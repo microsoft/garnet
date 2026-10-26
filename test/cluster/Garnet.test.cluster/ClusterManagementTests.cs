@@ -463,7 +463,7 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(node_count - 1, int.Parse(gossipConnections), "Expected one gossip connection per node.");
             var gossipActiveMemoryBytes = long.Parse(GetStat(server, "Stats", "gossip_active_memory_bytes"));
             var gossipMaxMemoryBytes = long.Parse(GetStat(server, "Stats", "gossip_max_memory_bytes"));
-            var clientOptions = LightNetworkWriterOptions.Default;
+            var clientOptions = NetworkWriterOptions.Default;
             var expectedMaxMemoryBytes = (node_count - 1) *
                 (clientOptions.MaxMemoryFootprint() + clientOptions.MaxOutOfLineRentedBytes);
             ClassicAssert.GreaterOrEqual(
@@ -509,7 +509,7 @@ namespace Garnet.test.cluster
             var server = context.clusterTestUtils.GetServer(0);
 
             // Baseline: every gossip client reports the default out-of-line rented byte budget.
-            var defaultOptions = LightNetworkWriterOptions.Default;
+            var defaultOptions = NetworkWriterOptions.Default;
             var baselineMaxMemory = (node_count - 1) *
                 (defaultOptions.MaxMemoryFootprint() + defaultOptions.MaxOutOfLineRentedBytes);
             ClassicAssert.AreEqual(baselineMaxMemory,
@@ -561,7 +561,7 @@ namespace Garnet.test.cluster
             await Task.Delay(1000).ConfigureAwait(false);
 
             var server = context.clusterTestUtils.GetServer(0);
-            var defaultOptions = LightNetworkWriterOptions.Default;
+            var defaultOptions = NetworkWriterOptions.Default;
 
             // One gossip client (to node 1) reporting the default budget.
             ClassicAssert.AreEqual(defaultOptions.MaxMemoryFootprint() + defaultOptions.MaxOutOfLineRentedBytes,
@@ -641,7 +641,7 @@ namespace Garnet.test.cluster
             await Task.Delay(1000).ConfigureAwait(false);
 
             var server = context.clusterTestUtils.GetServer(0);
-            var defaultOptions = LightNetworkWriterOptions.Default;
+            var defaultOptions = NetworkWriterOptions.Default;
             var newRentedBytes = defaultOptions.MaxOutOfLineRentedBytes * 2;
             var perConnectionNew = defaultOptions.MaxMemoryFootprint() + newRentedBytes;
 

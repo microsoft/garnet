@@ -18,7 +18,7 @@ namespace Garnet.cluster
         readonly ClusterProvider clusterProvider;
         readonly SslClientAuthenticationOptions tlsOptions;
         readonly LightEpoch epoch;
-        readonly GarnetLightClient gc;
+        readonly GarnetClient gc;
         GossipVersionNegotiation gossipNegotiation;
         ClusterAuthContainer clientAuth;
         ExponentialBackoff backoff;
@@ -76,7 +76,7 @@ namespace Garnet.cluster
         /// </summary>
         public EndPoint EndPoint;
 
-        public GarnetLightClient Client => gc;
+        public GarnetClient Client => gc;
 
         internal static int GetClientTimeoutMilliseconds(int clusterTimeoutSeconds)
             => clusterTimeoutSeconds <= 0 ? 0 : (int)Math.Min((long)clusterTimeoutSeconds * 1000, int.MaxValue);
@@ -100,7 +100,7 @@ namespace Garnet.cluster
             // Read the gossip options and the version they were published under in one consistent read. The
             // version records which configuration this client was built against for the staleness check at
             // add time; the options it carries are internally consistent (never a torn multi-parameter view).
-            var group = (IConfigGroup<LightNetworkWriterOptions>)clusterProvider.storeWrapper.runtimeConfig
+            var group = (IConfigGroup<NetworkWriterOptions>)clusterProvider.storeWrapper.runtimeConfig
                 .GetConfigGroup(ServerConfigGroupType.GOSSIP_CLIENT);
             var networkWriterOptions = group.Read(out this.gossipClientConfigVersion);
             this.gc = CreateGarnetClient(clientAuth, networkWriterOptions);
@@ -112,7 +112,7 @@ namespace Garnet.cluster
             ResetCts();
         }
 
-        GarnetLightClient CreateGarnetClient(ClusterAuthContainer auth, LightNetworkWriterOptions networkWriterOptions)
+        GarnetClient CreateGarnetClient(ClusterAuthContainer auth, NetworkWriterOptions networkWriterOptions)
             => new(
                 EndPoint,
                 tlsOptions,
@@ -159,7 +159,7 @@ namespace Garnet.cluster
                 return new(initializationTask);
             }
 
-            async Task<bool> InitializeCoreAsync(GarnetLightClient client)
+            async Task<bool> InitializeCoreAsync(GarnetClient client)
             {
                 try
                 {

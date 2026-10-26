@@ -19,7 +19,7 @@ namespace Garnet.client
     /// the inline buffer.
     /// </para>
     /// </summary>
-    struct LightPageAndOffset
+    struct PageAndOffset
     {
         internal const int kRequestBits = 15;
         const int kRequestOffset = 0;

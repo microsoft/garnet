@@ -18,8 +18,8 @@ namespace Garnet.client
     /// <para>
     /// This is a thin, network-owning shell over a
     /// <see cref="DuplexOperationChannel{TRequest, TCompletion, TTransport}"/>
-    /// specialized to <see cref="LightRequestContext"/> requests and <see cref="TcsWrapper"/> completions. It owns
-    /// the socket, the <see cref="GarnetLightClientTcpNetworkHandler"/> and the send buffer pool, and forwards
+    /// specialized to <see cref="RequestContext"/> requests and <see cref="TcsWrapper"/> completions. It owns
+    /// the socket, the <see cref="GarnetClientTcpNetworkHandler"/> and the send buffer pool, and forwards
     /// all ring bookkeeping (allocation, request enqueue, flush, and the completion lane) to the ring.
     /// </para>
     /// <para>
@@ -29,17 +29,17 @@ namespace Garnet.client
     /// completions in the same monotonic order.
     /// </para>
     /// </summary>
-    internal sealed class LightNetworkWriter : IDisposable
+    internal sealed class NetworkWriter : IDisposable
     {
         readonly struct RingTransport : ITransportContext
         {
             readonly ClientTcpNetworkSender tcpSender;
-            readonly GarnetLightClientTcpNetworkHandler networkHandler;
+            readonly GarnetClientTcpNetworkHandler networkHandler;
             readonly bool useTls;
 
             internal RingTransport(
                 ClientTcpNetworkSender tcpSender,
-                GarnetLightClientTcpNetworkHandler networkHandler,
+                GarnetClientTcpNetworkHandler networkHandler,
                 bool useTls)
             {
                 this.tcpSender = tcpSender;
@@ -52,7 +52,7 @@ namespace Garnet.client
                 if (useTls)
                 {
 #if DEBUG
-                    ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.LightClient_Tls_Pause_Before_Write);
+                    ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.GarnetClient_Tls_Pause_Before_Write);
 #endif
                     networkHandler.SendResponse(buffer, offset, length, context);
                 }
@@ -64,7 +64,7 @@ namespace Garnet.client
                 => networkHandler.Dispose();
         }
 
-        readonly DuplexOperationChannel<LightRequestContext, TcsWrapper, RingTransport> channel;
+        readonly DuplexOperationChannel<RequestContext, TcsWrapper, RingTransport> channel;
         readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
         LimitedFixedBufferPool requestPool;
@@ -73,7 +73,7 @@ namespace Garnet.client
         readonly MemoryThrottle outOfLineRentedBytesThrottle;
         // Created on the first out-of-line admission, so writers that only send inline requests never allocate it.
         WaiterQueue<MemoryThrottle, int> memoryThrottle;
-        readonly GarnetLightClientTcpNetworkHandler networkHandler;
+        readonly GarnetClientTcpNetworkHandler networkHandler;
         readonly ILogger logger;
         readonly long minMemoryFootprintBytes;
         readonly long maxMemoryFootprintBytes;
@@ -99,7 +99,7 @@ namespace Garnet.client
             => SaturatingAdd(
                 SaturatingAdd(
                     minMemoryFootprintBytes,
-                    (long)channel.AllocatedFlushContextCount * LightNetworkWriterOptions.FlushContextSizeBytes),
+                    (long)channel.AllocatedFlushContextCount * NetworkWriterOptions.FlushContextSizeBytes),
                 outOfLineRentedBytesThrottle.InUseBytes);
 
         internal long MaxMemoryUsageBytes
@@ -113,12 +113,12 @@ namespace Garnet.client
         /// <summary>
         /// Constructor
         /// </summary>
-        public LightNetworkWriter(
-            GarnetLightClient serverHook,
+        public NetworkWriter(
+            GarnetClient serverHook,
             Socket socket,
-            LightNetworkWriterOptions options,
+            NetworkWriterOptions options,
             SslClientAuthenticationOptions sslOptions,
-            out GarnetLightClientTcpNetworkHandler networkHandler,
+            out GarnetClientTcpNetworkHandler networkHandler,
             LightEpoch epoch,
             PoolOwnerType ownerType,
             ILogger logger = null)
@@ -136,9 +136,9 @@ namespace Garnet.client
             // The flush-completion callback is a static routine on the flush result and recovers its ring via
             // the result's sink, so the handler needs no ring instance at construction. That removes the
             // ring<->handler cycle: build the handler first, then construct the fully-wired ring.
-            var handler = new GarnetLightClientTcpNetworkHandler(
+            var handler = new GarnetClientTcpNetworkHandler(
                 serverHook,
-                DuplexOperationAsyncFlushResult<LightRequestContext>.CompleteChunk,
+                DuplexOperationAsyncFlushResult<RequestContext>.CompleteChunk,
                 socket,
                 networkBufferSettings,
                 networkPool,
@@ -150,7 +150,7 @@ namespace Garnet.client
             var useTls = sslOptions != null;
             var tcpSender = useTls ? null : (ClientTcpNetworkSender)handler.GetNetworkSender();
 
-            this.channel = new DuplexOperationChannel<LightRequestContext, TcsWrapper, RingTransport>(
+            this.channel = new DuplexOperationChannel<RequestContext, TcsWrapper, RingTransport>(
                 options.RequestPageSizeBytes,
                 options.RequestPageCount,
                 options.MaxOutstandingRequests,
@@ -264,14 +264,14 @@ namespace Garnet.client
         /// </summary>
         /// <param name="length"></param>
         /// <returns></returns>
-        internal LightRequestContext RentRequestBuffer(int length)
-            => LightRequestContext.RentRequestBuffer(RequestPool, length);
+        internal RequestContext RentRequestBuffer(int length)
+            => RequestContext.RentRequestBuffer(RequestPool, length);
 
         /// <summary>
         /// Gets the actual pooled allocation size that an out-of-line request will reserve.
         /// </summary>
         internal int GetRequestBufferAllocationSize(int length)
-            => LightRequestContext.GetRequestBufferAllocationSize(RequestPool, length);
+            => RequestContext.GetRequestBufferAllocationSize(RequestPool, length);
 
         internal ValueTask<bool> RentMemoryThrottle(int allocationSize, CancellationToken token)
             => MemoryThrottleQueue.AdmitAsync(allocationSize, token);
@@ -283,8 +283,8 @@ namespace Garnet.client
         internal void ReleaseOutOfLineRental(int allocationSize)
             => Volatile.Read(ref memoryThrottle).Release(allocationSize);
 
-        internal LightRequestContext RentAdmittedOutOfLineBuffer(int length, int reservedBytes)
-            => LightRequestContext.RentRequestBuffer(RequestPool, length, Volatile.Read(ref memoryThrottle), reservedBytes);
+        internal RequestContext RentAdmittedOutOfLineBuffer(int length, int reservedBytes)
+            => RequestContext.RentRequestBuffer(RequestPool, length, Volatile.Read(ref memoryThrottle), reservedBytes);
 
         /// <summary>
         /// Attempts to reserve the paired request address and optional completion ticket for one send operation.
@@ -318,7 +318,7 @@ namespace Garnet.client
             => channel.PublishInlineRecord(requestId, address, payloadLength);
 
         /// <summary>Register (store and publish) an out-of-line request record.</summary>
-        public void RegisterOfflineRecord(int requestId, long address, LightRequestContext payload)
+        public void RegisterOfflineRecord(int requestId, long address, RequestContext payload)
             => channel.RegisterOfflineRecord(requestId, address, payload);
 
         /// <summary>Register (store and publish) a completion for the given ticket.</summary>

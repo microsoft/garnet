@@ -18,17 +18,17 @@ namespace Garnet.cluster
         /// <summary>
         /// Connection to primary if reachable
         /// </summary>
-        GarnetLightClient primaryClient = null;
+        GarnetClient primaryClient = null;
 
         /// <summary>
         /// Helper method to establish connection towards remote node
         /// </summary>
         /// <param name="nodeId">Id of node to create connection for</param>
         /// <returns></returns>
-        private async Task<GarnetLightClient> CreateConnectionAsync(string nodeId)
+        private async Task<GarnetClient> CreateConnectionAsync(string nodeId)
         {
             var endpoint = oldConfig.GetEndpointFromNodeId(nodeId);
-            var client = new GarnetLightClient(
+            var client = new GarnetClient(
                 endpoint,
                 clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
                 authUsername: clusterProvider.ClusterUsername,
@@ -54,7 +54,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="nodeId"></param>
         /// <returns></returns>
-        private Task<GarnetLightClient> GetConnectionAsync(string nodeId)
+        private Task<GarnetClient> GetConnectionAsync(string nodeId)
             => CreateConnectionAsync(nodeId);
 
         /// <summary>

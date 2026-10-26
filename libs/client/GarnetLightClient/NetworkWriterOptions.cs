@@ -23,7 +23,7 @@ namespace Garnet.client
     }
 
     /// <summary>
-    /// Capacity and buffer settings for a <see cref="LightNetworkWriter"/>.
+    /// Capacity and buffer settings for a <see cref="NetworkWriter"/>.
     /// </summary>
     /// <remarks>
     /// Creates a complete set of network writer capacity and buffer options.
@@ -36,13 +36,13 @@ namespace Garnet.client
     /// <param name="requestPageCount">Power-of-two multiplier of <paramref name="requestPageSizeBytes"/> giving the inline request buffer capacity.</param>
     /// <param name="maxOutstandingRequests">
     /// Maximum number of requests awaiting local send completion, regardless of size; between 1 and
-    /// 2^<see cref="LightPageAndOffset.kRequestBits"/>.
+    /// 2^<see cref="PageAndOffset.kRequestBits"/>.
     /// </param>
     /// <param name="maxOutstandingCompletions">Maximum number of response completions awaiting replies.</param>
     /// <param name="maxConcurrentNetworkSends">Maximum number of concurrent transport sends.</param>
     /// <param name="maxOutOfLineRentedBytes">Maximum pooled out-of-line request bytes rented until local send completion. Zero disables throttling.</param>
     /// <param name="flushResultAllocationMode">Controls whether request-flush completion contexts are retained per request slot or allocated per operation.</param>
-    public struct LightNetworkWriterOptions(
+    public struct NetworkWriterOptions(
         int networkBufferSizeBytes,
         int requestPageSizeBytes,
         int requestPageCount,
@@ -53,18 +53,18 @@ namespace Garnet.client
         FlushResultAllocationMode flushResultAllocationMode)
     {
         static int RequestSlotSizeBytes
-            => Align(Unsafe.SizeOf<LightRequestContext>() + IntPtr.Size);
+            => Align(Unsafe.SizeOf<RequestContext>() + IntPtr.Size);
 
         internal static int FlushContextSizeBytes
             => Align(
                 (2 * IntPtr.Size) +
-                Unsafe.SizeOf<LightRequestContext>() +
+                Unsafe.SizeOf<RequestContext>() +
                 IntPtr.Size +
                 sizeof(int) +
                 sizeof(bool));
 
         /// <summary>
-        /// Default settings for a general-purpose <see cref="GarnetLightClient"/>.
+        /// Default settings for a general-purpose <see cref="GarnetClient"/>.
         /// </summary>
         /// <remarks>
         /// The default uses two 4-KiB request pages and 16 slots in both the request and completion lanes.
@@ -77,7 +77,7 @@ namespace Garnet.client
         /// Request pages: 2 pages * 4,096 bytes = 8 KiB of pinned payload storage.
         /// </description></item>
         /// <item><description>
-        /// Request side table: 16 slots, matching the completion lane; each <c>LightRequestContext</c> plus
+        /// Request side table: 16 slots, matching the completion lane; each <c>RequestContext</c> plus
         /// flush-context reference is approximately 32 bytes,
         /// for approximately 0.5 KiB.
         /// </description></item>
@@ -90,7 +90,7 @@ namespace Garnet.client
         /// After every physical request slot has been used, their approximate worst-case footprint is
         /// 16 slots * 56 bytes = 896 bytes, keeping the fully warmed request/completion ring near 10.4 KiB.
         /// </remarks>
-        public static LightNetworkWriterOptions Default => new(
+        public static NetworkWriterOptions Default => new(
             networkBufferSizeBytes: 1 << 13,
             requestPageSizeBytes: 1 << 12,
             requestPageCount: 2,
@@ -196,9 +196,9 @@ namespace Garnet.client
                 throw new ArgumentOutOfRangeException(nameof(maxOutstandingRequests), maxOutstandingRequests,
                     "Maximum outstanding requests must be positive.");
 
-            if (maxOutstandingRequests > (1 << LightPageAndOffset.kRequestBits))
+            if (maxOutstandingRequests > (1 << PageAndOffset.kRequestBits))
                 throw new ArgumentOutOfRangeException(nameof(maxOutstandingRequests), maxOutstandingRequests,
-                    $"Maximum outstanding requests must not exceed the {LightPageAndOffset.kRequestBits}-bit request-id space ({1 << LightPageAndOffset.kRequestBits}).");
+                    $"Maximum outstanding requests must not exceed the {PageAndOffset.kRequestBits}-bit request-id space ({1 << PageAndOffset.kRequestBits}).");
 
             return maxOutstandingRequests;
         }
@@ -209,9 +209,9 @@ namespace Garnet.client
                 throw new ArgumentOutOfRangeException(nameof(maxOutstandingCompletions), maxOutstandingCompletions,
                     "Maximum outstanding completions must be positive.");
 
-            if (maxOutstandingCompletions > (1 << LightPageAndOffset.kTaskBits))
+            if (maxOutstandingCompletions > (1 << PageAndOffset.kTaskBits))
                 throw new ArgumentOutOfRangeException(nameof(maxOutstandingCompletions), maxOutstandingCompletions,
-                    $"Maximum outstanding completions must not exceed the {LightPageAndOffset.kTaskBits}-bit completion-ticket space ({1 << LightPageAndOffset.kTaskBits}).");
+                    $"Maximum outstanding completions must not exceed the {PageAndOffset.kTaskBits}-bit completion-ticket space ({1 << PageAndOffset.kTaskBits}).");
 
             return maxOutstandingCompletions;
         }

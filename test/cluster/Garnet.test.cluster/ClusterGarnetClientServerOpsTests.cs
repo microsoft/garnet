@@ -15,7 +15,7 @@ namespace Garnet.test.cluster
 {
     /// <summary>
     /// End-to-end tests that drive the internal server-to-server operations which were migrated
-    /// from <c>GarnetClient</c> to <c>GarnetLightClient</c> (GLC): periodic gossip and MEET
+    /// from <c>GarnetClient</c> to <c>GarnetClient</c> (GLC): periodic gossip and MEET
     /// (<c>GarnetServerNode</c>), cross-node PUBLISH forwarding (<c>ClusterPublishNoResponse</c>),
     /// and the failover handshake (<c>PrimaryFailoverSession.Failover</c>,
     /// <c>ReplicaFailoverSession.GossipAsync</c>/<c>ReplicaOf</c>).
@@ -25,7 +25,7 @@ namespace Garnet.test.cluster
     /// they validate deterministically.
     /// </summary>
     [TestFixture, NonParallelizable]
-    public class ClusterLightClientServerOpsTests
+    public class ClusterGarnetClientServerOpsTests
     {
         ClusterTestContext context;
         readonly Dictionary<string, LogLevel> monitorTests = [];
@@ -155,7 +155,7 @@ namespace Garnet.test.cluster
         /// data must survive on the new primary.
         /// </summary>
         [Test, Order(4), CancelAfter(120_000)]
-        public void CoordinatedFailoverViaLightClientPromotesReplica()
+        public void CoordinatedFailoverViaGarnetClientPromotesReplica()
         {
             const int primaryIndex = 0;
             const int replicaIndex = 1;
@@ -182,7 +182,7 @@ namespace Garnet.test.cluster
         /// gracefully while the promotion succeeds and the data remains available.
         /// </summary>
         [Test, Order(5), CancelAfter(120_000)]
-        public void ForceFailoverViaLightClientPromotesReplica()
+        public void ForceFailoverViaGarnetClientPromotesReplica()
         {
             const int primaryIndex = 0;
             const int replicaIndex = 1;

@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using CommandLine;
@@ -9,9 +9,8 @@ namespace Client.benchmark
 {
     /// <summary>
     /// Entry point for the in-process client micro-benchmark. A single real Garnet
-    /// server is hosted over loopback and exercised by one client type (GarnetClient
-    /// or GarnetLightClient) driven by a configurable number of parallel threads, each
-    /// owning its own connection and all sharing one epoch.
+    /// server is hosted over loopback and exercised by GarnetClient driven by a configurable
+    /// number of parallel threads, each owning its own connection and all sharing one epoch.
     /// </summary>
     internal sealed class Program
     {
@@ -38,7 +37,7 @@ namespace Client.benchmark
             var endpoint = server.EndPoint;
             var value = new string('v', opts.ValueLength);
 
-            Console.WriteLine($"Server {server.Host}:{server.Port} | arm={opts.Client} tls={opts.EnableTLS} threads={opts.Threads} batch={opts.Batch} " +
+            Console.WriteLine($"Server {server.Host}:{server.Port} | tls={opts.EnableTLS} threads={opts.Threads} batch={opts.Batch} " +
                 $"warmup={opts.WarmupSeconds}s duration={opts.DurationSeconds}s valuelen={opts.ValueLength} " +
                 $"netbuf={opts.NetworkBufferBytes} maxsends={opts.MaxConcurrentSends} " +
                 $"max-requests={opts.MaxOutstandingRequests} max-completions={opts.MaxOutstandingCompletions} " +
@@ -47,16 +46,9 @@ namespace Client.benchmark
             var epoch = new LightEpoch();
             try
             {
-                var result = opts.Client switch
-                {
-                    ClientArm.GarnetClient => WorkloadRunner.Run<GarnetClientDriverFactory, GarnetClientDriver>(
-                        new GarnetClientDriverFactory(endpoint, Key, value, opts, server.TlsClientOptions), epoch,
-                        opts.Threads, opts.Batch, opts.WarmupSeconds, opts.DurationSeconds, opts.SharedSocket),
-                    ClientArm.GarnetLightClient => WorkloadRunner.Run<GarnetLightClientDriverFactory, GarnetLightClientDriver>(
-                        new GarnetLightClientDriverFactory(endpoint, Key, value, opts, server.TlsClientOptions), epoch,
-                        opts.Threads, opts.Batch, opts.WarmupSeconds, opts.DurationSeconds, opts.SharedSocket),
-                    _ => throw new ArgumentOutOfRangeException(nameof(opts)),
-                };
+                var result = WorkloadRunner.Run<GarnetClientDriverFactory, GarnetClientDriver>(
+                    new GarnetClientDriverFactory(endpoint, Key, value, opts, server.TlsClientOptions), epoch,
+                    opts.Threads, opts.Batch, opts.WarmupSeconds, opts.DurationSeconds, opts.SharedSocket);
 
                 PrintResult(opts, result);
             }
@@ -70,7 +62,6 @@ namespace Client.benchmark
         {
             Console.WriteLine();
             Console.WriteLine("================ Results ================");
-            Console.WriteLine($" Arm          : {opts.Client}");
             Console.WriteLine($" Topology     : {(opts.SharedSocket ? "shared-socket (one connection, all workers)" : "per-thread-socket (one connection per worker)")}");
             Console.WriteLine($" TLS          : {(opts.EnableTLS ? "Enabled" : "Disabled")}");
             Console.WriteLine($" Threads      : {opts.Threads}");
@@ -83,7 +74,7 @@ namespace Client.benchmark
             Console.WriteLine($" CPU (us/op)  : {r.CpuMicrosPerOp:F3} (client and in-process server)");
             Console.WriteLine("=========================================");
             Console.WriteLine(FormattableString.Invariant(
-                $"RESULT,{opts.Client},{(opts.EnableTLS ? "tls" : "plain")},{(opts.SharedSocket ? "shared" : "per-thread")},{opts.Threads},{r.Batch},{r.ThroughputOpsPerSec:F0},{r.CpuMicrosPerOp:F3},{r.P50Micros:F2},{r.P99Micros:F2}"));
+                $"RESULT,GarnetClient,{(opts.EnableTLS ? "tls" : "plain")},{(opts.SharedSocket ? "shared" : "per-thread")},{opts.Threads},{r.Batch},{r.ThroughputOpsPerSec:F0},{r.CpuMicrosPerOp:F3},{r.P50Micros:F2},{r.P99Micros:F2}"));
         }
     }
 }

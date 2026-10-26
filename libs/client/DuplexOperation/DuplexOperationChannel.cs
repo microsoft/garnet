@@ -44,7 +44,7 @@ namespace Garnet.client
 
     /// <summary>
     /// A duplex, back-pressured ring for inline and out-of-line request/response traffic over a single
-    /// connection. It owns ONE combined allocator cursor (<see cref="LightPageAndOffset"/>) that advances two
+    /// connection. It owns ONE combined allocator cursor (<see cref="PageAndOffset"/>) that advances two
     /// logically distinct lanes in a single compare-and-swap:
     /// <list type="bullet">
     /// <item><description>
@@ -321,7 +321,7 @@ namespace Garnet.client
         /// </summary>
         void AsyncFlushRequestContext(int fromRequestId, int untilRequestId)
         {
-            var count = (untilRequestId - fromRequestId) & (int)LightPageAndOffset.kRequestMask;
+            var count = (untilRequestId - fromRequestId) & (int)PageAndOffset.kRequestMask;
             controller.BeginFlushRange();
             var flushFailed = false;
 
@@ -340,7 +340,7 @@ namespace Garnet.client
                     break;
 
                 released++;
-                var requestId = (fromRequestId + i) & (int)LightPageAndOffset.kRequestMask;
+                var requestId = (fromRequestId + i) & (int)PageAndOffset.kRequestMask;
                 if (!store.TryClaimSchedule(requestId, out var schedule))
                     continue; // Reclaimed by teardown, or never published by a producer that failed.
 

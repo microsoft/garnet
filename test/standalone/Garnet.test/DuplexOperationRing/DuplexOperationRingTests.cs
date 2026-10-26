@@ -167,11 +167,11 @@ namespace Garnet.test
             h.AssertNoBufferLeaks();
         }
 
-        /// <summary>Logical page wrap preserves the published out-of-line descriptor address.</summary>
+        /// <summary>Request-id wrap preserves the published out-of-line descriptor address.</summary>
         [Test]
-        public async Task OutOfLineDescriptorAddressWrapsWithPageCounter()
+        public async Task OutOfLineDescriptorAddressSurvivesRequestIdWrap()
         {
-            var operationCount = (1 << PageOffset.kPageBits) + 1;
+            var operationCount = (1 << PageAndOffset.kRequestBits) + 1;
             using var h = new RingTestHarness(pageSize: 8, pageCount: 4, maxOutstandingRequests: 4, completionCapacity: 64, maxSendChunkSizeBytes: 8);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
@@ -197,7 +197,7 @@ namespace Garnet.test
         [Test]
         public async Task TicketAndInlineBufferWrap_PreserveOrderAndPayload()
         {
-            var total = (1 << LightPageAndOffset.kRequestBits) + 4099;
+            var total = (1 << PageAndOffset.kRequestBits) + 4099;
             using var h = new RingTestHarness(pageSize: 64, pageCount: 4, maxOutstandingRequests: 16, completionCapacity: 8, maxSendChunkSizeBytes: 64);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -208,7 +208,7 @@ namespace Garnet.test
                 while (Volatile.Read(ref producerDone) == 0 || h.CompletionTail != advanced)
                 {
                     var issued = h.CompletionTail;
-                    var delta = (int)((issued - advanced) & LightPageAndOffset.kTaskMask);
+                    var delta = (int)((issued - advanced) & PageAndOffset.kTaskMask);
                     if (delta > 0)
                     {
                         h.AdvanceCompletions(delta);

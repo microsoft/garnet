@@ -91,7 +91,7 @@ namespace BDN.benchmark.Client
                     return;
                 }
 
-                DuplexOperationAsyncFlushResult<LightRequestContext>.CompleteChunk(context);
+                DuplexOperationAsyncFlushResult<RequestContext>.CompleteChunk(context);
             }
 
             internal void RecordFlushError(Exception exception)
@@ -109,7 +109,7 @@ namespace BDN.benchmark.Client
         LightEpoch epoch;
         LimitedFixedBufferPool requestPool;
         TransportState transportState;
-        DuplexOperationChannel<LightRequestContext, BenchmarkCompletion, NoOpTransport> channel;
+        DuplexOperationChannel<RequestContext, BenchmarkCompletion, NoOpTransport> channel;
         byte[] inlineRequest;
         byte[] outOfLineRequest;
         int nextCompletion;
@@ -127,7 +127,7 @@ namespace BDN.benchmark.Client
                 numLevels: 4,
                 ownerType: PoolOwnerType.GarnetClient);
             transportState = new TransportState();
-            channel = new DuplexOperationChannel<LightRequestContext, BenchmarkCompletion, NoOpTransport>(
+            channel = new DuplexOperationChannel<RequestContext, BenchmarkCompletion, NoOpTransport>(
                 RingPageSize,
                 RingPageCount,
                 CompletionCapacity,
@@ -188,12 +188,12 @@ namespace BDN.benchmark.Client
             if (inline)
                 transportState.RecordModeError();
 
-            var request = LightRequestContext.RentRequestBuffer(requestPool, outOfLineRequest.Length);
+            var request = RequestContext.RentRequestBuffer(requestPool, outOfLineRequest.Length);
             outOfLineRequest.AsSpan().CopyTo(request.Buffer);
             return ExecuteOperation(recordSize, outOfLineRequest, inline: false, request);
         }
 
-        long ExecuteOperation(int recordSize, byte[] source, bool inline, LightRequestContext request)
+        long ExecuteOperation(int recordSize, byte[] source, bool inline, RequestContext request)
         {
             var requestRegistered = false;
             var epochProtected = false;
@@ -267,9 +267,9 @@ namespace BDN.benchmark.Client
 
         void PrewarmRequestPool()
         {
-            var requests = new LightRequestContext[4];
+            var requests = new RequestContext[4];
             for (var i = 0; i < requests.Length; i++)
-                requests[i] = LightRequestContext.RentRequestBuffer(requestPool, OutOfLinePayloadLength);
+                requests[i] = RequestContext.RentRequestBuffer(requestPool, OutOfLinePayloadLength);
             for (var i = 0; i < requests.Length; i++)
                 requests[i].Dispose();
         }

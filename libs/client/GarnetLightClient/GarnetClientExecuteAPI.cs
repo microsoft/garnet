@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -22,7 +23,7 @@ namespace Garnet.client
         /// <param name="param1">Parameter</param>
         /// <param name="param2">Parameter</param>
         /// <returns></returns>
-        public Task<string> ExecuteForStringResultAsync(Memory<byte> respOp, string param1 = null, string param2 = null)
+        public Task<string> ExecuteForStringResultAsync(ReadOnlyMemory<byte> respOp, string param1 = null, string param2 = null)
         {
             var tcs = new TcsWrapper { taskType = TaskType.StringAsync, stringTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously) };
             var _ = InternalExecuteAsync(tcs, respOp, param1, param2);
@@ -38,7 +39,7 @@ namespace Garnet.client
         /// 
         /// 
         /// <returns></returns>
-        public Task<string> ExecuteForStringResultAsync(Memory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default)
+        public Task<string> ExecuteForStringResultAsync(ReadOnlyMemory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default)
         {
             var tcs = new TcsWrapper { taskType = TaskType.StringAsync, stringTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously) };
             var _ = InternalExecuteAsync(tcs, respOp, param1, param2);
@@ -64,7 +65,7 @@ namespace Garnet.client
         /// <param name="respOp">Operation in resp format</param>
         /// <param name="args">Command arguments</param>
         /// <returns></returns>
-        public Task<string> ExecuteForStringResultAsync(Memory<byte> respOp, ICollection<Memory<byte>> args = null)
+        public Task<string> ExecuteForStringResultAsync(ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null)
         {
             var tcs = new TcsWrapper { taskType = TaskType.StringAsync, stringTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously) };
             var _ = InternalExecuteAsync(tcs, respOp, args);
@@ -84,7 +85,7 @@ namespace Garnet.client
         /// <param name="param1">Parameter</param>
         /// <param name="param2">Parameter</param>
         /// <returns></returns>
-        public void ExecuteForStringResult(Action<long, string> callback, long context, Memory<byte> respOp, string param1 = null, string param2 = null)
+        public void ExecuteForStringResult(Action<long, string> callback, long context, ReadOnlyMemory<byte> respOp, string param1 = null, string param2 = null)
         {
             var _ = InternalExecuteAsync(new TcsWrapper { taskType = TaskType.StringCallback, stringCallback = callback, context = context }, respOp, param1, param2);
         }
@@ -98,7 +99,7 @@ namespace Garnet.client
         /// <param name="param1">Parameter</param>
         /// <param name="param2">Parameter</param>
         /// <returns></returns>
-        public void ExecuteForStringResult(Action<long, string> callback, long context, Memory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default)
+        public void ExecuteForStringResult(Action<long, string> callback, long context, ReadOnlyMemory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default)
         {
             var _ = InternalExecuteAsync(new TcsWrapper { taskType = TaskType.StringCallback, stringCallback = callback, context = context }, respOp, param1, param2);
         }
@@ -124,7 +125,7 @@ namespace Garnet.client
         /// <param name="respOp">Operation in resp format</param>
         /// <param name="args">Operation arguments</param>
         /// <returns></returns>
-        public void ExecuteForStringResult(Action<long, string> callback, long context, Memory<byte> respOp, ICollection<Memory<byte>> args = null)
+        public void ExecuteForStringResult(Action<long, string> callback, long context, ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null)
         {
             var _ = InternalExecuteAsync(new TcsWrapper { taskType = TaskType.StringCallback, stringCallback = callback, context = context }, respOp, args);
         }
@@ -141,7 +142,7 @@ namespace Garnet.client
         /// <param name="param2"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async Task<string> ExecuteForStringResultWithCancellationAsync(Memory<byte> respOp, string param1, string param2 = default, CancellationToken token = default)
+        public async Task<string> ExecuteForStringResultWithCancellationAsync(ReadOnlyMemory<byte> respOp, string param1, string param2 = default, CancellationToken token = default)
         {
             var tcs = new TcsWrapper { taskType = TaskType.StringAsync, stringTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously) };
             if (token.CanBeCanceled)
@@ -167,7 +168,7 @@ namespace Garnet.client
         /// <param name="param2"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async Task<string> ExecuteForStringResultWithCancellationAsync(Memory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default, CancellationToken token = default)
+        public async Task<string> ExecuteForStringResultWithCancellationAsync(ReadOnlyMemory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default, CancellationToken token = default)
         {
             var tcs = new TcsWrapper { taskType = TaskType.StringAsync, stringTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously) };
             if (token.CanBeCanceled)
@@ -218,7 +219,7 @@ namespace Garnet.client
         /// <param name="args">Operation arguments</param>
         /// <param name="token">Cancellation token</param>
         /// <returns></returns>
-        public async Task<string> ExecuteForStringResultWithCancellationAsync(Memory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
+        public async Task<string> ExecuteForStringResultWithCancellationAsync(ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
         {
             var tcs = new TcsWrapper { taskType = TaskType.StringAsync, stringTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously) };
             if (token.CanBeCanceled)
@@ -253,7 +254,7 @@ namespace Garnet.client
         /// <param name="param1">Parameter</param>
         /// <param name="param2">Parameter</param>
         /// <returns></returns>
-        public Task<MemoryResult<byte>> ExecuteForMemoryResultAsync(Memory<byte> respOp, string param1 = null, string param2 = null)
+        public Task<MemoryResult<byte>> ExecuteForMemoryResultAsync(ReadOnlyMemory<byte> respOp, string param1 = null, string param2 = null)
         {
             var tcs = new TcsWrapper { taskType = TaskType.MemoryByteAsync, memoryByteTcs = new TaskCompletionSource<MemoryResult<byte>>(TaskCreationOptions.RunContinuationsAsynchronously) };
             var _ = InternalExecuteAsync(tcs, respOp, param1, param2);
@@ -267,7 +268,7 @@ namespace Garnet.client
         /// <param name="param1">Parameter</param>
         /// <param name="param2">Parameter</param>
         /// <returns></returns>
-        public Task<MemoryResult<byte>> ExecuteForMemoryResultAsync(Memory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default)
+        public Task<MemoryResult<byte>> ExecuteForMemoryResultAsync(ReadOnlyMemory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default)
         {
             var tcs = new TcsWrapper { taskType = TaskType.MemoryByteAsync, memoryByteTcs = new TaskCompletionSource<MemoryResult<byte>>(TaskCreationOptions.RunContinuationsAsynchronously) };
             var _ = InternalExecuteAsync(tcs, respOp, param1, param2);
@@ -293,7 +294,7 @@ namespace Garnet.client
         /// <param name="respOp">Operation in resp format</param>
         /// <param name="args">Operation arguments</param>
         /// <returns></returns>
-        public Task<MemoryResult<byte>> ExecuteForMemoryResultAsync(Memory<byte> respOp, ICollection<Memory<byte>> args = null)
+        public Task<MemoryResult<byte>> ExecuteForMemoryResultAsync(ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null)
         {
             var tcs = new TcsWrapper { taskType = TaskType.MemoryByteAsync, memoryByteTcs = new TaskCompletionSource<MemoryResult<byte>>(TaskCreationOptions.RunContinuationsAsynchronously) };
             var _ = InternalExecuteAsync(tcs, respOp, args);
@@ -313,7 +314,7 @@ namespace Garnet.client
         /// <param name="callback">Callback function when operation completes</param>
         /// <param name="context">Optional context to correlate request to callback</param>
         /// <returns></returns>ok 1
-        public void ExecuteForMemoryResult(Action<long, MemoryResult<byte>> callback, long context, Memory<byte> respOp, string param1 = null, string param2 = null)
+        public void ExecuteForMemoryResult(Action<long, MemoryResult<byte>> callback, long context, ReadOnlyMemory<byte> respOp, string param1 = null, string param2 = null)
         {
             var _ = InternalExecuteAsync(new TcsWrapper { taskType = TaskType.MemoryByteCallback, memoryByteCallback = callback, context = context }, respOp, param1, param2);
         }
@@ -327,7 +328,7 @@ namespace Garnet.client
         /// <param name="callback">Callback function when operation completes</param>
         /// <param name="context">Optional context to correlate request to callback</param>
         /// <returns></returns>ok 2
-        public void ExecuteForMemoryResult(Action<long, MemoryResult<byte>> callback, long context, Memory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default)
+        public void ExecuteForMemoryResult(Action<long, MemoryResult<byte>> callback, long context, ReadOnlyMemory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default)
         {
             var _ = InternalExecuteAsync(new TcsWrapper { taskType = TaskType.MemoryByteCallback, memoryByteCallback = callback, context = context }, respOp, param1, param2);
         }
@@ -352,7 +353,7 @@ namespace Garnet.client
         /// <param name="context"></param>
         /// <param name="respOp">Operation in resp format</param>
         /// <param name="args">Operation arguments</param>
-        public void ExecuteForMemoryResult(Action<long, MemoryResult<byte>> callback, long context, Memory<byte> respOp, ICollection<Memory<byte>> args = null)
+        public void ExecuteForMemoryResult(Action<long, MemoryResult<byte>> callback, long context, ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null)
         {
             var _ = InternalExecuteAsync(new TcsWrapper { taskType = TaskType.MemoryByteCallback, memoryByteCallback = callback, context = context }, respOp, args);
         }
@@ -369,7 +370,7 @@ namespace Garnet.client
         /// <param name="param2"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async Task<MemoryResult<byte>> ExecuteForMemoryResultWithCancellationAsync(Memory<byte> respOp, string param1, string param2 = default, CancellationToken token = default)
+        public async Task<MemoryResult<byte>> ExecuteForMemoryResultWithCancellationAsync(ReadOnlyMemory<byte> respOp, string param1, string param2 = default, CancellationToken token = default)
         {
             var tcs = new TcsWrapper { taskType = TaskType.MemoryByteAsync, memoryByteTcs = new TaskCompletionSource<MemoryResult<byte>>(TaskCreationOptions.RunContinuationsAsynchronously) };
             if (token.CanBeCanceled)
@@ -395,7 +396,7 @@ namespace Garnet.client
         /// <param name="param2"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async Task<MemoryResult<byte>> ExecuteForMemoryResultWithCancellationAsync(Memory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default, CancellationToken token = default)
+        public async Task<MemoryResult<byte>> ExecuteForMemoryResultWithCancellationAsync(ReadOnlyMemory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default, CancellationToken token = default)
         {
             var tcs = new TcsWrapper { taskType = TaskType.MemoryByteAsync, memoryByteTcs = new TaskCompletionSource<MemoryResult<byte>>(TaskCreationOptions.RunContinuationsAsynchronously) };
             if (token.CanBeCanceled)
@@ -444,7 +445,7 @@ namespace Garnet.client
         /// <param name="respOp">Operation in resp format</param>
         /// <param name="args">Operation arguments</param>
         /// <param name="token">Commands</param>
-        public async Task<MemoryResult<byte>> ExecuteForMemoryResultWithCancellationAsync(Memory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
+        public async Task<MemoryResult<byte>> ExecuteForMemoryResultWithCancellationAsync(ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
         {
             var tcs = new TcsWrapper { taskType = TaskType.MemoryByteAsync, memoryByteTcs = new TaskCompletionSource<MemoryResult<byte>>(TaskCreationOptions.RunContinuationsAsynchronously) };
             if (token.CanBeCanceled)
@@ -479,7 +480,7 @@ namespace Garnet.client
         /// <param name="param1"></param>
         /// <param name="param2"></param>
         /// <returns>Array of results</returns>
-        public Task<string[]> ExecuteForStringArrayResultAsync(Memory<byte> respOp, string param1 = null, string param2 = null)
+        public Task<string[]> ExecuteForStringArrayResultAsync(ReadOnlyMemory<byte> respOp, string param1 = null, string param2 = null)
         {
             var tcs = new TcsWrapper { taskType = TaskType.StringArrayAsync, stringArrayTcs = new TaskCompletionSource<string[]>(TaskCreationOptions.RunContinuationsAsynchronously) };
             var _ = InternalExecuteAsync(tcs, respOp, param1, param2);
@@ -493,7 +494,7 @@ namespace Garnet.client
         /// <param name="param1"></param>
         /// <param name="param2"></param>
         /// <returns></returns>
-        public Task<string[]> ExecuteForStringArrayResultAsync(Memory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default)
+        public Task<string[]> ExecuteForStringArrayResultAsync(ReadOnlyMemory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default)
         {
             var tcs = new TcsWrapper { taskType = TaskType.StringArrayAsync, stringArrayTcs = new TaskCompletionSource<string[]>(TaskCreationOptions.RunContinuationsAsynchronously) };
             var _ = InternalExecuteAsync(tcs, respOp, param1, param2);
@@ -519,7 +520,7 @@ namespace Garnet.client
         /// <param name="respOp">Operation in resp format</param>
         /// <param name="args">Operation arguments</param>
         /// <returns></returns>
-        public Task<string[]> ExecuteForStringArrayResultAsync(Memory<byte> respOp, ICollection<Memory<byte>> args = null)
+        public Task<string[]> ExecuteForStringArrayResultAsync(ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null)
         {
             var tcs = new TcsWrapper { taskType = TaskType.StringArrayAsync, stringArrayTcs = new TaskCompletionSource<string[]>(TaskCreationOptions.RunContinuationsAsynchronously) };
             var _ = InternalExecuteAsync(tcs, respOp, args);
@@ -538,7 +539,7 @@ namespace Garnet.client
         /// <param name="respOp">Operation in resp format</param>
         /// <param name="param1"></param>
         /// <param name="param2"></param>
-        public void ExecuteForStringArrayResult(Action<long, string[], string> callback, long context, Memory<byte> respOp, string param1 = null, string param2 = null)
+        public void ExecuteForStringArrayResult(Action<long, string[], string> callback, long context, ReadOnlyMemory<byte> respOp, string param1 = null, string param2 = null)
         {
             var _ = InternalExecuteAsync(new TcsWrapper { taskType = TaskType.StringArrayCallback, stringArrayCallback = callback, context = context }, respOp, param1, param2);
         }
@@ -551,7 +552,7 @@ namespace Garnet.client
         /// <param name="respOp">Operation in resp format</param>
         /// <param name="param1"></param>
         /// <param name="param2"></param>
-        public void ExecuteForStringArrayResult(Action<long, string[], string> callback, long context, Memory<byte> respOp, Memory<byte> param1, Memory<byte> param2 = default)
+        public void ExecuteForStringArrayResult(Action<long, string[], string> callback, long context, ReadOnlyMemory<byte> respOp, Memory<byte> param1, Memory<byte> param2 = default)
         {
             var _ = InternalExecuteAsync(new TcsWrapper { taskType = TaskType.StringArrayCallback, stringArrayCallback = callback, context = context }, respOp, param1, param2);
         }
@@ -576,7 +577,7 @@ namespace Garnet.client
         /// <param name="context"></param>
         /// <param name="respOp">Operation in resp format</param>
         /// <param name="args">Operation arguments</param>
-        public void ExecuteForStringArrayResult(Action<long, string[], string> callback, long context, Memory<byte> respOp, ICollection<Memory<byte>> args = null)
+        public void ExecuteForStringArrayResult(Action<long, string[], string> callback, long context, ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null)
         {
             var _ = InternalExecuteAsync(new TcsWrapper { taskType = TaskType.StringArrayCallback, stringArrayCallback = callback, context = context }, respOp, args);
         }
@@ -593,7 +594,7 @@ namespace Garnet.client
         /// <param name="param2"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async Task<string[]> ExecuteForStringArrayResultWithCancellationAsync(Memory<byte> respOp, string param1 = default, string param2 = default, CancellationToken token = default)
+        public async Task<string[]> ExecuteForStringArrayResultWithCancellationAsync(ReadOnlyMemory<byte> respOp, string param1 = default, string param2 = default, CancellationToken token = default)
         {
             var tcs = new TcsWrapper { taskType = TaskType.StringArrayAsync, stringArrayTcs = new TaskCompletionSource<string[]>(TaskCreationOptions.RunContinuationsAsynchronously) };
             if (token.CanBeCanceled)
@@ -620,7 +621,7 @@ namespace Garnet.client
         /// <param name="param2"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async Task<string[]> ExecuteForStringArrayResultWithCancellationAsync(Memory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default, CancellationToken token = default)
+        public async Task<string[]> ExecuteForStringArrayResultWithCancellationAsync(ReadOnlyMemory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default, CancellationToken token = default)
         {
             var tcs = new TcsWrapper { taskType = TaskType.StringArrayAsync, stringArrayTcs = new TaskCompletionSource<string[]>(TaskCreationOptions.RunContinuationsAsynchronously) };
             if (token.CanBeCanceled)
@@ -671,7 +672,7 @@ namespace Garnet.client
         /// <param name="args">Operation arguments</param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async Task<string[]> ExecuteForStringArrayResultWithCancellationAsync(Memory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
+        public async Task<string[]> ExecuteForStringArrayResultWithCancellationAsync(ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
         {
             var tcs = new TcsWrapper { taskType = TaskType.StringArrayAsync, stringArrayTcs = new TaskCompletionSource<string[]>(TaskCreationOptions.RunContinuationsAsynchronously) };
             if (token.CanBeCanceled)
@@ -706,7 +707,7 @@ namespace Garnet.client
         /// <param name="param1"></param>
         /// <param name="param2"></param>
         /// <returns>MemoryResult byte array</returns>
-        public Task<MemoryResult<byte>[]> ExecuteForMemoryResultArrayAsync(Memory<byte> respOp, string param1 = null, string param2 = null)
+        public Task<MemoryResult<byte>[]> ExecuteForMemoryResultArrayAsync(ReadOnlyMemory<byte> respOp, string param1 = null, string param2 = null)
         {
             var tcs = new TcsWrapper { taskType = TaskType.MemoryByteArrayAsync, memoryByteArrayTcs = new TaskCompletionSource<MemoryResult<byte>[]>(TaskCreationOptions.RunContinuationsAsynchronously) };
             var _ = InternalExecuteAsync(tcs, respOp, param1, param2);
@@ -720,7 +721,7 @@ namespace Garnet.client
         /// <param name="param1"></param>
         /// <param name="param2"></param>
         /// <returns>MemoryResult byte array</returns>
-        public Task<MemoryResult<byte>[]> ExecuteForMemoryResultArrayAsync(Memory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default)
+        public Task<MemoryResult<byte>[]> ExecuteForMemoryResultArrayAsync(ReadOnlyMemory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default)
         {
             var tcs = new TcsWrapper { taskType = TaskType.MemoryByteArrayAsync, memoryByteArrayTcs = new TaskCompletionSource<MemoryResult<byte>[]>(TaskCreationOptions.RunContinuationsAsynchronously) };
             var _ = InternalExecuteAsync(tcs, respOp, param1, param2);
@@ -746,7 +747,7 @@ namespace Garnet.client
         /// <param name="respOp">Operation in resp format</param>
         /// <param name="args">Operation arguments</param>
         /// <returns>MemoryResult byte array</returns>
-        public Task<MemoryResult<byte>[]> ExecuteForMemoryResultArrayAsync(Memory<byte> respOp, ICollection<Memory<byte>> args = null)
+        public Task<MemoryResult<byte>[]> ExecuteForMemoryResultArrayAsync(ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null)
         {
             var tcs = new TcsWrapper { taskType = TaskType.MemoryByteArrayAsync, memoryByteArrayTcs = new TaskCompletionSource<MemoryResult<byte>[]>(TaskCreationOptions.RunContinuationsAsynchronously) };
             var _ = InternalExecuteAsync(tcs, respOp, args);
@@ -765,7 +766,7 @@ namespace Garnet.client
         /// <param name="respOp">Operation in resp format</param>
         /// <param name="param1"></param>
         /// <param name="param2"></param>
-        public void ExecuteForMemoryResultArray(Action<long, MemoryResult<byte>[], MemoryResult<byte>> callback, long context, Memory<byte> respOp, string param1 = null, string param2 = null)
+        public void ExecuteForMemoryResultArray(Action<long, MemoryResult<byte>[], MemoryResult<byte>> callback, long context, ReadOnlyMemory<byte> respOp, string param1 = null, string param2 = null)
         {
             var _ = InternalExecuteAsync(new TcsWrapper { taskType = TaskType.MemoryByteArrayCallback, memoryByteArrayCallback = callback, context = context }, respOp, param1, param2);
         }
@@ -778,7 +779,7 @@ namespace Garnet.client
         /// <param name="respOp">Operation in resp format</param>
         /// <param name="param1"></param>
         /// <param name="param2"></param>
-        public void ExecuteForMemoryResultArray(Action<long, MemoryResult<byte>[], MemoryResult<byte>> callback, long context, Memory<byte> respOp, Memory<byte> param1, Memory<byte> param2 = default)
+        public void ExecuteForMemoryResultArray(Action<long, MemoryResult<byte>[], MemoryResult<byte>> callback, long context, ReadOnlyMemory<byte> respOp, Memory<byte> param1, Memory<byte> param2 = default)
         {
             var _ = InternalExecuteAsync(new TcsWrapper { taskType = TaskType.MemoryByteArrayCallback, memoryByteArrayCallback = callback, context = context }, respOp, param1, param2);
         }
@@ -802,7 +803,7 @@ namespace Garnet.client
         /// <param name="context"></param>
         /// <param name="respOp">Operation in resp format</param>
         /// <param name="args">Operation arguments</param>
-        public void ExecuteForMemoryResultArray(Action<long, MemoryResult<byte>[], MemoryResult<byte>> callback, long context, Memory<byte> respOp, ICollection<Memory<byte>> args = null)
+        public void ExecuteForMemoryResultArray(Action<long, MemoryResult<byte>[], MemoryResult<byte>> callback, long context, ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null)
         {
             var _ = InternalExecuteAsync(new TcsWrapper { taskType = TaskType.MemoryByteArrayCallback, memoryByteArrayCallback = callback, context = context }, respOp, args);
         }
@@ -820,7 +821,7 @@ namespace Garnet.client
         /// <param name="param2"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async Task<MemoryResult<byte>[]> ExecuteForMemoryResultArrayWithCancellationAsync(Memory<byte> respOp, string param1 = null, string param2 = null, CancellationToken token = default)
+        public async Task<MemoryResult<byte>[]> ExecuteForMemoryResultArrayWithCancellationAsync(ReadOnlyMemory<byte> respOp, string param1 = null, string param2 = null, CancellationToken token = default)
         {
             var tcs = new TcsWrapper { taskType = TaskType.MemoryByteArrayAsync, memoryByteArrayTcs = new TaskCompletionSource<MemoryResult<byte>[]>(TaskCreationOptions.RunContinuationsAsynchronously) };
 
@@ -847,7 +848,7 @@ namespace Garnet.client
         /// <param name="param2"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async Task<MemoryResult<byte>[]> ExecuteForMemoryResultArrayWithCancellationAsync(Memory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default, CancellationToken token = default)
+        public async Task<MemoryResult<byte>[]> ExecuteForMemoryResultArrayWithCancellationAsync(ReadOnlyMemory<byte> respOp, Memory<byte> param1 = default, Memory<byte> param2 = default, CancellationToken token = default)
         {
             var tcs = new TcsWrapper { taskType = TaskType.MemoryByteArrayAsync, memoryByteArrayTcs = new TaskCompletionSource<MemoryResult<byte>[]>(TaskCreationOptions.RunContinuationsAsynchronously) };
 
@@ -901,7 +902,7 @@ namespace Garnet.client
         /// <param name="args">Operation arguments</param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async Task<MemoryResult<byte>[]> ExecuteForMemoryResultArrayWithCancellationAsync(Memory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
+        public async Task<MemoryResult<byte>[]> ExecuteForMemoryResultArrayWithCancellationAsync(ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
         {
             var tcs = new TcsWrapper { taskType = TaskType.MemoryByteArrayAsync, memoryByteArrayTcs = new TaskCompletionSource<MemoryResult<byte>[]>(TaskCreationOptions.RunContinuationsAsynchronously) };
 
@@ -950,7 +951,7 @@ namespace Garnet.client
         /// <param name="respOp">Operation in resp format</param>
         /// <param name="args">Command arguments</param>
         /// <returns></returns>
-        public Task<long> ExecuteForLongResultAsync(Memory<byte> respOp, ICollection<Memory<byte>> args = null)
+        public Task<long> ExecuteForLongResultAsync(ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null)
         {
             var tcs = new TcsWrapper { taskType = TaskType.LongAsync, longTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously) };
             var _ = InternalExecuteAsync(tcs, respOp, args);
@@ -964,7 +965,7 @@ namespace Garnet.client
         /// <param name="param1"></param>
         /// <param name="param2"></param>
         /// <returns></returns>
-        public Task<long> ExecuteForLongResultAsync(Memory<byte> respOp, string param1 = null, string param2 = null)
+        public Task<long> ExecuteForLongResultAsync(ReadOnlyMemory<byte> respOp, string param1 = null, string param2 = null)
         {
             var tcs = new TcsWrapper { taskType = TaskType.LongAsync, longTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously) };
             var _ = InternalExecuteAsync(tcs, respOp, param1, param2);
@@ -996,7 +997,7 @@ namespace Garnet.client
         /// <param name="respOp">Command in resp format</param>
         /// <param name="args">Commands arguments</param>
         /// <returns></returns>
-        public void ExecuteForLongResult(Action<long, long, string> callback, long context, Memory<byte> respOp, ICollection<Memory<byte>> args = null)
+        public void ExecuteForLongResult(Action<long, long, string> callback, long context, ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null)
         {
             var _ = InternalExecuteAsync(new TcsWrapper { taskType = TaskType.LongCallback, longCallback = callback, context = context }, respOp, args);
         }
@@ -1010,7 +1011,7 @@ namespace Garnet.client
         /// <param name="respOp"></param>
         /// <param name="param1"></param>
         /// <param name="param2"></param>
-        public void ExecuteForLongResult(Action<long, long, string> callback, long context, Memory<byte> respOp, string param1 = null, string param2 = null)
+        public void ExecuteForLongResult(Action<long, long, string> callback, long context, ReadOnlyMemory<byte> respOp, string param1 = null, string param2 = null)
         {
             var _ = InternalExecuteAsync(new TcsWrapper { taskType = TaskType.LongCallback, longCallback = callback, context = context }, respOp, param1, param2);
         }
@@ -1044,46 +1045,121 @@ namespace Garnet.client
             }
         }
 
+
+        #endregion
+
+        void TokenRegistrationLongCallback(object s) => ((TaskCompletionSource<long>)s).TrySetCanceled();
+
+        #endregion
+
+        #region String-argument overloads for resp-formatted operations
+
         /// <summary>
-        /// Execute command (async) with cancellation token
+        /// Execute a command whose response is returned as a string.
         /// </summary>
         /// <param name="respOp">Operation in resp format</param>
-        /// <param name="args">Operation arguments</param>
+        /// <param name="args">Command arguments</param>
+        /// <returns>Task that completes with the string reply</returns>
+        public Task<string> ExecuteForStringResultAsync(ReadOnlyMemory<byte> respOp, ICollection<string> args)
+            => ExecuteForStringResultAsync(respOp, ToMemoryArgs(args));
+
+        /// <summary>
+        /// Execute a command whose response is returned as a string, honoring a cancellation token.
+        /// </summary>
+        /// <param name="respOp">Operation in resp format</param>
+        /// <param name="args">Command arguments</param>
         /// <param name="token">Cancellation token</param>
-        /// <returns></returns>
-        public async Task<long> ExecuteForLongResultWithCancellationAsync(Memory<byte> respOp, Memory<byte>[] args = null, CancellationToken token = default)
+        /// <returns>Task that completes with the string reply</returns>
+        public Task<string> ExecuteForStringResultWithCancellationAsync(ReadOnlyMemory<byte> respOp, ICollection<string> args, CancellationToken token = default)
+            => ExecuteForStringResultWithCancellationAsync(respOp, ToMemoryArgs(args), token);
+
+        /// <summary>
+        /// Execute a command whose response is returned as a binary-safe <see cref="MemoryResult{Byte}"/>.
+        /// </summary>
+        /// <param name="respOp">Operation in resp format</param>
+        /// <param name="args">Command arguments</param>
+        /// <returns>Task that completes with the binary reply</returns>
+        public Task<MemoryResult<byte>> ExecuteForMemoryResultAsync(ReadOnlyMemory<byte> respOp, ICollection<string> args)
+            => ExecuteForMemoryResultAsync(respOp, ToMemoryArgs(args));
+
+        /// <summary>
+        /// Execute a command whose response is returned as a binary-safe <see cref="MemoryResult{Byte}"/>,
+        /// honoring a cancellation token.
+        /// </summary>
+        /// <param name="respOp">Operation in resp format</param>
+        /// <param name="args">Command arguments</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>Task that completes with the binary reply</returns>
+        public Task<MemoryResult<byte>> ExecuteForMemoryResultWithCancellationAsync(ReadOnlyMemory<byte> respOp, ICollection<string> args, CancellationToken token = default)
+            => ExecuteForMemoryResultWithCancellationAsync(respOp, ToMemoryArgs(args), token);
+
+        /// <summary>
+        /// Execute a command whose response is returned as a 64-bit integer.
+        /// </summary>
+        /// <param name="respOp">Operation in resp format</param>
+        /// <param name="args">Command arguments</param>
+        /// <returns>Task that completes with the integer reply</returns>
+        public Task<long> ExecuteForLongResultAsync(ReadOnlyMemory<byte> respOp, ICollection<string> args)
+            => ExecuteForLongResultAsync(respOp, ToMemoryArgs(args));
+
+        /// <summary>
+        /// Execute a command whose response is returned as a 64-bit integer, honoring a cancellation token.
+        /// </summary>
+        /// <param name="respOp">Operation in resp format</param>
+        /// <param name="args">Command arguments</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>Task that completes with the integer reply</returns>
+        public async Task<long> ExecuteForLongResultWithCancellationAsync(ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
         {
             var tcs = new TcsWrapper { taskType = TaskType.LongAsync, longTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously) };
             if (token.CanBeCanceled)
             {
                 using (token.Register(TokenRegistrationLongCallback, tcs.longTcs))
                 {
-                    var _ = InternalExecuteAsync(tcs, respOp, args, token);
+                    _ = InternalExecuteAsync(tcs, respOp, args, token);
                     return await tcs.longTcs.Task.ConfigureAwait(false);
                 }
             }
-            else
-            {
-                var _ = InternalExecuteAsync(tcs, respOp, args, token);
-                return await tcs.longTcs.Task.ConfigureAwait(false);
-            }
+
+            _ = InternalExecuteAsync(tcs, respOp, args, token);
+            return await tcs.longTcs.Task.ConfigureAwait(false);
         }
 
         /// <summary>
-        /// Execute command expecting no response
+        /// Execute a command whose response is returned as a 64-bit integer, honoring a cancellation token.
         /// </summary>
-        /// <param name="op"></param>
-        /// <param name="param1"></param>
-        /// <param name="param2"></param>
-        /// <param name="param3"></param>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        public void ExecuteNoResponse(Memory<byte> op, ReadOnlySpan<byte> param1, Span<byte> param2, Span<byte> param3, CancellationToken token = default)
+        /// <param name="respOp">Operation in resp format</param>
+        /// <param name="args">Command arguments</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>Task that completes with the integer reply</returns>
+        public Task<long> ExecuteForLongResultWithCancellationAsync(ReadOnlyMemory<byte> respOp, ICollection<string> args, CancellationToken token = default)
+            => ExecuteForLongResultWithCancellationAsync(respOp, ToMemoryArgs(args), token);
+
+        #endregion
+
+        /// <summary>
+        /// Execute a fixed four-token command without expecting a response (fire-and-forget).
+        /// Intended for producer-only traffic such as pub/sub message forwarding; the command must not
+        /// produce a reply or the reply reader will fault the connection.
+        /// </summary>
+        /// <param name="op">Operation in resp format</param>
+        /// <param name="param1">First argument</param>
+        /// <param name="param2">Second argument</param>
+        /// <param name="param3">Third argument</param>
+        /// <param name="token">Cancellation token</param>
+        public void ExecuteNoResponse(ReadOnlyMemory<byte> op, ReadOnlySpan<byte> param1, Span<byte> param2, Span<byte> param3, CancellationToken token = default)
             => InternalExecuteNoResponse(op, param1, param2, param3, token);
-        #endregion
 
-        void TokenRegistrationLongCallback(object s) => ((TaskCompletionSource<long>)s).TrySetCanceled();
+        static Memory<byte>[] ToMemoryArgs(ICollection<string> args)
+        {
+            if (args == null)
+                return null;
 
-        #endregion
+            var result = new Memory<byte>[args.Count];
+            var i = 0;
+            foreach (var arg in args)
+                result[i++] = arg != null ? Encoding.UTF8.GetBytes(arg) : Memory<byte>.Empty;
+            return result;
+        }
     }
 }

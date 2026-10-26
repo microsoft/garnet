@@ -805,8 +805,8 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Verifies that the GarnetLightClient (gossip) network-writer options are exposed as individual
-        /// runtime-adjustable parameters: they default to LightNetworkWriterOptions.Default, appear in
+        /// Verifies that the GarnetClient (gossip) network-writer options are exposed as individual
+        /// runtime-adjustable parameters: they default to NetworkWriterOptions.Default, appear in
         /// CONFIG GET *, and round-trip through CONFIG SET (int, long and enum kinds).
         /// </summary>
         [Test]
@@ -823,9 +823,9 @@ namespace Garnet.test
                 return res[1].ToString();
             }
 
-            var defaults = Garnet.client.LightNetworkWriterOptions.Default;
+            var defaults = Garnet.client.NetworkWriterOptions.Default;
 
-            // Each slot is seeded from LightNetworkWriterOptions.Default.
+            // Each slot is seeded from NetworkWriterOptions.Default.
             ClassicAssert.AreEqual(defaults.NetworkBufferSizeBytes.ToString(), Get(db, "gossip-network-buffer-size"));
             ClassicAssert.AreEqual(defaults.RequestPageSizeBytes.ToString(), Get(db, "gossip-request-page-size"));
             ClassicAssert.AreEqual(defaults.RequestPageCount.ToString(), Get(db, "gossip-request-page-count"));
@@ -900,7 +900,7 @@ namespace Garnet.test
 
             // A rejected value must not have mutated the option.
             var res = (RedisResult[])db.Execute("CONFIG", "GET", "gossip-request-page-count");
-            ClassicAssert.AreEqual(Garnet.client.LightNetworkWriterOptions.Default.RequestPageCount.ToString(), res[1].ToString());
+            ClassicAssert.AreEqual(Garnet.client.NetworkWriterOptions.Default.RequestPageCount.ToString(), res[1].ToString());
         }
 
         /// <summary>

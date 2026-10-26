@@ -11,7 +11,7 @@ namespace Garnet.cluster
 {
     internal sealed class GossipVersionNegotiation
     {
-        private readonly GarnetLightClient client;
+        private readonly GarnetClient client;
         private readonly ClusterManager manager;
         private readonly SemaphoreSlim exchangeLock = new(1, 1);
         private ClusterConfig lastConfig;
@@ -20,7 +20,7 @@ namespace Garnet.cluster
 
         internal bool IsNegotiated => confirmed;
 
-        internal GossipVersionNegotiation(GarnetLightClient client, ClusterManager manager)
+        internal GossipVersionNegotiation(GarnetClient client, ClusterManager manager)
         {
             this.client = client;
             this.manager = manager;

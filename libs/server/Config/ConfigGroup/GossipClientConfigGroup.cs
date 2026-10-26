@@ -6,18 +6,18 @@ using Garnet.client;
 namespace Garnet.server
 {
     /// <summary>
-    /// The GOSSIP_CLIENT configuration group: materializes the gossip <see cref="GarnetLightClient"/>
+    /// The GOSSIP_CLIENT configuration group: materializes the gossip <see cref="GarnetClient"/>
     /// network-writer options from their runtime slots. Cross-field constraints (power-of-two sizes,
-    /// divisibility) are validated by the <see cref="LightNetworkWriterOptions"/> constructor at
+    /// divisibility) are validated by the <see cref="NetworkWriterOptions"/> constructor at
     /// materialization time, not when each slot is individually set.
     /// </summary>
-    internal sealed class GossipClientConfigGroup : ConfigGroupBase<LightNetworkWriterOptions>
+    internal sealed class GossipClientConfigGroup : ConfigGroupBase<NetworkWriterOptions>
     {
         /// <inheritdoc/>
         public override ServerConfigGroupType GetGroupType() => ServerConfigGroupType.GOSSIP_CLIENT;
 
         /// <inheritdoc/>
-        protected override LightNetworkWriterOptions Materialize(RuntimeServerConfig config) => new(
+        protected override NetworkWriterOptions Materialize(RuntimeServerConfig config) => new(
             networkBufferSizeBytes: config.GetInt(ServerConfigType.GOSSIP_NETWORK_BUFFER_SIZE_BYTES),
             requestPageSizeBytes: config.GetInt(ServerConfigType.GOSSIP_REQUEST_PAGE_SIZE_BYTES),
             requestPageCount: config.GetInt(ServerConfigType.GOSSIP_REQUEST_PAGE_COUNT),

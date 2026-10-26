@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
@@ -14,34 +15,35 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
+using HdrHistogram;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.client
 {
     /// <summary>
-    /// A lightweight Garnet client that makes a single network connection to a server and supports
-    /// inline and out-of-line payloads. It is intended for producers that fan out from multiple threads
-    /// (for example cluster gossip and pub/sub forwarding).
+    /// A Garnet client that makes a single network connection to a server and supports inline and
+    /// out-of-line payloads. It is safe for producers that fan out from multiple threads (for example
+    /// cluster gossip and pub/sub forwarding).
     /// <para>
-    /// Unlike <see cref="GarnetClient"/>, this client does not maintain a separate task-id space or a
-    /// producer-side serialization gate. Request allocation assigns response completions monotonically
-    /// ordered tickets in a separate reply-gated lane, and replies are matched in that same order.
+    /// The client does not maintain a separate task-id space or a producer-side serialization gate.
+    /// Request allocation assigns response completions monotonically ordered tickets in a separate
+    /// reply-gated lane, and replies are matched in that same order.
     /// </para>
     /// </summary>
-    public sealed partial class GarnetLightClient : IServerHook, IMessageConsumer, IDisposable
+    public sealed partial class GarnetClient : IServerHook, IMessageConsumer, IDisposable
     {
         static readonly ReadOnlyMemory<byte> AUTH = "$4\r\nAUTH\r\n"u8.ToArray();
         static readonly ReadOnlyMemory<byte> CLIENT = "$6\r\nCLIENT\r\n"u8.ToArray();
-        static readonly Memory<byte>[] SETINFO = ["SETINFO"u8.ToArray(), "LIB-NAME"u8.ToArray(), "GarnetLightClient"u8.ToArray()];
+        static readonly Memory<byte>[] SETINFO = ["SETINFO"u8.ToArray(), "LIB-NAME"u8.ToArray(), "GarnetClient"u8.ToArray()];
 
-        readonly LightNetworkWriterOptions networkWriterOptions;
+        readonly NetworkWriterOptions networkWriterOptions;
         readonly LightEpoch epoch;
         readonly bool isEpochOwned;
-        LightNetworkWriter networkWriter;
+        NetworkWriter networkWriter;
 
         readonly SslClientAuthenticationOptions sslOptions;
         readonly MemoryPool<byte> memoryPool;
-        GarnetLightClientTcpNetworkHandler networkHandler;
+        GarnetClientTcpNetworkHandler networkHandler;
         int tcsOffset;
 
         Socket socket;
@@ -88,7 +90,7 @@ namespace Garnet.client
         /// </summary>
         /// <remarks>
         /// Uses the ring's minimum allocated footprint plus current out-of-line byte reservations. As with
-        /// <see cref="LightNetworkWriterOptions.MinMemoryFootprint"/>, this estimate excludes array headers and
+        /// <see cref="NetworkWriterOptions.MinMemoryFootprint"/>, this estimate excludes array headers and
         /// network buffers, pool bookkeeping, and idle pooled request buffers.
         /// </remarks>
         public long ActiveMemoryUsageBytes
@@ -99,7 +101,7 @@ namespace Garnet.client
         /// out-of-line request-byte capacity.
         /// </summary>
         /// <remarks>
-        /// Uses the same exclusions as <see cref="LightNetworkWriterOptions.MaxMemoryFootprint"/>: array headers,
+        /// Uses the same exclusions as <see cref="NetworkWriterOptions.MaxMemoryFootprint"/>: array headers,
         /// network buffers, pool bookkeeping, and idle pooled request buffers are not included.
         /// <para>
         /// Returns <see cref="long.MaxValue"/> when out-of-line memory admission is disabled (configured capacity
@@ -128,35 +130,37 @@ namespace Garnet.client
         /// <param name="authUsername">Username to authenticate with</param>
         /// <param name="authPassword">Password to authenticate with</param>
         /// <param name="clientName">Client name to be used with CLIENT SETNAME command</param>
-        /// <param name="networkWriterOptions">Request-ring, completion, network-buffer, and send-throttling options. Uses <see cref="LightNetworkWriterOptions.Default"/> when omitted.</param>
+        /// <param name="networkWriterOptions">Request-ring, completion, network-buffer, and send-throttling options. Uses <see cref="NetworkWriterOptions.Default"/> when omitted.</param>
         /// <param name="timeoutMilliseconds">Timeout (in milliseconds) after which client disposes itself and throws exception on all active tasks</param>
         /// <param name="memoryPool">Pool for Memory based response buffers</param>
         /// <param name="useTimeoutChecker"></param>
         /// <param name="epoch">Shared epoch instance for thread protection; if null, a new instance is created and owned by this client</param>
         /// <param name="logger">Logger instance</param>
-        public GarnetLightClient(
+        /// <param name="recordLatency">Record per-request latency in the client's internal histogram</param>
+        public GarnetClient(
             EndPoint endpoint,
             SslClientAuthenticationOptions tlsOptions = null,
             string authUsername = null,
             string authPassword = null,
             string clientName = null,
-            LightNetworkWriterOptions? networkWriterOptions = null,
+            NetworkWriterOptions? networkWriterOptions = null,
             int timeoutMilliseconds = 0,
             MemoryPool<byte> memoryPool = null,
             bool useTimeoutChecker = true,
             LightEpoch epoch = null,
-            ILogger logger = null)
+            ILogger logger = null,
+            bool recordLatency = false)
         {
             EndPoint = endpoint;
-            var options = networkWriterOptions ?? LightNetworkWriterOptions.Default;
+            var options = networkWriterOptions ?? NetworkWriterOptions.Default;
             this.authentication = new(authUsername, authPassword);
             this.clientName = clientName != null ? ["SETNAME"u8.ToArray(), Encoding.ASCII.GetBytes(clientName)] : null;
 
-            if (options.MaxOutstandingCompletions > LightPageAndOffset.kTaskMask + 1)
-                ThrowException(new Exception($"Maximum outstanding tasks supported is {LightPageAndOffset.kTaskMask + 1}"));
+            if (options.MaxOutstandingCompletions > PageAndOffset.kTaskMask + 1)
+                ThrowException(new Exception($"Maximum outstanding tasks supported is {PageAndOffset.kTaskMask + 1}"));
 
             if (options.MaxOutstandingCompletions != (int)Utility.PreviousPowerOf2(options.MaxOutstandingCompletions))
-                ThrowException(new Exception($"Maximum outstanding tasks should be a power of two, up to {LightPageAndOffset.kTaskMask + 1}"));
+                ThrowException(new Exception($"Maximum outstanding tasks should be a power of two, up to {PageAndOffset.kTaskMask + 1}"));
 
             this.networkWriterOptions = options;
             this.sslOptions = tlsOptions;
@@ -166,6 +170,7 @@ namespace Garnet.client
             this.timeoutMilliseconds = timeoutMilliseconds;
             if (timeoutMilliseconds > 0 && useTimeoutChecker)
                 timeoutCheckerCts = new();
+            latency = recordLatency ? new LongHistogram(1, TimeStamp.Seconds(100), 2) : null;
             if (epoch == null)
             {
                 this.epoch = new LightEpoch();
@@ -178,7 +183,7 @@ namespace Garnet.client
         /// <summary>
         /// Finalizer
         /// </summary>
-        ~GarnetLightClient()
+        ~GarnetClient()
         {
             Dispose(false);
         }
@@ -189,7 +194,7 @@ namespace Garnet.client
         public void Connect(CancellationToken token = default)
         {
             socket = ConnectSendSocket();
-            networkWriter = new LightNetworkWriter(this, socket, networkWriterOptions, sslOptions, out networkHandler, epoch, PoolOwnerType.GarnetClient, logger);
+            networkWriter = new NetworkWriter(this, socket, networkWriterOptions, sslOptions, out networkHandler, epoch, PoolOwnerType.GarnetClient, logger);
             networkHandler.Start(sslOptions, EndPoint.ToString(), token);
 
             if (timeoutMilliseconds > 0)
@@ -204,7 +209,7 @@ namespace Garnet.client
         public async Task ConnectAsync(CancellationToken token = default)
         {
             socket = await ConnectSendSocketAsync(timeoutMilliseconds, token).ConfigureAwait(false);
-            networkWriter = new LightNetworkWriter(this, socket, networkWriterOptions, sslOptions, out networkHandler, epoch, PoolOwnerType.GarnetClient, logger);
+            networkWriter = new NetworkWriter(this, socket, networkWriterOptions, sslOptions, out networkHandler, epoch, PoolOwnerType.GarnetClient, logger);
             await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
 
             if (timeoutMilliseconds > 0)
@@ -391,7 +396,7 @@ namespace Garnet.client
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "Failed at GarnetLightClient.TryConnectSocket");
+                logger?.LogWarning(ex, "Failed at GarnetClient.TryConnectSocket");
                 socket.Dispose();
                 return false;
             }
@@ -434,7 +439,7 @@ namespace Garnet.client
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "Failed at GarnetLightClient.TryConnectSocketAsync");
+                logger?.LogWarning(ex, "Failed at GarnetClient.TryConnectSocketAsync");
                 socket.Dispose();
                 return false;
             }
@@ -500,6 +505,7 @@ namespace Garnet.client
             timeoutCheckerCts?.Cancel();
             socket?.Dispose();
             networkWriter?.Dispose();
+            latency?.Release();
             if (isEpochOwned)
                 epoch.Dispose();
         }
@@ -528,8 +534,78 @@ namespace Garnet.client
                 return ValueTask.CompletedTask;
             }
 
+            tcs.timestamp = GetTimestamp();
             return InternalExecuteCoreAsync(tcs, respOp, args, token);
         }
+
+        /// <summary>
+        /// Issue a command with up to two string parameters; null parameters are omitted.
+        /// </summary>
+        ValueTask InternalExecuteAsync(TcsWrapper tcs, ReadOnlyMemory<byte> respOp, string param1, string param2, CancellationToken token = default)
+        {
+            Memory<byte>[] args = (param1 != null, param2 != null) switch
+            {
+                (true, true) => [Encoding.UTF8.GetBytes(param1), Encoding.UTF8.GetBytes(param2)],
+                (true, false) => [Encoding.UTF8.GetBytes(param1)],
+                (false, true) => [Encoding.UTF8.GetBytes(param2)],
+                _ => null,
+            };
+            return InternalExecuteAsync(tcs, respOp, args, token);
+        }
+
+        /// <summary>
+        /// Issue a command with up to two binary parameters; empty parameters are omitted.
+        /// </summary>
+        ValueTask InternalExecuteAsync(TcsWrapper tcs, ReadOnlyMemory<byte> respOp, Memory<byte> param1, Memory<byte> param2, CancellationToken token = default)
+        {
+            Memory<byte>[] args = (!param1.IsEmpty, !param2.IsEmpty) switch
+            {
+                (true, true) => [param1, param2],
+                (true, false) => [param1],
+                (false, true) => [param2],
+                _ => null,
+            };
+            return InternalExecuteAsync(tcs, respOp, args, token);
+        }
+
+        /// <summary>
+        /// Issue a command whose name and arguments are plain strings.
+        /// </summary>
+        ValueTask InternalExecuteAsync(TcsWrapper tcs, string op, ICollection<string> args, CancellationToken token = default)
+            => InternalExecuteAsync(tcs, ToRespOp(op), ToMemoryArgs(args), token);
+
+        static byte[] ToRespOp(string op)
+        {
+            var opLength = Encoding.UTF8.GetByteCount(op);
+            var header = $"${opLength}\r\n";
+            var result = new byte[header.Length + opLength + 2];
+            var written = Encoding.ASCII.GetBytes(header, result);
+            written += Encoding.UTF8.GetBytes(op, result.AsSpan(written));
+            result[written++] = (byte)'\r';
+            result[written] = (byte)'\n';
+            return result;
+        }
+
+        long GetTimestamp() => latency != null ? Stopwatch.GetTimestamp() : 0;
+
+        /// <summary>
+        /// Number of requests awaiting a reply.
+        /// </summary>
+        public int PipelineLength()
+        {
+            var writer = Volatile.Read(ref networkWriter);
+            return writer == null ? 0 : (writer.CompletionTail - tcsOffset) & (int)PageAndOffset.kTaskMask;
+        }
+
+        /// <summary>
+        /// Maximum number of requests that may await a reply at once.
+        /// </summary>
+        public int GetOutstandingTasksLimit => networkWriterOptions.MaxOutstandingCompletions;
+
+        /// <summary>
+        /// Size in bytes of each inline request page.
+        /// </summary>
+        public int SendPageSize => networkWriterOptions.RequestPageSizeBytes;
 
         internal static int GetCommandLength(ReadOnlyMemory<byte> operation, ICollection<Memory<byte>> args)
         {
@@ -611,7 +687,7 @@ namespace Garnet.client
             // Out-of-line rents its payload buffer and serializes into it up front, outside the epoch. Inline
             // rents nothing and defers serialization until it owns a page slot (written under the epoch below).
 
-            LightRequestContext payload = default;
+            RequestContext payload = default;
             var payloadRegistered = false;
 
             try
@@ -783,7 +859,7 @@ namespace Garnet.client
 
             var recordSize = writer.GetRecordSize(totalLength, out var inline);
 
-            LightRequestContext payload = default;
+            RequestContext payload = default;
             var payloadRegistered = false;
 
             static unsafe void SerializeCommand(byte* curr, byte* end, int arraySize, ReadOnlySpan<byte> respOp,
@@ -988,24 +1064,33 @@ namespace Garnet.client
             while (writer != null && c != writer.CompletionTail)
             {
                 DisposeOffset(writer, c);
-                c = (c + 1) & (int)LightPageAndOffset.kTaskMask;
+                c = (c + 1) & (int)PageAndOffset.kTaskMask;
             }
         }
 
-        private void DisposeOffset(LightNetworkWriter writer, int taskId)
+        private void DisposeOffset(NetworkWriter writer, int taskId)
         {
-            CompletionOnFault(writer, taskId);
+            try
+            {
+                CompletionOnFault(writer, taskId);
+            }
+            catch (Exception ex)
+            {
+                // A throwing callback must not strand the requests queued behind it, and must not abandon the
+                // rest of teardown when the drain is running under Dispose. Report it and carry on.
+                logger?.LogError(ex, "Callback threw while completing a request abandoned by disposal");
+            }
             ConsumeTcsOffset(writer);
         }
 
         /// <summary>
         /// Fault the completion for <paramref name="taskId"/> with the teardown outcome, without advancing the
-        /// reply watermark. Wins the single-delivery claim (<see cref="LightNetworkWriter.TryClaimCompletionTicket"/>)
+        /// reply watermark. Wins the single-delivery claim (<see cref="NetworkWriter.TryClaimCompletionTicket"/>)
         /// first, so a completion targeted by both the receive-side drain (<see cref="DisposeOffset"/>) and the
         /// producer whose request failed to publish is faulted exactly once — safe for both the async and
         /// callback types. No-op if the completion was not published or was already claimed by the other path.
         /// </summary>
-        private static void CompletionOnFault(LightNetworkWriter writer, int taskId)
+        private static void CompletionOnFault(NetworkWriter writer, int taskId)
         {
             if (!writer.TryClaimCompletionTicket(taskId, out var tcs))
                 return;
@@ -1017,16 +1102,18 @@ namespace Garnet.client
         /// <see cref="ProcessReplies"/> once the receive batch is processed.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void ConsumeTcsOffset(ref int consumed)
+        void ConsumeTcsOffset(ref int consumed, long timestamp)
         {
-            tcsOffset = (tcsOffset + 1) & (int)LightPageAndOffset.kTaskMask;
+            tcsOffset = (tcsOffset + 1) & (int)PageAndOffset.kTaskMask;
             consumed++;
+            if (timestamp != 0)
+                latency?.RecordValue(Stopwatch.GetTimestamp() - timestamp);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void ConsumeTcsOffset(LightNetworkWriter writer)
+        void ConsumeTcsOffset(NetworkWriter writer)
         {
-            tcsOffset = (tcsOffset + 1) & (int)LightPageAndOffset.kTaskMask;
+            tcsOffset = (tcsOffset + 1) & (int)PageAndOffset.kTaskMask;
             writer.AdvanceReplied(1);
         }
 

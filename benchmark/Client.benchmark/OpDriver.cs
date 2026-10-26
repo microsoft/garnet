@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Net;
@@ -32,7 +32,7 @@ namespace Client.benchmark
     }
 
     /// <summary>
-    /// Pre-encoded RESP command names shared by both drivers so they put identical bytes on the wire.
+    /// Pre-encoded RESP command names issued by the driver.
     /// </summary>
     internal static class RespOps
     {
@@ -53,9 +53,8 @@ namespace Client.benchmark
     }
 
     /// <summary>
-    /// Driver for the original <see cref="GarnetClient"/> (inline send path). The measured
-    /// operation is a GET of the seeded key, issued through the raw RESP execute API with pre-encoded
-    /// arguments, the same call shape and wire format as <see cref="GarnetLightClientDriver"/>.
+    /// Driver for the <see cref="GarnetClient"/>. The measured operation is a GET of the seeded key,
+    /// issued through the raw RESP execute API with pre-encoded arguments.
     /// </summary>
     internal readonly struct GarnetClientDriver : IOpDriver
     {
@@ -65,12 +64,42 @@ namespace Client.benchmark
 
         public GarnetClientDriver(EndPoint endpoint, string key, string value, BenchmarkOptions opts, LightEpoch epoch, SslClientAuthenticationOptions tlsOptions)
         {
-            client = new GarnetClient(
-                endpoint,
-                tlsOptions: tlsOptions,
-                bufferSize: opts.NetworkBufferBytes,
-                networkSendThrottleMax: opts.MaxConcurrentSends,
-                epoch: epoch);
+            // Both duplex rings must hold the offered in-flight load (threads*batch) or producers stall.
+            // The benchmark sizes them from offered load by default; NetworkWriterOptions keeps its own small
+            // library defaults untouched.
+            //
+            // The inline request buffer is sized in BYTES to hold the offered load with headroom. Request and completion capacities count requests,
+            // one per in-flight operation regardless of size; --max-requests and --max-completions override them.
+            const int requestPageCount = 4;
+            const int bytesPerInflightRecord = 64;      // small inline GET/SET payload, with headroom
+            const int maxRequestIds = 1 << 15;          // PageAndOffset request-id space
+            var offered = Math.Max(1, opts.Threads * opts.Batch);
+
+            var targetRingBytes = Math.Max((long)opts.NetworkBufferBytes, (long)offered * bytesPerInflightRecord);
+            var requestPageSizeBytes = 1 << 13;
+            while ((long)requestPageSizeBytes * requestPageCount < targetRingBytes)
+                requestPageSizeBytes <<= 1;
+
+            var maxOutstandingRequests = opts.MaxOutstandingRequests > 0
+                ? opts.MaxOutstandingRequests
+                : Math.Min(maxRequestIds, Math.Max(512, offered * 2));
+
+            // One completion slot per in-flight reply; hold the offered load with headroom by default so
+            // replies are never completion-throttled.
+            var maxOutstandingCompletions = opts.MaxOutstandingCompletions > 0
+                ? opts.MaxOutstandingCompletions
+                : Math.Max(512, offered * 2);
+
+            var options = new NetworkWriterOptions(
+                networkBufferSizeBytes: opts.NetworkBufferBytes,
+                requestPageSizeBytes: requestPageSizeBytes,
+                requestPageCount: requestPageCount,
+                maxOutstandingRequests: maxOutstandingRequests,
+                maxOutstandingCompletions: maxOutstandingCompletions,
+                maxConcurrentNetworkSends: opts.MaxConcurrentSends,
+                maxOutOfLineRentedBytes: 64L << 20,
+                flushResultAllocationMode: FlushResultAllocationMode.Buffered);
+            client = new GarnetClient(endpoint, tlsOptions: tlsOptions, networkWriterOptions: options, epoch: epoch);
             var keyBytes = Encoding.UTF8.GetBytes(key);
             var valueBytes = Encoding.UTF8.GetBytes(value);
             getArgs = [keyBytes];
@@ -107,93 +136,5 @@ namespace Client.benchmark
         }
 
         public GarnetClientDriver Create(LightEpoch epoch) => new(endpoint, key, value, opts, epoch, tlsOptions);
-    }
-
-    /// <summary>
-    /// Driver for the <see cref="GarnetLightClient"/> (duplex-ring send path). The measured
-    /// operation is a GET of the seeded key, issued through the raw RESP execute API so the
-    /// wire format is identical to <see cref="GarnetClientDriver"/>.
-    /// </summary>
-    internal readonly struct GarnetLightClientDriver : IOpDriver
-    {
-        readonly GarnetLightClient client;
-        readonly Memory<byte>[] getArgs;
-        readonly Memory<byte>[] setArgs;
-
-        public GarnetLightClientDriver(EndPoint endpoint, string key, string value, BenchmarkOptions opts, LightEpoch epoch, SslClientAuthenticationOptions tlsOptions)
-        {
-            // Both duplex rings must hold the offered in-flight load (threads*batch) or producers stall.
-            // The benchmark sizes them from offered load by default so GarnetLightClient matches GarnetClient
-            // out of the box; LightNetworkWriterOptions keeps its own small library defaults untouched.
-            //
-            // The inline request buffer is sized in BYTES to hold the offered load with headroom (mirroring
-            // GarnetClient's byte-addressed send buffer). Request and completion capacities count requests,
-            // one per in-flight operation regardless of size; --max-requests and --max-completions override them.
-            const int requestPageCount = 4;
-            const int bytesPerInflightRecord = 64;      // small inline GET/SET payload, with headroom
-            const int maxRequestIds = 1 << 15;          // LightPageAndOffset request-id space
-            var offered = Math.Max(1, opts.Threads * opts.Batch);
-
-            var targetRingBytes = Math.Max((long)opts.NetworkBufferBytes, (long)offered * bytesPerInflightRecord);
-            var requestPageSizeBytes = 1 << 13;
-            while ((long)requestPageSizeBytes * requestPageCount < targetRingBytes)
-                requestPageSizeBytes <<= 1;
-
-            var maxOutstandingRequests = opts.MaxOutstandingRequests > 0
-                ? opts.MaxOutstandingRequests
-                : Math.Min(maxRequestIds, Math.Max(512, offered * 2));
-
-            // One completion slot per in-flight reply; hold the offered load with headroom by default so
-            // replies are never completion-throttled.
-            var maxOutstandingCompletions = opts.MaxOutstandingCompletions > 0
-                ? opts.MaxOutstandingCompletions
-                : Math.Max(512, offered * 2);
-
-            var options = new LightNetworkWriterOptions(
-                networkBufferSizeBytes: opts.NetworkBufferBytes,
-                requestPageSizeBytes: requestPageSizeBytes,
-                requestPageCount: requestPageCount,
-                maxOutstandingRequests: maxOutstandingRequests,
-                maxOutstandingCompletions: maxOutstandingCompletions,
-                maxConcurrentNetworkSends: opts.MaxConcurrentSends,
-                maxOutOfLineRentedBytes: 64L << 20,
-                flushResultAllocationMode: FlushResultAllocationMode.Buffered);
-            client = new GarnetLightClient(endpoint, tlsOptions: tlsOptions, networkWriterOptions: options, epoch: epoch);
-            var keyBytes = Encoding.UTF8.GetBytes(key);
-            var valueBytes = Encoding.UTF8.GetBytes(value);
-            getArgs = [keyBytes];
-            setArgs = [keyBytes, valueBytes];
-        }
-
-        public void Connect() => client.Connect();
-
-        public Task SeedAsync() => client.ExecuteForStringResultAsync(RespOps.SET, setArgs);
-
-        public Task IssueAsync() => client.ExecuteForStringResultAsync(RespOps.GET, getArgs);
-
-        public void Dispose() => client.Dispose();
-    }
-
-    /// <summary>
-    /// Factory producing per-thread <see cref="GarnetLightClientDriver"/> instances sharing one epoch.
-    /// </summary>
-    internal readonly struct GarnetLightClientDriverFactory : IDriverFactory<GarnetLightClientDriver>
-    {
-        readonly EndPoint endpoint;
-        readonly string key;
-        readonly string value;
-        readonly BenchmarkOptions opts;
-        readonly SslClientAuthenticationOptions tlsOptions;
-
-        public GarnetLightClientDriverFactory(EndPoint endpoint, string key, string value, BenchmarkOptions opts, SslClientAuthenticationOptions tlsOptions)
-        {
-            this.endpoint = endpoint;
-            this.key = key;
-            this.value = value;
-            this.opts = opts;
-            this.tlsOptions = tlsOptions;
-        }
-
-        public GarnetLightClientDriver Create(LightEpoch epoch) => new(endpoint, key, value, opts, epoch, tlsOptions);
     }
 }

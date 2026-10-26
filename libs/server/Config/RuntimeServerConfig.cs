@@ -266,10 +266,10 @@ namespace Garnet.server
             RegisterReadWrite(ServerConfigType.EXPIRED_KEY_DELETION_SCAN_FREQ, "expired-key-deletion-scan-freq",
                 ConfigKind.Int32, -1, int.MaxValue, updateAction: ApplyExpiredKeyDeletionUpdate);
 
-            // GarnetLightClient (gossip) network-writer options. These are plain storage slots: CONFIG SET
+            // GarnetClient (gossip) network-writer options. These are plain storage slots: CONFIG SET
             // records the new value with no UpdateAction, so it is not propagated to any live gossip client,
             // which keeps the options captured when it was constructed. Ranges only bound the stored value;
-            // the per-field constraints enforced by LightNetworkWriterOptions (power-of-two sizes,
+            // the per-field constraints enforced by NetworkWriterOptions (power-of-two sizes,
             // divisibility) are applied when a client is actually constructed, not here.
             RegisterReadWrite(ServerConfigType.GOSSIP_NETWORK_BUFFER_SIZE_BYTES, "gossip-network-buffer-size", ConfigKind.Int32, 1, int.MaxValue, groupType: ServerConfigGroupType.GOSSIP_CLIENT);
             RegisterReadWrite(ServerConfigType.GOSSIP_REQUEST_PAGE_SIZE_BYTES, "gossip-request-page-size", ConfigKind.Int32, 1, int.MaxValue, groupType: ServerConfigGroupType.GOSSIP_CLIENT);
@@ -336,10 +336,10 @@ namespace Garnet.server
             values[(int)ServerConfigType.EXPIRED_OBJECT_COLLECTION_FREQ] = o.ExpiredObjectCollectionFrequencySecs;
             values[(int)ServerConfigType.EXPIRED_KEY_DELETION_SCAN_FREQ] = o.ExpiredKeyDeletionScanFrequencySecs;
 
-            // Seed the gossip (GarnetLightClient) network-writer slots from LightNetworkWriterOptions.Default.
+            // Seed the gossip (GarnetClient) network-writer slots from NetworkWriterOptions.Default.
             // The slots are authoritative for CONFIG GET / SET; the live gossip clients consume the options
             // materialized from them by the GOSSIP_CLIENT group, published once below.
-            var gossipOptions = LightNetworkWriterOptions.Default;
+            var gossipOptions = NetworkWriterOptions.Default;
             values[(int)ServerConfigType.GOSSIP_NETWORK_BUFFER_SIZE_BYTES] = gossipOptions.NetworkBufferSizeBytes;
             values[(int)ServerConfigType.GOSSIP_REQUEST_PAGE_SIZE_BYTES] = gossipOptions.RequestPageSizeBytes;
             values[(int)ServerConfigType.GOSSIP_REQUEST_PAGE_COUNT] = gossipOptions.RequestPageCount;

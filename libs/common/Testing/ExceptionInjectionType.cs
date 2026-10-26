@@ -163,9 +163,9 @@ namespace Garnet.common
         /// </summary>
         Cluster_Gossip_Pause_Before_AddConnection,
         /// <summary>
-        /// Light client: pause before encrypting a flush chunk, while its source buffer is still in use.
+        /// GarnetClient: pause before encrypting a flush chunk, while its source buffer is still in use.
         /// </summary>
-        LightClient_Tls_Pause_Before_Write,
+        GarnetClient_Tls_Pause_Before_Write,
         /// <summary>
         /// Pause after receiving the full diskless snapshot, before recovery resets the AOF addresses.
         /// </summary>

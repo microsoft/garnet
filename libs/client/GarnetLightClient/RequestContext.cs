@@ -8,13 +8,13 @@ namespace Garnet.client
 {
     /// <summary>
     /// A request-lane payload for the <see cref="DuplexOperationChannel{TRequest, TCompletion, TTransport}"/>
-    /// (and its <see cref="LightNetworkWriter"/> realization). It is a pure request descriptor: it
+    /// (and its <see cref="NetworkWriter"/> realization). It is a pure request descriptor: it
     /// carries only the rented buffer and its length. The response completion no longer travels with
     /// the payload — in the duplex ring the completion lives in a separate, reply-gated lane keyed by
     /// the completion ticket that the combined allocator hands out alongside the request address.
     /// The request lane is freed on flush (send), independently of when the reply arrives.
     /// </summary>
-    struct LightRequestContext : IRequestContext
+    struct RequestContext : IRequestContext
     {
         /// <summary>
         /// Rented buffer holding the serialized command bytes.
@@ -30,7 +30,7 @@ namespace Garnet.client
         /// <inheritdoc />
         public readonly int Length => length;
 
-        internal LightRequestContext(
+        internal RequestContext(
             PoolEntry poolEntry,
             int length,
             WaiterQueue<MemoryThrottle, int> outOfLineRentedBytesWaiters)
@@ -54,7 +54,7 @@ namespace Garnet.client
             return allocationSize;
         }
 
-        internal static LightRequestContext RentRequestBuffer(
+        internal static RequestContext RentRequestBuffer(
             LimitedFixedBufferPool pool,
             int length,
             WaiterQueue<MemoryThrottle, int> outOfLineRentedBytesWaiters = null,
@@ -68,7 +68,7 @@ namespace Garnet.client
 
             var entry = pool.Get(allocationSize, PoolEntryBufferType.ClientOutOfLinePayload);
             ObjectDisposedException.ThrowIf(entry is null, pool);
-            return new LightRequestContext(entry, length, outOfLineRentedBytesWaiters);
+            return new RequestContext(entry, length, outOfLineRentedBytesWaiters);
         }
 
         /// <inheritdoc />

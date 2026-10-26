@@ -31,7 +31,7 @@ namespace Garnet.test.cluster
         public void LatestVersionMeetSucceedsWithoutCapabilityDiscovery(bool separateEndpoints)
         {
             CreateServer(separateEndpoints);
-            using var client = TestUtils.GetGarnetLightClient(context.endpoints[0]);
+            using var client = TestUtils.GetGarnetClient(context.endpoints[0]);
             client.Connect();
             var provider = (ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider;
             GossipVersionNegotiation negotiation = new(client, provider.clusterManager);
@@ -58,7 +58,7 @@ namespace Garnet.test.cluster
         public void UnsupportedGossipAlwaysReturnsHighestSupportedVersion(bool separateEndpoints, bool withMeet)
         {
             CreateServer(separateEndpoints);
-            using var client = TestUtils.GetLightGarnetClient(context.endpoints[0]);
+            using var client = TestUtils.GetGarnetClient(context.endpoints[0]);
             client.Connect();
             var provider = (ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider;
             var original = provider.clusterManager.CurrentConfig;
@@ -85,7 +85,7 @@ namespace Garnet.test.cluster
         public void FutureVersionRequestCanRetryWithVersionTwo(bool separateEndpoints)
         {
             CreateServer(separateEndpoints);
-            using var client = TestUtils.GetLightGarnetClient(context.endpoints[0]);
+            using var client = TestUtils.GetGarnetClient(context.endpoints[0]);
             client.Connect();
             var provider = (ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider;
             var config = CreatePeerConfig(separateEndpoints);
@@ -111,7 +111,7 @@ namespace Garnet.test.cluster
         public void UnsupportedGossipDoesNotChangeTheSelectedReplyVersion()
         {
             CreateServer(separateEndpoints: false);
-            using var client = TestUtils.GetLightGarnetClient(context.endpoints[0]);
+            using var client = TestUtils.GetGarnetClient(context.endpoints[0]);
             client.Connect();
             using var initialOffer = client.GossipAsync(new byte[] { 3 }).GetAwaiter().GetResult();
             Assert.That(initialOffer.Span[0], Is.EqualTo(2));

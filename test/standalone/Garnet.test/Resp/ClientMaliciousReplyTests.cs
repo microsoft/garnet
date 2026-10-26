@@ -24,7 +24,6 @@ namespace Garnet.test.Resp
         public enum Client
         {
             GarnetClient,
-            GarnetLightClient,
             GarnetClientSession,
         }
 
@@ -111,12 +110,6 @@ namespace Garnet.test.Resp
                         connection = gc;
                         gc.Connect();
                         request = gc.ExecuteForStringArrayResultAsync("PING");
-                        break;
-                    case Client.GarnetLightClient:
-                        var glc = new GarnetLightClient(endpoint);
-                        connection = glc;
-                        glc.Connect();
-                        request = glc.PingAsync();
                         break;
                     default:
                         var gcs = new GarnetClientSession(endpoint, new());

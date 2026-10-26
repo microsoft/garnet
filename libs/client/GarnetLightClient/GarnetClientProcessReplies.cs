@@ -1,13 +1,21 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Text;
 using Garnet.common;
 
 namespace Garnet.client
 {
-    public sealed partial class GarnetLightClient
+    struct OK_MEM : IMemoryOwner<byte>
+    {
+        static readonly Memory<byte> RESP_OK = "OK"u8.ToArray();
+        public Memory<byte> Memory => RESP_OK;
+        public void Dispose() { }
+    }
+
+    public sealed partial class GarnetClient
     {
         static readonly MemoryResult<byte> RESP_OK = new(default(OK_MEM));
 
@@ -269,7 +277,7 @@ namespace Garnet.client
                     case TaskType.StringCallback:
                         if (!ProcessReplyAsString(ref ptr, end, out var resultString, out var error))
                             return readHead;
-                        ConsumeTcsOffset(ref consumed);
+                        ConsumeTcsOffset(ref consumed, tcs.timestamp);
                         if (error != null) tcs.stringCallback?.Invoke(tcs.context, error);
                         else tcs.stringCallback?.Invoke(tcs.context, resultString);
                         break;
@@ -277,7 +285,7 @@ namespace Garnet.client
                     case TaskType.MemoryByteCallback:
                         if (!ProcessReplyAsMemoryByte(ref ptr, end, out var resultMemory, out error))
                             return readHead;
-                        ConsumeTcsOffset(ref consumed);
+                        ConsumeTcsOffset(ref consumed, tcs.timestamp);
                         if (error != null) tcs.memoryByteCallback?.Invoke(tcs.context, CopyErrorToSpan(error));
                         else tcs.memoryByteCallback?.Invoke(tcs.context, resultMemory);
                         break;
@@ -285,7 +293,7 @@ namespace Garnet.client
                     case TaskType.MemoryByteArrayCallback:
                         if (!ProcessReplyAsMemoryByteArray(ref ptr, end, out var resultMemoryByteArray, out error))
                             return readHead;
-                        ConsumeTcsOffset(ref consumed);
+                        ConsumeTcsOffset(ref consumed, tcs.timestamp);
                         if (error != null) tcs.memoryByteArrayCallback?.Invoke(tcs.context, resultMemoryByteArray, CopyErrorToSpan(error));
                         else tcs.memoryByteArrayCallback?.Invoke(tcs.context, resultMemoryByteArray, default);
                         break;
@@ -293,7 +301,7 @@ namespace Garnet.client
                     case TaskType.StringArrayCallback:
                         if (!ProcessReplyAsStringArray(ref ptr, end, out var resultStringArray, out error))
                             return readHead;
-                        ConsumeTcsOffset(ref consumed);
+                        ConsumeTcsOffset(ref consumed, tcs.timestamp);
                         if (error != null) tcs.stringArrayCallback?.Invoke(tcs.context, resultStringArray, error);
                         else tcs.stringArrayCallback?.Invoke(tcs.context, resultStringArray, default);
                         break;
@@ -301,7 +309,7 @@ namespace Garnet.client
                     case TaskType.StringAsync:
                         if (!ProcessReplyAsString(ref ptr, end, out resultString, out error))
                             return readHead;
-                        ConsumeTcsOffset(ref consumed);
+                        ConsumeTcsOffset(ref consumed, tcs.timestamp);
                         if (error != null) tcs.stringTcs?.TrySetException(new Exception(error));
                         else tcs.stringTcs?.TrySetResult(resultString);
                         break;
@@ -309,7 +317,7 @@ namespace Garnet.client
                     case TaskType.MemoryByteAsync:
                         if (!ProcessReplyAsMemoryByte(ref ptr, end, out resultMemory, out error))
                             return readHead;
-                        ConsumeTcsOffset(ref consumed);
+                        ConsumeTcsOffset(ref consumed, tcs.timestamp);
                         if (error != null) tcs.memoryByteTcs?.TrySetException(new Exception(error));
                         else tcs.memoryByteTcs?.TrySetResult(resultMemory);
                         break;
@@ -317,7 +325,7 @@ namespace Garnet.client
                     case TaskType.StringArrayAsync:
                         if (!ProcessReplyAsStringArray(ref ptr, end, out var resultArray, out error))
                             return readHead;
-                        ConsumeTcsOffset(ref consumed);
+                        ConsumeTcsOffset(ref consumed, tcs.timestamp);
                         if (error != null) tcs.stringArrayTcs?.TrySetException(new Exception(error));
                         else tcs.stringArrayTcs?.TrySetResult(resultArray);
                         break;
@@ -325,7 +333,7 @@ namespace Garnet.client
                     case TaskType.MemoryByteArrayAsync:
                         if (!ProcessReplyAsMemoryByteArray(ref ptr, end, out var resultByteArray, out error))
                             return readHead;
-                        ConsumeTcsOffset(ref consumed);
+                        ConsumeTcsOffset(ref consumed, tcs.timestamp);
                         if (error != null) tcs.memoryByteArrayTcs?.TrySetException(new Exception(error));
                         else tcs.memoryByteArrayTcs?.TrySetResult(resultByteArray);
                         break;
@@ -333,7 +341,7 @@ namespace Garnet.client
                     case TaskType.LongAsync:
                         if (!ProcessReplyAsNumber(ref ptr, end, out var resultLong, out error))
                             return readHead;
-                        ConsumeTcsOffset(ref consumed);
+                        ConsumeTcsOffset(ref consumed, tcs.timestamp);
                         if (error != null) tcs.longTcs?.TrySetException(new Exception(error));
                         else tcs.longTcs?.TrySetResult(resultLong);
                         break;
@@ -341,7 +349,7 @@ namespace Garnet.client
                     case TaskType.LongCallback:
                         if (!ProcessReplyAsNumber(ref ptr, end, out var resultLongCallback, out error))
                             return readHead;
-                        ConsumeTcsOffset(ref consumed);
+                        ConsumeTcsOffset(ref consumed, tcs.timestamp);
                         if (error != null) tcs.longCallback?.Invoke(tcs.context, resultLongCallback, error);
                         else tcs.longCallback?.Invoke(tcs.context, resultLongCallback, default);
                         break;

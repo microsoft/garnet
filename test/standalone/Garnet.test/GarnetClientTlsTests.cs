@@ -26,7 +26,7 @@ namespace Garnet.test
     /// </summary>
     [TestFixture]
     [NonParallelizable]
-    public class GarnetLightClientTlsTests : TestBase
+    public class GarnetClientTlsTests : TestBase
     {
         static readonly byte[] Echo = "$4\r\nECHO\r\n"u8.ToArray();
         static readonly byte[] Ping = "*1\r\n$4\r\nPING\r\n"u8.ToArray();
@@ -43,7 +43,7 @@ namespace Garnet.test
         {
             using var cts = new CancellationTokenSource(Deadline);
             using var listener = Listen();
-            using var client = TestUtils.GetGarnetLightClient(useTLS: true, networkWriterOptions: SmallBuffers());
+            using var client = TestUtils.GetGarnetClient(useTLS: true, networkWriterOptions: SmallBuffers());
             var connect = client.ConnectAsync(cts.Token);
             using var peer = await AcceptTlsAsync(listener, cts.Token);
             await connect.WaitAsync(Deadline);
@@ -65,7 +65,7 @@ namespace Garnet.test
         {
             using var cts = new CancellationTokenSource(Deadline);
             using var listener = Listen();
-            using var client = TestUtils.GetGarnetLightClient(useTLS: true, networkWriterOptions: SmallBuffers());
+            using var client = TestUtils.GetGarnetClient(useTLS: true, networkWriterOptions: SmallBuffers());
             var connect = client.ConnectAsync(cts.Token);
             using var peer = await AcceptTlsAsync(listener, cts.Token);
             await connect.WaitAsync(Deadline);
@@ -91,7 +91,7 @@ namespace Garnet.test
         {
             using var cts = new CancellationTokenSource(Deadline);
             using var listener = Listen();
-            using var client = TestUtils.GetGarnetLightClient(useTLS: true, networkWriterOptions: SmallBuffers());
+            using var client = TestUtils.GetGarnetClient(useTLS: true, networkWriterOptions: SmallBuffers());
             var connect = client.ConnectAsync(cts.Token);
             using var peer = await AcceptTlsAsync(listener, cts.Token);
             await connect.WaitAsync(Deadline);
@@ -116,7 +116,7 @@ namespace Garnet.test
         {
             using var cts = new CancellationTokenSource(Deadline);
             using var listener = Listen();
-            using var client = TestUtils.GetGarnetLightClient(useTLS: true, networkWriterOptions: SmallBuffers());
+            using var client = TestUtils.GetGarnetClient(useTLS: true, networkWriterOptions: SmallBuffers());
             var connect = client.ConnectAsync(cts.Token);
             using var peer = await AcceptTlsAsync(listener, cts.Token);
             await connect.WaitAsync(Deadline);
@@ -139,7 +139,7 @@ namespace Garnet.test
         {
             using var cts = new CancellationTokenSource(Deadline);
             using var listener = Listen();
-            using var client = TestUtils.GetGarnetLightClient(useTLS: true, networkWriterOptions: SmallBuffers());
+            using var client = TestUtils.GetGarnetClient(useTLS: true, networkWriterOptions: SmallBuffers());
             var connect = client.ConnectAsync(cts.Token);
             using var socket = await listener.AcceptSocketAsync(cts.Token);
             using var peer = await AuthenticatePeerAsync(socket, cts.Token);
@@ -160,7 +160,7 @@ namespace Garnet.test
             TestUtils.IgnoreIfExceptionInjectionDisabled();
             using var cts = new CancellationTokenSource(Deadline);
             using var listener = Listen();
-            using var client = TestUtils.GetGarnetLightClient(useTLS: true, networkWriterOptions: SmallBuffers());
+            using var client = TestUtils.GetGarnetClient(useTLS: true, networkWriterOptions: SmallBuffers());
             var connect = client.ConnectAsync(cts.Token);
             using var peer = await AcceptTlsAsync(listener, cts.Token);
             await connect.WaitAsync(Deadline);
@@ -181,7 +181,7 @@ namespace Garnet.test
         {
             using var cts = new CancellationTokenSource(Deadline);
             using var listener = Listen();
-            using var client = TestUtils.GetGarnetLightClient(useTLS: true, networkWriterOptions: SmallBuffers());
+            using var client = TestUtils.GetGarnetClient(useTLS: true, networkWriterOptions: SmallBuffers());
             var connect = client.ConnectAsync(cts.Token);
             using var oldPeer = await AcceptTlsAsync(listener, cts.Token);
             await connect.WaitAsync(Deadline);
@@ -206,7 +206,7 @@ namespace Garnet.test
         {
             using var cts = new CancellationTokenSource(Deadline);
             using var listener = Listen();
-            using var client = TestUtils.GetGarnetLightClient(useTLS: true);
+            using var client = TestUtils.GetGarnetClient(useTLS: true);
             using var handshakeCancellation = new CancellationTokenSource();
             var connect = client.ConnectAsync(handshakeCancellation.Token);
             using (var silentPeer = await listener.AcceptTcpClientAsync(cts.Token))
@@ -229,7 +229,7 @@ namespace Garnet.test
         {
             using var cts = new CancellationTokenSource(Deadline);
             using var listener = Listen();
-            using var client = TestUtils.GetGarnetLightClient(useTLS: true);
+            using var client = TestUtils.GetGarnetClient(useTLS: true);
             var connect = client.ConnectAsync(cts.Token);
             using (var peer = await listener.AcceptTcpClientAsync(cts.Token))
             {
@@ -249,7 +249,7 @@ namespace Garnet.test
             var request = new CertificateRequest("CN=GarnetTest", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
             using var generated = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddDays(1));
             using var certificate = X509CertificateLoader.LoadPkcs12(generated.Export(X509ContentType.Pkcs12), password: null);
-            using var client = new GarnetLightClient(TestUtils.EndPoint, new SslClientAuthenticationOptions
+            using var client = new GarnetClient(TestUtils.EndPoint, new SslClientAuthenticationOptions
             {
                 TargetHost = "GarnetTest",
             });
@@ -271,7 +271,7 @@ namespace Garnet.test
             using var cts = new CancellationTokenSource(Deadline);
             using var listener = Listen();
             var observedErrors = SslPolicyErrors.None;
-            using var client = new GarnetLightClient(TestUtils.EndPoint, new SslClientAuthenticationOptions
+            using var client = new GarnetClient(TestUtils.EndPoint, new SslClientAuthenticationOptions
             {
                 TargetHost = "not-the-garnet-test-host.invalid",
                 RemoteCertificateValidationCallback = (_, _, _, errors) =>
@@ -300,7 +300,7 @@ namespace Garnet.test
         {
             using var cts = new CancellationTokenSource(Deadline);
             using var listener = Listen();
-            using var client = new GarnetLightClient(TestUtils.EndPoint, new SslClientAuthenticationOptions
+            using var client = new GarnetClient(TestUtils.EndPoint, new SslClientAuthenticationOptions
             {
                 TargetHost = "GarnetTest",
                 EnabledSslProtocols = SslProtocols.Tls12,
@@ -348,7 +348,7 @@ namespace Garnet.test
             using var cts = new CancellationTokenSource(Deadline);
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: true);
             server.Start();
-            using var client = TestUtils.GetGarnetLightClient(useTLS: true, networkWriterOptions: SmallBuffers());
+            using var client = TestUtils.GetGarnetClient(useTLS: true, networkWriterOptions: SmallBuffers());
             await client.ConnectAsync(cts.Token);
             var value = new string('x', payloadLength);
 
@@ -358,7 +358,7 @@ namespace Garnet.test
             for (var i = 0; i < 300; i++)
                 ClassicAssert.AreEqual("PONG", await client.PingAsync(cts.Token).WaitAsync(Deadline));
 
-            var handler = typeof(GarnetLightClient).GetField("networkHandler", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(client);
+            var handler = typeof(GarnetClient).GetField("networkHandler", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(client);
             var handlerType = handler.GetType();
             while (handlerType.GetField("transportReceiveBuffer", BindingFlags.NonPublic | BindingFlags.Instance) == null)
                 handlerType = handlerType.BaseType;
@@ -372,7 +372,7 @@ namespace Garnet.test
             using var cts = new CancellationTokenSource(Deadline);
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: true);
             server.Start();
-            using var client = TestUtils.GetGarnetLightClient(useTLS: true, networkWriterOptions: SmallBuffers(mode));
+            using var client = TestUtils.GetGarnetClient(useTLS: true, networkWriterOptions: SmallBuffers(mode));
             await client.ConnectAsync(cts.Token);
 
             // ECHO framing adds 22 bytes for these payload sizes: encoded lengths straddle 256 and 512 bytes.
@@ -397,11 +397,11 @@ namespace Garnet.test
             using var cts = new CancellationTokenSource(Deadline);
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: true);
             server.Start();
-            using var client = TestUtils.GetGarnetLightClient(useTLS: true, networkWriterOptions: SmallBuffers(mode));
+            using var client = TestUtils.GetGarnetClient(useTLS: true, networkWriterOptions: SmallBuffers(mode));
             await client.ConnectAsync(cts.Token);
             ClassicAssert.AreEqual("PONG", await client.PingAsync(cts.Token).WaitAsync(Deadline));
             var writer = GetWriter(client);
-            using var pause = new InjectionPause(ExceptionInjectionType.LightClient_Tls_Pause_Before_Write);
+            using var pause = new InjectionPause(ExceptionInjectionType.GarnetClient_Tls_Pause_Before_Write);
 
             var value = new string('a', outOfLine ? 4096 : 100);
             var first = Task.Run(async () =>
@@ -430,10 +430,10 @@ namespace Garnet.test
             using var cts = new CancellationTokenSource(Deadline);
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: true);
             server.Start();
-            using var client = TestUtils.GetGarnetLightClient(useTLS: true, networkWriterOptions: SmallBuffers(mode));
+            using var client = TestUtils.GetGarnetClient(useTLS: true, networkWriterOptions: SmallBuffers(mode));
             await client.ConnectAsync(cts.Token);
             var oldWriter = GetWriter(client);
-            using var pause = new InjectionPause(ExceptionInjectionType.LightClient_Tls_Pause_Before_Write);
+            using var pause = new InjectionPause(ExceptionInjectionType.GarnetClient_Tls_Pause_Before_Write);
 
             var pending = Task.Run(async () =>
                 await client.ExecuteForStringResultWithCancellationAsync(Echo, [new string('x', 4096)], cts.Token), cts.Token);
@@ -458,15 +458,15 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("PONG", await client.PingAsync(cts.Token).WaitAsync(Deadline));
         }
 
-        static LightNetworkWriter GetWriter(GarnetLightClient client)
-            => (LightNetworkWriter)typeof(GarnetLightClient)
+        static NetworkWriter GetWriter(GarnetClient client)
+            => (NetworkWriter)typeof(GarnetClient)
                 .GetField("networkWriter", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(client);
 
-        static long RentedBytes(LightNetworkWriter writer)
-            => ((MemoryThrottle)typeof(LightNetworkWriter)
+        static long RentedBytes(NetworkWriter writer)
+            => ((MemoryThrottle)typeof(NetworkWriter)
                 .GetField("outOfLineRentedBytesThrottle", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(writer)).InUseBytes;
 
-        static LightNetworkWriterOptions SmallBuffers(FlushResultAllocationMode mode = FlushResultAllocationMode.Buffered) => new(
+        static NetworkWriterOptions SmallBuffers(FlushResultAllocationMode mode = FlushResultAllocationMode.Buffered) => new(
             networkBufferSizeBytes: 256,
             requestPageSizeBytes: 256,
             requestPageCount: 2,
@@ -525,7 +525,7 @@ namespace Garnet.test
                 CollectionAssert.AreEqual(Ping, buffer.AsSpan(i * Ping.Length, Ping.Length).ToArray());
         }
 
-        static async Task AssertPingAsync(GarnetLightClient client, SslStream peer, CancellationToken token)
+        static async Task AssertPingAsync(GarnetClient client, SslStream peer, CancellationToken token)
         {
             var ping = client.PingAsync(token);
             await ReadPingsAsync(peer, 1, token);

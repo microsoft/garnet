@@ -9,7 +9,7 @@ using Garnet.common;
 
 namespace Garnet.client
 {
-    public sealed partial class GarnetLightClient
+    public sealed partial class GarnetClient
     {
         /// <summary>
         /// CLUSTER command, resp formatted.

@@ -272,7 +272,7 @@ namespace Garnet.test.cluster
 
                 await using (TestPeer peer = new(provider.clusterManager.CurrentConfig, reconnectedVersion))
                 {
-                    GarnetLightClient client = node.Client;
+                    GarnetClient client = node.Client;
                     TimeSpan retryDelay = node.RecordConnectionFailure();
                     Assert.That(node.IsInitialized, Is.False);
                     Assert.That(await node.TryInitializeAsync(), Is.False);

@@ -61,7 +61,7 @@ namespace Garnet.client
         readonly Action flushReadOnlyRequests;
         readonly Action<Exception> onFlushError;
 
-        LightPageAndOffset tail;
+        PageAndOffset tail;
         long flushedInlineAddress;
         int readOnlyUntilRequestId;
         int readOnlyFromRequestId;
@@ -180,7 +180,7 @@ namespace Garnet.client
         /// <summary>Free-running inline address one past the last reserved inline byte.</summary>
         internal long GetTailAddress()
         {
-            LightPageAndOffset local = default;
+            PageAndOffset local = default;
             local.Value = Volatile.Read(ref tail.Value);
             return local.InlineAddress;
         }
@@ -290,7 +290,7 @@ namespace Garnet.client
         {
             while (true)
             {
-                LightPageAndOffset local = default;
+                PageAndOffset local = default;
                 local.Value = Volatile.Read(ref tail.Value);
                 var address = local.InlineAddress;
 
@@ -300,7 +300,7 @@ namespace Garnet.client
                     if (offset + size > inlineDataBufferCapacity)
                         address += inlineDataBufferCapacity - offset;
 
-                    var used = LightPageAndOffset.InlineDistance(Volatile.Read(ref flushedInlineAddress), address + size);
+                    var used = PageAndOffset.InlineDistance(Volatile.Read(ref flushedInlineAddress), address + size);
                     if (used > inlineDataBufferCapacity)
                     {
                         // The flushed address can only trail the tail, so a distance beyond the capacity is either
@@ -315,10 +315,10 @@ namespace Garnet.client
 
                 var taskId = local.TaskId;
                 var requestId = local.RequestCount;
-                var next = LightPageAndOffset.Pack(address + size, expectsCompletion ? taskId + 1 : taskId, requestId + 1);
+                var next = PageAndOffset.Pack(address + size, expectsCompletion ? taskId + 1 : taskId, requestId + 1);
                 if (Interlocked.CompareExchange(ref tail.Value, next, local.Value) == local.Value)
                 {
-                    reservation = new DuplexOperationReservation(address & LightPageAndOffset.kInlineAddressMask, (ushort)taskId, (ushort)requestId);
+                    reservation = new DuplexOperationReservation(address & PageAndOffset.kInlineAddressMask, (ushort)taskId, (ushort)requestId);
                     return true;
                 }
             }
@@ -478,9 +478,9 @@ namespace Garnet.client
             {
                 // The 15-bit request-id space dwarfs the maximum outstanding requests, so the masked difference
                 // is the unambiguous count of reserved-but-unflushed requests.
-                LightPageAndOffset snapshot = default;
+                PageAndOffset snapshot = default;
                 snapshot.Value = Volatile.Read(ref tail.Value);
-                return ((snapshot.RequestCount - readOnlyUntilRequestId) & (int)LightPageAndOffset.kRequestMask) != 0;
+                return ((snapshot.RequestCount - readOnlyUntilRequestId) & (int)PageAndOffset.kRequestMask) != 0;
             }
 
             bool AggressiveFlushShiftReadOnlyBump()
@@ -489,7 +489,7 @@ namespace Garnet.client
                 // that range's inline bytes end. Every id in the range may still be unpublished, but each owning
                 // producer holds the epoch until it publishes, so the bump callback cannot flush the range
                 // before all of it is published.
-                LightPageAndOffset snapshot = default;
+                PageAndOffset snapshot = default;
                 snapshot.Value = Volatile.Read(ref tail.Value);
                 var oldRequestId = readOnlyUntilRequestId;
                 var newRequestId = snapshot.RequestCount;

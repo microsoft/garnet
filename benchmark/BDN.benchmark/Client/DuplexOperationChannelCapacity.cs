@@ -87,7 +87,7 @@ namespace BDN.benchmark.Client
                 if ((uint)index >= (uint)pendingFlushes.Length)
                 {
                     Interlocked.Increment(ref capacityErrors);
-                    DuplexOperationAsyncFlushResult<LightRequestContext>.CompleteChunk(context);
+                    DuplexOperationAsyncFlushResult<RequestContext>.CompleteChunk(context);
                     return;
                 }
 
@@ -106,7 +106,7 @@ namespace BDN.benchmark.Client
 
                 Volatile.Write(ref pendingFlushes[index], null);
                 Volatile.Write(ref completedCount, index + 1);
-                DuplexOperationAsyncFlushResult<LightRequestContext>.CompleteChunk(context);
+                DuplexOperationAsyncFlushResult<RequestContext>.CompleteChunk(context);
                 return true;
             }
 
@@ -140,8 +140,8 @@ namespace BDN.benchmark.Client
         LightEpoch epoch;
         LimitedFixedBufferPool requestPool;
         DeferredTransportState transportState;
-        DuplexOperationChannel<LightRequestContext, BenchmarkCompletion, DeferredTransport> channel;
-        LightRequestContext[] prewarmedRequests;
+        DuplexOperationChannel<RequestContext, BenchmarkCompletion, DeferredTransport> channel;
+        RequestContext[] prewarmedRequests;
         int[] completionTickets;
         byte[] inlineRequest;
         byte[] outOfLineRequest;
@@ -177,7 +177,7 @@ namespace BDN.benchmark.Client
                 numLevels: 7,
                 ownerType: PoolOwnerType.GarnetClient);
             transportState = new DeferredTransportState(outOfLineRequestsPerBurst);
-            channel = new DuplexOperationChannel<LightRequestContext, BenchmarkCompletion, DeferredTransport>(
+            channel = new DuplexOperationChannel<RequestContext, BenchmarkCompletion, DeferredTransport>(
                 RingPageSize,
                 RingPageCount,
                 outOfLineRequestsPerBurst,
@@ -272,7 +272,7 @@ namespace BDN.benchmark.Client
                     }
                     else
                     {
-                        var request = LightRequestContext.RentRequestBuffer(requestPool, source.Length);
+                        var request = RequestContext.RentRequestBuffer(requestPool, source.Length);
                         source.AsSpan().CopyTo(request.Buffer);
                         channel.RegisterOfflineRecord(reservation.requestId, reservation.inlineDataBufferAddress, request);
                     }
@@ -333,9 +333,9 @@ namespace BDN.benchmark.Client
 
         void PrewarmRequestPool()
         {
-            prewarmedRequests = new LightRequestContext[outOfLineRequestsPerBurst];
+            prewarmedRequests = new RequestContext[outOfLineRequestsPerBurst];
             for (var i = 0; i < prewarmedRequests.Length; i++)
-                prewarmedRequests[i] = LightRequestContext.RentRequestBuffer(requestPool, OutOfLinePayloadLength);
+                prewarmedRequests[i] = RequestContext.RentRequestBuffer(requestPool, OutOfLinePayloadLength);
             for (var i = 0; i < prewarmedRequests.Length; i++)
                 prewarmedRequests[i].Dispose();
         }
