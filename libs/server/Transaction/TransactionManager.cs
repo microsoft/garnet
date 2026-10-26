@@ -112,6 +112,7 @@ namespace Garnet.server
 
         // Track whether transaction contains write operations
         internal bool PerformWrites;
+        internal bool ContainsDatabaseFlush;
 
         /// <summary>
         /// State
@@ -271,6 +272,7 @@ namespace Garnet.server
             this.storeTypes = TransactionStoreTypes.None;
             functionsState.StoredProcMode = false;
             this.PerformWrites = false;
+            this.ContainsDatabaseFlush = false;
 
             // Reset cluster key parse state
             if (clusterEnabled)

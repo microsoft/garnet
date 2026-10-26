@@ -14,6 +14,26 @@ namespace Garnet.common
         None = 0,
 
         /// <summary>
+        /// Fail replica attachment after primary maintenance has drained.
+        /// </summary>
+        Replication_Fail_After_Primary_Task_Drain,
+
+        /// <summary>
+        /// Pause an in-flight background collection cycle before its storage mutations.
+        /// </summary>
+        Failover_Pause_Background_Object_Collection,
+
+        /// <summary>
+        /// Pause between sampling write admission state and loading cluster configuration.
+        /// </summary>
+        Failover_Pause_Between_Write_Admission_Reads,
+
+        /// <summary>
+        /// Pause an admitted transaction before executing a database flush.
+        /// </summary>
+        Failover_Pause_Before_Transactional_Flush,
+
+        /// <summary>
         /// Network failure after GarnetServerTcp handler created
         /// </summary>
         Network_After_GarnetServerTcp_Handler_Created,
@@ -160,5 +180,14 @@ namespace Garnet.common
         /// Pause after receiving the full diskless snapshot, before recovery resets the AOF addresses.
         /// </summary>
         Replication_Pause_Before_Diskless_Snapshot_Recovery,
+        /// <summary>
+        /// Pause a periodic commit before checking the node role and committing the AOF.
+        /// </summary>
+        Aof_Pause_Before_Periodic_Commit,
+        /// <summary>
+        /// Server network sender: pause a send completion that frees a slot for a waiting send, after it has
+        /// decremented the send count and before it releases the waiter.
+        /// </summary>
+        Sender_Pause_Before_Slot_Release,
     }
 }

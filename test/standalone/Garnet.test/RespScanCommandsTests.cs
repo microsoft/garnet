@@ -448,6 +448,54 @@ namespace Garnet.test
             ClassicAssert.IsTrue(String.Equals(@"\\bar", (((RedisResult[])actualResponse)[0]).ToString()));
         }
 
+        [TestCase("KEYS")]
+        [TestCase("SCAN")]
+        [TestCase("HSCAN")]
+        [TestCase("SSCAN")]
+        [TestCase("ZSCAN")]
+        public void ScanCommandsSupportDeepWildcardPatterns(string command)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var member = new string('a', 8192);
+            var pattern = string.Concat(Enumerable.Repeat("*a", member.Length));
+            switch (command)
+            {
+                case "KEYS":
+                case "SCAN":
+                    db.StringSet(member, "value");
+                    break;
+                case "HSCAN":
+                    db.HashSet("collection", member, "value");
+                    break;
+                case "SSCAN":
+                    db.SetAdd("collection", member);
+                    break;
+                case "ZSCAN":
+                    db.SortedSetAdd("collection", member, 1);
+                    break;
+            }
+
+            foreach (var matches in new[] { true, false })
+            {
+                var matchPattern = matches ? pattern : pattern + "b";
+                var result = command switch
+                {
+                    "KEYS" => db.Execute(command, matchPattern),
+                    "SCAN" => db.Execute(command, "0", "MATCH", matchPattern, "COUNT", "100"),
+                    _ => db.Execute(command, "collection", "0", "MATCH", matchPattern, "COUNT", "100")
+                };
+                var entries = (RedisResult[])(command == "KEYS" ? result : result[1]);
+                ClassicAssert.AreEqual(matches ? (command is "HSCAN" or "ZSCAN" ? 2 : 1) : 0, entries.Length);
+                if (matches)
+                    ClassicAssert.AreEqual(member, (string)entries[0]);
+            }
+
+            ClassicAssert.AreEqual("PONG", (string)db.Execute("PING"));
+            using var other = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            ClassicAssert.AreEqual("PONG", (string)other.GetDatabase(0).Execute("PING"));
+        }
+
 
         [Test]
         public void CanUseScanWithEmptyStore()

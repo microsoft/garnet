@@ -121,9 +121,9 @@ namespace Garnet.cluster
         /// <inheritdoc />
         public void Dispose()
         {
+            failoverManager?.Dispose();
             clusterManager?.Dispose();
             replicationManager?.Dispose();
-            failoverManager?.Dispose();
             migrationManager?.Dispose();
         }
 
@@ -132,6 +132,9 @@ namespace Garnet.cluster
         /// <inheritdoc />
         public bool IsReplica()
             => clusterManager?.CurrentConfig.LocalNodeRole == NodeRole.REPLICA || replicationManager?.IsRecovering == true;
+
+        /// <inheritdoc />
+        public bool IsWritePaused => failoverManager?.IsWritePaused ?? false;
 
         /// <inheritdoc />
         public bool IsReplica(string nodeId)
@@ -364,9 +367,10 @@ namespace Garnet.cluster
         /// <summary>
         /// Wait for config transition
         /// </summary>
+        /// <param name="token">Cancellation token for the transition wait.</param>
         /// <returns></returns>
-        internal ValueTask<bool> BumpAndWaitForEpochTransitionAsync()
-            => garnetEpoch.BumpAndWaitForEpochTransitionAsync();
+        public ValueTask<bool> BumpAndWaitForEpochTransitionAsync(CancellationToken token = default)
+            => garnetEpoch.BumpAndWaitForEpochTransitionAsync(token);
 
         /// <inheritdoc />
         public string GetRunId() => replicationManager.PrimaryReplId;

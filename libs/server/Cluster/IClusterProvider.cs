@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
@@ -86,6 +87,18 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         bool IsReplica();
+
+        /// <summary>
+        /// Whether application writes are paused for failover.
+        /// </summary>
+        bool IsWritePaused { get; }
+
+        /// <summary>
+        /// Advances the cluster epoch and waits for active sessions to observe the transition.
+        /// </summary>
+        /// <param name="token">Cancellation token for the transition wait.</param>
+        /// <returns>True if sessions drained; false if the wait was canceled.</returns>
+        ValueTask<bool> BumpAndWaitForEpochTransitionAsync(CancellationToken token = default);
 
         /// <summary>
         /// Returns true if the given nodeId is a replica, according to the current cluster configuration.
