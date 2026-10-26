@@ -2765,6 +2765,12 @@ namespace Tsavorite.core
                     AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
                     return false;
                 }
+                else
+                {
+                    // We're at the end of the chain; dispose the diskLogRecord so it is not taken as the result.
+                    _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
+                    ctx.diskLogRecord.Dispose();
+                }
             }
             return true;
         }
