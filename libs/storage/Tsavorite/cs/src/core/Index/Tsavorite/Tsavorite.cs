@@ -108,6 +108,13 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Memory an overflow-bucket generation of this store commits as soon as it exists, before it hands out a bucket:
+        /// whole pages, each over-allocated by a sector so it can be aligned to the sector size of the store's devices.
+        /// This much is inherent to having an index, so a budget for index memory includes it.
+        /// </summary>
+        public long IndexOverflowFloorSizeBytes => MallocFixedPageSize<HashBucket>.GetMinCommittedMemorySize(sectorSize);
+
+        /// <summary>
         /// Total index memory in bytes: the main hash table (<see cref="IndexSizeBytes"/>) plus the memory committed
         /// by the overflow-bucket allocators (<see cref="IndexOverflowSizeBytes"/>). During an index resize this also
         /// includes the superseded hash table, which stays allocated until the split completes and makes the resize the

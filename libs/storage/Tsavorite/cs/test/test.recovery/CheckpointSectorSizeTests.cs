@@ -268,8 +268,8 @@ namespace Tsavorite.test.recovery
         }
 
         /// <summary>
-        /// The hash index and every overflow-bucket page are aligned to the sector size the index is initialized with,
-        /// and alignments up to the existing page slack do not change the overflow buckets' committed size.
+        /// The hash index and every overflow-bucket page are aligned to the sector size the index is initialized with, and
+        /// each overflow-bucket page carries a sector of slack for that alignment.
         /// </summary>
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
@@ -283,16 +283,36 @@ namespace Tsavorite.test.recovery
                 AssertIndexAligned(table, (uint)sectorSize);
 
                 // Levels 0 and 1 are committed at construction.
-                var committedAtMinimumSector = MallocFixedPageSize<HashBucket>.GetCommittedSizeForPages(2);
-                if (sectorSize <= 512 * MallocFixedPageSize<HashBucket>.RecordSize)
-                    ClassicAssert.AreEqual(committedAtMinimumSector, table.overflowBucketsAllocator.AllocatedSizeBytes);
-                else
-                    ClassicAssert.Greater(table.overflowBucketsAllocator.AllocatedSizeBytes, committedAtMinimumSector);
+                ClassicAssert.AreEqual(2 * (MallocFixedPageSize<HashBucket>.MemorySizeGranularity + sectorSize), table.overflowBucketsAllocator.AllocatedSizeBytes);
             }
             finally
             {
                 table.Free();
             }
+        }
+
+        /// <summary>
+        /// A fresh store's overflow buckets commit exactly its overflow floor, at the sector size it adopted from its
+        /// checkpoint devices; an index memory budget adds that floor to the configured index size. The floor exceeds
+        /// <see cref="KVSettings.OverflowBucketFloorMemorySize"/>, which assumes the minimum sector size, only when the
+        /// store's sector size is larger.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public void OverflowFloorIsWhatAFreshStoreCommits([Values] bool largerCheckpointSector)
+        {
+            var creator = new StrictSectorNamedDeviceFactoryCreator(reportSectorSize: largerCheckpointSector);
+            using var checkpointManager = CreateCheckpointManager(creator);
+            using var store = CreateSpanByteStore(new NullDevice(), checkpointManager);
+
+            var sectorSize = largerCheckpointSector ? (int)CheckpointSectorSize : IDevice.MinDeviceSectorSize;
+            ClassicAssert.AreEqual(sectorSize, store.hlogBase.GetDeviceSectorSize());
+            ClassicAssert.AreEqual(store.IndexOverflowFloorSizeBytes, store.IndexOverflowSizeBytes);
+            ClassicAssert.AreEqual(2 * (MallocFixedPageSize<HashBucket>.MemorySizeGranularity + sectorSize), store.IndexOverflowFloorSizeBytes);
+            if (largerCheckpointSector)
+                ClassicAssert.Greater(store.IndexOverflowFloorSizeBytes, KVSettings.OverflowBucketFloorMemorySize);
+            else
+                ClassicAssert.AreEqual(KVSettings.OverflowBucketFloorMemorySize, store.IndexOverflowFloorSizeBytes);
         }
 
         /// <summary>

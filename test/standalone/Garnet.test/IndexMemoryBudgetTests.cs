@@ -73,7 +73,7 @@ namespace Garnet.test
             ClassicAssert.IsNotNull(tracker);
 
             var budget = storeWrapper.serverOptions.IndexMemoryBudgetBytes;
-            ClassicAssert.AreEqual(store.IndexSizeBytes + KVSettings.OverflowBucketFloorMemorySize, budget,
+            ClassicAssert.AreEqual(store.IndexSizeBytes + store.IndexOverflowFloorSizeBytes, budget,
                 "With no index max size configured the index cannot grow, so the budget is the initial index size plus"
                 + " the memory an overflow generation commits just by existing.");
 
@@ -126,6 +126,34 @@ namespace Garnet.test
             ClassicAssert.AreEqual(store.IndexTotalSizeBytes, total);
             ClassicAssert.Greater(total, budget);
             ClassicAssert.AreEqual(total - budget, charged);
+        }
+
+        /// <summary>
+        /// A store whose checkpoint devices need 4 KiB sectors aligns its overflow-bucket pages to them, so its overflow
+        /// floor exceeds the one at the minimum sector size. The budget includes the store's own floor, so an empty store
+        /// still charges nothing to the log.
+        /// </summary>
+        [Test]
+        public void LargerSectorOverflowFloorIsWithinTheBudget()
+        {
+            var options = TestUtils.GetGarnetServerOptions(TestUtils.MethodTestDir, TestUtils.MethodTestDir, TestUtils.EndPoint, enableCluster: false);
+            options.IndexMemorySize = IndexSize;
+            options.LogMemorySize = "128m";
+            options.PageSize = "4m";
+            options.DeviceFactoryCreator = new StrictSectorCheckpointDeviceFactoryCreator(options.StoreCheckpointBaseDirectory);
+            server = new GarnetServer(options);
+            server.Start();
+
+            var storeWrapper = server.Provider.StoreWrapper;
+            var store = storeWrapper.store;
+            ClassicAssert.Greater(store.IndexOverflowFloorSizeBytes, KVSettings.OverflowBucketFloorMemorySize,
+                "Overflow-bucket pages aligned to 4 KiB carry more slack than at the minimum sector size.");
+            ClassicAssert.AreEqual(store.IndexSizeBytes + store.IndexOverflowFloorSizeBytes, storeWrapper.serverOptions.IndexMemoryBudgetBytes);
+
+            var tracker = store.Log.LogSizeTracker;
+            tracker.RefreshExternalMemorySize();
+            ClassicAssert.AreEqual(0, tracker.ExternalMemorySize,
+                "An empty store's overflow buckets commit exactly its floor, which the budget includes.");
         }
     }
 }

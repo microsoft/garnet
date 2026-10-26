@@ -506,6 +506,9 @@ namespace Garnet
                     new GarnetRecordTriggers(cacheSizeTracker, rangeIndexManager, vectorManager))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
+            // The budget includes the store's overflow-bucket floor, which depends on the sector size of the store's devices.
+            opts.SetIndexMemoryBudget(kvSettings, store.IndexOverflowFloorSizeBytes);
+
             if (kvSettings.LogMemorySize > 0 || kvSettings.ReadCacheMemorySize > 0)
             {
                 cacheSizeTracker.Initialize(store, kvSettings.LogMemorySize, kvSettings.ReadCacheMemorySize, this.loggerFactory, opts.IndexMemoryBudgetBytes);

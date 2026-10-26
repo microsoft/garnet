@@ -70,9 +70,10 @@ Several consequences matter when sizing a machine:
   generation stay allocated until the split completes, so a resize transiently needs both generations at once.
 
 To make this visible, index memory **beyond** the configured index budget (the larger of `IndexMemorySize` and
-`IndexMaxMemorySize`) is charged against `LogMemorySize`. The log sheds pages to make room for it, so the two no longer sum
-past the memory the machine has, and a store with more keys than the index was sized for degrades into disk I/O instead of
-growing without bound. A warning is logged when this charge grows.
+`IndexMaxMemorySize`, plus the roughly 8 MiB the overflow bucket allocator commits as soon as it exists) is charged against
+`LogMemorySize`. The log sheds pages to make room for it, so the two no longer sum past the memory the machine has, and a
+store with more keys than the index was sized for degrades into disk I/O instead of growing without bound. A warning is
+logged when this charge grows.
 
 This compensation is best-effort, not a hard bound. The log can only shed down to a floor of a few pages; once it reaches
 that floor there is nothing left to give back, and further index growth is again unbudgeted. Charging it buys headroom and

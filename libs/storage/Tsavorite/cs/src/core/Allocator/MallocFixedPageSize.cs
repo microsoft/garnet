@@ -70,15 +70,27 @@ namespace Tsavorite.core
         public long AllocatedSizeBytes => (long)Volatile.Read(ref allocatedPageCount) * (PageSize + alignmentSlackRecords) * RecordSize;
 
         /// <summary>
-        /// Bytes committed by <paramref name="pageCount"/> pages at the minimum sector size. A page array is over-allocated
-        /// by <see cref="MinAlignmentSlackRecords"/> records so its start can be sector-aligned, so a page costs that much
-        /// more than the <see cref="MemorySizeGranularity"/> it contributes to the budget. The overshoot is under 1% and is
+        /// Bytes committed by <paramref name="pageCount"/> pages aligned to <paramref name="sectorSize"/>. A page array is
+        /// over-allocated by <see cref="GetAlignmentSlackRecords"/> records so its start can be sector-aligned, so a page
+        /// costs that much more than the <see cref="MemorySizeGranularity"/> it contributes to the budget. The overshoot is
         /// reported rather than hidden, so whoever charges this allocator's memory sees what the process actually pays.
         /// </summary>
-        internal static long GetCommittedSizeForPages(long pageCount) => pageCount * (PageSize + MinAlignmentSlackRecords) * RecordSize;
+        internal static long GetCommittedSizeForPages(long pageCount, int sectorSize) => pageCount * (PageSize + GetAlignmentSlackRecords(sectorSize)) * RecordSize;
 
-        /// <summary>Smallest number of bytes a live allocator commits: <see cref="MinLevelCount"/> pages.</summary>
-        internal static long MinCommittedMemorySize => GetCommittedSizeForPages(MinLevelCount);
+        /// <summary>Smallest number of bytes a live allocator whose pages are aligned to <paramref name="sectorSize"/>
+        /// commits: <see cref="MinLevelCount"/> pages.</summary>
+        internal static long GetMinCommittedMemorySize(int sectorSize) => GetCommittedSizeForPages(MinLevelCount, sectorSize);
+
+        /// <summary>Smallest number of bytes any live allocator commits: <see cref="MinLevelCount"/> pages aligned to the
+        /// minimum sector size.</summary>
+        internal static long MinCommittedMemorySize => GetMinCommittedMemorySize(IDevice.MinDeviceSectorSize);
+
+        /// <summary>
+        /// Records of slack a page array carries so its start can be aligned to <paramref name="sectorSize"/>: the array
+        /// starts less than one sector below the next sector boundary. Pages of a non-blittable type are used as managed
+        /// arrays and never aligned, so they carry none.
+        /// </summary>
+        internal static int GetAlignmentSlackRecords(int sectorSize) => IsBlittable ? (sectorSize + RecordSize - 1) / RecordSize : 0;
 
         /// <summary>Budget used when none is configured: 16 GiB.</summary>
         internal static long DefaultMaxMemorySize => (long)LevelSize * PageSize * RecordSize;
@@ -132,10 +144,6 @@ namespace Tsavorite.core
         private AllocationMode allocationMode;
 #endif
 
-        // Every page array carries at least this many records of slack, which aligns its start to any sector size up to
-        // this many records' bytes without changing the committed size.
-        const int MinAlignmentSlackRecords = 512;
-
         /// <summary>Alignment, in bytes, of every page: at least the sector size of the devices the pages are
         /// checkpointed to and recovered from, since they are written and read in place.</summary>
         private readonly int sectorSize;
@@ -186,7 +194,7 @@ namespace Tsavorite.core
 
             this.levelCount = levelCount;
             this.sectorSize = sectorSize;
-            alignmentSlackRecords = Math.Max(MinAlignmentSlackRecords, (sectorSize + RecordSize - 1) / RecordSize);
+            alignmentSlackRecords = GetAlignmentSlackRecords(sectorSize);
             ordinaryAllocationLimit = MaxAllocationCount;
             values = new T[levelCount][];
             pointers = new IntPtr[levelCount];
