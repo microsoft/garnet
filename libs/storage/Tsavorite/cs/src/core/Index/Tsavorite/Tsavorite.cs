@@ -30,7 +30,6 @@ namespace Tsavorite.core
 
         internal readonly bool UseReadCache;
         private readonly ReadCopyOptions ReadCopyOptions;
-        internal readonly int sectorSize;
         /// <summary>Initial IO record size from <see cref="KVSettings"/>; <see cref="KVSettings.UseDefaultInitialIORecordSize"/> means unset.</summary>
         internal readonly int InitialIORecordSize;
         internal readonly StateMachineDriver stateMachineDriver;
@@ -237,6 +236,10 @@ namespace Tsavorite.core
 
                 var logSettings = kvSettings.GetLogSettings();
 
+                // Size the log pages, hash index and overflow buckets for the checkpoint devices as well as the log
+                // devices, since checkpoints write from and recovery reads into them directly.
+                logSettings.CheckpointSectorSize = (int)checkpointManager.GetCheckpointDeviceSectorSize();
+
                 UseReadCache = kvSettings.ReadCacheEnabled;
 
                 ReadCopyOptions = logSettings.ReadCopyOptions;
@@ -275,9 +278,8 @@ namespace Tsavorite.core
                     ReadCache = new(this, readcache);
                 }
 
-                sectorSize = (int)logSettings.LogDevice.SectorSize;
                 InitialIORecordSize = kvSettings.InitialIORecordSize;
-                Initialize(kvSettings.GetIndexSizeCacheLines(), sectorSize);
+                Initialize(kvSettings.GetIndexSizeCacheLines(), hlogBase.GetDeviceSectorSize());
 
                 LockTable = new OverflowBucketLockTable<TStoreFunctions, TAllocator>(this);
                 RevivificationManager = new(this, kvSettings.RevivificationSettings, logSettings);

@@ -67,15 +67,15 @@ namespace Tsavorite.core
 
         /// <summary>Bytes this allocator has committed. Pages are allocated whole and ahead of the records handed out,
         /// so this exceeds the size implied by the allocation count and is what the process pays.</summary>
-        public long AllocatedSizeBytes => GetCommittedSizeForPages(Volatile.Read(ref allocatedPageCount));
+        public long AllocatedSizeBytes => (long)Volatile.Read(ref allocatedPageCount) * (PageSize + alignmentSlackRecords) * RecordSize;
 
         /// <summary>
-        /// Bytes committed by <paramref name="pageCount"/> pages. A page array is over-allocated by
-        /// <see cref="SectorSize"/> records so its start can be sector-aligned, so a page costs that much more than the
-        /// <see cref="MemorySizeGranularity"/> it contributes to the budget. The overshoot is under 1% and is reported
-        /// rather than hidden, so whoever charges this allocator's memory sees what the process actually pays.
+        /// Bytes committed by <paramref name="pageCount"/> pages at the minimum sector size. A page array is over-allocated
+        /// by <see cref="MinAlignmentSlackRecords"/> records so its start can be sector-aligned, so a page costs that much
+        /// more than the <see cref="MemorySizeGranularity"/> it contributes to the budget. The overshoot is under 1% and is
+        /// reported rather than hidden, so whoever charges this allocator's memory sees what the process actually pays.
         /// </summary>
-        internal static long GetCommittedSizeForPages(long pageCount) => pageCount * (PageSize + SectorSize) * RecordSize;
+        internal static long GetCommittedSizeForPages(long pageCount) => pageCount * (PageSize + MinAlignmentSlackRecords) * RecordSize;
 
         /// <summary>Smallest number of bytes a live allocator commits: <see cref="MinLevelCount"/> pages.</summary>
         internal static long MinCommittedMemorySize => GetCommittedSizeForPages(MinLevelCount);
@@ -132,8 +132,19 @@ namespace Tsavorite.core
         private AllocationMode allocationMode;
 #endif
 
-        // This is used only for Flush and Restore, not random reads, so 512 is fine.
-        const int SectorSize = 512;
+        // Every page array carries at least this many records of slack, which aligns its start to any sector size up to
+        // this many records' bytes without changing the committed size.
+        const int MinAlignmentSlackRecords = 512;
+
+        /// <summary>Alignment, in bytes, of every page: at least the sector size of the devices the pages are
+        /// checkpointed to and recovered from, since they are written and read in place.</summary>
+        private readonly int sectorSize;
+
+        /// <summary>Records of slack each page array carries so its start can be aligned to <see cref="sectorSize"/>.</summary>
+        private readonly int alignmentSlackRecords;
+
+        /// <summary>Alignment, in bytes, of every page.</summary>
+        internal int SectorSize => sectorSize;
 
         private int initialAllocation = 0;
 
@@ -143,7 +154,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Create new instance with the default memory budget of <see cref="DefaultMaxMemorySize"/>.
         /// </summary>
-        public MallocFixedPageSize(ILogger logger = null) : this(LevelSize, logger) { }
+        public MallocFixedPageSize(ILogger logger = null) : this(LevelSize, IDevice.MinDeviceSectorSize, logger) { }
 
         /// <summary>
         /// Create new instance sized for a memory budget in bytes, rounded down to a whole number of pages and clamped
@@ -151,18 +162,31 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="maxMemorySize">Budget in bytes. Zero or negative selects <see cref="DefaultMaxMemorySize"/>.</param>
         /// <param name="logger">Logger</param>
-        public MallocFixedPageSize(long maxMemorySize, ILogger logger = null) : this(GetLevelCount(maxMemorySize), logger) { }
+        public MallocFixedPageSize(long maxMemorySize, ILogger logger = null) : this(GetLevelCount(maxMemorySize), IDevice.MinDeviceSectorSize, logger) { }
+
+        /// <summary>
+        /// Create new instance sized for a memory budget in bytes, rounded down to a whole number of pages and clamped
+        /// to the range the page table can express, with pages aligned to <paramref name="sectorSize"/>.
+        /// </summary>
+        /// <param name="maxMemorySize">Budget in bytes. Zero or negative selects <see cref="DefaultMaxMemorySize"/>.</param>
+        /// <param name="sectorSize">Page alignment in bytes: a power of two, at least <see cref="IDevice.MinDeviceSectorSize"/>.</param>
+        /// <param name="logger">Logger</param>
+        public MallocFixedPageSize(long maxMemorySize, int sectorSize, ILogger logger = null) : this(GetLevelCount(maxMemorySize), sectorSize, logger) { }
 
         /// <summary>
         /// Create new instance with an explicit level count.
         /// </summary>
-        private unsafe MallocFixedPageSize(int levelCount, ILogger logger)
+        private unsafe MallocFixedPageSize(int levelCount, int sectorSize, ILogger logger)
         {
             // Level 0 is allocated below and every level-0 allocation pre-allocates level 1, so two levels are the minimum.
             Debug.Assert(levelCount >= MinLevelCount, "levelCount must be at least MinLevelCount");
             Debug.Assert(levelCount <= MaxLevelCount, "levelCount must be at most MaxLevelCount");
+            if (sectorSize < IDevice.MinDeviceSectorSize || !Utility.IsPowerOfTwo(sectorSize))
+                throw new ArgumentOutOfRangeException(nameof(sectorSize), sectorSize, $"Sector size must be a power of two of at least {IDevice.MinDeviceSectorSize}");
 
             this.levelCount = levelCount;
+            this.sectorSize = sectorSize;
+            alignmentSlackRecords = Math.Max(MinAlignmentSlackRecords, (sectorSize + RecordSize - 1) / RecordSize);
             ordinaryAllocationLimit = MaxAllocationCount;
             values = new T[levelCount][];
             pointers = new IntPtr[levelCount];
@@ -170,12 +194,8 @@ namespace Tsavorite.core
             this.logger = logger;
             freeList = new ConcurrentQueue<long>();
 
-            values[0] = GC.AllocateArray<T>(PageSize + SectorSize, pinned: IsBlittable);
+            values[0] = AllocateLevel(0);
             _ = Interlocked.Increment(ref allocatedPageCount);
-            if (IsBlittable)
-            {
-                pointers[0] = (IntPtr)(((long)Unsafe.AsPointer(ref values[0][0]) + (SectorSize - 1)) & ~(SectorSize - 1));
-            }
 
             writeCacheLevel = -1;
             Interlocked.MemoryBarrier();
@@ -188,6 +208,18 @@ namespace Tsavorite.core
             // Clear this for the next allocation.
             allocationMode = AllocationMode.None;
 #endif
+        }
+
+        /// <summary>
+        /// Allocate the array for <paramref name="level"/> and, for blittable records, publish its sector-aligned start
+        /// in <see cref="pointers"/> before returning it.
+        /// </summary>
+        private unsafe T[] AllocateLevel(int level)
+        {
+            var array = GC.AllocateArray<T>(PageSize + alignmentSlackRecords, pinned: IsBlittable);
+            if (IsBlittable)
+                pointers[level] = (IntPtr)(((long)Unsafe.AsPointer(ref array[0]) + (sectorSize - 1)) & ~((long)sectorSize - 1));
+            return array;
         }
 
         /// <summary>
@@ -382,11 +414,7 @@ namespace Tsavorite.core
                 // If index 0, then allocate space for next level.
                 if (index == 0)
                 {
-                    var tmp = GC.AllocateArray<T>(PageSize + SectorSize, pinned: IsBlittable);
-                    if (IsBlittable)
-                        pointers[1] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (SectorSize - 1)) & ~(SectorSize - 1));
-
-                    values[1] = tmp;
+                    values[1] = AllocateLevel(1);
                     _ = Interlocked.Increment(ref allocatedPageCount);
                     Interlocked.MemoryBarrier();
                 }
@@ -434,11 +462,7 @@ namespace Tsavorite.core
                 // The last level has no successor to pre-allocate; the next allocation past it throws in ThrowAllocatorFull.
                 if (newBaseAddr < levelCount)
                 {
-                    var tmp = GC.AllocateArray<T>(PageSize + SectorSize, pinned: IsBlittable);
-                    if (IsBlittable)
-                        pointers[newBaseAddr] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (SectorSize - 1)) & ~(SectorSize - 1));
-
-                    values[newBaseAddr] = tmp;
+                    values[newBaseAddr] = AllocateLevel(newBaseAddr);
                     _ = Interlocked.Increment(ref allocatedPageCount);
                 }
 
@@ -507,7 +531,7 @@ namespace Tsavorite.core
             uint alignedPageSize = PageSize * (uint)RecordSize;
             uint lastLevelSize = (uint)recordsCountInLastLevel * (uint)RecordSize;
 
-            int sectorSize = (int)device.SectorSize;
+            int deviceSectorSize = (int)device.SectorSize;
             numBytesWritten = 0;
             int i = 0;
 
@@ -523,7 +547,7 @@ namespace Tsavorite.core
                     result.levelIndex = i;
                     result.retirementGuard = new(0);
 
-                    uint writeSize = (uint)((i == numCompleteLevels) ? (lastLevelSize + (sectorSize - 1)) & ~(sectorSize - 1) : alignedPageSize);
+                    uint writeSize = (uint)((i == numCompleteLevels) ? (lastLevelSize + (deviceSectorSize - 1)) & ~(deviceSectorSize - 1) : alignedPageSize);
                     result.numBytesToWrite = writeSize;
 
                     try

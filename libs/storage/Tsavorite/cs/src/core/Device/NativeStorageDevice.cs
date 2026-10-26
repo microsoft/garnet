@@ -2217,9 +2217,30 @@ namespace Tsavorite.core
         /// logical), taking no native-library dependency.
         /// </remarks>
         internal static uint ProbeSectorSize(string filename)
-        {
-            var probePath = MaterializeParentDirForProbe(filename);
+            => ProbeSectorSizeAt(MaterializeParentDirForProbe(filename));
 
+        /// <summary>
+        /// <see cref="ProbeSectorSize"/> without creating <paramref name="filename"/>'s parent directory: the native
+        /// probe walks up to the nearest existing ancestor, and the Windows probe uses the volume root. The path is
+        /// made absolute first, so a relative path whose directories do not exist yet still resolves to the current
+        /// directory's filesystem rather than ending the walk at an empty path.
+        /// </summary>
+        internal static uint ProbeSectorSizeWithoutCreating(string filename)
+        {
+            string probePath;
+            try
+            {
+                probePath = Path.GetFullPath(filename);
+            }
+            catch
+            {
+                probePath = filename;
+            }
+            return ProbeSectorSizeAt(probePath);
+        }
+
+        private static uint ProbeSectorSizeAt(string probePath)
+        {
             uint result = 0;
             if (OperatingSystem.IsLinux())
             {
