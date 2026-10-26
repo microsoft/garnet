@@ -384,7 +384,13 @@ namespace Garnet.server
 
                         if (logRecord.DataHeader.HasExpiration)
                         {
-                            _ = EXPIREAT(newKey, ConvertUtils.UnixTimeInMillisecondsFromTicks(logRecord.Expiration), out _, ExpireOption.None, ref context, milliseconds: true);
+                            _ = EXPIREAT(newKey, ConvertUtils.UnixTimeInMillisecondsFromTicks(logRecord.Expiration), out var timeoutSet, ExpireOption.None, ref context, milliseconds: true);
+
+                            if (!timeoutSet)
+                            {
+                                // Record _expired_ during rename, so force a delete
+                                _ = DELETE(newKey, ref context);
+                            }
                         }
 
                         // Delete the old key
