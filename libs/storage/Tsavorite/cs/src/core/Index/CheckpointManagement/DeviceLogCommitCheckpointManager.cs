@@ -50,12 +50,6 @@ namespace Tsavorite.core
             public uint ErrorCode;
         }
 
-        /// <summary>
-        /// Windows <c>ERROR_HANDLE_EOF</c>. <see cref="ReadInto"/> rounds its length up to a sector boundary, so a metadata
-        /// file shorter than one sector reports this. It means the file ended, not that the read failed.
-        /// </summary>
-        private const uint ErrorHandleEof = 38;
-
         private readonly bool removeOutdated;
         private SectorAlignedBufferPool bufferPool;
 
@@ -486,7 +480,7 @@ namespace Tsavorite.core
                 // A failed read leaves no metadata in the buffer, so report it rather than let the caller parse it.
                 // End-of-file is excluded: the sector rounding above over-reads, which Windows reports as
                 // ERROR_HANDLE_EOF and Linux as a short read, and in both cases the requested bytes were transferred.
-                if (completion.ErrorCode is not 0 and not ErrorHandleEof)
+                if (completion.ErrorCode is not 0 and not Native32.ERROR_HANDLE_EOF)
                     throw new TsavoriteException($"Checkpoint metadata read failed with error code {completion.ErrorCode}");
 
                 buffer = new byte[numBytesToRead];
