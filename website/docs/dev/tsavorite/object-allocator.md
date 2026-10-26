@@ -36,7 +36,8 @@ configure it, for the main object log and each Snapshot checkpoint's alike (see
 [Object-log serialization](objectlog-serialization.md), section 12.6). A page flush writes its records' components into
 that ring, and the ring's own flush makes them durable; reads take recent bytes from the ring and older ones from the
 device.
-`LogSettings.NumberOfDeserializationBuffers` sizes the read-ahead ring used only to read a version 7 object log.
+`LogSettings.NumberOfDeserializationBuffers` (4) sets how many 4 MiB windows a walk over a page's records reads ahead
+through, during recovery, scans, and the reading of a version 7 object log.
 
 ## Adaptive record fields
 

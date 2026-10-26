@@ -1647,9 +1647,8 @@ namespace Tsavorite.core
         /// This record's raw ObjectLogPosition word, including flag bits.
         /// </summary>
         /// <remarks>
-        /// Raw because <see cref="GetObjectLogRecordStartPositionAndLengths"/> masks the flag bits off, and the unstamped
-        /// markers are distinguished by the full word: <see cref="ObjectLogPositionInfo.NotSet"/> is all-ones, flag bits
-        /// included, and zero is the record-initialization value.
+        /// <see cref="ObjectLogPositionInfo.WordIsUnstamped"/> tests it for the unstamped marker, which has every address bit set and leaves
+        /// the flag bits as they were.
         /// </remarks>
         internal readonly ulong RawObjectLogPositionWord
         {

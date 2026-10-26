@@ -7,10 +7,9 @@ record's out-of-line pieces:
 - an overflow value; or
 - a serialized object value.
 
-> **Status:** the object log is written and read through `ObjectLog` (section 12), and section 12.10 is the authority on
-> its record format. Sections 3-9 still describe the previous file format (`ChunkHeader` framing, write buffers, and
-> direct IO) and are pending a rewrite; where they disagree with section 12, section 12 and the code are authoritative.
-> Version 7 checkpoints, which use that previous format, are read by `LegacyObjectLogReader` (section 7.5).
+> **Status:** the object log is written and read through `ObjectLog` (section 12). Sections 3-9 describe its record
+> format and the flush, read, and recovery flows over it; section 12.10 summarizes the format. Version 7 checkpoints use
+> an older format and are read by `LegacyObjectLogReader` (section 7.5).
 
 The hybrid log stores the record header, inline fields, objectId slots, optionals, and the object-log position. The
 object log stores the bytes referenced by those slots. The two logs are written and read together, but their metadata
@@ -19,8 +18,9 @@ has deliberately separate responsibilities:
 - The effective `RecordDataHeader.KeyLength` and `RecordDataHeader.ValueLength` properties describe physical fields in
   the hybrid-log record. They always return an exact inline length or the 4-byte objectId-slot size.
 - For an overflow key, the raw 10-bit RDH KeyLength field is free because `KeyIsInline` is false. A flushed record uses
-  it for the high bits of the key's page-count read extent without changing the effective property or record layout.
-- The high 9 bits of each out-of-line field's objectId slot contain an initial object-log read hint.
+  it for the high bits of the key slot's page-count hint without changing the effective property or record layout.
+- The high 9 bits of an objectId slot carry an initial read hint for the object-log extent the record's position
+  addresses: the key's slot when the key is overflow, otherwise the value's.
 - `KeyIsExactSize` / `ValueIsExactSize` bits in the object-log position word select whether that 9-bit value is an
   exact byte length or a page-count hint.
 - A 4-byte length prefix carries the exact length of every extent that is not exact-size, and a directory carries the
@@ -36,6 +36,8 @@ Inline values never enter the object log. Migration and replication use an indep
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/LogRecord.cs` / `LogRecord_cv7.cs` - metadata stamping/decoding,
 >   objectId-map assignment, and legacy decoding.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectAllocatorImpl.cs` - page flush, disk read, scan, and recovery orchestration.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/PageHeader.cs` - the page header's object-log floor.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/AllocatorBase.cs` - partial-sector images and recovery flush requests.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLog.cs` - the log-structured substrate; see section 12.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogWriter.cs` / `ObjectLogReader.cs` - writing and
 >   reading a record's components; see section 12.10.
@@ -49,6 +51,8 @@ Inline values never enter the object log. Migration and replication use an indep
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/LegacyObjectLogReader.cs` / `LegacyObjectLogPosition.cs` /
 >   `CircularDiskReadBuffer.cs` / `DiskReadBuffer.cs` - reading a version 7 object log.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/OverflowByteArray.cs` - owned overflow storage.
+> - `libs/storage/Tsavorite/cs/src/core/Index/Recovery/Recovery.cs` - recovery passes, snapshot-region flushes, and
+>   up-conversion.
 > - `libs/storage/Tsavorite/cs/src/core/Index/CheckpointManagement/RecoveryInfo.cs` - checkpoint format versions.
 
 ---
@@ -76,24 +80,31 @@ HYBRID LOG RECORD
                   inline bytes or i32        +-- inline bytes or i32 objectId
                   objectId
 
-OBJECT LOG, starting at obj-pos
-+=========================+==============================+
-| overflow key, if any    | overflow value or object,   |
-|                         | if any                       |
-+=========================+==============================+
+OBJECT LOG, at obj-pos
+  one out-of-line component that fits one chunk (HasDirectory clear):
+  +------------------------------+------------------------------------------+
+  | int32 length, if > 511 bytes | overflow key, overflow value, or object  |
+  +------------------------------+------------------------------------------+
+
+  otherwise (HasDirectory set), the record's top directory record:
+  +------------------------------+--------+---------+-------------------------+
+  | int32 length, if > 511 bytes | header | entries | final data, if combined |
+  +------------------------------+--------+---------+-------------------------+
 ```
 
-The key bytes come first. The value bytes start immediately after the key's complete object-log extent, including any
-key header and alignment padding. Components within a record are densely packed and have no record-level length prefix.
-A record start is not necessarily the previous record's exact end: each partial flush is sector-padded, and recovery
-relocation may insert up to 7 bytes to preserve the source record's modulo-8 alignment. A reader obtains each record
-start from that record's object-log position word rather than deriving it from the preceding record.
+A record's out-of-line components form one stream, key first. When the record has one out-of-line component and it fits
+one chunk, the position addresses that component's extent. Otherwise, including whenever the record has both an
+overflow key and an out-of-line value, the position addresses the record's top directory record, which lists the
+address and exact length of every chunk (section 4). The object log has no record-level framing, and consecutive
+records' extents are not necessarily contiguous, so a reader obtains each record's location from that record's
+object-log position word rather than deriving it from the preceding record.
 
 The objectId has two roles at different times:
 
 1. In memory, its low bits index the page's `ObjectIdMap`, which owns the `OverflowByteArray` or `IHeapObject`.
-2. In a flushed record image, its high bits also carry an initial object-log read hint. The low index bits remain
-   intact, so a live-page flush can stamp a hint without changing which object the slot resolves to.
+2. In a flushed record image, the high bits of the slot that sizes the record's extent also carry an initial object-log
+   read hint. The low index bits remain intact, so a live-page flush can stamp a hint without changing which object the
+   slot resolves to.
 
 Every in-memory lookup uses `ObjectIdMap.GetIndex()` and therefore masks away the hint bits.
 
@@ -135,9 +146,10 @@ Consequently, `GetKeyFieldInfo`, `GetValueFieldInfo`, `ActualSize`, `AllocatedSi
 Changing an overflow payload from 1 KB to 500 MB does not change the hybrid-log record's physical field size.
 
 For an inline key, raw RDH KeyLength and effective `KeyLength` are the same exact byte count. For an overflow key,
-effective `KeyLength` remains 4, but the raw field has no physical-layout consumer. The flushed record therefore uses
-those 10 raw bits as the high portion of the key's 4 KB page count. Assigning the recovered key to an `ObjectIdMap`
-restores the raw field to 4; the effective property remains 4 before and after restoration.
+effective `KeyLength` remains 4, but the raw field has no physical-layout consumer. When the key's slot sizes a
+length-prefixed extent, the flushed record therefore uses those 10 raw bits as the high portion of the extent's 4 KB
+page count (section 3.3); otherwise they hold 4. Assigning the recovered key to an `ObjectIdMap` restores the raw field
+to 4; the effective property remains 4 before and after restoration.
 
 ### 2.2 What object-log code must never do
 
@@ -154,9 +166,9 @@ component length prefixes outside the inline record image, but it leaves RDH len
 
 ### 2.3 Legacy exception
 
-Checkpoint cv7 used an older split length encoding: the RDH raw field held the low length bits and the objectId slot
-held the next 32 bits. The cv7 marker in object-log position bit 63 accompanies that decoder in
-`LogRecord_cv7.cs`.
+Checkpoint version 7 uses an older split length encoding: the raw RDH field holds the low length bits and the objectId
+slot holds the next 32 bits. `LogRecord_cv7.cs` decodes it, and recovery selects that decoder from the checkpoint
+version. Version 7 records also set object-log position bit 63, which current code does not read.
 
 The legacy decoder interprets both raw fields according to that older layout. Current-format code uses
 `GetKeyLengthRaw()` only for the overflow-key page-count high bits and does not use `GetValueLengthRaw()` as an
@@ -180,10 +192,14 @@ Each objectId slot is one 32-bit integer:
 | Bits | Name | Meaning |
 |---|---|---|
 | 0..22 | index | Index into the record page's `ObjectIdMap` |
-| 23..31 | size hint | Exact byte length, value page count/sentinel, or low 9 bits of the key page count |
+| 23..31 | size hint | Initial-read hint for the extent the record's position addresses (section 3.3) |
 
 The 23-bit index is larger than the maximum index needed by a 128 MB page at the minimum record size. The high 9 bits
 are therefore available for the disk-read hint without reducing the supported page population.
+
+One slot sizes the extent: the key's slot when the key is overflow, since the extent is then the key alone or a
+directory, and the value's slot otherwise. When the key's slot sizes it, the flush stamps a hint of zero into an
+out-of-line value's slot.
 
 `ObjectIdMap.StampSizeHint(slot, hint)` preserves the low index. `ObjectIdMap.GetIndex(slot)` masks the hint before
 an in-memory lookup, and `ObjectIdMap.GetSizeHint(slot)` extracts the high 9 bits for disk IO.
@@ -195,385 +211,418 @@ The optional 8-byte object-log position combines an address and format flags:
 ```text
 63             62              61                 60                 59..0
 +--------------+---------------+------------------+------------------+--------------+
-| cv7 reuse    | HasDirectory  | KeyIsExactSize   | ValueIsExactSize | address      |
+| unused       | HasDirectory  | KeyIsExactSize   | ValueIsExactSize | address      |
 +--------------+---------------+------------------+------------------+--------------+
 ```
 
 | Bit | Meaning |
 |---|---|
 | 0..59 | Object-log address, about a 1 EB range (`ObjectLogPositionInfo.AddressMask`) |
-| 60 | `ValueIsExactSize` |
-| 61 | `KeyIsExactSize` |
-| 62 | `HasDirectory` — the position addresses a directory record rather than a single data chunk (section 12.9) |
-| 63 | Unused and available; cv7 images carry a marker here that cv8 recovery ignores and clears |
+| 60 | `ValueIsExactSize`: the value slot's hint is an exact byte length; meaningful when the key is not overflow |
+| 61 | `KeyIsExactSize`: the key slot's hint is an exact byte length; meaningful when the key is overflow |
+| 62 | `HasDirectory`: the position addresses the record's top directory record rather than a single extent (section 12.9) |
+| 63 | Unused. Version 7 records set it; current code never reads it, and up-conversion rewrites the whole word |
 
-The address is flat. The current file-backed object log reaches it through a segment id and an offset, but those occupy
-exactly these bits, so the word holds the same value either way; the segment arithmetic is an implementation detail of
-addressing a file and goes away with it (see section 12).
+The address is a flat `ObjectLog` logical address (section 12); device segmentation is not part of it. A version 7
+position splits the same 60 bits into a segment id and an offset, which `LegacyObjectLogPosition` decodes for the
+version 7 reader (section 7.5).
 
-The key and value flags are independent because one record can have, for example, a 100-byte headerless overflow key
-and a 5 MB framed object value.
+Only the exact-size flag of the slot that sizes the extent applies, so a reader takes that slot's hint and flag
+together.
 
 #### Stamped versus unstamped
 
-The low 60 bits carry a position, so there is no spare value that means "no position": address 0 is a real location.
-The unstamped state is therefore encoded by setting *all* 60 address bits, which the flag bits survive
-unchanged. `ObjectLogPositionInfo` owns this encoding — `Unstamp` sets it, `WordIsUnstamped`/`IsUnstamped` test it,
-and callers must not compare against `NotSet` themselves.
+The unstamped state sets all 60 address bits and leaves the flag bits unchanged; no allocation reaches that address
+(section 12.7). `ObjectLogPositionInfo` owns this encoding: `Unstamp` sets it, `WordIsUnstamped` and `IsUnstamped` test
+it, and callers do not compare a word against `NotSet` themselves.
 
-`NotSet` — the word a position carries before any flush stamps it — is itself a **60-bit** value, leaving every flag
-bit clear. That matters beyond tidiness: a flag is a claim about the position, and an unstamped word makes no claims.
-When `NotSet` was all-ones, every freshly initialized record read as "has a directory", and a protocol that tries to
-acquire ownership by setting a flag bit would find the bit already set — a no-op rather than a transition.
+`NotSet` is the unstamped marker with every flag bit clear, because a flag is a claim about a position and an unstamped
+word makes no claims. `WordIsUnstamped` examines only the address bits, so a word with every bit set, as a version 7
+image may hold, also reads as unstamped. Flag readers therefore reject an unstamped word rather than test their bit in
+isolation, which is what `WordHasDirectory` does.
 
-Words written before `NotSet` was narrowed are still all-ones. They remain correctly recognized as unstamped, because
-every test for that goes through `WordIsUnstamped`, which examines only the address bits. Flag **readers** must
-therefore reject an unstamped word rather than testing their bit in isolation, which is what `WordHasDirectory` does.
+A record is unstamped whenever it holds components that are not in the object log. `InitializeRecord`,
+`TrySetValueObject`, and the `KeyOverflow` and `ValueOverflow` setters unstamp it, as do `SetDeserializedValueObject`
+and `OnObjectReadComplete` once a read has brought the components into memory. The position then describes nothing the
+record still needs, and leaving it stamped would let a later flush that skips the record persist a position for bytes
+it did not write. Unstamping preserves the flag bits, and a flush restamps the record when it writes its components.
 
-A record is unstamped at every point where it gains components that have not been written to the object log
-(`InitializeRecord`, `TrySetValueObject`, and the overflow key/value setters), and again by
-`SetDeserializedValueObject` once the bytes have been read back into memory. Unstamping after deserialization matters
-because the position then describes nothing the record still needs; leaving it stamped would let a later flush that
-skips the record persist a position for bytes it never wrote. Flush restamps when it writes the record.
+A reader never reads from an unstamped position, since the bytes there belong to another record. A page walk
+materializes such a record with `LogRecord.MaterializeObjectsWithoutReading`: overflow components become empty arrays,
+and an object value is recorded as absent (null) without invoking the deserializer, because zero bytes carry no type
+information. A Valid record with out-of-line components reaches disk unstamped when, for example, its flush had no
+object log to write them to (section 5.1). The single-record pending read instead treats an unstamped record as a flush
+defect and throws: it reads the record into a dedicated buffer, so the record reached disk without its object bytes.
 
-Unstamped is consequently the *sole* test for "flush skipped this record, so there is nothing to read" — the reader no
-longer infers that from a zero extent, which could not distinguish a skipped record from a legitimately empty
-component.
+#### Exact component lengths
 
-Such a record is not simply dropped. `ObjectLogReader.MaterializeRecordObjectsWithoutReading` materializes its
-out-of-line components as empty and still invokes the value deserializer, with the stream reporting end-of-stream so it
-receives no data. The same path serves a record whose only out-of-line component is zero length, which likewise
-contributes no object-log bytes. See the `IObjectSerializer<T>.Deserialize` contract: a serializer is handed back
-exactly the bytes it wrote, so an empty stream never means "this object serialized to nothing" — it means the record
-has no bytes in the object log.
+A reader knows each component's exact length before it reads the component's bytes:
 
-#### Bounding the deserializer
-
-That contract is enforced rather than assumed. `ObjectLogReader` carries a per-record `objectDataBudget`:
-
-| Value | Meaning |
+| Extent | Exact length from |
 |---|---|
-| `0` | Nothing to read — the record has no object-log bytes, or the component is zero length. `Read` reports end-of-stream without touching the ring |
-| `> 0` | Exact remaining byte count for a headerless object, whose objectId hint *is* its length. `Read` clamps to it |
-| `-1` | Framing-bounded: a headered object's length is not known up front because its hint saturates at the discovery sentinel, so the `ChunkHeader` chain bounds it |
+| Single exact extent | The hint, with its exact-size flag set |
+| Single length-prefixed extent | The 4-byte length prefix |
+| Directory | The sum of the component's entry lengths; `KeyEntryCount` divides the entries between key and value |
 
-In the framing-bounded case `ReadObjectData` stops once the final (non-continuing) data chunk is consumed, rather than
-reading the following record's bytes as a spurious header. A deserializer that asks for more than it wrote therefore
-sees end-of-stream at its own component boundary on every path.
+`ReadKey` and `ReadValueOverflow` therefore allocate one `OverflowByteArray` at its final length, and `ReadValueObject`
+bounds the deserializer by the value's length. The reader's `Read` returns 0, end-of-stream, once that many bytes have
+been delivered, so a deserializer that asks for more than it wrote never sees another record's bytes. A value of length
+zero is recorded as absent (null) without invoking the deserializer.
 
-This also removes a dependence on the record's stamp. Deserialization unstamps the record in the **live buffer**
-(`SetDeserializedValueObject`), so a page that is walked again reads as entirely unstamped; "is there anything to read"
-is decided from the component extent, which that in-memory mutation cannot affect.
+### 3.3 Hint encoding
 
-### 3.3 Exact versus page-count interpretation
+A hint describes the extent the position addresses: a single extent's payload, or a top directory record's payload,
+which is its header, entries, and any combined final data. An extent whose payload is at most
+`ObjectLogExtent.ExactCutoff` (511) bytes is exact and headerless; a larger one is length-prefixed (section 4.1).
 
-For an exact/headerless key or value:
-
-| Exact-size flag | objectId hint | Stream layout | Initial read |
+| Slot | Exact flag | 9-bit hint | First read |
 |---|---|---|---|
-| Set | 0..511 | Headerless | Exactly `hint` bytes |
+| Key | Set | Payload length, 0..511 | Exactly `hint` bytes |
+| Key | Clear | Low 9 bits of a 19-bit 4 KB page count | `pageCount * 4 KB`, clamped |
+| Value | Set | Payload length, 0..511 | Exactly `hint` bytes |
+| Value | Clear | 1..510: a 4 KB page count | `hint * 4 KB`, clamped |
+| Value | Clear | `ObjectLogExtent.LargeValueHint` (511): 511 or more pages | `ObjectLogExtent.LargeInitialRead` (4 MB + 4 bytes), clamped |
 
-For a non-exact/headered overflow key:
+A page count is `ceil((LengthPrefixSize + payload) / 4 KB)`: it includes the 4-byte prefix
+(`ObjectLogExtent.LengthPrefixSize`), in units of `RecordDataHeader.kFlushPageSize` (4 KB). "Clamped" means limited to
+the bytes left on the extent's object-log page and below the log's tail; a length-prefixed extent never spans a page.
+
+For a key whose exact flag is clear, the high 10 bits of the page count are in raw RDH KeyLength:
 
 ```text
 pageCount = (rawRdhKeyLength << 9) | objectIdHint
-initialReadExtent = pageCount * 4 KB
+firstRead = pageCount * 4 KB
 ```
 
-The 19-bit page count is exact: it is `ceil((ChunkHeader + alignment padding + payload) / 4 KB)`. It covers the
-configured 512 MB maximum key size with framing and alignment overhead. The reader can allocate/read the complete key
-without a sentinel-driven extension path; `ChunkHeader` still supplies the exact logical payload length.
+The 19-bit count is exact and never saturates. An addressed extent is one allocation and so at most one object-log page,
+which is 32,768 pages at the 128 MB maximum, far below `RecordDataHeader.kMaxOverflowKeyPageCount` (2^19 - 1), above
+which `ComputeOverflowKeySizeHint` throws. No flag selects the split: whenever `KeyIsExactSize` is clear, raw RDH
+KeyLength holds the high bits, zero below 512 pages. When it is set, raw RDH KeyLength holds the physical slot size,
+`ObjectIdMap.ObjectIdSize` (4).
 
-Keys are immutable and `KeyIsInline` never changes, so a headered overflow key always uses this split encoding; the
-high bits are simply zero for a small page count. No flag is needed to select it.
+A value hint saturates at `LargeValueHint`, which means "large" rather than 511 pages. Its first read covers a full
+write chunk (`IStreamBuffer.BufferSize`, 4 MB) and its prefix, so one IO reads any single extent the writer produces at
+its default chunk size.
 
-For a non-exact overflow or object value:
+The first read covers the whole extent unless the extent is length-prefixed and longer than `LargeInitialRead`, such as
+a top directory record whose entries and combined data exceed it. The prefix then gives the exact length, and a second
+read on the same page fetches the rest.
 
-| 9-bit objectId hint | Stream layout | Initial read |
-|---|---|---|
-| 1..510 | Overflow: leading header; object: 511-byte prefix, padding, then headers | `hint * 4 KB` bytes |
-| 511 | Same framing | One 4 MB discovery window |
-
-For values only, 511 is the sentinel meaning "issue a 4 MB discovery read and follow framing." It is not
-`511 * 4 KB`.
-
-#### How exactly a length is derivable
-
-Keys and values differ here, and the difference is deliberate:
-
-| Component | Derivable from the flushed indicators? |
-|---|---|
-| Overflow key | **Exactly**, always. `ComputeOverflowKeySizeHint` throws above `kMaxOverflowKeyPageCount`, so the RDH-high-bits + objectId-low-bits split always encodes an exact 19-bit page count |
-| Out-of-line value, below the sentinel | **Exactly** — exact bytes when `ValueIsExactSize` is set, else page count × 4 KB |
-| Out-of-line value, at the sentinel | **Only as a hint.** The authoritative length comes from the `ChunkHeader` chain |
-
-What *is* always derivable for a stamped record is whether a component is empty, which is what the reader needs:
-`ValueIsExactSize` set with hint 0 means a genuinely zero-length value, and that combination is unambiguous,
-because a headered value has `dataLength > 511` and therefore a page count of at least 1. Hint 0 with the flag
-clear only ever means unstamped.
-
-#### What the stamp does and does not tell you
-
-A stamped position means "these object-log bytes are at this location". An **unstamped** position arises from two
-different situations, and the reader treats them identically:
-
-1. The flush wrote no object-log bytes for the record, so it never stamped a position.
-2. An earlier walk of the same in-memory page already deserialized the record. `SetDeserializedValueObject` unstamps in
-   the **live buffer**, so every record on a re-walked page reads as unstamped even though its bytes were written
-   normally. Garnet's object-log upgrade flow does exactly this.
-
-Because of (2), an unstamped position is **not** evidence of a flush defect and cannot be asserted against. It is also
-why "is there anything to read" is decided from the component extent (see *Bounding the deserializer*) rather than from
-the stamp: an in-memory deserialization cannot affect an extent, but it does destroy a stamp.
-
-What the stamp still decides is whether a *position* may be used: reading from an unstamped position would consume
-bytes belonging to a different record, so the walk must not seek there.
-
-The one place the stamp is still treated as an invariant is the single-record pending read, which fails fast on an
-unstamped record. Situation (2) cannot arise there because that path uses a dedicated per-IO buffer rather than a
-shared page, so an unstamped record genuinely means one reached disk without its object bytes.
-
-Two cases are excluded from all of this by construction: a v+1 record, which a Snapshot flush writes verbatim while
-deliberately leaving its objects out of the snapshot object log and which recovery rejects at the persisted fuzzy
-boundary; and an elided record, whose lost capture leaves the live record `Invalid` so the `Info.Valid` test filters it
-first.
+A zero-length single component allocates nothing: the writer stamps the exact flag with a hint of zero, and the position
+is the log's tail when the record was written. In a directory, a component with no entries has length zero.
 
 ### 3.4 Computing and stamping a hint
 
-`LogRecord.SetObjectLogPositionAndSizeHints()` handles keys and values separately:
+`ObjectLogWriter.FinishRecord` encodes the hint from the payload length of the extent it wrote:
 
-1. If the serialized data length is at most 511:
-   - stamp the exact byte length;
-   - set the component's exact-size flag;
-   - write no `ChunkHeader`.
-2. For a larger overflow key:
-   - compute `ceil(totalOnDiskExtent / 4 KB)`;
-   - stamp its low 9 bits into the objectId and its high 10 bits into raw RDH KeyLength;
-   - leave `KeyIsExactSize` clear; and
-   - obtain the exact logical length from the leading `ChunkHeader`.
-3. For a larger overflow/object value:
-   - compute `ceil(initialOnDiskExtent / 4 KB)`;
-   - clamp it to 511;
-   - leave `ValueIsExactSize` clear;
-   - obtain authoritative lengths from `ChunkHeader`.
+- When the key is overflow, `ObjectLogExtent.EncodeKeyHint` (`RecordDataHeader.ComputeOverflowKeySizeHint`) returns the
+  exact length and sets `KeyIsExactSize` for a payload of at most 511 bytes, keeping raw RDH KeyLength at
+  `ObjectIdSize`; otherwise it splits the page count between the objectId hint (low 9 bits) and raw RDH KeyLength
+  (high 10 bits).
+- Otherwise `ObjectLogExtent.EncodeValueHint` (`RecordDataHeader.ComputeObjectIdValueSizeHint`) returns the exact length
+  and sets `ValueIsExactSize`, or returns the page count, saturating at `LargeValueHint`.
+- `HasDirectory` is set when the writer wrote a top directory record.
 
-For overflow, `initialOnDiskExtent` is the complete component:
+The result is an `ObjectLogWriteResult`: the position word with its address and flags, `KeySizeHint`,
+`KeyRdhLengthBits`, `ValueSizeHint`, and `ValueObjectLength`, the number of bytes an object value serialized to.
+`LogRecord.SetObjectLogPositionAndHints` then:
 
-```text
-ChunkHeader + alignment padding + payload
-```
+1. writes the position word;
+2. for an overflow key, stamps `KeySizeHint` into the key's slot, keeping its index, and writes `KeyRdhLengthBits` into
+   raw RDH KeyLength with one `SetDataHeader`; and
+3. for an out-of-line value, stamps `ValueSizeHint` into the value's slot, which is zero when the key's slot sizes the
+   extent.
 
-For an object, it covers only:
-
-```text
-511-byte prefix + 8-align padding + first ChunkHeader + first framed chunk
-```
-
-Later object chunks are discovered from continuation headers. The key page count is an exact rounded read extent, not
-an exact logical byte length. Value hints are initial IO requirements and may not cover the total value.
+Neither effective RDH length changes. Stamping raw RDH KeyLength is layout-neutral because `KeyLength` returns
+`ObjectIdSize` whenever `KeyIsInline` is false, and in-memory readers resolve the same object because each slot keeps
+its index bits.
 
 ### 3.5 Decoding a hint
 
-`LogRecord.GetObjectLogRecordStartPositionAndLengths()`:
+`LogRecord.GetObjectLogRecordRef()` captures what a reader needs as an `ObjectLogRecordRef`: the position word with its
+flags, which components are out of line, the key slot's hint and raw RDH KeyLength, and the value slot's hint. Its
+`TopExtentInitialRead` decodes the first read with `ObjectLogExtent.KeyInitialRead` when the key is overflow and
+`ObjectLogExtent.ValueInitialRead` otherwise, and the reader clamps it (section 6.1). A reader captures the reference
+before it materializes any component, because assigning a component unstamps the record.
 
-1. selects the cv7 exact-length decoder from the checkpoint metadata version;
-2. reads the key/value objectId high bits and, for a non-exact key, raw RDH KeyLength;
-3. reads `KeyIsExactSize` / `ValueIsExactSize`;
-4. converts the key metadata to exact bytes or its full 19-bit page extent, and value metadata to exact bytes,
-   page-count bytes, or a 4 MB discovery window; and
-5. masks the high flag bits from the returned object-log address.
-
-The method's output lengths are initial read extents for current-format records, not necessarily component lengths.
+`LogRecord.GetObjectLogRecordStartPositionAndLengths` serves the version 7 paths: when the checkpoint version selects
+the version 7 decode (`HybridLogRecoveryInfo.UsesDownlevelObjectLog`), it returns the record's position and exact split
+lengths from `GetObjectLogRecordStartPositionAndLengths_cv7`.
 
 ---
 
 ## 4. Object-log byte layouts
 
-### 4.1 `ChunkHeader`
+The object log has no record-level framing: a reader finds a record's bytes only through its position word. The
+structures below are what a position or a directory entry addresses; sections 12.9 and 12.10 give the rules that
+produce them.
 
-`ChunkHeader` is 8 bytes:
+### 4.1 Single extent
 
-| Field | Overflow | Object chunk |
-|---|---|---|
-| `currentLength` | complete payload length | this chunk's data length; high bit is `ContinuationFlag` |
-| second word | alignment padding before payload | reserved |
+A record whose only out-of-line component fits one chunk is written as a single extent, and its position has
+`HasDirectory` clear.
 
-There is no forward `nextLength`. Every header describes the bytes immediately following it, and continuation is
-self-terminating.
-
-### 4.2 Overflow key or value
-
-At most 511 bytes:
+At most 511 bytes, exact:
 
 ```text
 +-------------------+
 | payload           |
-| exact bytes       |
+| hint bytes        |
 +-------------------+
 ```
 
-More than 511 bytes:
+More than 511 bytes, length-prefixed:
 
 ```text
-+-------------------+-------------------+---------------------------+
-| ChunkHeader       | alignment padding | payload                   |
-| full payload len  | 0..sector-1 bytes | currentLength bytes       |
-+-------------------+-------------------+---------------------------+
++-------------------+---------------------------+
+| int32 length      | payload                   |
+| 4 bytes           | length bytes              |
++-------------------+---------------------------+
 ```
 
-The padding aligns the large direct-IO portion. It is part of the component's on-disk extent but not part of the
-`OverflowByteArray`'s logical payload.
+The payload is the overflow key, the overflow value, or the serialized object, byte for byte. It is at most one chunk:
+`IStreamBuffer.BufferSize` (4 MB), or the object-log page size less the prefix if that is smaller. A zero-length
+component has no bytes, and its exact hint of zero says so.
 
-### 4.3 Object value
+### 4.2 Directory record
 
-At most 511 serialized bytes:
+A record with more than one chunk, or with both an overflow key and an out-of-line value, gets a directory, and its
+position addresses its top directory record with `HasDirectory` set. The top record is framed like any addressed
+extent: exact when it is at most 511 bytes, length-prefixed otherwise.
 
 ```text
-+-------------------+
-| serialized data   |
-+-------------------+
+[int32 length, when longer than 511 bytes]
++-----------------------+-----------------------------+---------------------------------+
+| DirectoryRecordHeader | DirectoryEntry x EntryCount | final data chunk, when          |
+| 12 bytes              | 12 bytes each               | DirectoryIsCombined is set      |
++-----------------------+-----------------------------+---------------------------------+
 ```
 
-More than 511 serialized bytes:
+| Header field | Bytes | Meaning |
+|---|---|---|
+| `EntryCount` | 4 | Entries in this record, including a spine link |
+| `KeyEntryCount` | 4 | Overflow-key entries over the whole chain, excluding spine links |
+| `Flags` | 4 | `DirectoryIsCombined`: the final data chunk follows the entries |
 
 ```text
-+----------------------+--------------+---------------+-------------+-----+
-| first 511 data bytes | 8-align pad  | ChunkHeader 1 | chunk 1     | ... |
-+----------------------+--------------+---------------+-------------+-----+
-                                                       |
-                                      currentLength + continuation
+DirectoryEntry
+word0 (8 bytes): bits  0..59  address of the chunk's first data byte
+                 bit      60  IsDirectory: the entry links to a spine record
+                 bits 61..63  spare
+word1 (4 bytes): bits  0..26  data length, biased by one
+                 bits 27..31  spare
 ```
 
-The first 511 data bytes remain headerless. The absolute object-log position is then padded to an 8-byte boundary.
-Every remaining data chunk has its own header. A header may describe a zero-length continuing chunk when the header
-itself exactly fills the remaining write-buffer space.
+Entries list every component portion in stream order. A chunk holding the end of the key and the start of the value
+has two entries with the same address; each entry after the first at an address starts where the previous one ends.
+When `DirectoryIsCombined` is set, the last entries address the record's own data area, so reading the record also
+reads that data.
 
-The object serializer/deserializer sees one dense logical byte stream. `ObjectLogWriter` inserts framing, and
-`ObjectLogReader` removes it.
+### 4.3 Spine record
+
+When the entries outgrow one record, at `MaxDirectoryRecordSize` (1 MB) or the object-log page size if smaller, the
+writer writes them out as a spine record and starts a fresh list whose first entry links back to it with `IsDirectory`
+set:
+
+```text
++-----------------------+-----------------------------+
+| DirectoryRecordHeader | DirectoryEntry x EntryCount |
+| KeyEntryCount 0       | entry 0 may link to an      |
+| no flags              | older spine record          |
++-----------------------+-----------------------------+
+```
+
+A spine record has no length prefix and no combined data; the link that addresses it holds its exact length. Only entry
+0 of a directory record can be a link.
+
+### 4.4 Data chunk
+
+A data chunk is raw stream bytes, with no prefix, header, or padding. Only directory entries address it, and it never
+spans an object-log page. The stream is the overflow key's bytes followed by the value's, so one chunk can hold the end
+of the key and the start of the value.
+
+### 4.5 Placement
+
+A record's extents are allocated in stream order: data chunks as the stream fills them, a spine record whenever the
+entry list fills, and the top directory record last. The top record's address, which the position holds, is therefore
+the highest of the record's extents. For example, with default settings and no page cut, a 9 MB serialized object is
+written as:
+
+```text
+ascending object-log addresses ->
+| data chunk, 4 MB | data chunk, 4 MB | [length][header][3 entries][final 1 MB of data] |
+                                       ^ position word (HasDirectory set)
+```
+
+Records follow one another in hybrid-log address order (section 12.8), each at or above the end of the previous
+record's top extent. They are not necessarily contiguous: a page tail shorter than `MinPartialBytes` (64 KB) is left
+unused when a chunk does not fit it, and an extent that the writer does not cut moves whole to the next page.
 
 ---
 
 ## 5. Flush and write flow
 
-### 5.1 Page-level ordering
+### 5.1 Page-level ordering and completion
 
-For a page containing objects, `ObjectAllocatorImpl.WriteAsync()` preserves this issue and completion protocol:
+`ObjectAllocatorImpl.WriteAsync` writes one page, or part of one, for ReadOnly, Snapshot, and recovery flushes:
 
-1. determine the record range in the resident live page;
-2. walk records in address order;
-3. serialize/copy every record's object-log components;
-4. stamp that record's object-log position and objectId hints;
-5. issue the sector-padded final object-log write;
-6. submit the main-log page write containing those references; and
-7. invoke the external flush callback only after every object-log and main-log write completes.
+1. stamp the page header's object-log floor where the flush type calls for it (section 5.4);
+2. walk the records in address order, writing each eligible record's components with
+   `ObjectLogWriter.WriteRecordObjects` and stamping the result with `LogRecord.SetObjectLogPositionAndHints`
+   (sections 5.2 and 5.3);
+3. if any record wrote object-log bytes, request the object log's flush without waiting:
+   `ObjectLog.FlushTail(wait: false)` returns the tail the flush covers;
+4. submit the page's device writes from the live page (section 5.6); and
+5. join those writes and `ObjectLog.OnFlushed(tail, ...)` in a `PageFlushJoin`, which invokes the page's callback once,
+   after every part has completed, with the first error any part reported.
 
-The main-log write is issued after all object-log writes have been issued, but the devices may complete independently.
-The shared completion countdown prevents `FlushedUntilAddress` from advancing until both the main-log page and all
-referenced object-log bytes are durable.
+The page callback is what advances `FlushedUntilAddress`, so the main log never covers a record whose object bytes are
+not durable. The object log writes its own pages, so those writes overlap the main-log writes and no thread blocks on
+them.
 
 ```mermaid
 flowchart LR
-    A[ObjectAllocatorImpl.WriteAsync] --> B[walk page records]
-    B --> C[resolve overflow/object from resident page map]
+    A[ObjectAllocatorImpl.WriteAsync] --> B[stamp page floor, if any]
+    B --> C[walk page records]
     C --> D[ObjectLogWriter.WriteRecordObjects]
-    D --> E[SetObjectLogPositionAndSizeHints]
-    E --> B
-    B -->|done| F[OnPartialFlushComplete]
-    F --> G[issue final object-log write]
-    G --> H[issue main-log page write]
-    H --> I[shared callback after all writes complete]
+    D --> E[LogRecord.SetObjectLogPositionAndHints]
+    E --> C
+    C -->|done| F["ObjectLog.FlushTail(wait: false)"]
+    F --> G[submit main-log page writes]
+    G --> H[ObjectLog.OnFlushed]
+    H --> I[PageFlushJoin invokes the page callback once]
 ```
 
-### 5.2 Per-record serialization
+| Flush | Object log written |
+|---|---|
+| ReadOnly | The main object log, or during a version 7 up-conversion, its destination |
+| Snapshot | The checkpoint's own `ObjectLog`, created at `WAIT_FLUSH` over its snapshot object-log device |
+| Recovery, snapshot region | The main object log; components are copied from the checkpoint's object log (section 7.4) |
+| Recovery, up-conversion | The up-conversion's destination (section 7.5) |
+| Recovery, hybrid-log region | None; records are written verbatim (section 7.3) |
 
-`ObjectAllocatorImpl.WriteAsync()` resolves objectId slots to local `OverflowByteArray` / `IHeapObject` references.
-ReadOnly enters from an epoch callback and suspends that hold while serializing; Snapshot enters without epoch
-protection. Snapshot/ReadOnly ordering prevents `FlushedUntilAddress`, and therefore `HeadAddress`, from reaching the
-active Snapshot page on a real main-log device. For `NullDevice`, the same watermark directly caps `HeadAddress`.
-Thus the page and its `ObjectIdMap` remain resident without a Snapshot epoch pulse:
+A flush to a `NullDevice` main log completes without writing. A ReadOnly or Snapshot flush with no object log, or whose
+page's `ObjectIdMap` is empty, writes its span without walking the records. An allocator has no object log for ReadOnly
+flushes when it has no object-log device, or when its object-log or main-log device is a `NullDevice`, as for the read
+cache and the in-memory stores of iterators and compaction. Recovery never takes this inline path: records read from
+disk hold positions rather than map indices, so a recovered page's map is empty whatever its records hold, and every
+recovery flush must examine its records.
 
-- overflow key -> `ObjectLogWriter.WriteOverflowComponent()`;
-- overflow value -> `ObjectLogWriter.WriteOverflowComponent()`;
-- object value -> `ObjectLogWriter.DoSerialize()`; and
-- all records -> `CircularDiskWriteBuffer.OnRecordComplete()`.
+### 5.2 Per-record capture and stamping
 
-After serialization, `SetObjectLogPositionAndSizeHints()` writes:
+`WriteAsync` resolves each record's objectId slots against the page's live `ObjectIdMap`. ReadOnly enters from an epoch
+callback and suspends that hold for the flush, restoring it before it returns; Snapshot and recovery enter without
+epoch protection. Suspending matters because writing a record can wait for an object-log page flush, and an epoch held
+across IO stalls reclamation. It is safe because eviction is capped at `FlushedUntilAddress`, which cannot pass the page
+until this flush's callback runs. Snapshot/ReadOnly ordering keeps `FlushedUntilAddress`, and therefore `HeadAddress`,
+below the active Snapshot page on a real main-log device; for `NullDevice` the same watermark caps `HeadAddress`
+directly. The page and its `ObjectIdMap` therefore stay resident for the whole flush.
 
-- the record's starting object-log segment/offset;
-- the key objectId hint, raw RDH page-count high bits, and `KeyIsExactSize`, if the key is overflow; and
-- the value hint and `ValueIsExactSize`, if the value is overflow/object.
+For each record:
 
-The method does not change either effective RDH length. Stamping raw RDH KeyLength for an overflow key is
-layout-neutral because `KeyLength` returns `ObjectIdSize` whenever `KeyIsInline` is false.
+- An Invalid record, including a null one, writes nothing to the object log; the page write carries its inline image.
+- In a Snapshot flush, a next-version record at or above `fuzzyRegionStartAddress` is left unchanged, and recovery
+  rejects it (section 5.7).
+- A fully inline record has nothing to write.
+- In a ReadOnly or Snapshot flush, `LogRecord.TryGetOutOfLineComponents` first captures the overflow key and the
+  overflow value or object, rooting them, and reports a slot that a concurrent operation has already freed rather than
+  throwing. The flush then re-reads the live `RecordInfo`. Elision invalidates a record before it frees the record's
+  heap, so a capture that lost its heap finds an Invalid record, which the flush skips as if it had been Invalid from
+  the start. Otherwise `WriteRecordObjects(keyOverflow, valueOverflow, valueIsObject, valueObject)` writes the
+  components and `SetObjectLogPositionAndHints` stamps the record.
+- A recovery flush copies, re-serializes, or keeps each record's components, as section 7 describes.
 
-### 5.3 Buffered overflow write
+### 5.3 Writing a record
 
-For payloads at most `MaxCopySpanLen` (128 KB), or whenever direct IO is not selected:
+`ObjectLogWriter` turns a record's components into extents; section 12.10 states the rules and section 12.9 the
+directory format. One writer serves a page flush, record by record:
 
-1. write a `ChunkHeader` when the payload is greater than 511;
-2. write the payload through `CircularDiskWriteBuffer`;
-3. copy bytes into the current pooled sector-aligned buffer;
-4. flush a full buffer asynchronously and continue in the next buffer; and
-5. split naturally at object-log segment boundaries.
+- `WriteRecordObjects` calls `BeginRecord`, then `AppendKey` for an overflow key and `AppendValue` for an overflow value
+  or `Serialize` for an object, and ends with `FinishRecord`.
+- The components form one stream, key first, staged in a buffer of `IStreamBuffer.BufferSize` (4 MB), or of the
+  object-log page size less the length prefix if that is smaller, rented from `ArrayPool<byte>.Shared`. When nothing is
+  staged, a source span longer than a chunk is written straight from the source.
+- `EmitDataChunk` writes a full staging buffer, or a chunk-sized source span, as data chunks, one `ObjectLog.Allocate`
+  each. It fills a page tail when the tail is at least `MinPartialBytes` (64 KB) and leaves a shorter tail unused.
+- `FinishRecord` writes a single extent (`TryWriteSingleExtent`) when no chunk was emitted and the record has one
+  component. A length-prefixed extent that does not fit the page tail is cut when both pieces would be at least
+  `MinPartialBytes`: the tail takes the start of the stream as a data chunk, and the record gets a directory. An exact
+  extent is never cut.
+- Otherwise `WriteTopDirectoryRecord` writes the top directory record, combined with the staged final data when the
+  whole extent fits one page, and after writing that data as data chunks when it does not. When the record's allocation
+  is cut at a page end, the tail takes the start of the final data as a data chunk and the record moves to the next
+  page.
+- `WriteSpine` writes the entry list out as a spine record before it exceeds `MaxDirectoryRecordSize` (1 MB), or the
+  object-log page size if smaller.
+- Each allocation and the copy into it happen in one `ObjectLog.BeginScope` / `EndScope` (section 12.3). No epoch is
+  held while staging or serializing.
 
-Small exact payloads write only their bytes. Framed payloads on this path normally have zero alignment padding.
+An object value is serialized through the writer itself: the writer is the `IStreamBuffer` beneath a
+`PinnedMemoryStream`, and the store's serializer (`CreateValueObjectSerializer`) is created on the writer's first
+object, with `BeginSerialize` called once. Serializer writes reach `ObjectLogWriter.Write`, which appends them to the
+value; `FlushAndReset` does nothing, because chunks are emitted as the stream fills them. A serialized size at or above
+`IHeapObject.MaxSerializedObjectSize` (2^40 bytes) throws. An object slot that holds no object writes nothing for the
+value, which is then a zero-length component.
 
-### 5.4 Direct overflow write
+Tests shrink the chunk size, `MinPartialBytes`, and `MaxDirectoryRecordSize` through the internal
+`ObjectLogWriterSettings` to reach page cuts, directories, and spines with small data.
 
-For an overflow payload larger than 128 KB, `WriteOverflowDma()` avoids copying the aligned interior through the
-4 MB ring:
+### 5.4 Page-header object-log floors
 
-1. pin the `OverflowByteArray`;
-2. compute the source pointer residue and object-log sector residue;
-3. write the header, alignment padding, and any leading source fragment through the ring;
-4. flush the current ring buffer before issuing overlapping direct IO;
-5. write the sector-aligned interior directly from the pinned array;
-6. split direct writes at object-log segment boundaries;
-7. write any trailing fragment through the ring; and
-8. release the pin only after every asynchronous direct write callback completes.
+Each main-log page header holds `objectLogLowestPositionWord`, the page's floor: a main object-log address no greater
+than any position that a record on this page, or on a later page, references. The main object log is written in page
+order, so its tail before a page's records are written is such a bound (section 12.8). The floor is unstamped until a
+flush stamps it. `PageHeader.Initialize` sets it to `NotSet` for a newly allocated page and for a page cleared from its
+start, so a reused buffer page never presents a zeroed header, which would read as a floor of 0.
 
-`RefCountedPinnedGCHandle` shares pin ownership across split direct writes. No callback can observe a movable source.
+`WriteAsync` stamps the floor before it writes any of the page's records, with the destination object log's tail:
 
-### 5.5 Object serialization and header backfill
+| Flush | Floor |
+|---|---|
+| ReadOnly | Stamped when the range includes the page's first record, also for an object-free page; an existing floor is kept |
+| Snapshot | Never stamped: its tail is an address in the checkpoint's object log, and the later ReadOnly flush keeps an existing floor, so the stamp would reach the main log |
+| Recovery | Overwritten only when the flush writes the page's objects into a new address space: an up-conversion, or a snapshot-region copy of a page that starts in the snapshot region. Otherwise the header read from the device stays |
 
-`DoSerialize()` lazily creates and reuses a `PinnedMemoryStream<ObjectLogWriter<...>>` and the store's object
-serializer. Serializer writes call `ObjectLogWriter.Write()`, which routes object bytes to `WriteObjectData()`:
+Pass 2 resets the floor of a resident snapshot-region page that it loads from the checkpoint's object log
+(`ResetRecoveredResidentPageHeader`), so the next flush that writes the page header stamps a main object-log floor.
 
-1. copy the first 511 bytes without a header;
-2. align the first header to an absolute 8-byte boundary;
-3. reserve a placeholder `ChunkHeader`;
-4. fill the remainder of the current write buffer with object data;
-5. when the buffer fills, backfill the header with the chunk length and `ContinuationFlag`;
-6. flush the buffer and reserve the next header; and
-7. when serialization ends, backfill the final header without continuation.
+Main-log truncation (`TruncateUntilAddressBlocking`, `RemoveSegment`) reads, from the device, the header of a page at or
+below the new begin address (`ReadObjectLogFloor`). After truncating the main log, it calls `ObjectLog.Truncate(floor)`
+when the floor is above the object log's `BeginAddress`; the floor bounds that page and every later one, so no retained
+record loses its object bytes. The first two main-log pages and an unstamped floor yield -1, which truncates nothing.
 
-**Why headers are 8-byte aligned.** A chunk's length is not known until its data has been produced, so the header is
-written as a placeholder and backfilled afterwards — and a backfill can only reach a header that is still addressable as
-eight contiguous bytes in a single mutable buffer. Aligning the header to an absolute 8-byte object-log boundary
-guarantees exactly that: every container the bytes pass through — the 4 MB write buffer, the segment, the 4 KB flush
-page and the 512-byte sector — has a size that is a multiple of 8, so an 8-aligned 8-byte header always lies wholly
-within one of them and can never straddle a boundary. A straddling header could have its first half already flushed and
-therefore be unpatchable. The same property lets the reader consume a header as a unit rather than reassembling it
-across two buffers.
+### 5.5 Buffer and callback lifetime
 
-The alignment is absolute within the object log, not relative to the record, which is why a record's start offset
-modulo 8 is carried through the read path and why a verbatim snapshot copy pads to preserve the source's modulo-8
-offset.
+- A writer serves one page flush. Its staging buffer and entry array are rented on first use and returned by `Dispose`
+  in the flush's `finally`, after `EndSerialize` ends the object serializer.
+- Each allocation's bytes are copied into the `ObjectLog`'s page ring within its scope, so the writer keeps no reference
+  into the ring after `FinishRecord`; the ring's own flush writes those pages.
+- A composed first sector (section 5.6) is a pooled sector buffer held by the flush result (`freeBuffer1`) and returned
+  when the result is released.
+- `PageFlushJoin` holds a sentinel part until every part is submitted, so an early completion cannot finish the join.
+  `SubmitFlushPart` completes its part with an error when a submission throws, then rethrows to the issuer, and
+  `snapshotDeviceWriteIssued` tells the issuer that the callback owns cleanup from then on. The page callback runs
+  exactly once, which matters because a Snapshot page's callback releases the page's native snapshot-IO unit on its
+  first invocation.
+- `ObjectLog.OnFlushed` invokes its callback exactly once: at once when the address is already flushed, a flush below it
+  has failed, or the log is disposed, and otherwise from the flush completion that reaches the address or fails below
+  it. Disposing an object log fails its waiters, and the allocator disposes its object logs before its base, so those
+  callbacks run against a live allocator.
 
-### 5.6 Buffer and callback lifetime
+### 5.6 Live-page writes and partial sectors
 
-`CircularDiskWriteBuffer` owns pooled `DiskWriteBuffer` instances. It tracks each buffer's completion plus a global
-in-flight count. `OnPartialFlushComplete()` sector-pads and flushes the last object-log buffer, then schedules the
-main-log span in the same completion batch. Disposal returns buffers only after their writes complete.
-`PageAsyncFlushResult.RecordError()` retains the first error even when batched writes complete out of order.
-
-The main-log write always uses the allocator's live page; objectId hint stamping is index-preserving, but metadata
-non-destructiveness alone is not sufficient. Recovery has exclusive access. Snapshot/ReadOnly coordination keeps the
-page resident and prevents those modes from stamping the same page concurrently.
+The main-log write always uses the allocator's live page; no page image is copied. Hint stamping preserves each
+objectId's index and raw RDH KeyLength stamping is layout-neutral, but metadata non-destructiveness alone is not
+sufficient. Recovery has exclusive access. Snapshot/ReadOnly coordination keeps the page resident and prevents those
+modes from stamping the same page concurrently.
 
 The no-copy path also requires `OnDispose` not to tear down flush-critical bytes before the asynchronous page write
 finishes. `OnDispose` implementations must copy off cleanup state and defer clearing those bytes until that write
-finishes.
+finishes. A record in a flush's frozen range (`IsFrozenForFlush`) keeps its heap and metadata until the flush completes:
+a release there is marked `DeferredDispose` and run by the drain on flush completion, or by eviction.
+
+The write covers whole sectors, `[RoundDown(start, sectorSize), RoundUp(end, sectorSize))`. A flush that writes the page
+header, because its range includes the page's first record or it is an up-conversion, starts at the page's offset 0.
 
 A front-partial ReadOnly flush starts after a prefix already written by the same monotonic flush sequence. The physical
 write rounds down to the sector boundary, so it writes that prefix again, and it must not take the prefix from the live
@@ -584,13 +633,15 @@ prefix comes from the `PartialSectorImage` the previous ReadOnly flush of that p
 when no image describes that sector (after recovery or a reset), from reading the sector back from the device. A prefix
 that lies entirely below `BeginAddress` comes from the live page: nothing reads it, and it may never have been written,
 because the flush of a range below `BeginAddress` is skipped. The rest of the span is written directly from the live
-page. `AllocatorBase` holds this mechanism, and `SpanByteAllocator`'s ReadOnly flushes use it too, since superseding a
-record there elides it or clears its optional fields in the live page.
+page. `AllocatorBase` holds this mechanism (`partialSectorImages`, `TryGetDurableSectorPrefix`,
+`RecordPartialSectorImage`), and `SpanByteAllocator`'s ReadOnly flushes use it too, since superseding a record there
+elides it or clears its optional fields in the live page.
 
 Devices do not order overlapping writes, and the object allocator issues adjacent fragments without the `PendingFlush`
 chaining `AllocatorBase` uses for the same reason. So a flush that starts mid-sector issues its writes only once
-`FlushedUntilAddress` reaches its start, which means the previous write of that sector has completed. Otherwise that
-write could land last and replace the records this flush stamped there with their image from before it.
+`FlushedUntilAddress` reaches its start (`WaitForWritesBelow`), which means the previous write of that sector has
+completed. Otherwise that write could land last and replace the records this flush stamped there with their image from
+before it.
 
 Records below `FlushedUntilAddress` are therefore never written again from the live page, and `IsFrozenForFlush` covers
 only `[FlushedUntilAddress, SafeReadOnlyAddress)`. If the logical endpoint is inside a sector, the write carries the live
@@ -615,14 +666,14 @@ cutoff cohort, captures stable `snapshotFileLogicalStartAddress`, and enters `Fl
 The cutoff drain does not hold the allocator installation lock, so an included ReadOnly worker can issue the IO being
 awaited. Snapshot does not advance `ReadOnlyAddress`.
 
-During `Flushing`, a fixed-size ring tracks only the bounded set of concurrently issued object-log Snapshot pages.
-The default window is the object-log flush-buffer count. Callbacks may complete out of order, but
-`readOnlyFlushPageLimit` advances only across the contiguous completed prefix. ReadOnly page `P` may serialize only
-while `P < readOnlyFlushPageLimit`; it waits only if it catches an unfinished Snapshot page. Completing a page
-immediately gives ReadOnly and eviction priority for that page. After every issued page drains, coordination enters
-`Closed` and releases the final page.
+During `Flushing`, a fixed-size ring tracks only the bounded set of concurrently issued Snapshot pages. Its size is
+`SnapshotFlushCoordinationWindowSize`: for the object allocator, 64 pages capped at its buffer size (section 9.7).
+Callbacks may complete out of order, but `readOnlyFlushPageLimit` advances only across the contiguous completed prefix.
+ReadOnly page `P` may serialize only while `P < readOnlyFlushPageLimit`; it waits only if it catches an unfinished
+Snapshot page. Completing a page immediately gives ReadOnly and eviction priority for that page. After every issued page
+drains, coordination enters `Closed` and releases the final page.
 
-Real-device allocators without an object log do not install coordination and retain parallel Snapshot submission.
+Real-device non-object allocators do not install coordination and retain parallel Snapshot submission.
 A non-object `NullDevice` uses a one-slot window only to cap `HeadAddress`, because it has no durable main-log fallback.
 Outside an actual cutoff or page wait, ReadOnly performs only state, cutoff, and page-limit reads. It suspends epoch
 protection only around a real wait. If Snapshot fails, the failure stops new issuance but coordination remains
@@ -658,271 +709,272 @@ stable allocation so recovery can advance to the next record.
 
 ## 6. Read flow
 
-### 6.1 Initial read range
+`ObjectLogReader` reads a record's components from one `ObjectLog`, which `GetReadObjectLog` selects: the main object
+log, or during Snapshot recovery the checkpoint's object log. No epoch is held while deserializing; `ObjectLog.Read`
+takes its own scope for each read. The reader's callers are:
 
-The caller obtains the record's start position and initial key/value extents from
-`GetObjectLogRecordStartPositionAndLengths()`.
+| Caller | Read-ahead | Sequence |
+|---|---|---|
+| Single-record pending read (`VerifyRecordFromDiskCallback`) | None | Section 9.2 |
+| Page walk (`DeserializeObjectsOnPage`): page reads outside recovery Pass 1, such as scans, and recovery Pass 2 | When at least two records are read | Sections 7.2 and 9.4 |
+| Recovery Pass 1 overflow-key hash (`ComputeRecoveryOverflowKeyHash`) | None | Sections 7.1 and 9.3 |
+| Snapshot-region copy (`CopyRecordTo`, within `WriteAsync`) | When at least two records are read | Sections 7.4 and 9.5 |
 
-- A record with an overflow key begins with only that key's exact-byte or 4 KB-page discovery extent.
-- After a framed key reveals its exact endpoint, the value demand is rebased there and uses its own exact-byte or initial
-  4 KB-page extent.
-- A record without an overflow key begins directly with the value's extent.
-- Page load/recovery scans object-bearing records in one object-log address space. Each later record position safely
-  bounds the preceding record; the final scanned record contributes only its first-component hint.
-- The scan stops as soon as the initial range reaches one complete circular-ring capacity
-  (`bufferSize * numberOfBuffers`, 16 MB with defaults). Framing and later record hints extend demand while consumed.
-- Recovery splits the page containing the exact Snapshot/main boundary into separate main- and snapshot-device ranges.
-  A main-log record is therefore never used as a Snapshot record's successor. Iterators use the same scan entirely in
-  main-object-log space.
+The pending read and the page walk share `ObjectAllocatorImpl.ReadRecordObjects(reader, ref logRecord, requestedKey)`:
 
-For Snapshot recovery, `mainLogRecoveryEndAddress` is the exact overlay boundary. Main-log recovery supplies the page
-prefix below `mainLogRecoveryEndAddress`. Snapshot recovery then reads only the suffix at/above that address from the
-snapshot file; if it is not sector-aligned, recovery saves and restores the main bytes below it in the first shared
-sector. The snapshot file's
-`snapshotFileLogicalStartAddress` remains the page-offset mapping for locating that suffix, but it is not the
-main/snapshot object-device split. If the main boundary page is not resident (for example, because an index checkpoint
-made replay unnecessary), recovery first reloads its durable main prefix.
+1. capture `GetObjectLogRecordRef()`, because assigning a component unstamps the record;
+2. `BeginRecord` reads the top extent and any directory (sections 6.1 and 6.2);
+3. for an overflow key, assign `KeyOverflow = ReadKey()`; when a requested key is given and differs, return false
+   without reading the value;
+4. assign the value, `ValueOverflow = ReadValueOverflow()` or `SetDeserializedValueObject(ReadValueObject())`
+   (sections 6.3 and 6.4);
+5. call `OnObjectReadComplete()` (section 6.6); and
+6. on an exception, call `OnDeserializationError`, which converts the record's out-of-line fields to inline so its
+   disposal releases nothing. `EndRecord` runs in every case.
 
-Main object-log reads use `objectLogTail` as a hard logical end once that tail is set. During early recovery an unset
-main tail disables this bound. Snapshot recovery carries the persisted `snapshotEndObjectLogTail` as a separate,
-same-space hard end through Pass 1 overflow-key hashing, snapshot-to-main verbatim copying, and Pass 2 deserialization.
-Framing may tighten or extend speculative read-ahead within that boundary, but an authoritative endpoint beyond it is
-reported as truncation or corruption.
+### 6.1 Top extent
 
-### 6.2 Absolute endpoint accounting
+`BeginRecord` refuses an unstamped record and one with no out-of-line component, and treats a record with both an
+overflow key and an out-of-line value but no directory as corrupt. It reads the extent the position addresses, sized by
+the key's slot when the key is overflow and by the value's slot otherwise:
 
-`CircularDiskReadBuffer` tracks:
+- Exact: one read of exactly `hint` bytes, or none for a zero-length component.
+- Length-prefixed: one read of the decoded first read (section 3.3), clamped to the bytes left on the extent's page and
+  below the log's tail. The prefix must exceed `ExactCutoff` (511) and fit within those bytes. When the extent is
+  longer than the first read, a second read on the same page fetches the rest.
 
-| State | Meaning |
+The extent stays in the reader's `topBuffer`. Without a directory, its payload is the record's one component; with one,
+`ParseDirectory` follows.
+
+### 6.2 Directory parse and validation
+
+`ParseDirectory` decodes the top record, walks the spine backward from it, and validates every entry before it reads
+any data:
+
+- every record's `EntryCount` is positive and its entries fit the record, its combined flag agrees with whether bytes
+  follow the entries, and only its entry 0 is a link;
+- a spine record has `KeyEntryCount` zero and no combined data, and one read fetches it, sized by its link;
+- a link points backward from the record that holds it, no lower than `BeginAddress`, and its extent lies within
+  `[BeginAddress, TailAddress)` and one page;
+- each data entry stays within its address's page, and one outside the combined data lies within
+  `[BeginAddress, TailAddress)`; and
+- `KeyEntryCount` is at most the number of data entries, is nonzero exactly when the key is overflow, and leaves no
+  value entries when the value is inline.
+
+The data entries are then flattened, oldest record first, into stream order with effective addresses: the first entry
+at an address starts there, and each later entry at the same address starts where the previous one ends. The first
+`KeyEntryCount` entries are the key's and the rest are the value's, and their sums are `KeyLength` and `ValueLength`. A
+violation throws a `TsavoriteException` that names the record's address.
+
+### 6.3 Overflow components
+
+`ReadKey` and `ReadValueOverflow` allocate one `OverflowByteArray` at the component's exact length
+(`OverflowByteArray.AllocateData`) and fill it in place. A single extent's payload is copied from `topBuffer`. With a
+directory, an entry in the combined data is copied from `topBuffer`, and any other entry is read straight into its
+slice of the array: one read per entry, served by the read-ahead when it holds the bytes and by `ObjectLog.Read`
+otherwise (section 12.4). An overflow value longer than `int.MaxValue` bytes is corrupt.
+
+### 6.4 Object values
+
+`ReadValueObject` returns null for a value of length zero without invoking the deserializer, and rejects a length at or
+above `IHeapObject.MaxSerializedObjectSize`. Otherwise the store's deserializer reads the value as a stream through a
+`PinnedMemoryStream` over the reader; the deserializer is created on the reader's first object, and `BeginDeserialize`
+runs once. `Read` serves the single extent's payload from `topBuffer`, or the value's entries one at a time: an entry in
+the combined data from `topBuffer`, and any other entry read into a pooled `chunkBuffer`. It returns 0 once the value's
+exact length has been delivered (section 3.2), and the deserializer never sees a length prefix or a directory byte.
+
+### 6.5 Page-walk read-ahead
+
+A page walk attaches an `ObjectLogReadAhead` to its reader (`ObjectLogReader.ReadAhead`). `StartPageReadAhead` creates
+it when at least two of the walk's records have objects and a readable position; its range runs from the first such
+record's position to the highest `position + TopExtentInitialRead` among them, clamped to the log's tail. Section 12.10
+describes the mechanism:
+
+- windows of up to `IStreamBuffer.BufferSize` (4 MB) that never span an object-log page, read by
+  `ObjectLog.TryBeginRangeRead`, with up to `NumberOfDeserializationBuffers` (4) in flight or resident;
+- a window at or above `HeadAddress` is copied from memory, and one below it is read from the device and stops at
+  `HeadAddress`;
+- the reader releases the bytes below each data entry it reads and, at `EndRecord`, the bytes below the end of the
+  record's top extent, so the read-ahead drops the windows the walk has passed and starts new ones; and
+- a read the windows cannot serve goes to `ObjectLog.Read`, so the read-ahead changes only the number of IOs.
+
+The walk disposes the read-ahead in its `finally`, which waits for every window's read before returning its buffer.
+
+### 6.6 Assignment to the `ObjectIdMap` and unstamping
+
+Assigning a component replaces the flushed slot with a live map index (`ObjectIdMap.AllocateAndSet`) and unstamps the
+record, preserving its flags:
+
+| Assignment | Also |
 |---|---|
-| `baseRequiredEndAddress` | fixed endpoint of the caller's bounded same-space scan range |
-| `dynamicRequiredEndAddress` | replaceable current framing demand; grows for continuation/discovery and shrinks when a header reveals an earlier exact end |
-| `RequiredEndAddress` | maximum of the fixed base demand and replaceable framing demand |
-| `nextFileReadPosition` | sector-aligned start of the next sequential device request, and therefore the exclusive high-water submitted since ring initialization or the last direct-read reset |
-| `hardReadEndAddress` | known and initialized main object-log durable tail, or `ulong.MaxValue` while that tail is unset or no same-address-space tail was supplied |
-| `deferredBufferStartPosition` | payload-end offset within a sector, retained when a direct read resets the ring but no following ring read is yet required |
+| `KeyOverflow` setter | Restores raw RDH KeyLength to `ObjectIdSize` if it differs, clearing the page-count high bits |
+| `ValueOverflow` setter | Restores raw RDH ValueLength to `ObjectIdSize` if it differs |
+| `SetDeserializedValueObject` | Restores raw RDH ValueLength to `ObjectIdSize` if it differs; a null object takes a slot too |
 
-All endpoints are absolute object-log addresses. "Submitted" means `IDevice.ReadAsync` has been called; the request may
-still be in flight and its bytes have not necessarily been consumed. Device requests are sector-rounded, so
-`nextFileReadPosition` may pass `RequiredEndAddress`. It advances monotonically within a ring-read epoch;
-`RepositionAfterDirectRead()` drains pending requests and begins a new epoch at the payload-end sector.
-
-`SetDynamicReadThrough()` replaces rather than adds to dynamic demand, so parsing the same header twice cannot
-double-extend a read. `RequiredEndAddress` remains the maximum of that dynamic demand and the bounded initial range.
-A discovery endpoint may clamp to the hard tail. An authoritative endpoint parsed from a header may not cross it;
-crossing is treated as truncated/corrupt framing. Already-submitted sector-rounded IO cannot be cancelled and is
-reused by later components and same-space records or drained at disposal.
-
-Large overflow reads bypass the ring for the aligned payload interior. `RepositionAfterDirectRead()` drains and resets
-the ring at the logical payload end. If no later bytes are required yet, it saves that endpoint's in-sector offset in
-`deferredBufferStartPosition`; when framing later grows demand, the first refill starts at the preceding sector
-boundary but exposes bytes only from the saved logical offset.
-
-### 6.3 Overflow read
-
-`ObjectLogReader.ReadOverflow()` has three paths:
-
-**Exact/headerless (0..511 bytes)**
-
-1. allocate one exact `OverflowByteArray`;
-2. copy exactly the objectId-hint byte count from the ring; and
-3. fail if the ring cannot supply the complete length.
-
-**Framed, small enough for buffered copy**
-
-1. read `ChunkHeader`;
-2. set the authoritative absolute payload endpoint;
-3. skip recorded alignment padding;
-4. allocate one exact `OverflowByteArray`; and
-5. copy the payload from the ring.
-
-**Framed, large direct read**
-
-1. parse the header and padding through the ring;
-2. allocate `payload length + 3 * sectorSize` bytes;
-3. pin the array;
-4. choose `StartOffset`/`EndOffset` so the logical payload pointer has the same sector residue as its file position;
-5. copy payload bytes already available in the current ring buffer;
-6. direct-read the remaining aligned range into the same final array;
-7. split reads at object-log segment boundaries;
-8. wait for every direct read;
-9. reposition the ring at the logical payload end; and
-10. release the pin in `finally`.
-
-There is no intermediate payload-sized buffer and no second copy into the final `OverflowByteArray`.
-
-If an overflow key precedes an out-of-line value, the key header may reveal that the key is larger than its initial
-hint. After reading the key, `ReadRecordObjects()` rebases the value's initial requirement at the actual key end before
-reading the value.
-
-### 6.4 Object read
-
-For an exact/headerless object, the object deserializer reads the dense stream directly from the ring.
-
-For a framed object, `ReadObjectData()`:
-
-1. supplies the first 511 data bytes;
-2. consumes the absolute 8-byte-alignment padding;
-3. reads a `ChunkHeader`;
-4. sets the exact endpoint for that chunk;
-5. supplies only `currentLength` data bytes to the deserializer;
-6. if continuation is set, requests the next 4 MB discovery window;
-7. skips zero-length continuing chunks; and
-8. stops interpreting framing when continuation clears.
-
-The object deserializer self-terminates according to the object format, and the reader no longer relies on that alone:
-it stops once the final non-continuing chunk is consumed, and clamps to the component's exact byte count where one is
-known, so a deserializer that asks for more than it wrote sees end-of-stream rather than the next record's bytes. See
-*Bounding the deserializer*. It never sees object-log padding or `ChunkHeader` bytes.
-
-### 6.5 Assignment to the objectId map
-
-After object deserialization, `LogRecord.SetDeserializedValueObject()`:
-
-1. allocates a slot in the selected `ObjectIdMap`;
-2. stores the `IHeapObject`;
-3. writes the new low-bit objectId index into the value field;
-4. unstamps the optional object-log position, preserving its flag bits. The bytes are now in memory, so the position
-   describes nothing the record still needs; leaving it stamped would let a later flush that skips the record persist a
-   position for bytes it never wrote. Flush restamps when it writes the record. Note this mutates the **live buffer**,
-   which is why a page walked a second time reads as entirely unstamped — see *What the stamp does and does not tell
-   you*; and
-5. restores/asserts the RDH physical value length as `ObjectIdMap.ObjectIdSize`.
-
-Overflow key/value reads similarly assign owned `OverflowByteArray` instances to objectId-map slots. The flushed
-size-hint bits are not treated as a live map index without `GetIndex()`. Assigning an overflow key also clears its raw
-RDH page-count high bits back to the in-memory objectId-slot value.
+`OnObjectReadComplete` then asserts that both raw lengths of out-of-line fields are `ObjectIdSize` and unstamps the
+record. Recovery Pass 2 assigns into the page's own `ObjectIdMap`; single-record reads and other page reads use a
+transient map. The flushed hint bits are never used as an index without `GetIndex()`.
 
 ---
 
 ## 7. Recovery flows
 
+Recovery positions the object logs before it reads any record (section 12.11):
+
+- For a version 8 checkpoint, `RestoreObjectLog` replaces the main object log with a fresh `ObjectLog`, restored with
+  `ObjectLog.RestoreTail` to `objectLogBeginAddress` and `hlogEndObjectLogTail`; a checkpoint that recorded no end
+  leaves it empty. A Snapshot whose main-log recovery range is empty references nothing in the main object log, so its
+  begin address is set to that end.
+- Snapshot recovery opens the checkpoint's object log at `snapshotEndObjectLogTail` (`OpenRecoverySnapshotObjectLog`)
+  and closes it when the snapshot phase ends, on failure as well.
+
+Every read validates against the restored `[BeginAddress, TailAddress)`, so the recorded ends bound recovery's reads.
+A recovery call selects the object log by device: none for the main object log, or the checkpoint's object-log device.
+
 ### 7.1 Pass 1: index construction and overflow-key hashing
 
-The recovery index-build pass cannot resolve an overflow key through the page `ObjectIdMap`, because that map is
-populated in Pass 2. `ComputeRecoveryOverflowKeyHash()` therefore:
+Pass 1 builds the index before any object is loaded, so an overflow key cannot be resolved through the page's
+`ObjectIdMap`. `RecoverFromPage` hashes an inline key from the record and calls `ComputeRecoveryOverflowKeyHash` for an
+overflow key, which:
 
-1. decodes the key's object-log start and initial extent;
-2. creates dedicated circular read buffers for the main or snapshot object-log device;
-3. uses `objectLogTail` only for the main device and `NotSet` for the snapshot device;
-4. reads only the overflow key with `ReadOverflowKeyHashCodeForRecovery()`; and
-5. pins its final span while calling the store's key comparer/hash function.
+1. creates an `ObjectLogReader` over the record's object log;
+2. calls `BeginRecord`, whose first read covers the whole top extent, the key alone or a directory, because the key's
+   page count is exact;
+3. calls `ReadKey`, which reads only the key into one exact `OverflowByteArray`; and
+4. pins the key while calling the store's `GetKeyHashCode64`.
 
-For a headered key, the combined RDH/objectId page count already covers the entire framed key. Recovery Pass 1 does not
-need a key sentinel or repeated discovery reads; the leading header narrows the rounded extent to the exact payload.
-The Snapshot Pass 1 scan begins at `mainLogRecoveryEndAddress`, so records in the preserved main prefix are neither
-rehashed nor reported as snapshot reads a second time.
+Each key uses its own reader and no read-ahead. On a Snapshot page, a next-version record at or above
+`fuzzyRegionStartAddress` is invalidated before its key is hashed, so its object bytes are never read. The Snapshot
+Pass 1 scan begins at `mainLogRecoveryEndAddress`, so records in the preserved main prefix are neither rehashed nor
+reported as snapshot reads a second time.
 
 ### 7.2 Pass 2: page object loading
 
-`LoadObjectsForRecoveryPass2()` calls `DeserializeObjectsOnPage()` once per same-device range:
+`RecoveryLoadObjectsPass2` loads objects over the recovered range once, after the pages are read: at the end of a
+FoldOver recovery, and after the snapshot phase of a Snapshot recovery. Without a size tracker it loads every resident
+page. With one, it walks the pages from the top down within the memory budget:
 
-1. first range pass: compute successor bounds until one ring capacity is covered, then include the last record's
-   first-component hint when capacity has not yet been reached;
-2. initialize one `ObjectLogReader`;
-3. second page pass: call `ReadRecordObjects()` for each valid object-bearing record;
-4. allocate recovered objects into the page's `ObjectIdMap`;
-5. update object-size tracking; and
-6. drain outstanding reads in `finally`.
+1. `CalculatePageObjectSizes` estimates the page's object-log bytes from hints, as the span from its first object
+   record's position to its last one's position plus that record's `TopExtentInitialRead`. On the boundary page it
+   estimates the main and snapshot sides separately.
+2. `FindHeadAddressCutoffOnPage` chooses how many lower pages to evict and, when that is not enough, which of this
+   page's records to leave below the head, estimating each record by its `TopExtentInitialRead`.
+3. `FlushIfNeededThenEvictPageForRecovery` evicts the lower pages. A snapshot-region page whose cutoff leaves records
+   below the head is first flushed to the main log (section 7.4), so those records can be read back.
+4. `LoadObjectsForRecoveryPass2` loads each range through `DeserializeObjectsOnPage` into the page's own `ObjectIdMap`,
+   with a read-ahead (section 6.5), and `TrackRecoveredObjectRecord` adds each record's heap size to the size tracker.
 
-Low-memory recovery may calculate page object sizes, evict older pages, and flush snapshot-region pages while this pass
-proceeds. On the page containing `snapshotScanFromAddress`, both size estimation and loading split at that exact record
-boundary. If recovery has already rewritten the page, the whole requested range reads from the main object log.
+The object log is selected per range. Pages below the boundary page, and snapshot-region pages already flushed to the
+main log, read the main object log. The boundary page splits at `snapshotScanFromAddress`: the part below reads the
+main object log and the part above reads the checkpoint's. A page loaded from the checkpoint's object log then has its
+floor reset (section 5.4).
 
-### 7.3 Recovery-state flush of hybrid-log-region records
+The walk stops at a page-extent guard: a zeroed `RecordDataHeader`, a non-positive record size, or a record that would
+overrun the range, since a sector-aligned read can extend past the bytes a flush wrote. A Valid object record with no
+readable position is materialized without reading (section 3.2) and adds nothing to the size tracker.
 
-The live page for a recovery-state flush may also contain records from the hybrid-log region whose object bytes are
-already durable in the main object log:
+### 7.3 Recovery flush of hybrid-log-region records
 
-- A current-format record is written verbatim. Its position, objectId hints, and exact-size flags already describe those
-  durable bytes, so the flush leaves the position word untouched rather than restamping it.
-- A cv7 record is identified by bit 63. cv7 bytes are never rewritten in place: the dense headerless stream has no room
-  for the current format's per-component headers, so inserting them would shift every subsequent position on the
-  segment. Up-conversion is instead an explicit offline pass that writes to a separate device; see §7.5.
+When Pass 1 invalidates next-version records on a page read from the main log, `ProcessReadPageAndFlush` writes the page
+back. That flush has no object log to write:
 
-Recovery has exclusive access to these pages, so the current-format branch writes the live page directly. This branch
-is separate from snapshot-region copying: hybrid-region object bytes remain at their existing main object-log positions
-and are not copied or reserialized.
+- A current-format record is written verbatim. Its position, objectId hints, and exact-size flags already describe
+  durable bytes in the main object log, so the flush leaves them untouched and copies nothing.
+- A version 7 record cannot reach this flush, because recovery up-converts every page of a version 7 checkpoint instead
+  (section 7.5). The flush throws if one does, rather than persist a page that later releases cannot decode.
 
-### 7.4 Snapshot-region verbatim copy
+The page header keeps the floor it was read with. Recovery has exclusive access to these pages, so the flush writes the
+live page directly.
 
-When a recovered snapshot page must become durable in the main log before its objects are deserialized, the flush path
-copies raw object-log bytes from the snapshot device to the main object log:
+### 7.4 Snapshot-region copy
 
-1. initialize demand from the record's first out-of-line component;
-2. align the destination record start so `destination % 8 == source % 8`;
-3. replace only the live record's segment/offset with `RepointObjectLogPosition()`, preserving objectId hints and all
-   format flags;
-4. call `CopyRecordObjectsFollowingFraming()` for every record; and
-5. use exact hints directly while following headers for non-exact overflow and object components through their exact end.
+Snapshot-region pages are read from the snapshot file without their objects, and their records' positions address the
+checkpoint's object log. Before such a page is evicted (`FlushIfNeededThenEvictPageForRecovery`), or when Pass 2 leaves
+some of its records below the head, `FlushSnapshotPageForRecovery` flushes it to the main log and waits for the flush:
 
-The recovery write uses the live page rather than allocating a page-image copy. If the page remains resident after the
-copy, recovery records that its positions now address the main object log and Pass 2 deserializes it from that device.
-Each record's framing supplies its copy endpoint; no following record or page contributes a bound.
+1. `AsyncFlushPagesForRecovery` receives the checkpoint's object-log device and `snapshotScanFromAddress` as the
+   boundary, so the flush reads from the recovery snapshot `ObjectLog`, writes to the main object log, and copies the
+   records at or above the boundary.
+2. A page that starts in the snapshot region has its floor overwritten with the main object log's tail (section 5.4).
+3. For each record with objects, a reader over the checkpoint's object log, with a read-ahead over the page's extents,
+   runs `BeginRecord`, then `CopyRecordTo(logWriter)`, which appends each component's bytes to the main object log's
+   writer, then `EndRecord`.
+4. `SetObjectLogPositionAndHints` restamps the record with the destination's position word and hints. The writer
+   re-chunks the components for the destination, so the hints and flags change along with the address.
+5. The flush stops at the recovered tail. Past it, the Snapshot's image of the tail page holds next-version records,
+   which recovery does not process and whose value slots hold object ids rather than positions.
 
-The copy stops at the recovered tail. Past it, the Snapshot's image of the tail page holds the fuzzy `(v+1)` suffix, whose
-records recovery does not process and which carry object ids rather than snapshot positions. So a flush of the tail page,
-such as Pass 2's when its memory budget puts the head inside that page, ends at the recovered tail rather than the page
-end.
+Objects are not deserialized, and each record's inline image keeps its size. Recovery then marks the page as flushed to
+the main log, and Pass 2 reads it from the main object log. Main and snapshot positions are never mixed: every pass that
+could see both splits the boundary page at `snapshotScanFromAddress`.
 
-The modulo-8 preservation is required because the first object header is aligned from the absolute object start.
-Moving identical bytes to a different residue would move the expected first-header location and make the copy
-unreadable.
+### 7.5 Version 7 recovery
 
-Snapshot and main positions are never subtracted. `ObjectLogPositionInfo.operator -` validates segment-size and
-ordering, but address-space identity is a caller invariant.
+A version 7 object log is a dense file: a record's overflow key, then its overflow value or serialized object, follow
+one another with no framing, at a position split into segment and offset. The exact lengths are split between the raw
+RDH length fields (low bits) and the objectId slots (the next 32 bits). Recovery selects this decode from the checkpoint
+version (`HybridLogRecoveryInfo.UsesDownlevelObjectLog`), not from position bit 63. `LegacyObjectLogReader` reads the
+file through `CircularDiskReadBuffer`, a ring of `NumberOfDeserializationBuffers` (4) buffers of
+`IStreamBuffer.BufferSize` (4 MB), with lengths from `GetObjectLogRecordStartPositionAndLengths_cv7` and positions from
+`LegacyObjectLogPosition`. It bounds a deserializer by the object's exact length, as the current reader does.
 
-### 7.5 cv7 recovery
+A version 7 object log cannot become a current one in place, so recovery up-converts it into a fresh `ObjectLog`:
 
-Bit 63 selects cv7's split exact-length decoder and dense, headerless object-log stream. Verbatim snapshot copies
-preserve that bit.
+- `VerifyRecoveryInfo` fails with `TsavoriteObjectLogUpgradeRequiredException` when the store has an object-log device
+  but no `KVSettings.UpgradeObjectLogDevice`. A self-contained Snapshot, whose main object log holds no version 7 bytes
+  (`hlogEndObjectLogTail` is 0), needs none: its conversion writes a fresh object log over the main device. A store with
+  no object-log device has nothing to convert.
+- `BeginObjectLogUpgrade` creates the destination, and recovery reads every page of the log from `beginAddress`,
+  including pages this process has already flushed, since every record must be converted.
+- `UpgradeObjectLogPageForRecovery` loads each hybrid-log-region page's objects with the version 7 decode and flushes
+  the page. The flush re-serializes each record's resident components into the destination with `ObjectLogWriter`,
+  restamps the record, overwrites the page's floor, and checks that the record's inline size is unchanged.
+  `UpgradeSnapshotObjectLogPageForRecovery` does the same for snapshot-region pages, reading the checkpoint's version 7
+  object log up to its recorded end. Pages are converted one at a time, in ascending order, before any can be evicted.
+- `CompleteObjectLogUpgrade` makes the destination the live object log once every region is converted, and
+  `LogAccessor.ObjectLogWasUpgraded` reports that it did. Garnet drives the conversion through its `--upgrade` option.
 
-Because header insertion changes each record's object-log footprint, a cv7 object log cannot be up-converted in place.
-Recovery reads cv7 records with the headerless decoder and rewrites them, with current-format headers, to the device
-supplied as `KVSettings.UpgradeObjectLogDevice`; the caller swaps that device in once recovery completes. Garnet drives
-this through the host's `--upgrade` option. Recovery fails fast when a cv7 checkpoint has an object log device but no
-upgrade object log device, so a conversion is never silently skipped. A checkpoint with no object log device needs no
-special handling — its next checkpoint is simply stamped with the current version.
+Pass 1 reads a version 7 overflow key through a `CircularDiskReadBuffer` that the caller reuses across keys.
 
 ---
 
 ## 8. Allocation and copy accounting
 
-### 8.1 Flush/write paths
+### 8.1 Write paths
 
-| Component/path | Per-record allocation | Byte copies before device | Pin/direct IO | Reason |
-|---|---|---|---|---|
-| Exact overflow at most 511 bytes | none beyond existing `OverflowByteArray` | payload into reused write ring | no | headerless small payload |
-| Framed overflow at most 128 KB | none beyond existing `OverflowByteArray` | header + payload into reused ring | no | copy is bounded; simple buffered path |
-| Framed overflow above 128 KB | no payload-sized staging allocation | header/padding/fragments into ring; aligned interior not copied | source array pinned; direct writes split by segment | avoid copying a large payload through the ring |
-| Exact object at most 511 bytes | serializer/ring reused | serializer bytes into reused ring | no | headerless object |
-| Framed object above 511 bytes | serializer/ring reused | serializer bytes into reused ring | no | headers must be reserved/backfilled as chunks close |
-| Main-log live-page path | none | no page copy; whole sectors written from the live page | live memory held through callbacks | Recovery, Snapshot, and ReadOnly, including front/back-partial ranges |
-| All-inline page (empty `objectIdMap`) | none | no object-log writer or ring rented; record walk skipped | live memory held through callbacks | ReadOnly and Snapshot pages with no out-of-line data |
-
-The object serializer and pinned stream are reused across objects within one page flush, and the circular write
-buffers are reused across page ranges in the top-level flush.
+| Path | Allocation | Byte copies before the device | Notes |
+|---|---|---|---|
+| Component bytes in spans up to a chunk | One staging buffer per writer, rented from `ArrayPool<byte>.Shared` | Source -> staging -> object-log page | Reused across the page's records |
+| Source span longer than a chunk, with nothing staged | None | Source -> object-log page | Written chunk by chunk from the source |
+| Object value | One serializer and `PinnedMemoryStream` per writer, created on its first object | Serializer writes are component bytes, as in the two rows above | The serialized object is never held whole |
+| Directory entries | One entry array per writer, rented from `ArrayPool<DirectoryEntry>.Shared` | Entries -> directory record in the object-log page | |
+| Object-log page | The `ObjectLog`'s page ring | None; the ring's own flush writes the page | |
+| Main-log page | None | None; whole sectors from the live page | A front-partial ReadOnly flush composes its first sector in a pooled sector buffer |
+| Page with no object log or an empty `ObjectIdMap` | No writer | None | Record walk skipped |
 
 ### 8.2 Read paths
 
-| Component/path | Final allocation | Intermediate payload allocation | Copies | Pin/direct IO |
-|---|---|---|---|---|
-| Exact overflow at most 511 bytes | exact `OverflowByteArray` | none | ring -> final array | no |
-| Framed overflow at most 128 KB | exact `OverflowByteArray` | none | ring -> final array | no |
-| Framed overflow above 128 KB | exact payload + sector slack in one `OverflowByteArray` | none | buffered prefix -> final; direct remainder has no copy | final array pinned through all reads |
-| Object value | final `IHeapObject` allocated by deserializer | no whole serialized-object array | ring data -> deserializer | no direct object payload read |
-| Recovery Pass1 key hash | one recovered `OverflowByteArray` | none | same overflow path | final key span pinned only while hashing |
-| Snapshot verbatim copy | one 4 MB `ArrayPool<byte>` buffer rented per record and returned after its framing walk | none proportional to record | snapshot ring -> discard span while the same consumed bytes are teed to the main write ring | framing-only copy follows the record through its exact terminal boundary |
+| Path | Final allocation | Intermediate buffers | Copies |
+|---|---|---|---|
+| Top extent and spine | None | `topBuffer`, and a spine buffer returned after the walk, from `ArrayPool<byte>.Shared` | Source -> `topBuffer` |
+| Directory | Entry address and length arrays from `ArrayPool` | One `DirectoryEntry[]` per directory record while parsing | |
+| Overflow key or value | One `OverflowByteArray` at its exact length | None | `topBuffer` or source -> final array |
+| Object value | The object the deserializer builds | `topBuffer`, or `chunkBuffer` from `ArrayPool` for an entry outside the top record | Buffer -> deserializer |
+| Device read (`ObjectLog.Read`) | None | One sector-aligned buffer from the `ObjectLog`'s pool per read | Buffer -> destination |
+| Read-ahead window | None | Up to `NumberOfDeserializationBuffers` (4) sector-aligned buffers of up to 4 MB from the `ObjectLog`'s pool | Window -> destination |
+| Pass 1 key hash | One `OverflowByteArray` at the key's exact length | A reader per key | Pinned only while hashing |
+| Snapshot-region copy | None | The source reader's buffers and the destination writer's staging buffer | Source buffer -> staging -> main object-log page |
 
-The large overflow read's sector slack is part of the array allocation but outside its logical `StartOffset..EndOffset`
-payload. It permits leading/trailing sector overlap without writing outside the pinned allocation.
+A source is the object-log page for a resident address, a device read's buffer, or a read-ahead window. A reader reuses
+its buffers across its records and returns them in `Dispose`.
 
-### 8.3 Why object values use the ring instead of direct payload IO
+### 8.3 Why objects stream
 
-An overflow header provides the complete payload length before allocation, so one final array can be aligned and filled
-directly. An object serializer defines its own internal termination and may emit multiple object-log chunks. The
-reader therefore streams chunk data through `IStreamBuffer` to the object deserializer and never materializes the
-complete serialized object in a `byte[]`; this also avoids imposing the single-array 2 GB limit on serialized objects.
+An overflow component's exact length is known before its bytes are read, so its array is allocated once and filled in
+place. An object's serialized bytes stream through `IStreamBuffer` instead: the writer stages at most one chunk, and the
+reader holds at most its top extent and one entry while the deserializer consumes the value. Neither side holds a whole
+serialized object in one array, so a serialized object is bounded by `IHeapObject.MaxSerializedObjectSize` (2^40 bytes),
+which both sides enforce, rather than by the 2 GB single-array limit.
 
 ---
 
@@ -932,119 +984,118 @@ Indentation is call depth. Component branches and lifetime changes are included 
 
 ### 9.1 Normal page flush
 
-- `ObjectAllocatorImpl.AsyncFlushPagesForReadOnly()` / `WriteAsyncToDeviceForSnapshot()`
-  - `ObjectAllocatorImpl.WriteAsync(...)`
-    - use the resident live page
-    - create `ObjectLogWriter` over the supplied pooled `CircularDiskWriteBuffer`
-    - for each object-bearing `LogRecord`
-      - resolve objectIds from the resident page map
-        - `objectIdMap.GetOverflowByteArray(...)`
-        - `objectIdMap.GetHeapObject(...)`
-      - `ObjectLogWriter.WriteRecordObjects(keyOverflow, valueOverflow, valueObject)`
-        - overflow key -> `WriteOverflowComponent()`
-          - at most 511 bytes -> headerless
-          - 512 bytes through 128 KB -> buffered header + payload
-          - above 128 KB -> `WriteOverflowDma()` -> pinned direct interior
-        - overflow value -> same branches
-        - object value -> `DoSerialize()` -> `WriteObjectData()`
-          - first 511 bytes headerless
-          - `StartObjectHeaderedPhase()`
-          - `AdvanceObjectBuffer()` for continuing chunks
-          - `OnSerializeComplete()` backfills final header
-        - `CircularDiskWriteBuffer.OnRecordComplete()`
-      - `LogRecord.SetObjectLogPositionAndSizeHints(...)`
-        - write object-log position
-        - stamp key/value objectId high bits
-        - stamp overflow-key page-count high bits into raw RDH KeyLength
-        - set `KeyIsExactSize` / `ValueIsExactSize` as applicable
-    - `ObjectLogWriter.OnPartialFlushComplete()`
-      - `CircularDiskWriteBuffer.OnPartialFlushComplete()`
-        - sector-pad and flush final object-log buffer
-        - submit the whole-sector main-log write, spanning `[alignedStartOffset, RoundUp(endOffset, sectorSize))`
-        - final callback after all writes complete
+- `ObjectAllocatorImpl.OnPagesMarkedReadOnlyWorker()` -> `AsyncFlushPagesForReadOnly(from, until)` (ReadOnly), or
+  `AllocatorBase.AsyncFlushPagesForSnapshot(snapshotObjectLog, ...)` -> `WriteAsyncToDeviceForSnapshot(...)` (Snapshot)
+  - ReadOnly: `asyncResult.objectLog = FlushObjectLog`; `WaitForSnapshotPage(coordination, page)`
+  - Snapshot: `asyncResult.objectLog` is the checkpoint's object log; the page goes to its offset in the snapshot file
+  - `ObjectAllocatorImpl.WriteAsync(flushPage, ..., asyncResult, device, fuzzyStartLogicalAddress)`
+    - `NullDevice` -> complete without writing
+    - ReadOnly range from the page's first record -> `PageHeader.SetLowestObjectLogAddress(objectLog.TailAddress)`
+    - no object log, or an empty `ObjectIdMap` -> write the span without walking the records
+    - `epoch.TrySuspend()`
+    - ReadOnly flush starting mid-sector -> `TryGetDurableSectorPrefix(...)`
+    - `new ObjectLogWriter(objectLog, storeFunctions, objectLogWriterSettings)`
+    - each Valid record with objects, except a Snapshot's fuzzy next-version records
+      - `LogRecord.TryGetOutOfLineComponents(...)`, then re-read `Info.Valid`
+      - `ObjectLogWriter.WriteRecordObjects(keyOverflow, valueOverflow, valueIsObject, valueObject)`
+        - `BeginRecord`; `AppendKey`; `AppendValue`, or `Serialize` -> serializer -> `Write` -> `AppendValue`
+          - full staging buffer -> `EmitStaged` -> `EmitDataChunk` -> `ObjectLog.Allocate`
+          - long source span with nothing staged -> `EmitDataChunk`
+          - `AddChunkEntries` -> `WriteSpine` when the entry list is full
+        - `FinishRecord` -> `TryWriteSingleExtent` or `WriteTopDirectoryRecord`; encode the hint
+      - `LogRecord.SetObjectLogPositionAndHints(in result)`
+    - `ObjectLog.FlushTail(wait: false)` if any record wrote object-log bytes
+    - ReadOnly -> `RecordPartialSectorImage(...)`; mid-sector start -> `WaitForWritesBelow(start)`
+    - `new PageFlushJoin(callback, asyncResult)`
+      - `SubmitFlushPart` for the composed first sector, if any, and for the rest of the whole-sector span
+      - `ObjectLog.OnFlushed(tail, PageFlushJoin.PartCallback, join)`
+      - `join.Complete(...)` releases the issuer's sentinel; the last part to complete invokes the page callback
+    - `finally`: `epoch.Resume()` if suspended; dispose the writer
 
-### 9.2 Single-record pending disk read
+### 9.2 Single-record pending read
 
-- `ObjectAllocatorImpl.VerifyRecordFromDiskCallback(...)`
-  - `GetObjectLogRecordStartPositionAndLengths(...)`
-  - create `CircularDiskReadBuffer`
-  - throw if the record has no readable position — a dedicated per-IO buffer excludes in-memory unstamping, so this
-    means a record reached disk without its object bytes
-  - if the total read extent is zero -> `MaterializeRecordObjectsWithoutReading(...)` and return
-  - `ObjectLogReader.OnBeginReadRecords(start, keyHint + valueHint, objectLogTail)`
-  - `ObjectLogReader.ReadRecordObjects(...)`
-    - `OnBeginRecord(start)`
-    - overflow key -> `ReadOverflow()`
-    - rebase value requirement at actual key end
-    - overflow value -> `ReadOverflow()`
-    - object value -> set `objectDataBudget` (exact count, or -1 when framing-bounded) -> `DoDeserialize()` -> `ReadObjectData()`
-    - `OnObjectReadComplete()`
-  - `OnEndReadRecords()`
+- `ObjectAllocatorImpl.VerifyRecordFromDiskCallback(ref ctx, ...)`
+  - `AllocatorBase.VerifyRecordFromDiskCallback` -> false for an incomplete record, an Invalid record, or a mismatched
+    inline key
+  - inline record -> done
+  - unstamped position -> throw; a record read from disk with out-of-line components must carry one
+  - `new ObjectLogReader(GetReadObjectLog(null), storeFunctions)`, with no read-ahead
+  - `ReadRecordObjects(reader, ref diskLogRecord.logRecord, ctx.requestKey)`
+    - `GetObjectLogRecordRef()`
+    - `BeginRecord(recordRef)` -> `ObjectLog.Read`, and a second read for a long length-prefixed extent
+      - `HasDirectory` -> `ParseDirectory` -> one `ObjectLog.Read` per spine record
+    - overflow key -> `KeyOverflow = ReadKey()` -> `KeysEqual(requestedKey, logRecord)`; mismatch -> return false
+    - overflow value -> `ValueOverflow = ReadValueOverflow()`
+    - object -> `SetDeserializedValueObject(ReadValueObject())`
+    - `OnObjectReadComplete()`; on an exception, `OnDeserializationError(keyWasSet)`; `finally` -> `EndRecord()`
+  - mismatched overflow key -> `prevAddressToRead` is the record's `PreviousAddress`
 
 ### 9.3 Recovery Pass 1
 
-- `Recovery.RecoverFromPage(...)`
-  - Snapshot boundary page starts at `mainLogRecoveryEndAddress` after merging its snapshot suffix over the main prefix
-  - inline key -> hash directly from `LogRecord`
-  - overflow key -> `ObjectAllocatorImpl.ComputeRecoveryOverflowKeyHash(...)`
-    - decode position/hint
-    - choose main hard tail or snapshot `NotSet`
-    - `ReadOverflowKeyHashCodeForRecovery(...)`
-      - `ReadOverflow(...)`
-      - pin final key span
-      - `storeFunctions.GetKeyHashCode64(...)`
+- `Recovery.RecoverFromPage(...)`, for a page from the main log or the snapshot file
+  - snapshot page: next-version record at or above `fuzzyRegionStartAddress` -> `SetInvalid`, skip
+  - inline key -> `storeFunctions.GetKeyHashCode64(logRecord)`
+  - overflow key -> `ObjectAllocatorImpl.ComputeRecoveryOverflowKeyHash(in logRecord, ..., objectLogDevice, ...)`
+    - version 8 -> `new ObjectLogReader(GetReadObjectLog(objectLogDevice), storeFunctions)`
+      - `GetObjectLogRecordRef()` -> `BeginRecord` -> `ReadKey()`
+      - pin the key -> `storeFunctions.GetKeyHashCode64(ConditionallyHoistedKey.CreatePinned(...))`
+    - version 7 -> `LegacyObjectLogReader.ReadOverflowKeyHashCodeForRecovery(...)` through the caller's ring
 
 ### 9.4 Recovery Pass 2 / page load
 
-- `Recovery.RecoveryLoadObjectsPass2(...)`
-  - `ObjectAllocatorImpl.LoadObjectsForRecoveryPass2(...)`
-    - `DeserializeObjectsOnPage(...)`
-      - stop the walk at the page-extent guard (zeroed `RecordDataHeader`, non-positive or overrunning allocated size)
-      - first pass: scan same-device object-bearing records until one read-ring capacity is covered, contributing no
-        range for a record with no readable position
-      - include the final scanned record's first-component hint
-      - `OnBeginReadRecords(...)`
-      - second pass, each valid object record
-        - no readable position -> `MaterializeRecordObjectsWithoutReading(...)`, no recovered-object accounting
-        - otherwise `ReadRecordObjects(...)`
-        - record hints set initial component demand
-        - parsed framing rebases following components and sets authoritative endpoints
-        - `TrackRecoveredObjectRecord(...)`
-      - `OnEndReadRecords()`
+- `Recovery.RecoveryLoadObjectsPass2(recoveryStatus, from, until, snapshotObjectLogDevice, snapshotBoundaryPage)`
+  - with a size tracker, per page from the top down: `CalculatePageObjectSizes` -> `FindHeadAddressCutoffOnPage` ->
+    `FlushIfNeededThenEvictPageForRecovery` for lower pages -> `FlushSnapshotPageForRecovery` when the cutoff leaves
+    snapshot-region records below the head
+  - `LoadPageObjects`: the main object log, the boundary page split at `snapshotScanFromAddress`, or the checkpoint's
+    object log followed by `ResetRecoveredResidentPageHeader(page)`
+    - `ObjectAllocatorImpl.LoadObjectsForRecoveryPass2(page, from, until, objectLogDevice, checkpointVersion, ...)`
+      - `DeserializeObjectsOnPage(pagePhysicalAddress, maxOffset, objectIdMap, objectLogDevice, ..., minOffset)`
+        - version 7 -> `DeserializeLegacyObjectsOnPage(...)` (section 7.5)
+        - walk the records; stop at the page-extent guard
+        - skip inline and Invalid records; unstamped -> `LogRecord.MaterializeObjectsWithoutReading()`
+        - first readable record -> `new ObjectLogReader(GetReadObjectLog(objectLogDevice), storeFunctions)`;
+          `reader.ReadAhead = StartPageReadAhead(...)`
+        - `ReadRecordObjects(reader, ref logRecord, default(EmptyKey))` -> `TrackRecoveredObjectRecord`
+        - `finally`: dispose the reader and the read-ahead
+- page reads outside Pass 1: `ObjectAllocatorImpl.ReadAsync` -> `AsyncReadPageWithObjectsCallback` ->
+  `DeserializeObjectsOnPage(..., transientObjectIdMap, objectLogDevice: null, ...)`
 
 ### 9.5 Snapshot recovery copy
 
-- `ObjectAllocatorImpl.WriteAsync(..., FlushRequestState.Recovery, snapshotObjectLogDevice, ...)`
-  - use the live recovery page as the main-log write source
-  - identify a snapshot-region record
-  - `AlignNextRecordStartLike(snapshotPosition)`
-  - `RepointObjectLogPosition(mainPosition)`
-  - `CopyRecoveredObjectBytesFollowingFraming(...)`
-    - `ObjectLogReader.CopyRecordObjectsFollowingFraming(...)`
-      - parse overflow/object headers
-      - tee every consumed raw byte to the main `ObjectLogWriter`
-  - advance recovery page object-log position by exact copied extent
-  - mark the resident page as repointed to the main object-log address space
-  - Pass 2 reads that page from the main object log
+- `Recovery.FlushSnapshotPageForRecovery(recoveryStatus, page)`
+  - `AsyncFlushPagesForRecovery(snapshotScanFromAddress, page, 1, ..., objectLogRecoveryDevice,
+    formerFlushedUntilAddress: snapshotScanFromAddress, untilAddress: snapshotUntilAddress)`
+    - `asyncResult.objectLog = RecoveryFlushObjectLog`
+    - `asyncResult.recoverySnapshotObjectLog = GetRecoverySnapshotObjectLog(objectLogRecoveryDevice)`
+    - `ObjectAllocatorImpl.WriteAsync(...)`
+      - page starting in the snapshot region -> `SetLowestObjectLogAddress(objectLog.TailAddress, force: true)`
+      - each record with objects at or above `formerFlushedUntilAddress`
+        - `GetObjectLogRecordRef()`
+        - first such record -> `new ObjectLogReader(snapshotSourceLog, storeFunctions)`;
+          `ReadAhead = StartPageReadAhead(snapshotSourceLog, ...)`
+        - `BeginRecord` -> `CopyRecordTo(logWriter)` -> writer `BeginRecord`, `AppendKey`, `AppendValue`,
+          `FinishRecord` -> `EndRecord`
+        - `SetObjectLogPositionAndHints(in result)`
+      - `ObjectLog.FlushTail(wait: false)`, page writes, `PageFlushJoin`
+  - `WaitFlush(pageIndex)`; `snapshotPageFlushedToMain[pageIndex] = true`
 
 ### 9.6 Recovery-state flush of hybrid-log-region records
 
-- `ObjectAllocatorImpl.WriteAsync(..., FlushRequestState.Recovery, ...)`
-  - use the live recovery page as the main-log write source
-  - identify a record outside the snapshot-copy region
-  - current-format record
-    - preserve its main object-log position, objectId hints, and flags verbatim
-    - issue no object-log copy
-  - Legacy cv7 record
-    - never rewritten in place; header insertion would shift every later position on the segment
-    - up-converted only by the offline `--upgrade` pass, which writes to `KVSettings.UpgradeObjectLogDevice`
+- `Recovery.ProcessReadPageAndFlush(...)` -> `ProcessReadPage` reports that it invalidated next-version records
+  - `AsyncFlushPagesForRecovery(scanFromAddress, page, 1, ..., checkpointVersion)`: no snapshot device and no
+    up-conversion, so `asyncResult.objectLog` is null
+  - `ObjectAllocatorImpl.WriteAsync(...)`
+    - no floor stamp and no writer
+    - current-format record -> written verbatim, with its position, hints, and flags untouched
+    - version 7 record -> throw
 
 ### 9.7 Snapshot checkpoint no-copy ordering
 
 - Allocator configuration
   - `AllocatorBase.SnapshotFlushWindowSize` defaults to zero
-  - `ObjectAllocatorImpl` sets it in its constructor to an independent 64-page default, capped by the
-    allocator's resident page count (`BufferSize`); it is not derived from the object-log serialization-buffer count
+  - `ObjectAllocatorImpl` sets it in its constructor to `DefaultSnapshotFlushWindowSize` (64 pages), capped by the
+    allocator's resident page count (`BufferSize`)
   - `SnapshotFlushCoordinationWindowSize` uses that value for ObjectAllocator, one for a non-object
     `NullDevice` that needs Head/page-residency protection, or zero for a real-device non-object allocator
 - `ObjectAllocatorImpl.OnPagesMarkedReadOnlyWorker()`
@@ -1074,50 +1125,83 @@ Indentation is call depth. Component branches and lifetime changes are included 
       the cohort has published durable completion
     - reacquire the installation lock, capture the resulting `FlushedUntilAddress` as the stable
       `snapshotFileLogicalStartAddress`, initialize `readOnlyFlushPageLimit` to its page, and enter `Flushing`
-  - `AsyncFlushPagesForSnapshot(snapshotFileLogicalStartAddress, recoveredTailAddress, fuzzyRegionStartAddress, ...)`
+  - `AsyncFlushPagesForSnapshot(snapshotObjectLog, ..., snapshotFileLogicalStartAddress, recoveredTailAddress,
+    fuzzyRegionStartAddress, ...)`, where `snapshotObjectLog` is the checkpoint's own `ObjectLog`
     - issue live Snapshot pages through the bounded completion window
     - mark out-of-order completions in fixed, reusable slots
     - advance `readOnlyFlushPageLimit` through the contiguous completed prefix; a post-cutoff ReadOnly range may
       flush page `P` only when `P < readOnlyFlushPageLimit`
     - enter `Closed` after every issued page drains
 
+### 9.8 Version 7 up-conversion
+
+- `Recovery.RecoverHybridLogAsync(...)`
+  - `ObjectAllocatorImpl.BeginObjectLogUpgrade()` -> destination `ObjectLog` over the upgrade device, or a fresh main
+    object log for a self-contained Snapshot
+  - each page read: `ProcessReadPage` -> `UpgradeObjectLogPageForRecovery(...)`
+    - `LoadObjectsForRecoveryPass2(...)` -> `DeserializeLegacyObjectsOnPage` ->
+      `LegacyObjectLogReader.ReadRecordObjects`
+    - `AsyncFlushPagesForRecovery(...)` -> `ObjectAllocatorImpl.WriteAsync(...)`
+      - `SetLowestObjectLogAddress(destination tail, force: true)`
+      - each record with objects: `TryGetOutOfLineComponents` -> `WriteRecordObjects` ->
+        `SetObjectLogPositionAndHints`; throw if the inline size changed
+    - `WaitFlush`; evict lower pages while over budget
+  - FoldOver -> `CompleteObjectLogUpgrade()`
+- `Recovery.RecoverHybridLogFromSnapshotFileAsync(...)`, for a Snapshot
+  - each batch of snapshot-region pages -> `UpgradeSnapshotObjectLogPageForRecovery(...)`, which loads from the
+    checkpoint's version 7 object log and flushes as above
+  - `CompleteObjectLogUpgrade()`
+
 ---
 
 ## 10. Boundary and corruption-safety invariants
 
-- 510, 511, and 512 bytes exercise headerless-before-cutoff, maximum exact, and first framed values.
-- Page-count hints round up the complete initial on-disk extent, including headers and padding.
-- For keys, page-count low bits 511 are ordinary data and carry into raw RDH KeyLength at 512 pages.
-- For values, objectId hint 511 with the exact flag clear means one 4 MB discovery window.
-- Parsed authoritative lengths are checked against the known main object-log hard tail.
-- Main and snapshot object-log positions are never mixed for subtraction or hard bounds.
-- `ObjectLogPositionInfo.Advance()` is used for segment-crossing arithmetic; direct IO splits at segment boundaries.
-- Object headers are absolute 8-byte aligned; snapshot relocation preserves the source modulo-8 start.
-- Direct-read pins remain alive through every callback.
-- `OverflowByteArray` leading/trailing slack covers sector overlap; logical length excludes that slack.
-- Every recovery record is copied from its own exact hints and framing; successor positions are not consulted.
-- Speculative ring reads are drained before buffers are reused or disposed.
-- Any unsupported cv7 conversion that would require inserting headers fails rather than guessing.
+- A payload of 511 bytes is the largest exact extent and 512 bytes the smallest length-prefixed one, for single extents
+  and top directory records alike.
+- A page-count hint rounds up the whole extent, including its 4-byte length prefix.
+- A key's page count is exact over 19 bits: low bits of 511 are ordinary data, and the count carries into raw RDH
+  KeyLength at 512 pages.
+- A value hint of 511 with the exact flag clear means "large": the first read is `LargeInitialRead`, clamped to the page
+  and the tail.
+- No allocation, extent, entry, or read spans an object-log page: `ObjectLog.Allocate` never returns one, the reader
+  rejects an extent or entry that would, and `ObjectLog.Read` refuses one.
+- A length prefix must exceed 511 and fit the bytes left on its page and below the log's tail.
+- A directory is validated in full, spine included, before any data entry is read (section 6.2).
+- A record with both an overflow key and an out-of-line value always has a directory.
+- A device read that transfers fewer bytes than requested fails, and a failed read-ahead window falls back to
+  `ObjectLog.Read`.
+- An unstamped position is never read, and no allocation reaches the unstamped marker (section 12.7).
+- Main and snapshot object-log positions are never mixed: recovery splits the boundary page at
+  `snapshotScanFromAddress`, and a snapshot-region copy restamps the position and the hints.
+- The main log's `FlushedUntilAddress` never covers a record whose object bytes are not durable.
+- A page header's floor is a main object-log address no greater than any position on that page or a later one.
+- A checkpoint records each object log's `FlushedUntilAddress`, sampled after the main log's recovery end.
+- A version 7 object log is never rewritten in place.
 
-The object-size boundary suites exercise normal pending IO, Snapshot/FoldOver recovery, low-memory eviction, overflow
-keys, overflow/object values, direct-IO thresholds, 4 MB discovery boundaries, and object-log segment crossings.
+The object-size boundary suites (`ObjectSizeBoundaryDiskIOTests`, `ObjectSizeBoundaryRecoveryTests`) sweep sizes across
+the exact cutoff, sector and 4 KB boundaries, the value hint's saturation, and multi-chunk records, over pending reads,
+Snapshot and FoldOver recovery, low-memory eviction, overflow keys with inline and overflow values, and object-log
+segment crossings. `ObjectLogChunkFormatTests` cover framing, page cuts, directories, spines, corrupt structure, and
+read-ahead; `ObjectLogDirectoryTests` cover the directory encoding.
 
 ---
 
 ## 11. Version and format separation
 
-The current object-log format is checkpoint version 8. It uses chunk framing and carries extended overflow-key page
-hints across raw RDH KeyLength and the objectId hint. Version 8 metadata also
-carries the writing store's hybrid-log `pageSize` in the fifth address slot and appends its `segmentSize`. Version 7 is
-the only released downlevel format: it is recoverable through the per-record bit-63 legacy discriminator and its
-dedicated decoder, and its metadata duplicates `recoveredTailAddress` in that fifth slot and has no `segmentSize`, so
-both normalize to zero when read.
+The current object-log format is checkpoint version 8. Its extents are exact or length-prefixed, with a directory for a
+record of more than one chunk or of both an overflow key and an out-of-line value, and an overflow key's page-count hint
+spans raw RDH KeyLength and the objectId hint.
+Version 8 metadata records the main object log's begin address and durable end and the Snapshot object log's end,
+carries the writing store's hybrid-log `pageSize` in the fifth address slot, and appends its `segmentSize`,
+`objectLogSegmentSize`, and `objectLogPageSize` (see [Checkpoint Metadata](checkpoint-recovery.md)). Version 7 is the
+only released downlevel format. Recovery selects its dedicated decoder from the checkpoint version; its metadata
+duplicates `recoveredTailAddress` in the fifth slot and records no geometry, so those fields read as zero.
 
 The following formats are separate and must not borrow each other's length semantics:
 
 - hybrid-log effective RDH lengths: exact physical inline/objectId-slot lengths; raw overflow-key KeyLength additionally
   carries page-count high bits;
-- object-log file: objectId initial hints plus `ChunkHeader` authoritative framing;
+- object-log file: objectId initial-read hints, length prefixes, and directory entries;
 - migration/replication wire record: explicit network component framing described in the companion document; and
 - [AOF](../aof-record-layout.md): operation serialization, not a `DiskLogRecord` object-log image.
 
@@ -1127,7 +1211,8 @@ The following formats are separate and must not borrow each other's length seman
 
 > **Status:** `ObjectLog` is the object log: the main object log, each Snapshot checkpoint's own object log, and recovery's
 > up-conversion target are all `ObjectLog`s, written and read by the writer and reader in section 12.10. Sections 3-9
-> still describe the previous format; this section describes the substrate and the format that replace it.
+> describe the record format and the flows over it in detail; this section describes the substrate and the format's
+> design.
 
 ### 12.1 What it is and why
 
@@ -1149,8 +1234,10 @@ iterator, and read surface.
 
 `TryRecoverLatest` is off and `Commit()` is never called, so there are no commit files and no commit records in the
 log. `info.dat` remains the sole authority on object-log tails: recovery reads a tail from checkpoint metadata and
-positions the log with `ObjectLog.RestoreTail`, which sets the head to the tail so recovered content is read from the
-device on demand rather than paged in wholesale. Durability is a wait on `FlushedUntilAddress`.
+positions the log with `ObjectLog.RestoreTail`. That loads only the page holding the tail, and only when the tail is
+mid-page, because the first flush rewrites the sector the tail is in and must not write zeros over the recovered bytes
+sharing it; everything below that page is read from the device on demand. Durability is a wait on
+`FlushedUntilAddress`.
 
 `hlog_objs[_<dbId>]`, `snapshot.obj.dat`, and `info.dat` keep their current paths and roles. The substrate change adds
 no files on disk.
@@ -1290,8 +1377,9 @@ from a downlevel image, where the unstamped marker was all-ones and every flag b
 > chunk, because nothing else records where the key ends and the value begins. "Fits one allocation" never implies
 > `HasDirectory` is clear. A chunk holding the end of the key and the start of the value carries **two entries at the
 > same address** — one per component, each with its own length — and a reader resolves an entry's offset as
-> `address + sum(lengths of preceding entries sharing that address)`, issuing one IO per distinct address. At most two
-> entries can share an address, since there are only two components.
+> `address + sum(lengths of preceding entries sharing that address)`, and reads each entry on its own, so a shared
+> chunk outside the top record takes two reads unless a page walk's read-ahead holds it. At most two entries can share
+> an address, since there are only two components.
 
 A `DirectoryEntry` is 12 bytes:
 
@@ -1303,8 +1391,8 @@ word1: bits  0..26  data length, biased by one
        bits 27..31  spare
 ```
 
-The address points at the data rather than at the entry header preceding it, so a reader issues exactly `Length` bytes
-with nothing to parse. **The benefit is not fewer IOs but the removal of a serial dependency**: in the old format read
+The address points at the chunk's first data byte, and a data chunk has no header, so a reader issues exactly `Length`
+bytes with nothing to parse. **The benefit is not fewer IOs but the removal of a serial dependency**: in the old format read
 *k+1* could not be sized until read *k*'s framing had been parsed, so a large object's reads were strictly serialized.
 With the directory every read is known up front and the device queue can be saturated.
 
@@ -1325,7 +1413,7 @@ A directory record is a `DirectoryRecordHeader` followed by its entries:
 one address. `EntryCount` counts the entries immediately following this header, including a spine link when present;
 it is not necessarily the physical chunk count. `KeyEntryCount` counts key entries across the flattened chain,
 excluding spine links. Summing each component's data-entry lengths gives its exact size, so an `OverflowByteArray`
-is allocated once at the right size and section 6.3's rebase-at-actual-key-end discovery is retired.
+is allocated once at the right size (section 6.3).
 
 **Initial-read hints remain.** With `HasDirectory` set, the hint describes the top directory record, including
 combined data, rather than the component payload. Use the key slot when the key is out-of-line, otherwise the value
