@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -13,6 +14,11 @@ namespace Garnet.client
 {
     public static unsafe class RespReadResponseUtils
     {
+        /// <summary>
+        /// Maximum number of arguments allowed in a single RESP array.
+        /// </summary>
+        private const int MaxRespArrayLength = 1 << 20; // 1,048,576
+
         /// <inheritdoc cref="RespReadUtils.TryReadSimpleString(out string, ref byte*, byte*)"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool TryReadSimpleString(out string result, ref byte* ptr, byte* end)
@@ -175,6 +181,11 @@ namespace Garnet.client
                 return true;
             }
 
+            if (length > MaxRespArrayLength)
+            {
+                RaiseArrayOutOfBoundsException(length);
+            }
+
             // Parse individual strings in the array
             result = new string[length];
             for (var i = 0; i < length; i++)
@@ -224,6 +235,11 @@ namespace Garnet.client
                 return true;
             }
 
+            if (length > MaxRespArrayLength)
+            {
+                RaiseArrayOutOfBoundsException(length);
+            }
+
             // Parse individual strings in the array
             result = new MemoryResult<byte>[length];
             for (var i = 0; i < length; i++)
@@ -247,6 +263,16 @@ namespace Garnet.client
 
             return true;
         }
+
+        /// <summary>
+        /// Helper to raise an exception for too-large arrays.
+        /// 
+        /// Factored out to minimize IL and assembly bloat.
+        /// </summary>
+        [DoesNotReturn]
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void RaiseArrayOutOfBoundsException(int value)
+        => throw new Exception($"RESP Array length ({value:N0}) exceeds maximum ({MaxRespArrayLength:N0})");
 
         /// <inheritdoc cref="RespReadUtils.TryReadInt32WithLengthHeader(out int, ref byte*, byte*)"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
