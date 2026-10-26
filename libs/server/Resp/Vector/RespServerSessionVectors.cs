@@ -261,8 +261,20 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR invalid vector set import term"u8);
             }
 
-            var status = storageApi.VectorSetImport(parseState.GetArgSliceByRef(0), termType,
-                parseState.GetArgSliceByRef(2), parseState.GetArgSliceByRef(3), out var result, out var errorMsg);
+            var key = parseState.GetArgSliceByRef(0);
+            var id = parseState.GetArgSliceByRef(2);
+            var value = parseState.GetArgSliceByRef(3);
+
+            if (termType == VectorImportTermType.IntMap && value.length != sizeof(uint))
+            {
+                return AbortWithErrorMessage("ERR imported INTMAP value must 4-bytes");
+            }
+            else if (termType is VectorImportTermType.Vector or VectorImportTermType.Neighbors or VectorImportTermType.Quant or VectorImportTermType.Attrs or VectorImportTermType.ExtMap && id.length != sizeof(uint))
+            {
+                return AbortWithErrorMessage("ERR imported id for this term must be 4-bytes");
+            }
+
+            var status = storageApi.VectorSetImport(key, termType, id, value, out var result, out var errorMsg);
             if (status == GarnetStatus.WRONGTYPE)
             {
                 return AbortVectorSetWrongType();

@@ -65,6 +65,15 @@ namespace Garnet.cluster
                 }
             }
 
+            if (abort)
+            {
+                // A canceled handoff must not restore primary status after takeover may have started.
+                clusterProvider.failoverManager.TryAbortReplicaFailover();
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole != NodeRole.PRIMARY)
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CANNOT_FAILOVER_FROM_NON_MASTER, ref dcurr, dend))
@@ -103,16 +112,12 @@ namespace Garnet.cluster
                 replicaPort = worker.PeerPort;
             }
 
-            // Try abort ongoing failover
-            if (abort)
+            var timeoutTimeSpan = timeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(timeout);
+            if (!clusterProvider.failoverManager.TryStartPrimaryFailover(replicaAddress, replicaPort, force ? FailoverOption.FORCE : FailoverOption.DEFAULT, timeoutTimeSpan))
             {
-                clusterProvider.clusterManager.TrySetLocalNodeRole(NodeRole.PRIMARY);
-                clusterProvider.failoverManager.TryAbortReplicaFailover();
-            }
-            else
-            {
-                var timeoutTimeSpan = timeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(timeout);
-                _ = clusterProvider.failoverManager.TryStartPrimaryFailover(replicaAddress, replicaPort, force ? FailoverOption.FORCE : FailoverOption.DEFAULT, timeoutTimeSpan);
+                while (!RespWriteUtils.TryWriteError("ERR failed to start failover", ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
