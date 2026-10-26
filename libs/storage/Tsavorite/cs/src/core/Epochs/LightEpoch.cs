@@ -646,6 +646,13 @@ namespace Tsavorite.core
             if (TryClaimEntry(entry))
                 return true;
 
+            return TryAcquireEntrySlow(ref entry);
+        }
+
+        // Keep alternate probing outside the preferred-slot hot path.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        bool TryAcquireEntrySlow(ref int entry)
+        {
             // Try alternate offset
             (Metadata.startOffset2, Metadata.startOffset1) = (Metadata.startOffset1, Metadata.startOffset2);
             entry = Metadata.startOffset1;

@@ -27,6 +27,8 @@
 
 	<ItemGroup>
 		<Compile Include="..\..\libs\storage\Tsavorite\cs\benchmark\BDN-Tsavorite.Benchmark\EpochTests.cs" Link="Client\EpochTests.cs" />
+		<Compile Include="..\..\libs\storage\Tsavorite\cs\benchmark\BDN-Tsavorite.Benchmark\EpochReleaseTests.cs" Link="Client\EpochReleaseTests.cs" />
+		<Compile Include="..\..\libs\storage\Tsavorite\cs\benchmark\BDN-Tsavorite.Benchmark\EpochReleaseWorkload.cs" Link="Client\EpochReleaseWorkload.cs" />
 		<Compile Include="..\..\libs\storage\Tsavorite\cs\benchmark\BDN-Tsavorite.Benchmark\EpochBenchmarkEnvironment.cs" Link="Client\EpochBenchmarkEnvironment.cs" />
 		<Compile Include="..\..\main\GarnetServer\Extensions\MyDictObject.cs" Link="Custom\MyDictObject.cs" />
 		<Compile Include="..\..\main\GarnetServer\Extensions\MyDictSet.cs" Link="Custom\MyDictSet.cs" />

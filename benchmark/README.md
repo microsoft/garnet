@@ -106,6 +106,36 @@ multimodal results; overlapping BDN confidence intervals alone do not establish
 equivalence. These microbenchmarks do not establish end-to-end throughput impact
 or memory-model correctness, and x64 measurements do not establish ARM64 cost.
 
+### Concurrent release fencing
+
+`EpochReleaseTests` uses the same source for the core and client epoch. Its
+`Stable`, `DrainPressure`, and `WaiterPressure` cases run persistent workers with
+deterministic, independent jitter before and after each suspend. `Jitter` is the
+maximum bounded `Thread.SpinWait` iteration count, not a duration; zero is the
+no-jitter control. Calibrate separately when expressing this work as time.
+
+Drain pressure acquires an old-epoch holder before each batch, injects four
+preallocated actions while workers run, and holds workers at a midpoint gate.
+The second half races the holder's release with worker releases and reclamation.
+Setup verifies that the holder retains pending actions; validation and cleanup
+check that every action executes exactly once per round. The midpoint gate and
+injection are part of the measured batch, amortized over all worker operations.
+This measures drain-pressure transitions, not an isolated release instruction.
+Waiter pressure parks holders in all but `Threads / 2`
+slots, then runs `Threads` contenders. Setup fills those slots and confirms actual
+waiter registration before letting workers churn. Reflection reads private
+pressure counters only during setup, validation, and cleanup, never per operation.
+All holders and workers are joined before disposing the epoch.
+
+Run with `--filter '*EpochReleaseTests.*'` and at least eight affinity entries.
+Each invocation completes 65,536 acquire/release pairs across all workers;
+reported ns/op is aggregate elapsed time, including jitter and batch rendezvous,
+not individual release latency. Compare identical sources with the non-inlined
+probing helper retained: `Interlocked.Exchange` versus `Volatile.Write` followed
+by `Thread.MemoryBarrier` inside `Release`, before both waiter and drain reads.
+Keep variant builds and process watchdogs outside shipping code. Do not use a
+barrier-free store as the pressure-workload baseline.
+
 ## Device.benchmark
 
 A low-overhead random-read IOPS benchmark for Tsavorite's `IDevice` implementations

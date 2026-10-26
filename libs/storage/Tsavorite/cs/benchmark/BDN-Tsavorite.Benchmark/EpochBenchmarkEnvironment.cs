@@ -4,6 +4,11 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+#if EPOCH_RELEASE_WORKLOAD_TESTS
+using System;
+using System.Collections.Generic;
+using System.IO;
+#endif
 #if GARNET_CLIENT_EPOCH_BENCHMARK
 using Garnet.client;
 
