@@ -32,7 +32,8 @@ namespace Tsavorite.core
         /// List of devices to be used. The list should be given in order of hot to cold. Read is served from the
         /// device with smallest index in the list that has the requested data
         /// </param>
-        public TieredStorageDevice(int commitPoint, IList<IDevice> devices) : base(ComputeFileString(devices, commitPoint), 512, ComputeCapacity(devices))
+        /// <remarks>Each request is forwarded unchanged to the tiers, so this device reports the largest of their sector sizes.</remarks>
+        public TieredStorageDevice(int commitPoint, IList<IDevice> devices) : base(ComputeFileString(devices, commitPoint), GetLargestSectorSize(devices), ComputeCapacity(devices))
         {
             Debug.Assert(commitPoint >= 0 && commitPoint < devices.Count, "commit point is out of range");
 

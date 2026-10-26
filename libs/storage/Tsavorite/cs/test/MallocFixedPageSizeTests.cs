@@ -221,9 +221,10 @@ namespace Tsavorite.test
         public void CheckpointSucceedsAfterAllocatorIsExhausted()
         {
             DeleteDirectory(MethodTestDir, wait: true);
+            using var device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ExhaustedCheckpoint.dat"), deleteOnClose: true);
 
             const int LevelCount = 2;
-            using var allocator = new MallocFixedPageSize<HashBucket>(MallocFixedPageSize<HashBucket>.MemorySizeGranularity * LevelCount);
+            using var allocator = new MallocFixedPageSize<HashBucket>(MallocFixedPageSize<HashBucket>.MemorySizeGranularity * LevelCount, (int)device.SectorSize);
 
             var capacity = allocator.GetPageSize() * (long)LevelCount;
             while (allocator.GetMaxValidAddress() < capacity)
@@ -233,7 +234,6 @@ namespace Tsavorite.test
                 _ = Assert.Throws<TsavoriteException>(() => allocator.Allocate());
 
             // BeginCheckpoint turns count into a page-table index range, so a count past capacity would read out of range.
-            using var device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ExhaustedCheckpoint.dat"), deleteOnClose: true);
             allocator.BeginCheckpoint(device, 0, out var numBytes);
             allocator.IsCheckpointCompletedAsync().AsTask().GetAwaiter().GetResult();
             ClassicAssert.AreEqual((ulong)(capacity * MallocFixedPageSize<HashBucket>.RecordSize), numBytes);
