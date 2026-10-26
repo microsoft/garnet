@@ -67,7 +67,9 @@ Several consequences matter when sizing a machine:
   cannot exceed the 128 GiB the page table can address. `INFO STORE` reports the threshold as `IndexOverflowThreshold`
   and the resolved ceiling as `IndexOverflowMaxMemorySizeBytes`, alongside current use as `IndexOverflowMemorySizeBytes`.
 * An index resize is the peak of index memory use, not a step change: the superseded hash table and its overflow
-  generation stay allocated until the split completes, so a resize transiently needs both generations at once.
+  generation stay allocated until the split completes, so a resize transiently needs both generations at once. The
+  superseded generation is not charged against the log budget described below: it is freed when the split completes, and
+  evicting log pages to make room for it would cost disk I/O or, without a storage tier, lose their records.
 
 To make this visible, index memory **beyond** the configured index budget (the larger of `IndexMemorySize` and
 `IndexMaxMemorySize`, plus the roughly 8 MiB the overflow bucket allocator commits as soon as it exists) is charged against
@@ -85,7 +87,7 @@ it was provisioned for still needs to be resharded or given more memory. The rel
 * `IndexTotalMemorySizeBytes` — the sum of the two, i.e. actual index memory.
 * `IndexMemoryBudgetBytes` — the configured index budget.
 * `IndexMemoryChargedToLogBudgetBytes` — index memory charged against the log budget. The log's effective budget is reduced
-  by this much, or down to its floor, whichever is less.
+  by this much, or down to its floor, whichever is less. During an index resize it excludes the superseded generation.
 
 If `IndexMemoryChargedToLogBudgetBytes` is large and growing, the machine is storing more keys than it was provisioned for:
 add nodes, or reduce `LogMemorySize` so the remaining budget is honest.

@@ -130,12 +130,21 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Index memory in bytes excluding the generation an index resize is replacing: the main hash table
+        /// (<see cref="IndexSizeBytes"/>) plus the memory committed by the current overflow-bucket generation. Equal to
+        /// <see cref="IndexTotalSizeBytes"/> except during an index resize, when it omits the superseded hash table and
+        /// overflow buckets, which the resize frees when its split completes.
+        /// </summary>
+        public long IndexSettledSizeBytes => IndexSizeBytes + overflowBucketsAllocator.AllocatedSizeBytes;
+
         /// <summary>Number of allocations performed</summary>
         public long OverflowBucketAllocations => overflowBucketsAllocator.NumAllocations;
 
         /// <summary>
-        /// Resample <see cref="IndexTotalSizeBytes"/> into the log size tracker, waking the resizer if it grew. Called
-        /// where index memory steps by a whole generation at once, so the log is not left over budget until the
+        /// Resample the log size tracker's external memory (see
+        /// <see cref="LogSizeTracker{TStoreFunctions, TAllocator}.ExternalMemorySizeProvider"/>), waking the resizer if it grew.
+        /// Called where index memory steps by a whole generation at once, so the log is not left over budget until the
         /// resizer's next periodic sample.
         /// </summary>
         internal void RefreshIndexMemoryCharge()

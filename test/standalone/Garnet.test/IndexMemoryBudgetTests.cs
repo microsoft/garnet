@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Linq;
 using Garnet.common;
 using NUnit.Framework;
@@ -154,6 +155,73 @@ namespace Garnet.test
             tracker.RefreshExternalMemorySize();
             ClassicAssert.AreEqual(0, tracker.ExternalMemorySize,
                 "An empty store's overflow buckets commit exactly its floor, which the budget includes.");
+        }
+
+        /// <summary>Runs an action as an index resize enters <see cref="Phase.IN_PROGRESS_GROW"/>: after the resize installs the
+        /// new generation and before its split frees the generation it replaces.</summary>
+        sealed class IndexGrowCallback(Action onGrow) : IStateMachineCallback
+        {
+            public void BeforeEnteringState(SystemState next)
+            {
+                if (next.Phase == Phase.IN_PROGRESS_GROW)
+                    onGrow();
+            }
+        }
+
+        static long MinimumLogBudget<TStoreFunctions, TAllocator>(LogSizeTracker<TStoreFunctions, TAllocator> tracker, long pageSize)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
+            => LogSizeTracker<TStoreFunctions, TAllocator>.MinTargetPageCount * pageSize;
+
+        /// <summary>
+        /// The generation an index resize replaces stays allocated until the split completes, so it is not charged against the
+        /// log budget. Charging it would evict log pages for memory that is about to be freed, and without a storage tier the
+        /// evicted records are lost.
+        /// </summary>
+        [Test]
+        public void IndexResizeDoesNotChargeReplacedGenerationToLogBudget()
+        {
+            // No storage tier, so evicting a page removes its records. An overflow generation's floor exceeds this log budget.
+            server = TestUtils.CreateGarnetServer(null, memorySize: "3m", indexSize: "512", pageSize: $"{TestUtils.MinKvLogPageSize}");
+            server.Start();
+
+            var storeWrapper = server.Provider.StoreWrapper;
+            var store = storeWrapper.store;
+            var tracker = store.Log.LogSizeTracker;
+            var budget = storeWrapper.serverOptions.IndexMemoryBudgetBytes;
+
+            const int numKeys = 2000;
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            for (var i = 0; i < numKeys; i++)
+                db.StringSet($"key:{i}", "v", flags: CommandFlags.FireAndForget);
+            ClassicAssert.AreEqual("v", (string)db.StringGet($"key:{numKeys - 1}"));
+
+            var beginAddress = store.Log.BeginAddress;
+            ClassicAssert.Greater(tracker.TotalSize, MinimumLogBudget(tracker, store.Log.PageSizeBytes),
+                "The log must exceed its minimum budget, so that reducing the budget to that minimum evicts pages.");
+
+            long indexTotalDuringSplit = 0, chargedDuringSplit = -1;
+            var overBudgetDuringSplit = true;
+            storeWrapper.DefaultDatabase.StateMachineDriver.UnsafeRegisterCallback(new IndexGrowCallback(() =>
+            {
+                indexTotalDuringSplit = store.IndexTotalSizeBytes;
+                _ = tracker.RefreshExternalMemorySize();
+                chargedDuringSplit = tracker.ExternalMemorySize;
+                overBudgetDuringSplit = tracker.IsOverBudget;
+            }));
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("CONFIG", "SET", "index", "1024"));
+
+            ClassicAssert.Greater(indexTotalDuringSplit - store.IndexTotalSizeBytes, tracker.TargetSize,
+                "The replaced generation must exceed the log target, so that charging it would reduce the log to its minimum budget.");
+            ClassicAssert.AreEqual(Math.Max(0, store.IndexTotalSizeBytes - budget), chargedDuringSplit,
+                "During the split the log must be charged only for the generation the resize installs.");
+            ClassicAssert.IsFalse(overBudgetDuringSplit, "The log must not be over budget during the split.");
+
+            ClassicAssert.AreEqual(beginAddress, store.Log.BeginAddress, "No log page may be evicted.");
+            for (var i = 0; i < numKeys; i++)
+                ClassicAssert.IsTrue(db.KeyExists($"key:{i}"), $"key:{i} was lost");
         }
     }
 }
