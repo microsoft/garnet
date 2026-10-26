@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using Tsavorite.core;
 using static Garnet.server.SessionFunctionsUtils;
 
@@ -87,8 +86,8 @@ namespace Garnet.server
                 // Defer the actual copying of data to PostCopyUpdater, so we know the record has been successfully CASed into the hash chain before we potentially
                 // create large allocations (e.g. if srcLogRecord is from disk, we would have to allocate the overflow byte[]). Because we are doing an update we have
                 // and XLock, so nobody will see the unset data even after the CAS. Tsavorite will handle cloning the ValueObject and caching serialized data as needed,
-                // based on whether srcLogRecord is in-memory or a DiskLogRecord.
-                return true;
+                // based on whether srcLogRecord is in-memory or a DiskLogRecord. The expiration is copied here, so PostCopyUpdater starts from the source's.
+                return dstLogRecord.TryCopyOptionals(in srcLogRecord, in sizeInfo);
             }
 
             var cmd = input.header.cmd;
@@ -118,14 +117,10 @@ namespace Garnet.server
             if (srcLogRecord.DataHeader.ValueIsObject)
             {
                 // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that
-                // the record was CASed into the hash chain before it gets modified
-                var value = Unsafe.As<IGarnetObject>(srcLogRecord.ValueObject.Clone());
-
-                // First copy the new Value and optionals to the new record. This will also ensure space and set the flag for expiration if it's present.
-                // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
-                var hasExpiration = dstLogRecord.DataHeader.HasExpiration;
-                if (!dstLogRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo))
-                    return false;
+                // the record was CASed into the hash chain before it gets modified. CacheSerializedObjectData has already
+                // cloned the source object into dstLogRecord, and CopyUpdater has copied the expiration if the new record
+                // keeps one. PERSIST sizes the new record without one, so answer from the source's.
+                var hasExpiration = srcLogRecord.DataHeader.HasExpiration;
 
                 var cmd = input.header.cmd;
                 switch (cmd)
