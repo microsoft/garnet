@@ -29,20 +29,14 @@ namespace Tsavorite.test.recovery
         const int NumKeys = 5000;
         const int NumObjects = 500;
 
-        string checkpointDir;
-
         [SetUp]
-        public void Setup()
-        {
-            DeleteDirectory(MethodTestDir, wait: true);
-            checkpointDir = Path.Join(MethodTestDir, "checkpoints");
-        }
+        public void Setup() => DeleteDirectory(MethodTestDir, wait: true);
 
         [TearDown]
         public void TearDown() => OnTearDown();
 
-        private DeviceLogCommitCheckpointManager CreateCheckpointManager(INamedDeviceFactoryCreator creator)
-            => new(creator, new DefaultCheckpointNamingScheme(checkpointDir));
+        private static DeviceLogCommitCheckpointManager CreateCheckpointManager(INamedDeviceFactoryCreator creator)
+            => new(creator, new DefaultCheckpointNamingScheme(MethodTestDir));
 
         private static TsavoriteKV<StructStoreFunctions, StructAllocator> CreateSpanByteStore(IDevice logDevice, ICheckpointManager checkpointManager,
                 long indexSize = 1L << 16, long pageSize = 1L << 14, long logMemorySize = 1L << 22)
