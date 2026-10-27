@@ -15,6 +15,11 @@ namespace Garnet.client
 {
     public static unsafe class RespReadResponseUtils
     {
+        /// <summary>
+        /// Maximum number of arguments allowed in a single RESP array.
+        /// </summary>
+        private const int MaxRespArrayLength = 1 << 20; // 1,048,576
+
         /// <inheritdoc cref="RespReadUtils.TryReadSimpleString(out string, ref byte*, byte*)"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool TryReadSimpleString(out string result, ref byte* ptr, byte* end)
@@ -179,7 +184,7 @@ namespace Garnet.client
             result = null;
 
             var cur = ptr;
-            if (!RespReadUtils.TrySkipArrayReply(ref cur, end, allowNestedArrays: true))
+            if (!RespReadUtils.TrySkipArrayReply(ref cur, end, allowNestedArrays: true, maxArrayLength: MaxRespArrayLength))
             {
                 return false;
             }
@@ -287,7 +292,7 @@ namespace Garnet.client
             result = null;
 
             var cur = ptr;
-            if (!RespReadUtils.TrySkipArrayReply(ref cur, end, allowNestedArrays: false))
+            if (!RespReadUtils.TrySkipArrayReply(ref cur, end, allowNestedArrays: false, maxArrayLength: MaxRespArrayLength))
             {
                 return false;
             }
