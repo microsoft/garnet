@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
@@ -1278,9 +1279,13 @@ namespace Tsavorite.core
         {
             Debug.Assert(numCompletionThreads >= 1);
 
-            // The 260-char MAX_PATH limit does not apply to extended-length paths (those prefixed with
-            // "\\?\"); only enforce it for normal paths.
-            if (!Native32.IsExtendedLengthPath(filename) && filename.Length > Native32.WIN32_MAX_PATH - 11)     // -11 to allow for ".<segment>"
+            // Reject a path the OS would refuse on the first IO, leaving room for the ".<segment>" suffix of up to 11 characters
+            // on each segment file. Windows limits paths that are not extended-length (prefixed with "\\?\") to MAX_PATH
+            // characters, and Linux limits every path to PATH_MAX bytes.
+            const int SegmentSuffixLength = 11;
+            if (OperatingSystem.IsWindows()
+                    ? !Native32.IsExtendedLengthPath(filename) && filename.Length > Native32.WIN32_MAX_PATH - SegmentSuffixLength
+                    : Encoding.UTF8.GetByteCount(filename) > Native32.LINUX_PATH_MAX - SegmentSuffixLength)
                 throw new TsavoriteException($"Path {filename} is too long");
 
             // Configuration is captured here; the native device handle (and its completion-drainer
