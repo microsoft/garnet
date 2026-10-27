@@ -2,65 +2,23 @@
 // Licensed under the MIT license.
 
 using System;
-using System.ComponentModel;
 using System.Runtime.InteropServices;
 
 namespace Tsavorite.epoch.litmus
 {
-    /// <summary>Page allocation and thread-to-core pinning.</summary>
+    /// <summary>Thread-to-core pinning.</summary>
     internal static unsafe class Platform
     {
-        const uint MEM_COMMIT = 0x1000, MEM_RESERVE = 0x2000, MEM_RELEASE = 0x8000, PAGE_RW = 0x04;
-        [DllImport("kernel32", SetLastError = true)] static extern IntPtr VirtualAlloc(IntPtr a, nuint s, uint t, uint p);
-        [DllImport("kernel32", SetLastError = true)] static extern bool VirtualFree(IntPtr a, nuint s, uint t);
         [DllImport("kernel32")] static extern IntPtr GetCurrentThread();
         [DllImport("kernel32", SetLastError = true)] static extern UIntPtr SetThreadAffinityMask(IntPtr h, UIntPtr m);
 
-        const int PROT_READ = 0x1, PROT_WRITE = 0x2;
-        const int MAP_PRIVATE = 0x02, MAP_ANONYMOUS = 0x20;
-        [DllImport("libc", SetLastError = true, EntryPoint = "mmap")] static extern IntPtr LinuxMmap(IntPtr addr, nuint length, int prot, int flags, int fd, long offset);
-        [DllImport("libc", SetLastError = true, EntryPoint = "munmap")] static extern int LinuxMunmap(IntPtr addr, nuint length);
         [DllImport("libc", SetLastError = true, EntryPoint = "sched_setaffinity")] static extern int LinuxSchedSetAffinity(int pid, nuint cpuSetSize, ulong* mask);
 
         /// <summary>Bytes in the kernel cpu_set_t passed to sched_setaffinity (1024 CPUs).</summary>
         const int CpuSetBytes = 128;
 
-        /// <summary>Whether page unmapping and core pinning are available on this platform.</summary>
+        /// <summary>Whether core pinning is available on this platform.</summary>
         internal static bool IsSupported => OperatingSystem.IsWindows() || OperatingSystem.IsLinux();
-
-        /// <summary>Allocate a page-aligned region, committed and readable/writable.</summary>
-        internal static byte* MapPage(nuint bytes)
-        {
-            if (OperatingSystem.IsWindows())
-            {
-                var pointer = VirtualAlloc(IntPtr.Zero, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_RW);
-                if (pointer == IntPtr.Zero)
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "VirtualAlloc failed.");
-                return (byte*)pointer;
-            }
-
-            var mapped = LinuxMmap(IntPtr.Zero, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-            if (mapped == new IntPtr(-1))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "mmap failed.");
-
-            return (byte*)mapped;
-        }
-
-        /// <summary>Release the region.</summary>
-        internal static void Unmap(byte* p, nuint bytes)
-        {
-            if (OperatingSystem.IsWindows())
-            {
-                // MEM_RELEASE requires dwSize 0 and drops the whole reservation.
-                if (!VirtualFree((IntPtr)p, 0, MEM_RELEASE))
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "VirtualFree failed.");
-
-                return;
-            }
-
-            if (LinuxMunmap((IntPtr)p, bytes) != 0)
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "munmap failed.");
-        }
 
         /// <summary>
         /// Pin the calling thread to <paramref name="core"/>. An unpinned thread drifts off the

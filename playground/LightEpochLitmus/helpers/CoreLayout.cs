@@ -17,11 +17,11 @@ namespace Tsavorite.epoch.litmus
         /// Reclaimer on processor 0, reader on 2, disturbers on 4, 6, 8 and so on. Stepping by two
         /// gives each thread its own physical core on an SMT machine, where sibling threads share a
         /// store buffer and would mask the reordering; the odd processors are only used once the
-        /// even ones run out. Exactly <paramref name="disturberCount"/> disturbers are laid out,
-        /// sharing cores if need be; false if the machine cannot even seat the reader and the
+        /// even ones run out. Up to six disturbers use the remaining processors without
+        /// oversubscription; false if the machine cannot even seat the reader and the
         /// reclaimer.
         /// </summary>
-        internal static bool TrySelect(int disturberCount, out CoreLayout cores)
+        internal static bool TrySelect(out CoreLayout cores)
         {
             var logical = Environment.ProcessorCount;
             if (logical < 4)
@@ -41,9 +41,9 @@ namespace Tsavorite.epoch.litmus
             for (var core = 1; core < logical; core += 2)
                 pool.Add(core);
 
-            var disturbers = new int[disturberCount];
-            for (var i = 0; i < disturberCount; i++)
-                disturbers[i] = pool[i % pool.Count];
+            var disturbers = new int[Math.Min(6, pool.Count)];
+            for (var i = 0; i < disturbers.Length; i++)
+                disturbers[i] = pool[i];
 
             cores = new CoreLayout { ReclaimerCore = reclaimer, ReaderCore = reader, DisturberCores = disturbers };
             return true;
