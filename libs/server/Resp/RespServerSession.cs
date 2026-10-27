@@ -1539,7 +1539,7 @@ namespace Garnet.server
             // Debug.WriteLine($"SEND: [{Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "")}]");
             // #endif
 
-            Debug.Assert(d != null, "Send requires a response buffer");
+            GarnetAsserts.Assert(d != null, "Send requires a response buffer");
             if ((int)(dcurr - d) > 0)
             {
                 // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");

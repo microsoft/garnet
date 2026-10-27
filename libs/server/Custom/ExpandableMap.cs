@@ -50,7 +50,7 @@ namespace Garnet.server
         /// <param name="maxId">The maximal item ID value (can be smaller than minId for descending order of IDs)</param>
         public ExpandableMap(int minSize, int minId, int maxId)
         {
-            GarnetAsserts.Assert(maxId > minId);
+            GarnetAsserts.Assert(maxId >= minId);
 
             this.Map = null;
             this.minSize = minSize;

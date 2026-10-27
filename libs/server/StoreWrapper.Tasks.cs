@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -229,7 +228,7 @@ namespace Garnet.server
 
         Task CompactionTaskAsync(int compactionFrequencySecs, CancellationToken token = default)
         {
-            Debug.Assert(compactionFrequencySecs > 0);
+            GarnetAsserts.Assert(compactionFrequencySecs > 0);
 
             return RunMaintenanceLoopAsync(async (cancellationToken) =>
             {
@@ -244,7 +243,7 @@ namespace Garnet.server
 
         Task ObjectCollectTaskAsync(int objectCollectFrequencySecs, CancellationToken token = default)
         {
-            Debug.Assert(objectCollectFrequencySecs > 0);
+            GarnetAsserts.Assert(objectCollectFrequencySecs > 0);
 
             if (serverOptions.DisableObjects)
             {
@@ -266,7 +265,7 @@ namespace Garnet.server
 
         Task ExpiredKeyDeletionScanTaskAsync(int expiredKeyDeletionScanFrequencySecs, CancellationToken token = default)
         {
-            Debug.Assert(expiredKeyDeletionScanFrequencySecs > 0);
+            GarnetAsserts.Assert(expiredKeyDeletionScanFrequencySecs > 0);
 
             return RunMaintenanceLoopAsync((_) =>
             {
