@@ -151,7 +151,7 @@ namespace Tsavorite.core
         public long ReadCachePageSize = 1 << 25;
 
         /// <summary>
-        /// Main-log circular-buffer size if nonzero; rounds down to a power of 2 and errors if that does not allow ReadCachePageSize.
+        /// Read-cache circular-buffer size if nonzero; rounds down to a power of 2 and errors if that does not allow ReadCachePageSize.
         /// </summary>
         /// <remarks>
         /// If zero, calculate it from <see cref="ReadCacheMemorySize"/> and <see cref="ReadCachePageSize"/>, which is also the max if both this and <see cref="ReadCacheMemorySize"/> are nonzero.

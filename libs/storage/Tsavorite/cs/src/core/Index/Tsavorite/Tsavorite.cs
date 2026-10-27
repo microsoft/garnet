@@ -282,6 +282,7 @@ namespace Tsavorite.core
                         ObjectLogDevice = hlog.HasObjectLog ? new NullDevice() : null,
                         MemorySize = logSettings.ReadCacheSettings.MemorySize,
                         PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
+                        PageCount = logSettings.ReadCacheSettings.PageCount,
                         SegmentSizeBits = logSettings.ReadCacheSettings.PageSizeBits + 1,   // Not used by readcache but make sure it passes validation
                         MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                     };

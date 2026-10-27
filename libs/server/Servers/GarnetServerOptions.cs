@@ -1131,8 +1131,8 @@ namespace Garnet.server
                 if (kvSettings.ReadCacheMemorySize > 0)
                 {
                     var pageCount = kvSettings.ReadCacheMemorySize / kvSettings.ReadCachePageSize;
-                    if (kvSettings.PageCount > pageCount)
-                        logger?.LogInformation("[Store] Warning: Read cache overriding specified PageCount of {kvSettingsReadCachePageCount} with smaller page count calculated from LogMemorySize limit divided by PageSize: {pageCount}", kvSettings.ReadCachePageCount, pageCount);
+                    if (kvSettings.ReadCachePageCount > pageCount)
+                        logger?.LogInformation("[Store] Warning: Read cache overriding specified ReadCachePageCount of {kvSettingsReadCachePageCount} with smaller page count calculated from ReadCacheMemorySize limit divided by ReadCachePageSize: {pageCount}", kvSettings.ReadCachePageCount, pageCount);
 
                     var bufferSize = NextPowerOf2(pageCount);
                     logger?.LogInformation("[Store] Read cache enabled with {LogPages} log pages in memory, of which {pageCount} are initially allocated", PrettySize(bufferSize), pageCount);
@@ -1143,10 +1143,10 @@ namespace Garnet.server
                     if (kvSettings.ReadCachePageCount == 0)
                         throw new TsavoriteException($"Read Cache Log Memory size or PageCount must be specified");
                     var bufferSize = (int)NextPowerOf2(kvSettings.ReadCachePageCount);
-                    if (kvSettings.PageCount < bufferSize)
+                    if (kvSettings.ReadCachePageCount < bufferSize)
                     {
-                        logger?.LogInformation("[Store] Warning: Read cache overriding specified PageCount of {kvSettingsReadCachePageCount} with next power of 2 page count {bufferSize}", kvSettings.ReadCachePageCount, bufferSize);
-                        kvSettings.PageCount = bufferSize;
+                        logger?.LogInformation("[Store] Warning: Read cache overriding specified ReadCachePageCount of {kvSettingsReadCachePageCount} with next power of 2 page count {bufferSize}", kvSettings.ReadCachePageCount, bufferSize);
+                        kvSettings.ReadCachePageCount = bufferSize;
                     }
                     logger?.LogInformation("[Store] Read cache enabled with {LogPages} log pages in memory, all of which will be used because there is no MemorySize limit", PrettySize(bufferSize));
                     logger?.LogInformation("[Store] No Read cache log memory size limit will be enforced");
