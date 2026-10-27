@@ -195,7 +195,8 @@ namespace Garnet.test
             var startPointKey = BitConverter.GetBytes(VectorManager.DefaultStartPointId);
             ClassicAssert.IsTrue(service.ImportTerm(Context, rawIndex, DiskANNService.FullVector, startPointKey, new byte[75]));
             ClassicAssert.IsTrue(service.ImportTerm(Context, rawIndex, DiskANNService.NeighborList, startPointKey, new byte[11 * sizeof(uint)]));
-            ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNImportResult.Success, service.FinishImport(Context, rawIndex, 0, 1));
+            ClassicAssert.IsTrue(service.VerifyImport(Context, rawIndex, 0, 1));
+            ClassicAssert.IsTrue(service.FinishImport(Context, rawIndex));
             ClassicAssert.AreEqual(0UL, NativeDiskANNMethods.card(Context, rawIndex));
 
             Span<byte> id = [0, 1, 2, 3];
@@ -246,7 +247,8 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(service.ImportTerm(ImportContext, importIndex, DiskANNService.InternalIdMap, id, importId));
                 ClassicAssert.IsTrue(service.ImportTerm(ImportContext, importIndex, DiskANNService.ExternalIdMap, importId, id));
 
-                ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNImportResult.FinishFailed, service.FinishImport(ImportContext, importIndex, 0, 1));
+                ClassicAssert.IsTrue(service.VerifyImport(ImportContext, importIndex, 0, 1));
+                ClassicAssert.IsTrue(service.FinishImport(ImportContext, importIndex));
             }
             finally
             {

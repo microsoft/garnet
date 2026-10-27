@@ -239,7 +239,7 @@ namespace Garnet.server
                 (uint)buildExplorationFactor, (uint)numLinks, distanceMetric, quantState.HasValue, quantState.GetValueOrDefault().ReadOnlySpan, startPointId, out result, out errorMsg);
         }
 
-        /// <inheritdoc cref="IGarnetApi.VectorSetImport"/>
+        /// <inheritdoc/>
         public GarnetStatus VectorSetImport(PinnedSpanByte key, VectorImportTermType termType, PinnedSpanByte id, PinnedSpanByte value,
             out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
@@ -287,14 +287,13 @@ namespace Garnet.server
             }
         }
 
-        /// <inheritdoc cref="IGarnetApi.VectorSetFinishImport"/>
-        public GarnetStatus VectorSetFinishImport(PinnedSpanByte key, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetVerifyImport(PinnedSpanByte key, int taskIndex, int taskCount, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
-            result = VectorManagerResult.BadParams;
-            errorMsg = default;
-            if (!vectorManager.IsEnabled)
+            if (taskCount < 0 || taskIndex < 0 || taskIndex >= taskCount)
             {
-                errorMsg = "ERR Vector Set (preview) commands are not enabled"u8;
+                result = VectorManagerResult.BadParams;
+                errorMsg = "ERR Task configuration invalid"u8;
                 return GarnetStatus.OK;
             }
 
@@ -306,20 +305,33 @@ namespace Garnet.server
             {
                 if (status != GarnetStatus.OK)
                 {
+                    errorMsg = "ERR Vector Set not found"u8;
                     return status;
                 }
 
-                var finishResult = vectorManager.FinishImport(key, indexSpan);
-                if (finishResult == NativeDiskANNMethods.DiskANNImportResult.Success)
+                _ = vectorManager.TryVerifyImport(key, indexSpan, taskIndex, taskCount, out errorMsg);
+
+                return GarnetStatus.OK;
+            }
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetFinishImport(PinnedSpanByte key, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        {
+            result = VectorManagerResult.Invalid;
+            parseState.InitializeWithArgument(key);
+            var input = new StringInput(RespCommand.XVIMPORT, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out _))
+            {
+                if (status != GarnetStatus.OK)
                 {
-                    result = VectorManagerResult.OK;
+                    errorMsg = "ERR Vector Set not found"u8;
+                    return status;
                 }
-                else
-                {
-                    errorMsg = finishResult == NativeDiskANNMethods.DiskANNImportResult.FinishFailed
-                        ? "ERR vector set import finalization failed"u8
-                        : "ERR vector set import verification failed"u8;
-                }
+
+                _ = vectorManager.TryFinishImport(key, indexSpan, out errorMsg);
+
                 return GarnetStatus.OK;
             }
         }

@@ -1367,6 +1367,14 @@ namespace Garnet.server
         /// <param name="key">Name of the vector set.</param>
         /// <param name="result">Finalization result.</param>
         /// <param name="errorMsg">Error details when finalization fails.</param>
+        GarnetStatus VectorSetVerifyImport(PinnedSpanByte key, int taskIndex, int taskCount, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
+
+        /// <summary>
+        /// Finalizes an imported vector set before returning.
+        /// </summary>
+        /// <param name="key">Name of the vector set.</param>
+        /// <param name="result">Finalization result.</param>
+        /// <param name="errorMsg">Error details when finalization fails.</param>
         GarnetStatus VectorSetFinishImport(PinnedSpanByte key, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
 
         /// <summary>

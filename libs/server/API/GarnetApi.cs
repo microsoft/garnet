@@ -401,6 +401,10 @@ namespace Garnet.server
         => storageSession.VectorSetImport(key, termType, id, value, out result, out errorMsg);
 
         /// <inheritdoc />
+        public GarnetStatus VectorSetVerifyImport(PinnedSpanByte key, int taskIndex, int taskCount, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        => storageSession.VectorSetVerifyImport(key, taskIndex, taskCount, out result, out errorMsg);
+
+        /// <inheritdoc />
         public GarnetStatus VectorSetFinishImport(PinnedSpanByte key, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         => storageSession.VectorSetFinishImport(key, out result, out errorMsg);
 
