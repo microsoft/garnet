@@ -2,10 +2,13 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -65,12 +68,8 @@ namespace Tsavorite.test
             var recoveredLog = new TsavoriteLog(logSettings);
             try
             {
-                // Which exception reports the missing commit is platform dependent. Where the forward scan runs off
-                // the end of the written region the read fails and WaitForFrameLoad rethrows the resulting
-                // OperationCanceledException (Windows reports the over-read as an error, Linux returns a short read);
-                // otherwise the scan completes without finding commit 4 and the commit-number check rejects it.
-                var ex = Assert.CatchAsync(async () => await recoveredLog.RecoverAsync(4).ConfigureAwait(false));
-                Assert.That(ex, Is.InstanceOf<TsavoriteException>().Or.InstanceOf<OperationCanceledException>());
+                // The forward scan reaches the end of the written log without finding commit 4
+                _ = Assert.CatchAsync<TsavoriteException>(async () => await recoveredLog.RecoverAsync(4).ConfigureAwait(false));
                 ClassicAssert.AreNotEqual(commit1Addr, recoveredLog.TailAddress,
                     "Recovery silently fell back to an earlier commit instead of failing the request");
             }
@@ -85,6 +84,143 @@ namespace Tsavorite.test
             ClassicAssert.AreEqual(cookie1, recoveredLog.RecoveredCookie);
             ClassicAssert.AreEqual(commit1Addr, recoveredLog.TailAddress);
             recoveredLog.Dispose();
+        }
+
+        /// <summary>Where the fast-commit recovery scan for commit records starts</summary>
+        public enum RecoveryScanStart
+        {
+            /// <summary>Nothing was written, so the scan starts at the beginning of an empty log</summary>
+            EmptyLog,
+
+            /// <summary>The latest commit has metadata, so the scan starts at the end of the log</summary>
+            LatestCommitMetadata,
+
+            /// <summary>No commit has metadata, so the scan starts at the beginning and finds every commit</summary>
+            BeginningOfLog,
+        }
+
+        private const int SmallPageSizeBits = 12;
+
+        private TsavoriteLogSettings SmallPageFastCommitSettings(IDevice logDevice) => new()
+        {
+            LogDevice = logDevice,
+            LogChecksum = LogChecksumType.PerEntry,
+            LogCommitManager = manager,
+            FastCommitMode = true,
+            TryRecoverLatest = false,
+            PageSizeBits = SmallPageSizeBits,
+            MemorySizeBits = 20,
+            SegmentSizeBits = 22
+        };
+
+        [Test]
+        [Category("TsavoriteLog")]
+        public async Task FastCommitRecoveryEndsQuietlyAtTheEndOfTheLog(
+            [Values(DeviceType.Native, DeviceType.RandomAccess, DeviceType.FileStream)] DeviceType deviceType,
+            [Values] RecoveryScanStart scanStart)
+        {
+            // The recovery scan for commit records has no end bound, so it always reads past the end of the written log.
+            // Windows reports that read as an end-of-file error where other platforms return zeros; neither is a failure.
+            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, $"endOfLog{deviceType}.log"), deviceType: deviceType, deleteOnClose: true);
+            var logSettings = SmallPageFastCommitSettings(device);
+
+            byte[] lastCookie = null;
+            var lastCommitAddress = 0L;
+            if (scanStart != RecoveryScanStart.EmptyLog)
+            {
+                log = new TsavoriteLog(logSettings);
+
+                // Span several pages, so the scan crosses page boundaries before it reaches the end of the log
+                for (var commitNum = 1; commitNum <= 3; commitNum++)
+                {
+                    for (var i = 0; i < 100; i++)
+                        _ = log.Enqueue(entry);
+                    lastCookie = new byte[100];
+                    new Random().NextBytes(lastCookie);
+                    ClassicAssert.IsTrue(log.CommitStrongly(out lastCommitAddress, out _, true, lastCookie, commitNum));
+                }
+                ClassicAssert.Greater(lastCommitAddress, 3L << SmallPageSizeBits, "the log should span several pages");
+
+                log.Dispose();
+                log = null;
+            }
+
+            if (scanStart == RecoveryScanStart.BeginningOfLog)
+                manager.RemoveAllCommits();
+
+            var logger = new RecordingLogger();
+            var recoveredLog = new TsavoriteLog(logSettings, logger);
+            try
+            {
+                await recoveredLog.RecoverAsync().ConfigureAwait(false);
+                ClassicAssert.AreEqual(lastCookie, recoveredLog.RecoveredCookie);
+                if (scanStart != RecoveryScanStart.EmptyLog)
+                    ClassicAssert.AreEqual(lastCommitAddress, recoveredLog.TailAddress);
+            }
+            finally
+            {
+                recoveredLog.Dispose();
+            }
+
+            Assert.That(logger.AtOrAbove(LogLevel.Warning), Is.Empty, "reaching the end of the log is how the recovery scan ends, not a failure");
+        }
+
+        [Test]
+        [Category("TsavoriteLog")]
+        public async Task FastCommitRecoveryReportsAReadErrorPastTheLastCommit()
+        {
+            // Only the end of the written log ends the recovery scan quietly. A device error is still reported, and recovery
+            // keeps the last commit the scan found.
+            var failing = new ErrorCodeOnReadDevice(Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "readError.log"), deleteOnClose: true));
+            device = failing;
+            var logSettings = SmallPageFastCommitSettings(failing);
+            log = new TsavoriteLog(logSettings);
+
+            for (var i = 0; i < 100; i++)
+                _ = log.Enqueue(entry);
+            var cookie = new byte[100];
+            new Random().NextBytes(cookie);
+            ClassicAssert.IsTrue(log.CommitStrongly(out var commitAddress, out _, true, cookie, 1));
+
+            var pageSize = 1L << SmallPageSizeBits;
+            ClassicAssert.AreNotEqual(0L, commitAddress & (pageSize - 1), "the scan should start inside the last written page");
+            var firstUnwrittenPage = (commitAddress | (pageSize - 1)) + 1;
+            log.Dispose();
+            log = null;
+
+            // ERROR_IO_DEVICE: a genuine failure, unlike the end-of-file error Windows reports past the end of the log
+            failing.ReadErrorFromAddress = firstUnwrittenPage;
+            failing.ReadErrorCode = 1117;
+
+            var logger = new RecordingLogger();
+            var recoveredLog = new TsavoriteLog(logSettings, logger);
+            try
+            {
+                await recoveredLog.RecoverAsync().ConfigureAwait(false);
+                ClassicAssert.AreEqual(cookie, recoveredLog.RecoveredCookie);
+                ClassicAssert.AreEqual(commitAddress, recoveredLog.TailAddress);
+            }
+            finally
+            {
+                recoveredLog.Dispose();
+            }
+
+            Assert.That(logger.AtOrAbove(LogLevel.Warning), Is.Not.Empty, "a device error during the recovery scan must be reported");
+        }
+
+        /// <summary>Records every log entry so a test can assert on what was reported</summary>
+        private sealed class RecordingLogger : ILogger
+        {
+            private readonly ConcurrentQueue<(LogLevel Level, string Message)> entries = new();
+
+            public IDisposable BeginScope<TState>(TState state) => default!;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
+                => entries.Enqueue((logLevel, $"{formatter(state, exception)} {exception?.GetType().Name}"));
+
+            public string[] AtOrAbove(LogLevel level) => [.. entries.Where(e => e.Level >= level).Select(e => $"{e.Level}: {e.Message}")];
         }
 
         [Test]

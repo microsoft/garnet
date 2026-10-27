@@ -26,6 +26,12 @@ namespace Tsavorite.core
         protected bool disposed = false;
 
         /// <summary>
+        /// Set by <see cref="ScanForwardForCommit"/>. That scan has no end bound and runs until the written log ends, so
+        /// reaching unwritten space ends the scan rather than failing it.
+        /// </summary>
+        private volatile bool stopAtEndOfLog;
+
+        /// <summary>
         /// Whether iteration has ended, either because we reached the end address of iteration, or because
         /// we reached the end of a completed log.
         /// </summary>
@@ -653,7 +659,8 @@ namespace Tsavorite.core
             {
                 var result = (PageAsyncReadResult<Empty>)context;
 
-                if (errorCode == 0)
+                // The frame is cleared before every read, so a read past the end of the file leaves the page reading as unwritten
+                if (errorCode == 0 || (stopAtEndOfLog && IsEndOfFile(errorCode)))
                     _ = result.handle?.Signal();
                 else
                 {
@@ -680,8 +687,15 @@ namespace Tsavorite.core
             return (length + 3) & ~3;
         }
 
+        /// <summary>
+        /// Whether a read failed only because it started at or past the end of the file, which Windows reports as an error
+        /// and other platforms as a successful read of zero bytes.
+        /// </summary>
+        private static bool IsEndOfFile(uint errorCode) => OperatingSystem.IsWindows() && errorCode == Native32.ERROR_HANDLE_EOF;
+
         internal unsafe bool ScanForwardForCommit(ref TsavoriteLogRecoveryInfo info, long commitNum = -1)
         {
+            stopAtEndOfLog = true;
             epoch.Resume();
             var foundCommit = false;
             // Track the address of the record currently being processed so a torn/invalid commit
@@ -831,7 +845,12 @@ namespace Tsavorite.core
 
                         // If zeroed out field is at page start, we encountered an uninitialized page and should signal up
                         if (pageOffset == 0)
+                        {
+                            // For a scan that runs to the end of the log, the first unwritten page is where the log ends
+                            if (stopAtEndOfLog)
+                                return false;
                             throw new TsavoriteException("Uninitialized page found during scan at page " + allocator.GetPage(currentAddress));
+                        }
                     }
                     continue;
                 }
