@@ -5,7 +5,13 @@
     <AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DefineConstants>$(DefineConstants);GARNET_CLIENT_EPOCH</DefineConstants>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\storage\Tsavorite\cs\src\core\Epochs\LightEpoch.cs" Link="Epochs\LightEpoch.cs" />
+    <Compile Include="..\storage\Tsavorite\cs\src\core\Epochs\LightEpoch.EntryTable.cs" Link="Epochs\LightEpoch.EntryTable.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\metrics\HdrHistogram\HdrHistogram.csproj" />
