@@ -144,6 +144,8 @@ namespace Garnet.server
                 return false;
             }
 
+            SetFlags(key, VectorSetFlags.ImportCompleted, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
+
             ReplicateVectorSetFinishImport(key);
 
             errorMsg = default;

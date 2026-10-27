@@ -5701,8 +5701,12 @@ namespace Garnet.test
             const float Value = 1f;
             const int InternalId = 1;
 
+            const int StartPointId = 0;
+
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
             var db = redis.GetDatabase();
+
+            var startPointIdBytes = new byte[sizeof(int)];
 
             var idBytes = new byte[sizeof(int)];
             BinaryPrimitives.WriteInt32LittleEndian(idBytes, InternalId);
@@ -5717,27 +5721,43 @@ namespace Garnet.test
 
             var neighborBytes = new byte[(Links + 1) * sizeof(uint)];
 
-            // Import single vector which is also start point
-
-            var createRes = (string)await db.ExecuteAsync("XVCREATE", [Key, "DIM", Dims, "M", Links, "NOQUANT", "START_POINT", InternalId]).ConfigureAwait(false);
+            var createRes = (string)await db.ExecuteAsync("XVCREATE", [Key, "DIM", Dims, "M", Links, "NOQUANT", "START_POINT", StartPointId]).ConfigureAwait(false);
             ClassicAssert.AreEqual("OK", createRes);
 
-            var fullVectorRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "VECTOR", idBytes, valueBytes]).ConfigureAwait(false);
-            ClassicAssert.AreEqual("OK", fullVectorRes);
+            // Import single vector
+            {
+                var fullVectorRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "VECTOR", idBytes, valueBytes]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", fullVectorRes);
 
-            var neighborRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "NEIGHBORS", idBytes, neighborBytes]).ConfigureAwait(false);
-            ClassicAssert.AreEqual("OK", neighborRes);
+                var neighborRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "NEIGHBORS", idBytes, neighborBytes]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", neighborRes);
 
-            // No QUANT import in simple case
+                // No QUANT import in simple case
 
-            var attrRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "ATTRS", idBytes, attrBytes]).ConfigureAwait(false);
-            ClassicAssert.AreEqual("OK", attrRes);
+                var attrRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "ATTRS", idBytes, attrBytes]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", attrRes);
 
-            var intRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "INTMAP", externalIdBytes, idBytes]).ConfigureAwait(false);
-            ClassicAssert.AreEqual("OK", intRes);
+                var intRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "INTMAP", externalIdBytes, idBytes]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", intRes);
 
-            var extRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "EXTMAP", idBytes, externalIdBytes]).ConfigureAwait(false);
-            ClassicAssert.AreEqual("OK", extRes);
+                var extRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "EXTMAP", idBytes, externalIdBytes]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", extRes);
+            }
+
+            // Set start point, which is otherwise the same as the initial point
+            {
+                var fullVectorRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "VECTOR", startPointIdBytes, valueBytes]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", fullVectorRes);
+
+                var startPointNeighborBytes = new byte[(Links + 1) * sizeof(uint)];
+                BinaryPrimitives.WriteInt32LittleEndian(startPointNeighborBytes, 1);
+                BinaryPrimitives.WriteInt32LittleEndian(startPointNeighborBytes.AsSpan()[sizeof(uint)..], InternalId);
+
+                var neighborRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "NEIGHBORS", startPointIdBytes, startPointNeighborBytes]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", neighborRes);
+
+                // No QUANT import in simple case
+            }
 
             // Verify and finish import
 
