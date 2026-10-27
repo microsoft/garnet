@@ -193,8 +193,6 @@ namespace Garnet.test
 
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "target", "FINISH"));
 
-            await WaitForXVIMPORTCompletionAsync(db, "target").ConfigureAwait(false);
-
             var finishedInfo = ((string[])db.Execute("VINFO", "target")).Chunk(2).ToDictionary(static pair => pair[0], static pair => pair[1]);
             ClassicAssert.AreEqual("0", finishedInfo["import-pending"]);
             ClassicAssert.AreEqual("1", finishedInfo["size"]);
@@ -232,7 +230,6 @@ namespace Garnet.test
                 if (finish)
                 {
                     ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "imported", "FINISH"));
-                    await WaitForXVIMPORTCompletionAsync(db, "imported").ConfigureAwait(false);
                 }
             }
             if (checkpoint)
@@ -252,7 +249,6 @@ namespace Garnet.test
                 var info = ((string[])db.Execute("VINFO", "imported")).Chunk(2).ToDictionary(static pair => pair[0], static pair => pair[1]);
                 ClassicAssert.AreEqual(finish ? "0" : "1", info["import-pending"]);
                 ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "imported", "FINISH"));
-                await WaitForXVIMPORTCompletionAsync(db, "imported").ConfigureAwait(false);
 
                 ClassicAssert.AreEqual(1, (int)db.Execute("VCARD", "imported"));
                 CollectionAssert.AreEqual(new[] { (float)databaseId, 2f, 3f }, ((string[])db.Execute("VEMB", "imported", "member")).Select(float.Parse).ToArray());
@@ -305,16 +301,12 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "imported", "FINISH"));
                 ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "imported", "FINISH"));
 
-                await WaitForXVIMPORTCompletionAsync(db, "imported").ConfigureAwait(false);
-
                 ClassicAssert.AreEqual(1, (int)db.Execute("VADD", "imported", "VALUES", 3, 4, 5, 6, "after", quantizer, "M", 4));
             }
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVCREATE", "empty", "DIM", 3, "NOQUANT", "M", 4, "START_POINT", 42));
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "empty", "VECTOR", startPointKey, vector));
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "empty", "NEIGHBORS", startPointKey, new byte[5 * sizeof(uint)]));
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "empty", "FINISH"));
-
-            await WaitForXVIMPORTCompletionAsync(db, "empty").ConfigureAwait(false);
 
             ClassicAssert.IsTrue(await server.Store.CommitAOFAsync(CancellationToken.None));
             redis.Dispose();
@@ -325,8 +317,6 @@ namespace Garnet.test
             using var recovered = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             db = recovered.GetDatabase();
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "empty", "FINISH"));
-
-            await WaitForXVIMPORTCompletionAsync(db, "empty").ConfigureAwait(false);
 
             ClassicAssert.AreEqual(0, (int)db.Execute("VCARD", "empty"));
             var info = ((string[])db.Execute("VINFO", "imported")).Chunk(2).ToDictionary(static pair => pair[0], static pair => pair[1]);
@@ -339,16 +329,12 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("2", info["size"]);
                 CollectionAssert.AreEqual(new[] { "member" }, (string[])db.Execute("VSIM", "imported", "FP32", vector, "COUNT", 1));
                 ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "imported", "FINISH"));
-
-                await WaitForXVIMPORTCompletionAsync(db, "imported").ConfigureAwait(false);
             }
             else
             {
                 ClassicAssert.IsFalse(info.ContainsKey("size"));
                 ClassicAssert.Throws<RedisServerException>(() => db.Execute("VCARD", "imported"));
                 ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "imported", "FINISH"));
-
-                await WaitForXVIMPORTCompletionAsync(db, "imported").ConfigureAwait(false);
 
                 ClassicAssert.AreEqual(1, (int)db.Execute("VCARD", "imported"));
             }
@@ -450,7 +436,7 @@ namespace Garnet.test
         [Test]
         public async Task XVIMPORTFinishParsingAsync()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig(allowAdmin: true)).ConfigureAwait(false);
             var db = redis.GetDatabase();
             ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandInfo(RespCommand.XVIMPORT, out var commandInfo));
             ClassicAssert.AreEqual(-3, commandInfo.Arity);
@@ -487,7 +473,6 @@ namespace Garnet.test
                 ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "missing", "FINISH")).Message);
             ClassicAssert.IsFalse(db.KeyExists("missing"));
 
-            await WaitForXVIMPORTCompletionAsync(db, "FINISH").ConfigureAwait(false);
             ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "FINISH", "VECTOR", new byte[] { 1, 0, 0, 0 }, new byte[12]));
 
             ClassicAssert.AreEqual(1, (int)db.Execute("VADD", "FINISH", "FP32", new byte[12], "first", "NOQUANT", "M", 4));
@@ -5705,33 +5690,72 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, info.Value.Length);
         }
 
-        /// <summary>
-        /// Wait for a `XVIMPORT ... FINISH` to complete on the given key.
-        /// </summary>
-        private static async Task WaitForXVIMPORTCompletionAsync(IDatabase db, string key)
+        [Test]
+        public async Task SimpleImportAndValidateAsync()
         {
-            while (true)
-            {
-                TestContext.CurrentContext.CancellationToken.ThrowIfCancellationRequested();
+            const string Key = nameof(SimpleImportAndValidateAsync);
+            const string Element = Key + "_Element";
+            const string Attribute = "{\"attr\": 12345}";
+            const int Dims = 3;
+            const int Links = 16;
+            const float Value = 1f;
+            const int InternalId = 1;
 
-                try
-                {
-                    var resRaw = await db.ExecuteAsync("VINFO", [key]).ConfigureAwait(false);
-                    var res = resRaw.ToDictionary();
-                    if (res.ContainsKey("import-pending") && (int)res["import-pending"] == 0)
-                    {
-                        break;
-                    }
-                }
-                catch
-                {
-                    // Ignore
-                }
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
 
-                await Task.Delay(100).ConfigureAwait(false);
-            }
+            var idBytes = new byte[sizeof(int)];
+            BinaryPrimitives.WriteInt32LittleEndian(idBytes, InternalId);
+
+            var externalIdBytes = Encoding.UTF8.GetBytes(Element);
+
+            var valueFloats = new float[Dims];
+            valueFloats.AsSpan().Fill(Value);
+            var valueBytes = MemoryMarshal.AsBytes(valueFloats).ToArray();
+
+            var attrBytes = Encoding.UTF8.GetBytes(Attribute);
+
+            var neighborBytes = new byte[(Links + 1) * sizeof(uint)];
+
+            // Import single vector which is also start point
+
+            var createRes = (string)await db.ExecuteAsync("XVCREATE", [Key, "DIM", Dims, "M", Links, "NOQUANT", "START_POINT", InternalId]).ConfigureAwait(false);
+            ClassicAssert.AreEqual("OK", createRes);
+
+            var fullVectorRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "VECTOR", idBytes, valueBytes]).ConfigureAwait(false);
+            ClassicAssert.AreEqual("OK", fullVectorRes);
+
+            var neighborRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "NEIGHBORS", idBytes, neighborBytes]).ConfigureAwait(false);
+            ClassicAssert.AreEqual("OK", neighborRes);
+
+            // No QUANT import in simple case
+
+            var attrRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "ATTRS", idBytes, attrBytes]).ConfigureAwait(false);
+            ClassicAssert.AreEqual("OK", attrRes);
+
+            var intRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "INTMAP", externalIdBytes, idBytes]).ConfigureAwait(false);
+            ClassicAssert.AreEqual("OK", intRes);
+
+            var extRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "EXTMAP", idBytes, externalIdBytes]).ConfigureAwait(false);
+            ClassicAssert.AreEqual("OK", extRes);
+
+            // Verify and finish import
+
+            var verifyRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "VERIFY", "0", "1"]).ConfigureAwait(false);
+            ClassicAssert.AreEqual("OK", verifyRes);
+
+            var finishRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "FINISH"]).ConfigureAwait(false);
+            ClassicAssert.AreEqual("OK", finishRes);
+
+            // Perform a search
+
+            var searchReq = VectorSetSimilaritySearchRequest.ByVector(valueFloats);
+            searchReq.WithAttributes = true;
+            using var searchRes = await db.VectorSetSimilaritySearchAsync(Key, searchReq).ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, searchRes.Span.Length);
+            ClassicAssert.AreEqual(Element, searchRes.Span[0].Member);
+            ClassicAssert.AreEqual(Attribute, searchRes.Span[0].AttributesJson);
         }
-
 
         /// <summary>
         /// Create a new GarnetServer instance with a small enough log that ordinary writes flush pages.

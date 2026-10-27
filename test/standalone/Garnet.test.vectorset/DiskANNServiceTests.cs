@@ -249,6 +249,7 @@ namespace Garnet.test
 
                 ClassicAssert.IsTrue(service.VerifyImport(ImportContext, importIndex, 0, 1));
                 ClassicAssert.IsTrue(service.FinishImport(ImportContext, importIndex));
+                
             }
             finally
             {

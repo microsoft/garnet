@@ -223,16 +223,14 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVIMPORT));
             }
 
+            var key = parseState.GetArgSliceByRef(0);
+
             var term = parseState.GetArgSliceByRef(1).ReadOnlySpan;
             if (term.EqualsUpperCaseSpanIgnoringCase("FINISH"u8))
             {
                 if (parseState.Count != 2)
                 {
                     return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVIMPORT));
-                }
-                if (parseState.GetArgSliceByRef(0).ReadOnlySpan.IsEmpty)
-                {
-                    return AbortWithErrorMessage("ERR Vector Set key cannot be empty"u8);
                 }
 
                 var finishStatus = storageApi.VectorSetFinishImport(parseState.GetArgSliceByRef(0), out var finishResult, out var finishErrorMsg);
@@ -252,6 +250,28 @@ namespace Garnet.server
                 WriteDirect(CmdStrings.RESP_OK);
                 return true;
             }
+            else if (term.EqualsUpperCaseSpanIgnoringCase("VERIFY"u8))
+            {
+                if (parseState.Count != 4)
+                {
+                    return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVIMPORT));
+                }
+
+                if (!parseState.TryGetInt(2, out var taskIndex) || !parseState.TryGetInt(3, out var taskCount))
+                {
+                    return AbortWithErrorMessage("ERR XVIMPORT VERIFY must have integer taskIndex and taskCount parameters");
+                }
+
+                _ = storageApi.VectorSetVerifyImport(key, taskIndex, taskCount, out var res, out var verifyErrorMsg);
+                if (res != VectorManagerResult.OK)
+                {
+                    return AbortWithErrorMessage(verifyErrorMsg);
+                }
+
+                WriteDirect(CmdStrings.RESP_OK);
+                return true;
+            }
+
             if (parseState.Count != 4)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVIMPORT));
@@ -271,7 +291,6 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR invalid vector set import term"u8);
             }
 
-            var key = parseState.GetArgSliceByRef(0);
             var id = parseState.GetArgSliceByRef(2);
             var value = parseState.GetArgSliceByRef(3);
 
