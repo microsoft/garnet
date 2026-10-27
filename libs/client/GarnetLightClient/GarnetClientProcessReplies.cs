@@ -286,7 +286,8 @@ namespace Garnet.client
                         if (!ProcessReplyAsMemoryByte(ref ptr, end, out var resultMemory, out error))
                             return readHead;
                         ConsumeTcsOffset(ref consumed, tcs.timestamp);
-                        if (error != null) tcs.memoryByteCallback?.Invoke(tcs.context, CopyErrorToSpan(error));
+                        if (tcs.memoryByteCallback == null) resultMemory.Dispose();
+                        else if (error != null) tcs.memoryByteCallback.Invoke(tcs.context, CopyErrorToSpan(error));
                         else tcs.memoryByteCallback?.Invoke(tcs.context, resultMemory);
                         break;
 
@@ -294,7 +295,8 @@ namespace Garnet.client
                         if (!ProcessReplyAsMemoryByteArray(ref ptr, end, out var resultMemoryByteArray, out error))
                             return readHead;
                         ConsumeTcsOffset(ref consumed, tcs.timestamp);
-                        if (error != null) tcs.memoryByteArrayCallback?.Invoke(tcs.context, resultMemoryByteArray, CopyErrorToSpan(error));
+                        if (tcs.memoryByteArrayCallback == null) DisposeMemoryResults(resultMemoryByteArray);
+                        else if (error != null) tcs.memoryByteArrayCallback.Invoke(tcs.context, resultMemoryByteArray, CopyErrorToSpan(error));
                         else tcs.memoryByteArrayCallback?.Invoke(tcs.context, resultMemoryByteArray, default);
                         break;
 
@@ -319,7 +321,7 @@ namespace Garnet.client
                             return readHead;
                         ConsumeTcsOffset(ref consumed, tcs.timestamp);
                         if (error != null) tcs.memoryByteTcs?.TrySetException(new Exception(error));
-                        else tcs.memoryByteTcs?.TrySetResult(resultMemory);
+                        else if (tcs.memoryByteTcs?.TrySetResult(resultMemory) != true) resultMemory.Dispose();
                         break;
 
                     case TaskType.StringArrayAsync:
@@ -335,7 +337,7 @@ namespace Garnet.client
                             return readHead;
                         ConsumeTcsOffset(ref consumed, tcs.timestamp);
                         if (error != null) tcs.memoryByteArrayTcs?.TrySetException(new Exception(error));
-                        else tcs.memoryByteArrayTcs?.TrySetResult(resultByteArray);
+                        else if (tcs.memoryByteArrayTcs?.TrySetResult(resultByteArray) != true) DisposeMemoryResults(resultByteArray);
                         break;
 
                     case TaskType.LongAsync:
@@ -375,6 +377,13 @@ namespace Garnet.client
             new ReadOnlySpan<byte>(errorByteArray).CopyTo(memResultError.Span);
 
             return memResultError;
+        }
+
+        static void DisposeMemoryResults(MemoryResult<byte>[] results)
+        {
+            if (results != null)
+                foreach (var result in results)
+                    result.Dispose();
         }
     }
 }

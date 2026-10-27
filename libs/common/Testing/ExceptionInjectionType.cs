@@ -167,6 +167,10 @@ namespace Garnet.common
         /// </summary>
         GarnetClient_Tls_Pause_Before_Write,
         /// <summary>
+        /// GarnetClient: pause after connecting a socket, before publishing its writer.
+        /// </summary>
+        GarnetClient_Connect_Pause_Before_Publish,
+        /// <summary>
         /// Pause after receiving the full diskless snapshot, before recovery resets the AOF addresses.
         /// </summary>
         Replication_Pause_Before_Diskless_Snapshot_Recovery,

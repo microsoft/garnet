@@ -209,6 +209,9 @@ namespace Garnet.client
         public async Task ConnectAsync(CancellationToken token = default)
         {
             socket = await ConnectSendSocketAsync(timeoutMilliseconds, token).ConfigureAwait(false);
+#if DEBUG
+            ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.GarnetClient_Connect_Pause_Before_Publish);
+#endif
             networkWriter = new NetworkWriter(this, socket, networkWriterOptions, sslOptions, out networkHandler, epoch, PoolOwnerType.GarnetClient, logger);
             await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
 
