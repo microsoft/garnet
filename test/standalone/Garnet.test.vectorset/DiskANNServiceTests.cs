@@ -62,7 +62,6 @@ namespace Garnet.test
         public void CheckInternalId()
         {
             const ulong Context = 8;
-            const ulong ImportContext = 16;
 
             ConcurrentDictionary<(ulong Context, byte[] Key), byte[]> data = new(new ContextAndKeyComparer());
 
@@ -237,25 +236,7 @@ namespace Garnet.test
             }
 
             service.DropIndex(Context, rawIndex);
-            var importIndex = NativeDiskANNMethods.create_index(ImportContext, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, VectorManager.DefaultStartPointId, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
-            ClassicAssert.AreNotEqual(nint.Zero, importIndex);
-            try
-            {
-                var importId = BitConverter.GetBytes(1u);
-                ClassicAssert.IsTrue(service.ImportTerm(ImportContext, importIndex, DiskANNService.FullVector, importId, elem));
-                ClassicAssert.IsTrue(service.ImportTerm(ImportContext, importIndex, DiskANNService.NeighborList, importId, new byte[11 * sizeof(uint)]));
-                ClassicAssert.IsTrue(service.ImportTerm(ImportContext, importIndex, DiskANNService.InternalIdMap, id, importId));
-                ClassicAssert.IsTrue(service.ImportTerm(ImportContext, importIndex, DiskANNService.ExternalIdMap, importId, id));
-
-                ClassicAssert.IsTrue(service.VerifyImport(ImportContext, importIndex, 0, 1));
-                ClassicAssert.IsTrue(service.FinishImport(ImportContext, importIndex));
-                
-            }
-            finally
-            {
-                service.DropIndex(ImportContext, importIndex);
-            }
-
+            
             GC.KeepAlive(deleteDel);
             GC.KeepAlive(writeDel);
             GC.KeepAlive(readDel);

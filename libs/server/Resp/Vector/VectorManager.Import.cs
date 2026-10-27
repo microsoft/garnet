@@ -161,11 +161,10 @@ namespace Garnet.server
         {
             ReadIndex(indexConfig, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
-            // Validation on a not-importing Vector Set succeeds by definition
             if (!IsImportPending(indexConfig))
             {
-                errorMsg = default;
-                return true;
+                errorMsg = "ERR Vector set is not importing"u8;
+                return false;
             }
 
             if (!Service.VerifyImport(context, indexPtr, taskIndex, taskCount))

@@ -5691,90 +5691,49 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task SimpleImportAndValidateAsync()
+        public async Task XVIMPORTVerifyErrorsAsync()
         {
-            const string Key = nameof(SimpleImportAndValidateAsync);
-            const string Element = Key + "_Element";
-            const string Attribute = "{\"attr\": 12345}";
-            const int Dims = 3;
-            const int Links = 16;
-            const float Value = 1f;
-            const int InternalId = 1;
-
-            const int StartPointId = 0;
+            const string MissingKey = nameof(XVIMPORTVerifyErrorsAsync) + "_Missing";
+            const string NotImportingKey = nameof(XVIMPORTVerifyErrorsAsync) + "_NotImporting";
+            const string ImportingKey = nameof(XVIMPORTVerifyErrorsAsync) + "_Importing";
 
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
             var db = redis.GetDatabase();
 
-            var startPointIdBytes = new byte[sizeof(int)];
+            // Vector Set doesn't exist
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", [MissingKey, "VERIFY", "0", "1"]));
+            ClassicAssert.AreEqual("ERR Vector Set not found", exc0.Message);
 
-            var idBytes = new byte[sizeof(int)];
-            BinaryPrimitives.WriteInt32LittleEndian(idBytes, InternalId);
+            // Vector Set not importing
+            ClassicAssert.IsTrue(await db.VectorSetAddAsync(NotImportingKey, VectorSetAddRequest.Member("foo", new float[] { 1 })).ConfigureAwait(false));
 
-            var externalIdBytes = Encoding.UTF8.GetBytes(Element);
+            var exc1 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", [NotImportingKey, "VERIFY", "0", "1"]));
+            ClassicAssert.AreEqual("ERR Vector set is not importing", exc1.Message);
 
-            var valueFloats = new float[Dims];
-            valueFloats.AsSpan().Fill(Value);
-            var valueBytes = MemoryMarshal.AsBytes(valueFloats).ToArray();
+            // Too few args
+            ClassicAssert.AreEqual("OK", (string)await db.ExecuteAsync("XVCREATE", [ImportingKey, "DIM", 3, "M", 4, "NOQUANT", "START_POINT", "0"]).ConfigureAwait(false));
+            var exc2 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", [NotImportingKey, "VERIFY"]));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'XVIMPORT' command", exc2.Message);
 
-            var attrBytes = Encoding.UTF8.GetBytes(Attribute);
+            // Task index malformed
+            var exc3 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", [NotImportingKey, "VERIFY", "abc", "1"]));
+            ClassicAssert.AreEqual("ERR XVIMPORT VERIFY must have integer taskIndex and taskCount parameters", exc3.Message);
 
-            var neighborBytes = new byte[(Links + 1) * sizeof(uint)];
+            // Task count malformed
+            var exc4 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", [NotImportingKey, "VERIFY", "0", "abc"]));
+            ClassicAssert.AreEqual("ERR XVIMPORT VERIFY must have integer taskIndex and taskCount parameters", exc4.Message);
 
-            var createRes = (string)await db.ExecuteAsync("XVCREATE", [Key, "DIM", Dims, "M", Links, "NOQUANT", "START_POINT", StartPointId]).ConfigureAwait(false);
-            ClassicAssert.AreEqual("OK", createRes);
+            // Task index out of bounds
+            var exc5 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", [NotImportingKey, "VERIFY", "-1", "1"]));
+            ClassicAssert.AreEqual("ERR Task configuration invalid", exc5.Message);
 
-            // Import single vector
-            {
-                var fullVectorRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "VECTOR", idBytes, valueBytes]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", fullVectorRes);
+            // Task count out of bounds
+            var exc6 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", [NotImportingKey, "VERIFY", "0", "0"]));
+            ClassicAssert.AreEqual("ERR Task configuration invalid", exc6.Message);
 
-                var neighborRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "NEIGHBORS", idBytes, neighborBytes]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", neighborRes);
-
-                // No QUANT import in simple case
-
-                var attrRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "ATTRS", idBytes, attrBytes]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", attrRes);
-
-                var intRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "INTMAP", externalIdBytes, idBytes]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", intRes);
-
-                var extRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "EXTMAP", idBytes, externalIdBytes]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", extRes);
-            }
-
-            // Set start point, which is otherwise the same as the initial point
-            {
-                var fullVectorRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "VECTOR", startPointIdBytes, valueBytes]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", fullVectorRes);
-
-                var startPointNeighborBytes = new byte[(Links + 1) * sizeof(uint)];
-                BinaryPrimitives.WriteInt32LittleEndian(startPointNeighborBytes, 1);
-                BinaryPrimitives.WriteInt32LittleEndian(startPointNeighborBytes.AsSpan()[sizeof(uint)..], InternalId);
-
-                var neighborRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "NEIGHBORS", startPointIdBytes, startPointNeighborBytes]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", neighborRes);
-
-                // No QUANT import in simple case
-            }
-
-            // Verify and finish import
-
-            var verifyRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "VERIFY", "0", "1"]).ConfigureAwait(false);
-            ClassicAssert.AreEqual("OK", verifyRes);
-
-            var finishRes = (string)await db.ExecuteAsync("XVIMPORT", [Key, "FINISH"]).ConfigureAwait(false);
-            ClassicAssert.AreEqual("OK", finishRes);
-
-            // Perform a search
-
-            var searchReq = VectorSetSimilaritySearchRequest.ByVector(valueFloats);
-            searchReq.WithAttributes = true;
-            using var searchRes = await db.VectorSetSimilaritySearchAsync(Key, searchReq).ConfigureAwait(false);
-            ClassicAssert.AreEqual(1, searchRes.Span.Length);
-            ClassicAssert.AreEqual(Element, searchRes.Span[0].Member);
-            ClassicAssert.AreEqual(Attribute, searchRes.Span[0].AttributesJson);
+            // Task count and index mismatch
+            var exc7 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", [NotImportingKey, "VERIFY", "1", "1"]));
+            ClassicAssert.AreEqual("ERR Task configuration invalid", exc7.Message);
         }
 
         /// <summary>

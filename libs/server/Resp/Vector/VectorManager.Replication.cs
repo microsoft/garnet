@@ -264,6 +264,7 @@ namespace Garnet.server
             {
                 throw new GarnetException("Invalid XVIMPORT AOF payload");
             }
+
             if (status != GarnetStatus.OK || result != VectorManagerResult.OK)
             {
                 throw new GarnetException($"Vector Set import replay failed: {status}, {result}, {Encoding.UTF8.GetString(error)}");
