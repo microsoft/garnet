@@ -93,6 +93,9 @@ namespace Garnet.server
         internal async Task<CollectionItemResult> GetCollectionItemAsync(RespCommand command, byte[][] keys,
             RespServerSession session, double timeoutInSeconds, PinnedSpanByte[] cmdArgs = null)
         {
+            if (!session.CanBlock)
+                return GetCollectionItemWithoutBlocking(command, keys, session, cmdArgs);
+
             var observer = new CollectionItemObserver(session, command, cmdArgs);
             return await GetCollectionItemAsync(observer, keys, timeoutInSeconds).ConfigureAwait(false);
         }
@@ -110,8 +113,30 @@ namespace Garnet.server
         internal async Task<CollectionItemResult> MoveCollectionItemAsync(RespCommand command, byte[] srcKey,
             RespServerSession session, double timeoutInSeconds, PinnedSpanByte[] cmdArgs)
         {
+            if (!session.CanBlock)
+                return GetCollectionItemWithoutBlocking(command, [srcKey], session, cmdArgs);
+
             var observer = new CollectionItemObserver(session, command, cmdArgs);
             return await GetCollectionItemAsync(observer, [srcKey], timeoutInSeconds).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Serves <paramref name="command"/> on the calling session's thread without waiting, for a session that
+        /// cannot block (see <see cref="RespServerSession.CanBlock"/>). Returns the result for the first of
+        /// <paramref name="keys"/>, in order, that holds an item or a value of the wrong type; otherwise the empty
+        /// result that a timeout returns.
+        /// </summary>
+        private CollectionItemResult GetCollectionItemWithoutBlocking(RespCommand command, byte[][] keys,
+            RespServerSession session, PinnedSpanByte[] cmdArgs)
+        {
+            foreach (var key in keys)
+            {
+                if (TryGetResult(key, session.storageSession, command, cmdArgs, failOnSrcTypeMismatch: true,
+                        out _, out var result))
+                    return result;
+            }
+
+            return CollectionItemResult.Empty;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -174,43 +199,27 @@ namespace Garnet.server
             HandleCollectionUpdateWorker(key);
         }
 
+        /// <summary>
+        /// Queues a collection-updated event for <paramref name="key"/> unless the key has no observer queue. Does not
+        /// wait for keysToObserversLock: callers include sessions holding key locks that the broker loop waits for
+        /// while holding that lock, and the broker loop itself while holding it. If the lock is unavailable, the event
+        /// is queued; the loop ignores events for keys without observers and removes empty observer queues.
+        /// </summary>
         void HandleCollectionUpdateWorker(byte[] key)
         {
-            ConcurrentQueue<CollectionItemObserver> observers;
-
-            keysToObserversLock.ReadLock();
-            try
+            if (keysToObserversLock.TryReadLock())
             {
-                if (!keysToObservers.TryGetValue(key, out observers))
-                    return;
-            }
-            finally
-            {
-                keysToObserversLock.ReadUnlock();
-            }
-
-            // If the observer queue is empty, remove the key entry
-            if (observers.IsEmpty)
-            {
-                keysToObserversLock.WriteLock();
                 try
                 {
-                    if (!keysToObservers.TryGetValue(key, out observers))
+                    if (!keysToObservers.ContainsKey(key))
                         return;
-
-                    if (observers.IsEmpty)
-                    {
-                        keysToObservers.Remove(key);
-                        return;
-                    }
                 }
                 finally
                 {
-                    keysToObserversLock.WriteUnlock();
+                    keysToObserversLock.ReadUnlock();
                 }
             }
 
-            // Add collection updated event to queue
             brokerEventsQueue.Enqueue(CollectionItemBrokerEvent.CreateCollectionUpdatedEvent(key));
         }
 
@@ -448,8 +457,8 @@ namespace Garnet.server
 
                         // The destination type was already validated against the source type by the caller, so the
                         // push cannot fail on type mismatch here.
-                        // The broker's observer lock is held here, so the push must not notify the broker inline.
-                        // The destination key is reported back instead, and notified once the lock is released.
+                        // The destination key is returned to TryGetResult, which notifies the broker once the move
+                        // completes.
                         status = storageSession.ListPush(dstKey, element,
                             dstDirection == OperationDirection.Left ? ListOperation.LPUSH : ListOperation.RPUSH,
                             out _, ref objectContext, notifyItemBroker: false);
@@ -672,12 +681,9 @@ namespace Garnet.server
                 if (createTransaction)
                     storageSession.txnManager.Commit(true);
 
-                // Wake observers blocked on the destination key. The event is enqueued directly rather than going
-                // through HandleCollectionUpdate, because callers of this method hold keysToObserversLock and
-                // re-acquiring it here would deadlock. The broker loop resolves the event asynchronously and
-                // tolerates keys that have no observers.
+                // Wake observers blocked on the destination key.
                 if (notifyKey is not null)
-                    brokerEventsQueue.Enqueue(CollectionItemBrokerEvent.CreateCollectionUpdatedEvent(notifyKey));
+                    HandleCollectionUpdate(notifyKey);
             }
         }
 
