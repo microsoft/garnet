@@ -17,6 +17,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.client;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -24,6 +25,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test.cluster
 {
@@ -2838,6 +2840,51 @@ namespace Garnet.test.cluster
                 ClassicAssert.IsTrue((int)res4 > 0);
                 ClassicAssert.IsTrue((int)res4 <= (int)res2);
             }
+        }
+
+        [Test]
+        [CancelAfter(30_000)]
+        public async Task RejectDiskLogRecordVectorSetMigrationsAsync(CancellationToken cancellation)
+        {
+            const string KeyName = "0123456789abcdef";
+
+            const int RecordTypeIndex = RecordInfo.Size + RecordDataHeader.RecordTypeOffsetInHeader;
+
+            _ = await SimpleSetupClusterAsync(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1, useTLS: false).ConfigureAwait(false);
+
+            var slot = HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(KeyName));
+
+            var owningNodeIndex = context.clusterTestUtils.GetSourceNodeIndexFromSlot(slot, null);
+            var targetNodeIndex = owningNodeIndex == 0 ? 1 : 0;
+
+            var importingFromId = context.clusterTestUtils.GetLocalNodeId(owningNodeIndex);
+            var targetNodeId = context.clusterTestUtils.GetLocalNodeId(targetNodeIndex);
+
+            var setSlotImportingRes = context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "IMPORTING", importingFromId);
+            ClassicAssert.AreEqual("OK", setSlotImportingRes);
+
+            // Preconstructed DiskLogRecord with the above key
+            var disklogPayload = Convert.FromHexString("0100000000000A0003000410000000003031323334353637383961626364656669794D53744576657159746D4E6F7A33");
+
+            // Corrupt the RecordTypeIndex
+            disklogPayload[RecordTypeIndex] = 255;
+
+            var forgingClient = context.clusterTestUtils.GetGarnetClientSession(targetNodeIndex);
+            forgingClient.SetClusterMigrateHeader(importingFromId, false, false);
+            ClassicAssert.True(forgingClient.TryWriteRecordSpan(disklogPayload, MigrationRecordSpanType.LogRecord, out var task));
+            ClassicAssert.IsNull(task);
+
+            ClassicAssert.AreEqual("OK", await forgingClient.SendAndResetIterationBuffer().ConfigureAwait(false));
+
+            var setSlotOwnedRes = context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "NODE", targetNodeId);
+            ClassicAssert.AreEqual("OK", setSlotOwnedRes);
+
+            var setSlotStableRes = context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "STABLE", "");
+            ClassicAssert.AreEqual("OK", setSlotStableRes);
+
+            var existsRes = await forgingClient.ExecuteAsync("EXISTS", KeyName).ConfigureAwait(false);
+
+            ClassicAssert.AreEqual("0", existsRes);
         }
 
         private async Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool useTLS = true, int replayTasks = 1, int? physicalLogs = null)

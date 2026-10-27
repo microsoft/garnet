@@ -947,7 +947,7 @@ namespace Tsavorite.core
             var (_ /*oldValueLength*/, valueAddress) = localDataHeader.GetValueFieldInfo(physicalAddress);
             var recordLength = localDataHeader.GetRecordLength();
             var fillerLength = (int)(physicalAddress + recordLength - (valueAddress + sizeInfo.InlineValueSize));
-            if (fillerLength < 0)
+            if (fillerLength < sizeInfo.OptionalSize || localDataHeader.RecordType != sizeInfo.FieldInfo.RecordType)
                 return false;
 
             // Clear optional flags + update ValueLength on the local; SetFiller computes FillerWords from the local's new
@@ -1359,7 +1359,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Check if there is sufficient space to store an ETag in the log record
+        /// Gets the value's heap memory size, or zero for an inline value or an unset object slot.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetValueHeapMemorySize()
@@ -1368,7 +1368,7 @@ namespace Tsavorite.core
                 return 0;
 
             if (DataHeader.ValueIsObject)
-                return ValueObject.HeapMemorySize;
+                return ValueObjectIsSet ? ValueObject.HeapMemorySize : 0;
 
             var (_ /*length*/, dataAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
             return objectIdMap.GetOverflowByteArray(*(int*)dataAddress).HeapMemorySize;

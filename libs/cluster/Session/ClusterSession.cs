@@ -41,6 +41,35 @@ namespace Garnet.cluster
         public bool ReadOnlySession => readOnlySession;
         public bool IsInternalWriteSession => internalWriteSession;
 
+        /// <inheritdoc/>
+        public bool IsWritePaused => clusterProvider.failoverManager.IsWritePaused;
+
+        /// <inheritdoc/>
+        public void WaitForWritesToResume()
+        {
+            // Internal replay must keep applying replication data so the replica can catch up and complete failover.
+            if (internalWriteSession || !IsWritePaused ||
+                clusterProvider.clusterManager.CurrentConfig.LocalNodeRole != NodeRole.PRIMARY)
+                return;
+
+            // Failover drains session epochs before releasing the pause.
+            ReleaseCurrentEpoch();
+            try
+            {
+                // Keep short pauses allocation-free; task blocking lets the pool compensate for longer waits.
+                var spinner = ConfiguredSpinWait.CpuLocal();
+                while (IsWritePaused)
+                {
+                    if (!spinner.TryWait())
+                        AsyncUtils.BlockingWait(clusterProvider.failoverManager.WaitForWritesToResumeAsync());
+                }
+            }
+            finally
+            {
+                AcquireCurrentEpoch();
+            }
+        }
+
         public void SetReadOnlySession() => readOnlySession = true;
         public void SetReadWriteSession() => readOnlySession = false;
         public void SetInternalWriteSession() => internalWriteSession = true;

@@ -696,6 +696,25 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Verifies that SET NX over an expired RangeIndex key yields a plain string and not a record that retains the RangeIndex type.
+        /// </summary>
+        [Test]
+        public void SetNxOverExpiredRangeIndexYieldsStringTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("RI.CREATE", "myindex", "MEMORY", "CACHESIZE", "65536"));
+            ClassicAssert.IsTrue(db.KeyExpire("myindex", TimeSpan.FromMilliseconds(100)));
+            Thread.Sleep(300);
+
+            ClassicAssert.IsTrue(db.StringSet("myindex", "v", when: When.NotExists));
+            ClassicAssert.AreEqual("string", (string)db.Execute("TYPE", "myindex"));
+            ClassicAssert.AreEqual("v", (string)db.StringGet("myindex"));
+            ClassicAssert.IsNull(db.KeyTimeToLive("myindex"));
+        }
+
+        /// <summary>
         /// Verifies RI.SET returns an error when the field exceeds MAXKEYLEN.
         /// </summary>
         [Test]
@@ -1790,21 +1809,17 @@ namespace Garnet.test
             var result = db.Execute("RI.METRICS", "myindex");
             var arr = (RedisResult[])result;
 
-            // Should be 8 elements (4 field-value pairs)
-            ClassicAssert.AreEqual(8, arr.Length);
+            // Should be 6 elements (3 field-value pairs)
+            ClassicAssert.AreEqual(6, arr.Length);
 
-            ClassicAssert.AreEqual("tree_handle", (string)arr[0]);
-            // tree_handle should be a non-zero number
-            ClassicAssert.IsNotNull((string)arr[1]);
+            ClassicAssert.AreEqual("is_live", (string)arr[0]);
+            ClassicAssert.AreEqual("true", (string)arr[1]);
 
-            ClassicAssert.AreEqual("is_live", (string)arr[2]);
-            ClassicAssert.AreEqual("true", (string)arr[3]);
+            ClassicAssert.AreEqual("is_flushed", (string)arr[2]);
+            ClassicAssert.AreEqual("false", (string)arr[3]);
 
-            ClassicAssert.AreEqual("is_flushed", (string)arr[4]);
+            ClassicAssert.AreEqual("is_recovered", (string)arr[4]);
             ClassicAssert.AreEqual("false", (string)arr[5]);
-
-            ClassicAssert.AreEqual("is_recovered", (string)arr[6]);
-            ClassicAssert.AreEqual("false", (string)arr[7]);
         }
 
         /// <summary>

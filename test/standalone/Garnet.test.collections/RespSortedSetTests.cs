@@ -183,6 +183,32 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task SortedSetAddRecreatesExpiredEvictedKey(
+            [Values(RedisProtocol.Resp2, RedisProtocol.Resp3)] RedisProtocol protocol,
+            [Values(SortedSetWhen.Always, SortedSetWhen.NotExists)] SortedSetWhen when,
+            [Values(16, 2048)] int keyLength)
+        {
+            using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig(protocol: protocol));
+            var db = redis.GetDatabase(0);
+            var clientId = (long)await db.ExecuteAsync("CLIENT", "ID");
+            var key = new string('k', keyLength);
+            Assert.That(await db.SortedSetAddAsync(key, "old", 1), Is.True);
+            Assert.That(await db.KeyExpireAsync(key, TimeSpan.FromMilliseconds(200)), Is.True);
+
+            var storeLog = server.Provider.StoreWrapper.store.Log;
+            var tailAddress = storeLog.TailAddress;
+            storeLog.FlushAndEvict(wait: true);
+            Assert.That(storeLog.HeadAddress, Is.GreaterThanOrEqualTo(tailAddress), "The expired source must be read from disk");
+            await Task.Delay(300);
+
+            Assert.That(await db.SortedSetAddAsync(key, "new", 42, when), Is.True);
+            Assert.That(await db.SortedSetRangeByRankWithScoresAsync(key), Is.EqualTo([new SortedSetEntry("new", 42)]));
+            Assert.That(await db.KeyTimeToLiveAsync(key), Is.Null, "The replacement must not inherit the old key's TTL");
+            Assert.That((string)await db.ExecuteAsync("PING"), Is.EqualTo("PONG"));
+            Assert.That((long)await db.ExecuteAsync("CLIENT", "ID"), Is.EqualTo(clientId), "The connection must not have been replaced");
+        }
+
+        [Test]
         public void AddAndLength()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -2354,6 +2380,40 @@ namespace Garnet.test
             var results = (RedisResult[])result;
             ClassicAssert.AreEqual(1, results.Length);
             ClassicAssert.AreEqual(-2, (long)results[0]);
+        }
+
+        [Test]
+        public void SortedSetExpireOutOfRangeIsRejectedWithoutKillingSession()
+        {
+            var faulted = false;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            redis.ConnectionFailed += delegate { faulted = true; };
+
+            var db = redis.GetDatabase(0);
+            db.SortedSetAdd("mysortedset", "member1", 1);
+
+            // milliseconds too far in the future
+            var exc0 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("ZPEXPIRE", "mysortedset", "300000000000000", "MEMBERS", "1", "member1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'zpexpire' command", exc0.Message);
+
+            // seconds too far in the future
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("ZEXPIRE", "mysortedset", "300000000000", "MEMBERS", "1", "member1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'zexpire' command", exc1.Message);
+
+            // unix time (seconds) too far in the future
+            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("ZEXPIREAT", "mysortedset", long.MaxValue.ToString(), "MEMBERS", "1", "member1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'zexpireat' command", exc2.Message);
+
+            // unix time (ms) too far in the future
+            var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("ZPEXPIREAT", "mysortedset", long.MaxValue.ToString(), "MEMBERS", "1", "member1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'zpexpireat' command", exc3.Message);
+
+            // Member TTL unchanged and member undeleted
+            ClassicAssert.IsTrue(db.SortedSetScore("mysortedset", "member1").HasValue);
+
+            // Connection never faulted during operation - previously these all closed the connection with no reply
+            ClassicAssert.IsFalse(faulted);
         }
 
         [Test]
