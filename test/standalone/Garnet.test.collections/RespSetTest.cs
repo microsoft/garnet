@@ -886,6 +886,75 @@ namespace Garnet.test
             ClassicAssert.IsTrue(members.Contains("four"));
         }
 
+        [Test]
+        public async Task SMoveSameKeyAsync()
+        {
+            const string Key = nameof(SMoveSameKeyAsync);
+            const string PresentElement = nameof(PresentElement);
+            const string MissingElement = nameof(MissingElement);
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.IsTrue(await db.SetAddAsync(Key, PresentElement).ConfigureAwait(false));
+
+            // Moving to same set, even if it doesn't actually move an element, reports success
+            ClassicAssert.IsTrue(await db.SetMoveAsync(Key, Key, PresentElement).ConfigureAwait(false));
+
+            // Moving to same set, but a key that doesn't exist, still reports failure
+            ClassicAssert.IsFalse(await db.SetMoveAsync(Key, Key, MissingElement).ConfigureAwait(false));
+
+            ClassicAssert.AreEqual(1, await db.SetLengthAsync(Key).ConfigureAwait(false));
+        }
+
+        [Test]
+        public async Task SMoveSameKeyInTransactionAsync()
+        {
+            const string Key = nameof(SMoveSameKeyInTransactionAsync);
+            const string PresentElement = nameof(PresentElement);
+            const string MissingElement = nameof(MissingElement);
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.IsTrue(await db.SetAddAsync(Key, PresentElement).ConfigureAwait(false));
+
+            var tran = db.CreateTransaction();
+            var successMove = tran.SetMoveAsync(Key, Key, PresentElement);
+            var failMove = tran.SetMoveAsync(Key, Key, MissingElement);
+            var len = tran.SetLengthAsync(Key);
+
+            ClassicAssert.IsTrue(await tran.ExecuteAsync().ConfigureAwait(false));
+
+            // Moving to same set, even if it doesn't actually move an element, reports success
+            ClassicAssert.IsTrue(await successMove.ConfigureAwait(false));
+
+            // Moving to same set, but a key that doesn't exist, still reports failure
+            ClassicAssert.IsFalse(await failMove.ConfigureAwait(false));
+
+            ClassicAssert.AreEqual(1, await len.ConfigureAwait(false));
+        }
+
+        [Test]
+        public async Task SMoveEmptyKeyAsync()
+        {
+            const string OtherKey = nameof(SMoveEmptyKeyAsync);
+            const string Element = nameof(Element);
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.IsTrue(await db.SetAddAsync("", Element).ConfigureAwait(false));
+
+            // Moving to same set
+            ClassicAssert.IsTrue(await db.SetMoveAsync("", "", Element).ConfigureAwait(false));
+            ClassicAssert.AreEqual(1, await db.SetLengthAsync("").ConfigureAwait(false));
+
+            ClassicAssert.IsTrue(await db.SetMoveAsync("", OtherKey, Element).ConfigureAwait(false));
+            ClassicAssert.AreEqual(0, await db.SetLengthAsync("").ConfigureAwait(false));
+            ClassicAssert.AreEqual(1, await db.SetLengthAsync(OtherKey).ConfigureAwait(false));
+        }
+
         #endregion
 
 
@@ -1219,7 +1288,7 @@ namespace Garnet.test
 
             //Same key.
             response = await db.ExecuteForLongResultAsync("SMOVE", ["sourceSet", "sourceSet", "sourceValue"]).ConfigureAwait(false);
-            ClassicAssert.AreEqual(response, 0);
+            ClassicAssert.AreEqual(response, 1);
 
             //Move non-common member.
             response = await db.ExecuteForLongResultAsync("SMOVE", ["sourceSet", "destinationSet", "sourceValue"]).ConfigureAwait(false);
