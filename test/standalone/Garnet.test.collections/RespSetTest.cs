@@ -907,6 +907,34 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, await db.SetLengthAsync(Key).ConfigureAwait(false));
         }
 
+        [Test]
+        public async Task SMoveSameKeyInTransactionAsync()
+        {
+            const string Key = nameof(SMoveSameKeyAsync);
+            const string PresentElement = nameof(PresentElement);
+            const string MissingElement = nameof(MissingElement);
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.IsTrue(await db.SetAddAsync(Key, PresentElement).ConfigureAwait(false));
+
+            var tran = db.CreateTransaction();
+            var successMove = tran.SetMoveAsync(Key, Key, PresentElement);
+            var failMove = tran.SetMoveAsync(Key, Key, MissingElement);
+            var len = tran.SetLengthAsync(Key);
+
+            ClassicAssert.IsTrue(await tran.ExecuteAsync().ConfigureAwait(false));
+
+            // Moving to same set, even if it doesn't actually move an element, reports success
+            ClassicAssert.IsTrue(await successMove.ConfigureAwait(false));
+
+            // Moving to same set, but a key that doesn't exist, still reports failure
+            ClassicAssert.IsFalse(await failMove.ConfigureAwait(false));
+
+            ClassicAssert.AreEqual(1, await len.ConfigureAwait(false));
+        }
+
         #endregion
 
 
