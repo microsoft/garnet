@@ -236,7 +236,7 @@ namespace Garnet.test
             }
 
             service.DropIndex(Context, rawIndex);
-            
+
             GC.KeepAlive(deleteDel);
             GC.KeepAlive(writeDel);
             GC.KeepAlive(readDel);
