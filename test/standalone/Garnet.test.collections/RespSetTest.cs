@@ -910,7 +910,7 @@ namespace Garnet.test
         [Test]
         public async Task SMoveSameKeyInTransactionAsync()
         {
-            const string Key = nameof(SMoveSameKeyAsync);
+            const string Key = nameof(SMoveSameKeyInTransactionAsync);
             const string PresentElement = nameof(PresentElement);
             const string MissingElement = nameof(MissingElement);
 
@@ -933,6 +933,26 @@ namespace Garnet.test
             ClassicAssert.IsFalse(await failMove.ConfigureAwait(false));
 
             ClassicAssert.AreEqual(1, await len.ConfigureAwait(false));
+        }
+
+        [Test]
+        public async Task SMoveEmptyKeyAsync()
+        {
+            const string OtherKey = nameof(SMoveEmptyKeyAsync);
+            const string Element = nameof(Element);
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.IsTrue(await db.SetAddAsync("", Element).ConfigureAwait(false));
+
+            // Moving to same set
+            ClassicAssert.IsTrue(await db.SetMoveAsync("", "", Element).ConfigureAwait(false));
+            ClassicAssert.AreEqual(1, await db.SetLengthAsync("").ConfigureAwait(false));
+
+            ClassicAssert.IsTrue(await db.SetMoveAsync("", OtherKey, Element).ConfigureAwait(false));
+            ClassicAssert.AreEqual(0, await db.SetLengthAsync("").ConfigureAwait(false));
+            ClassicAssert.AreEqual(1, await db.SetLengthAsync(OtherKey).ConfigureAwait(false));
         }
 
         #endregion
