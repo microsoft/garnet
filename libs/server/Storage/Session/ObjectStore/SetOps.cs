@@ -55,13 +55,10 @@ namespace Garnet.server
         /// <param name="saddCount"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        internal unsafe GarnetStatus SetAdd<TObjectContext>(PinnedSpanByte key, PinnedSpanByte[] members, out int saddCount, ref TObjectContext objectContext)
+        internal GarnetStatus SetAdd<TObjectContext>(PinnedSpanByte key, PinnedSpanByte[] members, out int saddCount, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             saddCount = 0;
-
-            if (key.Length == 0)
-                return GarnetStatus.OK;
 
             // Prepare the parse state
             parseState.InitializeWithArguments(members);
@@ -124,7 +121,7 @@ namespace Garnet.server
         {
             sremCount = 0;
 
-            if (key.Length == 0 || members.Length == 0)
+            if (members.Length == 0)
                 return GarnetStatus.OK;
 
             // Prepare the parse state
@@ -149,13 +146,10 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        internal unsafe GarnetStatus SetLength<TObjectContext>(PinnedSpanByte key, out int count, ref TObjectContext objectContext)
+        internal GarnetStatus SetLength<TObjectContext>(PinnedSpanByte key, out int count, ref TObjectContext objectContext)
                 where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             count = 0;
-
-            if (key.Length == 0)
-                return GarnetStatus.OK;
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SCARD };
@@ -176,13 +170,10 @@ namespace Garnet.server
         /// <param name="members"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        internal unsafe GarnetStatus SetMembers<TObjectContext>(PinnedSpanByte key, out PinnedSpanByte[] members, ref TObjectContext objectContext)
+        internal GarnetStatus SetMembers<TObjectContext>(PinnedSpanByte key, out PinnedSpanByte[] members, ref TObjectContext objectContext)
              where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             members = default;
-
-            if (key.Length == 0)
-                return GarnetStatus.OK;
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SMEMBERS };
@@ -230,9 +221,6 @@ namespace Garnet.server
              where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             elements = default;
-
-            if (key.Length == 0)
-                return GarnetStatus.OK;
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SPOP };
@@ -734,12 +722,6 @@ namespace Garnet.server
         public GarnetStatus SetIsMember<TObjectContext>(PinnedSpanByte key, ReadOnlySpan<PinnedSpanByte> members, ref Span<int> result, ref TObjectContext objectContext)
              where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            if (key.Length == 0)
-            {
-                result = default;
-                return GarnetStatus.OK;
-            }
-
             parseState.InitializeWithArguments(members);
 
             // Prepare the input
