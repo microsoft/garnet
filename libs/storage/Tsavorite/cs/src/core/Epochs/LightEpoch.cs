@@ -574,10 +574,13 @@ namespace Tsavorite.core
             (*(tableAligned + entry)).threadId = 0;
 
             // Zeroing localCurrentEpoch is what publishes the slot as free, so it must be the last store
-            // of the two. A release store guarantees that the threadId clear cannot be reordered after
-            // it. Were the order to flip, another thread could claim the slot and write its own threadId
-            // in the gap, and this thread's clear would then land on top and wipe it.
-            Volatile.Write(ref (*(tableAligned + entry)).localCurrentEpoch, 0);
+            // of the two; the exchange keeps the threadId clear ahead of it. Were the order to flip, another
+            // thread could claim the slot and write its own threadId in the gap, and this thread's clear would
+            // then land on top and wipe it. The exchange is also a full fence, which orders the clear before the
+            // caller's later drainCount and waiterCount reads: either this thread sees a pending drain action, or
+            // the thread that queued it scans this slot as free. A release store alone would let those reads
+            // pass the clear, and both threads could skip the drain.
+            _ = Interlocked.Exchange(ref (*(tableAligned + entry)).localCurrentEpoch, 0);
 
             entry = kInvalidIndex;
             if (waiterCount > 0)
