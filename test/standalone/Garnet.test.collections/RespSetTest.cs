@@ -1268,7 +1268,7 @@ namespace Garnet.test
 
             //Same key.
             response = await db.ExecuteForLongResultAsync("SMOVE", ["sourceSet", "sourceSet", "sourceValue"]).ConfigureAwait(false);
-            ClassicAssert.AreEqual(response, 0);
+            ClassicAssert.AreEqual(response, 1);
 
             //Move non-common member.
             response = await db.ExecuteForLongResultAsync("SMOVE", ["sourceSet", "destinationSet", "sourceValue"]).ConfigureAwait(false);
