@@ -145,8 +145,7 @@ namespace Garnet.test.Resp
             ClassicAssert.AreEqual(reply.Length, fullConsumed);
         }
 
-        [TestCase("*268435456\r\n")]
-        [TestCase("*357913941\r\n")]
+        [TestCase("*1048576\r\n")]
         [TestCase("*1000000\r\n$1\r\na\r\n")]
         public void ADeclaredCountDoesNotAllocateBeforeItsElementsArrive(string header)
         {
@@ -169,11 +168,36 @@ namespace Garnet.test.Resp
         [TestCase("*2147483591\r\n")]
         [TestCase("*715827883\r\n")]
         [TestCase("*357913942\r\n")]
+        [TestCase("*268435456\r\n")]
+        [TestCase("*357913941\r\n")]
+        [TestCase("*1048577\r\n")]
+        [TestCase("*1\r\n*1048577\r\n")]
         [TestCase("*1\r\n*357913942\r\n")]
         public void ACountNoBufferCanHoldIsAProtocolError(string header)
         {
             _ = Assert.Throws<RespParsingException>(() => ReadStrings(header, out _, out _));
             _ = Assert.Throws<RespParsingException>(() => ReadPooled(MemoryPool<byte>.Shared, header, out _, out _));
+        }
+
+        [Test]
+        public void OversizedNestedArrayIsRejectedBeforeMaterializingEarlierElements()
+        {
+            const string reply = "*2\r\n$3\r\nabc\r\n*1048577\r\n";
+            _ = Assert.Throws<RespParsingException>(() => ReadStrings(reply, out _, out _));
+            using var pool = new CountingPool();
+            _ = Assert.Throws<RespParsingException>(() => ReadPooled(pool, "*1048577\r\n", out _, out _));
+            ClassicAssert.AreEqual(0, pool.Rented);
+        }
+
+        [TestCase("*2\r\n+a\r\n+b\r\n")]
+        [TestCase("*1\r\n*2\r\n+a\r\n+b\r\n")]
+        public void ArrayValidationAcceptsTheConfiguredLimit(string reply)
+        {
+            ClassicAssert.IsTrue(Parse(reply, (ref byte* ptr, byte* end) =>
+                RespReadUtils.TrySkipArrayReply(ref ptr, end, allowNestedArrays: true, maxArrayLength: 2), out var consumed));
+            ClassicAssert.AreEqual(reply.Length, consumed);
+            _ = Assert.Throws<RespParsingException>(() => Parse(reply, (ref byte* ptr, byte* end) =>
+                RespReadUtils.TrySkipArrayReply(ref ptr, end, allowNestedArrays: true, maxArrayLength: 1), out _));
         }
 
         [Test]

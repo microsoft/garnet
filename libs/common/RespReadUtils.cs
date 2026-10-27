@@ -1151,18 +1151,20 @@ namespace Garnet.common
         /// <param name="ptr">The start of the reply. Advanced past the reply if it is complete.</param>
         /// <param name="end">The current end of the received bytes.</param>
         /// <param name="allowNestedArrays">Whether elements may themselves be arrays.</param>
+        /// <param name="maxArrayLength">Maximum element count allowed in each array, including nested arrays.</param>
         /// <returns>True if the whole reply has been received; false if more bytes are needed.</returns>
         /// <exception cref="RespParsingException">Thrown if the reply is malformed, declares an array longer than
-        /// <see cref="RespLimits.MaxArrayLength"/> or a bulk string longer than <see cref="RespLimits.MaxArgumentLengthBytes"/>, or nests
+        /// <paramref name="maxArrayLength"/> or <see cref="RespLimits.MaxArrayLength"/>, contains a bulk string
+        /// longer than <see cref="RespLimits.MaxArgumentLengthBytes"/>, or nests
         /// deeper than <see cref="RespLimits.MaxNestingDepth"/>.</exception>
-        public static bool TrySkipArrayReply(ref byte* ptr, byte* end, bool allowNestedArrays)
+        public static bool TrySkipArrayReply(ref byte* ptr, byte* end, bool allowNestedArrays, int maxArrayLength = RespLimits.MaxArrayLength)
         {
             if (!TryReadSignedArrayLength(out var length, ref ptr, end))
             {
                 return false;
             }
 
-            if (length > RespLimits.MaxArrayLength)
+            if (length > RespLimits.MaxArrayLength || length > maxArrayLength)
             {
                 RespParsingException.ThrowInvalidLength(length);
             }
@@ -1203,7 +1205,7 @@ namespace Garnet.common
                         }
                         if (!TryReadSignedArrayLength(out length, ref ptr, end))
                             return false;
-                        if (length > RespLimits.MaxArrayLength)
+                        if (length > RespLimits.MaxArrayLength || length > maxArrayLength)
                         {
                             RespParsingException.ThrowInvalidLength(length);
                         }
