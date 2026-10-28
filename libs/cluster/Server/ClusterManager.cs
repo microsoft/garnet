@@ -164,6 +164,7 @@ namespace Garnet.cluster
             ctsGossip.Cancel();
             while (numActiveTasks > 0)
                 Thread.Yield();
+            StopGossipClientRetirement();
             ctsGossip.Dispose();
         }
 

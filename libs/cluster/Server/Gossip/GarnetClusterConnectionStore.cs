@@ -318,69 +318,36 @@ namespace Garnet.cluster
 
         /// <summary>
         /// Atomically swaps every live gossip connection for a replacement built from the current runtime
-        /// configuration, then retires the previous connections in the background. The connectionMap offsets are
-        /// preserved, so a selector (<see cref="GetConnection"/>, <see cref="GetConnectionAtOffset"/>,
-        /// <see cref="GetRandomConnection"/>) observes the replacement as soon as the swap completes. A caller
-        /// that already captured a previous connection keeps using it; its in-flight work drains through the
-        /// previous connection's graceful disposal rather than being aborted.
+        /// configuration and returns the previous connections, which the caller owns and must retire. The
+        /// connectionMap offsets are preserved, so a selector (<see cref="GetConnection"/>,
+        /// <see cref="GetConnectionAtOffset"/>, <see cref="GetRandomConnection"/>) observes the replacement as soon
+        /// as the swap completes. A caller that already captured a previous connection keeps using it until the
+        /// previous connection is retired.
         /// </summary>
-        /// <param name="grace">
-        /// Delay applied once, after every connection has been repointed, before the previous connections begin
-        /// graceful disposal. It widens the window for callers that selected a previous connection just before
-        /// the swap to finish issuing their requests against it.
-        /// </param>
-        public void SwapAllConnections(TimeSpan grace)
+        /// <returns>The previous connections; empty when the store is disposed or holds no connections.</returns>
+        public GarnetServerNode[] SwapAllConnections()
         {
-            GarnetServerNode[] retired;
-            int retiredCount;
             try
             {
                 _lock.WriteLock();
-                if (_disposed) return;
+                if (_disposed || numConnection == 0)
+                    return [];
 
-                retiredCount = numConnection;
-                retired = new GarnetServerNode[retiredCount];
-                for (var i = 0; i < retiredCount; i++)
+                var retired = new GarnetServerNode[numConnection];
+                for (var i = 0; i < retired.Length; i++)
                 {
                     var previous = connections[i];
                     // connectionMap[nodeId] -> i is unchanged, so selectors immediately observe the replacement.
                     connections[i] = previous.CreateReplacement();
                     retired[i] = previous;
                 }
+
+                return retired;
             }
             finally
             {
                 _lock.WriteUnlock();
             }
-
-            if (retiredCount == 0)
-                return;
-
-            // Apply the grace window once for the whole collection, then retire every previous connection.
-            _ = Task.Run(async () =>
-            {
-                if (grace > TimeSpan.Zero)
-                    await Task.Delay(grace).ConfigureAwait(false);
-
-                var retirements = new Task[retiredCount];
-                for (var i = 0; i < retiredCount; i++)
-                {
-                    var previous = retired[i];
-                    retirements[i] = Task.Run(async () =>
-                    {
-                        try
-                        {
-                            await previous.DisposeGracefullyAsync().ConfigureAwait(false);
-                        }
-                        catch (Exception ex)
-                        {
-                            logger?.LogWarning(ex, "Error retiring gossip connection during configuration swap");
-                        }
-                    });
-                }
-
-                await Task.WhenAll(retirements).ConfigureAwait(false);
-            });
         }
 
         /// <summary>
