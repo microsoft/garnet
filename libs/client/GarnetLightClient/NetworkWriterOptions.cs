@@ -33,13 +33,13 @@ namespace Garnet.client
     /// Maximum inline request size, rounded down to a power of two. Must be at least
     /// <see cref="DuplexRingRecordFormat.HeaderSize"/>.
     /// </param>
-    /// <param name="requestPageCount">Power-of-two multiplier of <paramref name="requestPageSizeBytes"/> giving the inline request buffer capacity.</param>
+    /// <param name="requestPageCount">Power-of-two multiplier of <paramref name="requestPageSizeBytes"/> giving the inline request buffer capacity, which must not exceed 1 GiB.</param>
     /// <param name="maxOutstandingRequests">
     /// Maximum number of requests awaiting local send completion, regardless of size; between 1 and
     /// <see cref="PageAndOffset.MaxOutstandingRequests"/>.
     /// </param>
     /// <param name="maxOutstandingCompletions">
-    /// Maximum number of response completions awaiting replies; between 1 and
+    /// Maximum number of response completions awaiting replies; a power of two between 1 and
     /// <see cref="PageAndOffset.MaxOutstandingCompletions"/>.
     /// </param>
     /// <param name="maxConcurrentNetworkSends">Maximum number of concurrent transport sends.</param>
@@ -118,7 +118,8 @@ namespace Garnet.client
         /// <summary>
         /// Number of circular pages in the request ring.
         /// </summary>
-        public int RequestPageCount = GetRequestPageCount(requestPageCount);
+        public int RequestPageCount = ValidateInlineBufferCapacity(
+            GetRequestPageSizeBytes(requestPageSizeBytes), GetRequestPageCount(requestPageCount));
 
         /// <summary>
         /// Maximum number of requests awaiting local send completion. Each inline or out-of-line request
@@ -216,7 +217,19 @@ namespace Garnet.client
                 throw new ArgumentOutOfRangeException(nameof(maxOutstandingCompletions), maxOutstandingCompletions,
                     $"Maximum outstanding completions must be below the {PageAndOffset.kTaskBits}-bit completion-ticket space (at most {PageAndOffset.MaxOutstandingCompletions}).");
 
+            if (!System.Numerics.BitOperations.IsPow2(maxOutstandingCompletions))
+                throw new ArgumentOutOfRangeException(nameof(maxOutstandingCompletions), maxOutstandingCompletions,
+                    "Maximum outstanding completions must be a power of two.");
+
             return maxOutstandingCompletions;
+        }
+
+        static int ValidateInlineBufferCapacity(int requestPageSizeBytes, int requestPageCount)
+        {
+            if ((long)requestPageSizeBytes * requestPageCount > DuplexRingRecordFormat.MaxInlineBufferCapacity)
+                throw new ArgumentOutOfRangeException(nameof(requestPageCount), requestPageCount,
+                    $"Request page size times page count must not exceed {DuplexRingRecordFormat.MaxInlineBufferCapacity} bytes.");
+            return requestPageCount;
         }
 
         public static int GetRequestPageCount(int requestPageCount)

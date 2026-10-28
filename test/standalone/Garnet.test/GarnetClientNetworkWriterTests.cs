@@ -722,9 +722,10 @@ namespace Garnet.test
             => ClassicAssert.AreEqual(maxOutstandingRequests, CreateRequestCountOptions(maxOutstandingRequests).MaxOutstandingRequests);
 
         [TestCase(0)]
+        [TestCase(3)]
         [TestCase(PageAndOffset.MaxOutstandingCompletions + 1)]
         [TestCase(1 << PageAndOffset.kTaskBits)]
-        public void MaxOutstandingCompletionsMustFitCompletionTicketSpace(int maxOutstandingCompletions)
+        public void MaxOutstandingCompletionsRejectsInvalidCapacity(int maxOutstandingCompletions)
         {
             var exception = Assert.Throws<ArgumentOutOfRangeException>(() => CreateCompletionCountOptions(maxOutstandingCompletions));
             ClassicAssert.AreEqual("maxOutstandingCompletions", exception.ParamName);

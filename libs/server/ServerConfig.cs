@@ -193,17 +193,10 @@ namespace Garnet.server
 
                 if (dynamicSets != null)
                 {
-                    foreach (var (type, value) in dynamicSets)
-                    {
-                        if (!storeWrapper.runtimeConfig.TrySet(type, value, out var error))
-                            AppendError(sbErrorMsg, error);
-                    }
-
-                    // Publish every configuration group whose parameters changed, as one consistent versioned
-                    // unit, then notify downstream consumers. TrySet marks the owning group dirty per slot, so a
-                    // multi-parameter group (e.g. GOSSIP_CLIENT) is materialized and published exactly once here
-                    // - the swapped-in clients observe every updated value together, never a partial group.
-                    storeWrapper.runtimeConfig.PublishDirtyGroups(group =>
+                    // Apply the batch and publish each changed configuration group as one consistent versioned
+                    // unit, then notify downstream consumers. A multi-parameter group (e.g. GOSSIP_CLIENT) is
+                    // published once per batch, so swapped-in clients observe every updated value together.
+                    storeWrapper.runtimeConfig.TrySetAll(dynamicSets, error => AppendError(sbErrorMsg, error), group =>
                     {
                         if (group == ServerConfigGroupType.GOSSIP_CLIENT)
                             storeWrapper.clusterProvider?.OnGossipClientConfigChanged();

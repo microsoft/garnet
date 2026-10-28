@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Threading;
 
 namespace Garnet.server
@@ -30,6 +31,12 @@ namespace Garnet.server
         /// <see langword="false"/>.
         /// </summary>
         bool PublishIfDirty(RuntimeServerConfig config);
+
+        /// <summary>
+        /// Checks that the current slots in <paramref name="config"/> materialize into valid options without
+        /// publishing them. On failure, <paramref name="error"/> holds a single-line RESP error message.
+        /// </summary>
+        bool TryValidate(RuntimeServerConfig config, out string error);
     }
 
     /// <summary>
@@ -92,6 +99,27 @@ namespace Garnet.server
                 Volatile.Write(ref version, version + 1);
                 dirty = false;
                 return true;
+            }
+        }
+
+        /// <inheritdoc/>
+        public bool TryValidate(RuntimeServerConfig config, out string error)
+        {
+            try
+            {
+                _ = Materialize(config);
+                error = null;
+                return true;
+            }
+            catch (ArgumentException e)
+            {
+                // Exception messages may append the parameter name and value on extra lines; RESP errors are single-line.
+                var message = e.Message;
+                var newLine = message.AsSpan().IndexOfAny('\r', '\n');
+                if (newLine >= 0)
+                    message = message[..newLine];
+                error = $"ERR Invalid {GetGroupType()} configuration: {message}";
+                return false;
             }
         }
 

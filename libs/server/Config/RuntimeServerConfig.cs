@@ -49,6 +49,10 @@ namespace Garnet.server
         // is read-only (only the interior groups mutate), so concurrent lookup needs no lock.
         readonly IConfigGroup[] groups = BuildGroups();
 
+        // Serializes CONFIG SET batches: the slot writes, group validation, rollback, and publish of one batch
+        // run as a unit, so a group snapshot never captures part of another batch's multi-parameter update.
+        readonly object setLock = new();
+
         // Startup options are retained only to resolve read-only parameters that derive from live server
         // state. Runtime-adjustable values are seeded into the table at construction and are thereafter
         // read exclusively through the typed accessors so a CONFIG SET is observed everywhere.
@@ -266,11 +270,10 @@ namespace Garnet.server
             RegisterReadWrite(ServerConfigType.EXPIRED_KEY_DELETION_SCAN_FREQ, "expired-key-deletion-scan-freq",
                 ConfigKind.Int32, -1, int.MaxValue, updateAction: ApplyExpiredKeyDeletionUpdate);
 
-            // GarnetClient (gossip) network-writer options. These are plain storage slots: CONFIG SET
-            // records the new value with no UpdateAction, so it is not propagated to any live gossip client,
-            // which keeps the options captured when it was constructed. Ranges only bound the stored value;
-            // the per-field constraints enforced by NetworkWriterOptions (power-of-two sizes,
-            // divisibility) are applied when a client is actually constructed, not here.
+            // GarnetClient (gossip) network-writer options, published together as the GOSSIP_CLIENT group.
+            // Ranges only bound each stored value; cross-field constraints enforced by NetworkWriterOptions
+            // (power-of-two sizes, inline buffer capacity) are checked per group by TrySetAll, which rolls back
+            // the batch's changes to the group when they would not materialize.
             RegisterReadWrite(ServerConfigType.GOSSIP_NETWORK_BUFFER_SIZE_BYTES, "gossip-network-buffer-size", ConfigKind.Int32, 1, int.MaxValue, groupType: ServerConfigGroupType.GOSSIP_CLIENT);
             RegisterReadWrite(ServerConfigType.GOSSIP_REQUEST_PAGE_SIZE_BYTES, "gossip-request-page-size", ConfigKind.Int32, 1, int.MaxValue, groupType: ServerConfigGroupType.GOSSIP_CLIENT);
             RegisterReadWrite(ServerConfigType.GOSSIP_REQUEST_PAGE_COUNT, "gossip-request-page-count", ConfigKind.Int32, 1, int.MaxValue, groupType: ServerConfigGroupType.GOSSIP_CLIENT);
@@ -357,17 +360,15 @@ namespace Garnet.server
 
         /// <summary>
         /// Publishes every group marked dirty since the last call: re-materializes its options from the current
-        /// slots, bumps its version, and clears the flag. Called after a CONFIG SET batch (and once at Init), so
-        /// a multi-parameter group that had several members changed is published exactly once, atomically.
-        /// <paramref name="onPublished"/> is invoked once per group actually republished, letting the caller
-        /// notify downstream consumers (e.g. swap gossip clients).
+        /// slots, bumps its version, and clears the flag. A multi-parameter group that had several members
+        /// changed is published exactly once. Callers other than construction must hold <see cref="setLock"/>.
         /// </summary>
-        public void PublishDirtyGroups(Action<ServerConfigGroupType> onPublished = null)
+        void PublishDirtyGroups(List<ServerConfigGroupType> published = null)
         {
             foreach (var group in groups)
             {
                 if (group != null && group.PublishIfDirty(this))
-                    onPublished?.Invoke(group.GetGroupType());
+                    published?.Add(group.GetGroupType());
             }
         }
 
@@ -468,7 +469,8 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Validate <paramref name="value"/> and, if valid, update the slot for <paramref name="type"/>.
+        /// Validate <paramref name="value"/> and, if valid, update the slot for <paramref name="type"/> and
+        /// publish its group. A grouped parameter is committed only if its group still materializes into valid options.
         /// </summary>
         /// <param name="type">Configuration parameter to update.</param>
         /// <param name="value">Value as supplied on the CONFIG SET wire.</param>
@@ -476,7 +478,98 @@ namespace Garnet.server
         /// <returns><see langword="true"/> if the slot was updated.</returns>
         public bool TrySet(ServerConfigType type, string value, out string error)
         {
+            string firstError = null;
+            TrySetAll([(type, value)], e => firstError ??= e);
+            error = firstError;
+            return error == null;
+        }
+
+        /// <summary>
+        /// Applies a CONFIG SET batch and publishes the groups it changed. Each parameter is parsed, range-checked,
+        /// and updated independently; <paramref name="onError"/> receives one message per rejected parameter.
+        /// Grouped parameters are then validated per group: if a group's updated slots do not materialize into
+        /// valid options, every slot this batch changed in that group is restored and the group is reported as
+        /// rejected; otherwise the group is republished once with all of the batch's changes.
+        /// </summary>
+        /// <remarks>
+        /// Batches are serialized, so a published group reflects whole batches only. <paramref name="onPublished"/>
+        /// runs after the batch is released, once per republished group, to notify downstream consumers; a
+        /// consumer reads the group's latest published options, which may already include a later batch.
+        /// </remarks>
+        /// <param name="sets">Parameters and wire values to apply, in order.</param>
+        /// <param name="onError">Receives each error message, prefixed with "ERR ".</param>
+        /// <param name="onPublished">Optional callback invoked for each republished group.</param>
+        public void TrySetAll(IReadOnlyList<(ServerConfigType type, string value)> sets, Action<string> onError,
+            Action<ServerConfigGroupType> onPublished = null)
+        {
+            List<ServerConfigGroupType> published = null;
+            lock (setLock)
+            {
+                if (ApplyBatch(sets, onError))
+                    PublishDirtyGroups(published = []);
+            }
+
+            if (published != null && onPublished != null)
+            {
+                foreach (var group in published)
+                    onPublished(group);
+            }
+        }
+
+        // Applies the batch's slot writes and validates each touched group, rolling back a group that does not
+        // materialize. Returns true if any group was marked dirty. Caller holds setLock.
+        bool ApplyBatch(IReadOnlyList<(ServerConfigType type, string value)> sets, Action<string> onError)
+        {
+            List<(ServerConfigType type, long oldValue)> groupedUpdates = null;
+            foreach (var (type, value) in sets)
+            {
+                if (!TrySetSlot(type, value, out var oldValue, out var error))
+                {
+                    onError(error);
+                    continue;
+                }
+
+                if (Meta[(int)type].GroupType != ServerConfigGroupType.NONE)
+                    (groupedUpdates ??= []).Add((type, oldValue));
+            }
+
+            if (groupedUpdates == null)
+                return false;
+
+            var anyDirty = false;
+            foreach (var group in groups)
+            {
+                if (group == null)
+                    continue;
+
+                var groupType = group.GetGroupType();
+                if (!groupedUpdates.Exists(u => Meta[(int)u.type].GroupType == groupType))
+                    continue;
+
+                if (group.TryValidate(this, out var error))
+                {
+                    group.MarkDirty();
+                    anyDirty = true;
+                    continue;
+                }
+
+                // Restore in reverse so a parameter set more than once in the batch returns to its pre-batch value.
+                for (var i = groupedUpdates.Count - 1; i >= 0; i--)
+                {
+                    var (type, oldValue) = groupedUpdates[i];
+                    if (Meta[(int)type].GroupType == groupType)
+                        Volatile.Write(ref values[(int)type], oldValue);
+                }
+                onError(error);
+            }
+
+            return anyDirty;
+        }
+
+        bool TrySetSlot(ServerConfigType type, string value, out long oldValue, out string error)
+        {
             error = null;
+            oldValue = 0;
             ref readonly var meta = ref Meta[(int)type];
             if (meta.IsReadOnly)
             {
@@ -554,7 +647,7 @@ namespace Garnet.server
 
             // Publish the new value first so any task an update action restarts observes it, then run the
             // action. On rejection, roll the slot back so the option is left unchanged.
-            var oldValue = Volatile.Read(ref values[(int)type]);
+            oldValue = Volatile.Read(ref values[(int)type]);
             Volatile.Write(ref values[(int)type], parsed);
 
             if (meta.UpdateAction != null && !meta.UpdateAction(this, oldValue, parsed, out error))
@@ -562,11 +655,6 @@ namespace Garnet.server
                 Volatile.Write(ref values[(int)type], oldValue);
                 return false;
             }
-
-            // Mark the owning group dirty so the next PublishDirtyGroups re-materializes it from the updated
-            // slots. Ungrouped parameters (NONE) have no group slot and need no publish.
-            if (meta.GroupType != ServerConfigGroupType.NONE)
-                groups[(int)meta.GroupType].MarkDirty();
 
             return true;
         }

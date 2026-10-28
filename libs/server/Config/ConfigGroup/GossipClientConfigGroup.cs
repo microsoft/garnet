@@ -8,8 +8,8 @@ namespace Garnet.server
     /// <summary>
     /// The GOSSIP_CLIENT configuration group: materializes the gossip <see cref="GarnetClient"/>
     /// network-writer options from their runtime slots. Cross-field constraints (power-of-two sizes,
-    /// divisibility) are validated by the <see cref="NetworkWriterOptions"/> constructor at
-    /// materialization time, not when each slot is individually set.
+    /// inline buffer capacity) are enforced by the <see cref="NetworkWriterOptions"/> constructor, which
+    /// CONFIG SET runs through <see cref="IConfigGroup.TryValidate"/> before committing a change.
     /// </summary>
     internal sealed class GossipClientConfigGroup : ConfigGroupBase<NetworkWriterOptions>
     {
