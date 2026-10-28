@@ -21,13 +21,19 @@ namespace Garnet.client
     /// </summary>
     struct PageAndOffset
     {
-        internal const int kRequestBits = 15;
+        internal const int kRequestBits = DuplexRingRecordFormat.RequestIdBits;
         const int kRequestOffset = 0;
         internal const long kRequestMask = (1L << kRequestBits) - 1;
 
-        internal const int kTaskBits = 15;
+        internal const int kTaskBits = DuplexRingRecordFormat.CompletionTicketBits;
         const int kTaskOffset = kRequestOffset + kRequestBits;
         internal const long kTaskMask = (1L << kTaskBits) - 1;
+
+        /// <summary>Largest request capacity the wrapping request id can distinguish from an empty range.</summary>
+        internal const int MaxOutstandingRequests = DuplexRingRecordFormat.MaxOutstandingRequests;
+
+        /// <summary>Largest completion capacity the wrapping completion ticket can distinguish from an empty range.</summary>
+        internal const int MaxOutstandingCompletions = DuplexRingRecordFormat.MaxOutstandingCompletions;
 
         internal const int kInlineAddressBits = 64 - kRequestBits - kTaskBits;
         const int kInlineAddressOffset = kTaskOffset + kTaskBits;

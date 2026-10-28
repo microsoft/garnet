@@ -72,7 +72,7 @@ namespace Client.benchmark
             // one per in-flight operation regardless of size; --max-requests and --max-completions override them.
             const int requestPageCount = 4;
             const int bytesPerInflightRecord = 64;      // small inline GET/SET payload, with headroom
-            const int maxRequestIds = 1 << 15;          // PageAndOffset request-id space
+            const int maxRequestIds = (1 << 15) - 1;    // Largest request capacity the 15-bit request id allows
             var offered = Math.Max(1, opts.Threads * opts.Batch);
 
             var targetRingBytes = Math.Max((long)opts.NetworkBufferBytes, (long)offered * bytesPerInflightRecord);

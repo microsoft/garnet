@@ -36,9 +36,12 @@ namespace Garnet.client
     /// <param name="requestPageCount">Power-of-two multiplier of <paramref name="requestPageSizeBytes"/> giving the inline request buffer capacity.</param>
     /// <param name="maxOutstandingRequests">
     /// Maximum number of requests awaiting local send completion, regardless of size; between 1 and
-    /// 2^<see cref="PageAndOffset.kRequestBits"/>.
+    /// <see cref="PageAndOffset.MaxOutstandingRequests"/>.
     /// </param>
-    /// <param name="maxOutstandingCompletions">Maximum number of response completions awaiting replies.</param>
+    /// <param name="maxOutstandingCompletions">
+    /// Maximum number of response completions awaiting replies; between 1 and
+    /// <see cref="PageAndOffset.MaxOutstandingCompletions"/>.
+    /// </param>
     /// <param name="maxConcurrentNetworkSends">Maximum number of concurrent transport sends.</param>
     /// <param name="maxOutOfLineRentedBytes">Maximum pooled out-of-line request bytes rented until local send completion. Zero disables throttling.</param>
     /// <param name="flushResultAllocationMode">Controls whether request-flush completion contexts are retained per request slot or allocated per operation.</param>
@@ -196,9 +199,9 @@ namespace Garnet.client
                 throw new ArgumentOutOfRangeException(nameof(maxOutstandingRequests), maxOutstandingRequests,
                     "Maximum outstanding requests must be positive.");
 
-            if (maxOutstandingRequests > (1 << PageAndOffset.kRequestBits))
+            if (maxOutstandingRequests > PageAndOffset.MaxOutstandingRequests)
                 throw new ArgumentOutOfRangeException(nameof(maxOutstandingRequests), maxOutstandingRequests,
-                    $"Maximum outstanding requests must not exceed the {PageAndOffset.kRequestBits}-bit request-id space ({1 << PageAndOffset.kRequestBits}).");
+                    $"Maximum outstanding requests must be below the {PageAndOffset.kRequestBits}-bit request-id space (at most {PageAndOffset.MaxOutstandingRequests}).");
 
             return maxOutstandingRequests;
         }
@@ -209,9 +212,9 @@ namespace Garnet.client
                 throw new ArgumentOutOfRangeException(nameof(maxOutstandingCompletions), maxOutstandingCompletions,
                     "Maximum outstanding completions must be positive.");
 
-            if (maxOutstandingCompletions > (1 << PageAndOffset.kTaskBits))
+            if (maxOutstandingCompletions > PageAndOffset.MaxOutstandingCompletions)
                 throw new ArgumentOutOfRangeException(nameof(maxOutstandingCompletions), maxOutstandingCompletions,
-                    $"Maximum outstanding completions must not exceed the {PageAndOffset.kTaskBits}-bit completion-ticket space ({1 << PageAndOffset.kTaskBits}).");
+                    $"Maximum outstanding completions must be below the {PageAndOffset.kTaskBits}-bit completion-ticket space (at most {PageAndOffset.MaxOutstandingCompletions}).");
 
             return maxOutstandingCompletions;
         }

@@ -33,6 +33,24 @@ namespace Garnet.client
 
         /// <summary>Largest supported inline-buffer capacity, in bytes.</summary>
         internal const int MaxInlineBufferCapacity = 1 << 30;
+
+        /// <summary>Width of the wrapping request-id cursor.</summary>
+        internal const int RequestIdBits = 15;
+
+        /// <summary>Width of the wrapping completion-ticket cursor.</summary>
+        internal const int CompletionTicketBits = 15;
+
+        // Capacities stay strictly below each cursor's modulus: at exactly 2^bits outstanding, a full lap makes
+        // the tail equal the head and the range reads as empty.
+
+        /// <summary>Largest request capacity the wrapping request id can distinguish from an empty range.</summary>
+        internal const int MaxOutstandingRequests = (1 << RequestIdBits) - 1;
+
+        /// <summary>
+        /// Largest completion capacity the wrapping completion ticket can distinguish from an empty range. The
+        /// completion lane is a power of two, so this is the largest power of two below 2^<see cref="CompletionTicketBits"/>.
+        /// </summary>
+        internal const int MaxOutstandingCompletions = 1 << (CompletionTicketBits - 1);
     }
 
     /// <summary>
@@ -63,8 +81,8 @@ namespace Garnet.client
             internal TRequestContext request;
         }
 
-        // Upper bound on schedulable requests; mirrors the dense request-id field width enforced client-side.
-        const int MaxSchedulableRequests = 1 << 15;
+        const int MaxSchedulableRequests = DuplexRingRecordFormat.MaxOutstandingRequests;
+        const int MaxCompletionCapacity = DuplexRingRecordFormat.MaxOutstandingCompletions;
 
         readonly RingBoundedBuffer<byte> inlineDataBuffer;
         readonly ScheduleSlot[] scheduleArray;
@@ -135,6 +153,9 @@ namespace Garnet.client
                     $"Maximum outstanding requests must be between 1 and {MaxSchedulableRequests}.");
             MaxOutstandingRequests = maxOutstandingRequests;
 
+            if (completionCapacity > MaxCompletionCapacity)
+                throw new ArgumentOutOfRangeException(nameof(completionCapacity), completionCapacity,
+                    $"Completion capacity must not exceed {MaxCompletionCapacity}.");
             CompletionCapacity = (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)Math.Max(1, completionCapacity));
             completionMask = CompletionCapacity - 1;
             completions = new CompletionSlot[CompletionCapacity];

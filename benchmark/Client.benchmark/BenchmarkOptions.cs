@@ -34,7 +34,7 @@ namespace Client.benchmark
         [Option("maxsends", Default = 8, HelpText = "Maximum concurrent transport sends (maxConcurrentNetworkSends).")]
         public int MaxConcurrentSends { get; set; }
 
-        [Option("max-requests", Default = 0, HelpText = "GarnetClient request capacity (maxOutstandingRequests): the number of requests, of any size, awaiting local send completion (max 32768). Default 0 auto-sizes it to the offered load (threads*batch) with headroom; the inline request buffer is sized separately in bytes from the offered load.")]
+        [Option("max-requests", Default = 0, HelpText = "GarnetClient request capacity (maxOutstandingRequests): the number of requests, of any size, awaiting local send completion (max 32767). Default 0 auto-sizes it to the offered load (threads*batch) with headroom; the inline request buffer is sized separately in bytes from the offered load.")]
         public int MaxOutstandingRequests { get; set; }
 
         [Option("max-completions", Default = 0, HelpText = "GarnetClient completion-ring capacity (maxOutstandingCompletions). Default 0 auto-sizes it to the offered load (threads*batch) with headroom so GarnetClient is not completion-throttled.")]

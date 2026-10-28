@@ -706,7 +706,7 @@ namespace Garnet.test
 
         [TestCase(0)]
         [TestCase(-1)]
-        [TestCase((1 << PageAndOffset.kRequestBits) + 1)]
+        [TestCase(1 << PageAndOffset.kRequestBits)]
         public void MaxOutstandingRequestsMustFitRequestIdSpace(int maxOutstandingRequests)
         {
             var exception = Assert.Throws<ArgumentOutOfRangeException>(() => CreateRequestCountOptions(maxOutstandingRequests));
@@ -717,9 +717,35 @@ namespace Garnet.test
         [TestCase(3)]
         [TestCase(10)]
         [TestCase(512)]
-        [TestCase(1 << PageAndOffset.kRequestBits)]
+        [TestCase(PageAndOffset.MaxOutstandingRequests)]
         public void MaxOutstandingRequestsIsIndependentOfPageGeometry(int maxOutstandingRequests)
             => ClassicAssert.AreEqual(maxOutstandingRequests, CreateRequestCountOptions(maxOutstandingRequests).MaxOutstandingRequests);
+
+        [TestCase(0)]
+        [TestCase(PageAndOffset.MaxOutstandingCompletions + 1)]
+        [TestCase(1 << PageAndOffset.kTaskBits)]
+        public void MaxOutstandingCompletionsMustFitCompletionTicketSpace(int maxOutstandingCompletions)
+        {
+            var exception = Assert.Throws<ArgumentOutOfRangeException>(() => CreateCompletionCountOptions(maxOutstandingCompletions));
+            ClassicAssert.AreEqual("maxOutstandingCompletions", exception.ParamName);
+        }
+
+        [Test]
+        public void MaxOutstandingCompletionsAcceptsLargestDistinguishableCapacity()
+            => ClassicAssert.AreEqual(
+                PageAndOffset.MaxOutstandingCompletions,
+                CreateCompletionCountOptions(PageAndOffset.MaxOutstandingCompletions).MaxOutstandingCompletions);
+
+        static NetworkWriterOptions CreateCompletionCountOptions(int maxOutstandingCompletions)
+            => new(
+                networkBufferSizeBytes: 256,
+                requestPageSizeBytes: 256,
+                requestPageCount: 2,
+                maxOutstandingRequests: 8,
+                maxOutstandingCompletions: maxOutstandingCompletions,
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: 512,
+                flushResultAllocationMode: FlushResultAllocationMode.Buffered);
 
         static NetworkWriterOptions CreateRequestCountOptions(int maxOutstandingRequests)
             => new(
@@ -814,7 +840,7 @@ namespace Garnet.test
                 requestPageSizeBytes: 1 << 12,
                 requestPageCount: 2,
                 maxOutstandingRequests: 64,
-                maxOutstandingCompletions: 1 << PageAndOffset.kTaskBits,
+                maxOutstandingCompletions: PageAndOffset.MaxOutstandingCompletions,
                 maxConcurrentNetworkSends: 8,
                 maxOutOfLineRentedBytes: 0,
                 flushResultAllocationMode: FlushResultAllocationMode.Buffered);

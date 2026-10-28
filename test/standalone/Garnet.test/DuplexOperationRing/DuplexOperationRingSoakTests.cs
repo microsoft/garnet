@@ -75,8 +75,10 @@ namespace Garnet.test
                 maxOutstandingRequests: pageSizeBytes * pageCount / DuplexRingRecordFormat.HeaderSize,
                 completionCapacity: completionCapacity,
                 maxSendChunkSizeBytes: maxSendChunkSizeBytes);
-            using var producerCts = new CancellationTokenSource();
             using var guardCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            // Bounds producer admission by the guard: a lost wakeup cancels the parked enqueue, failing the round
+            // instead of hanging Task.WhenAll.
+            using var producerCts = CancellationTokenSource.CreateLinkedTokenSource(guardCts.Token);
             var readerDone = new CancellationTokenSource();
             Task reader = null;
 

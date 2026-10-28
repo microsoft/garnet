@@ -156,11 +156,11 @@ namespace Garnet.client
             this.authentication = new(authUsername, authPassword);
             this.clientName = clientName != null ? ["SETNAME"u8.ToArray(), Encoding.ASCII.GetBytes(clientName)] : null;
 
-            if (options.MaxOutstandingCompletions > PageAndOffset.kTaskMask + 1)
-                ThrowException(new Exception($"Maximum outstanding tasks supported is {PageAndOffset.kTaskMask + 1}"));
+            if (options.MaxOutstandingCompletions > PageAndOffset.MaxOutstandingCompletions)
+                ThrowException(new Exception($"Maximum outstanding tasks supported is {PageAndOffset.MaxOutstandingCompletions}"));
 
             if (options.MaxOutstandingCompletions != (int)Utility.PreviousPowerOf2(options.MaxOutstandingCompletions))
-                ThrowException(new Exception($"Maximum outstanding tasks should be a power of two, up to {PageAndOffset.kTaskMask + 1}"));
+                ThrowException(new Exception($"Maximum outstanding tasks should be a power of two, up to {PageAndOffset.MaxOutstandingCompletions}"));
 
             this.networkWriterOptions = options;
             this.sslOptions = tlsOptions;
