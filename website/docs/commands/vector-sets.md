@@ -202,8 +202,9 @@ that integrate with DiskANN code in other contexts where the index is created
 outside of Garnet but where it might be beneficial to serve queries with Garnet.
 
 Start with `XVCREATE`. Quantized sets require `QUANT_STATE` before importing.
-Imports may run concurrently. Wait for all term-import replies, then call `XVIMPORT key FINISH`
-before using other vector set operations. `DEL` can discard an incomplete import.
+Imports may run concurrently. Wait for all term-import replies, then call `XVIMPORT key VERIFY <index> <count>`
+to validate the import.  Once all verification is complete, call `XVIMPORT key FINISH` before using other 
+vector set operations. `DEL` can discard an incomplete import.
 
 Once a term is accepted, ordinary vector commands other than `VINFO` return
 `ERR Vector Set import is not finished` until `FINISH` succeeds. A newly created empty set with no imported
@@ -217,26 +218,22 @@ Both RESP2 and RESP3 return the simple string `OK` when the term is accepted. Mi
 Repeated terms may be accepted. A failed import must be retried successfully or the set discarded;
 failure does not guarantee that no storage changes occurred.
 
-`XVIMPORT key FINISH` waits for vector set finalization before returning
-`OK`. Finalization requires a valid imported start point, even when there are no data vectors.
+The client is responsible for making sure all data-bearing `XVIMPORT`s have finished before calling
+`XVIMPORT key VERIFY <index> <count>`, and similarly that all verification has finished before calling
+`XVIMPORT key FINISH`.  Verification is optional.
+
+Finalization requires a valid imported start point, even when there are no data vectors.
 Verification failure returns `ERR vector set import verification failed`; a failure during final setup
 returns `ERR vector set import finalization failed`. Imports are disabled once finalization starts.
 
 If ordinary operations have disabled imports and no import is pending, `FINISH` returns
 `ERR vector set import verification failed` without changing the set's state or availability.
 
-Concurrent `FINISH` calls join the same attempt. After a verification failure, another `FINISH` retries only
-failed partitions, leaving successful partitions complete. Missing terms cannot be supplied once finalization
-has started, so an incomplete import must be discarded. A finalization failure is terminal; discard the set.
-After success, repeated `FINISH` returns `OK` without re-finalizing, including after rename, eviction, or
-recovery. Terminal failure also survives eviction, recovery, replication, and migration; `FINISH` continues
-to return an error without native work. Deleting and recreating the key starts a new import lifecycle.
-Partition retry state remains cached only while the same native handle is live.
-
-:::caution
-`OK` for a term acknowledges acceptance, not graph finalization. AOF recovery or replication ending before
-FINISH leaves the set pending; replay does not finalize imports implicitly.
-:::
+Missing terms cannot be supplied once finalizationhas started, so an incomplete import must be discarded.
+A finalization failure is terminal; discard the set.  After success, repeated `FINISH` returns `OK` without
+re-finalizing, including after rename, eviction, or recovery. Terminal failure also survives eviction, recovery, 
+replication, and migration; `FINISH` continues to return an error without native work. Deleting and recreating
+the key starts a new import lifecycle. Partition retry state remains cached only while the same native handle is live.
 
 ---
 
