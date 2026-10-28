@@ -97,7 +97,7 @@ namespace Tsavorite.epoch.litmus
         const int JoinTimeoutMs = 5000;
 
         private readonly TEpoch epoch;
-        private readonly TimeSpan duration;
+        private readonly RunLimit limit;
         private readonly CoreLayout cores;
         private readonly PairBarrier start = new();
         private readonly PairBarrier end = new();
@@ -109,10 +109,10 @@ namespace Tsavorite.epoch.litmus
         private volatile bool disturbersStop;
         private int suspenderThreadId;
 
-        internal DrainLitmus(TEpoch epoch, TimeSpan duration, CoreLayout cores)
+        internal DrainLitmus(TEpoch epoch, RunLimit limit, CoreLayout cores)
         {
             this.epoch = epoch;
-            this.duration = duration;
+            this.limit = limit;
             this.cores = cores;
             onDrain = OnDrain;
         }
@@ -231,7 +231,7 @@ namespace Tsavorite.epoch.litmus
 
         (long Rounds, long Stranded) BumperLoop()
         {
-            var deadline = Environment.TickCount64 + (long)duration.TotalMilliseconds;
+            var deadline = limit.StartDeadline();
             long rounds = 0, stranded = 0, bumps = 0;
 
             while (true)
@@ -252,7 +252,7 @@ namespace Tsavorite.epoch.litmus
                     stranded++;
 
                 rounds++;
-                if (Environment.TickCount64 >= deadline)
+                if (limit.IsReached(rounds, deadline))
                     stop = true;
 
                 checkpoint.Wait();

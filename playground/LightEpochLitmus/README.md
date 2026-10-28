@@ -10,15 +10,25 @@ dotnet run -f net10.0 -c Release --project playground\LightEpochLitmus
 
 # Volatile-only release, without checking out another commit
 dotnet run -f net10.0 -c Release --project playground\LightEpochLitmus -- --buggy
+
+# The race without LightEpoch: broken release, then the two fences
+dotnet run -f net10.0 -c Release --project playground\LightEpochLitmus -- --toy
 ```
 
-Only three options are supported:
+Only five options are supported:
 
 | Option | Meaning |
 |---|---|
 | `--buggy` | Test a production-derived copy whose release-slot clear uses `Volatile.Write` |
-| `--seconds N` | Stress duration, default 180 seconds |
+| `--toy` | Run the reduced race (see [Toy](#toy)); cannot be combined with `--buggy` |
+| `--seconds N` | Stop after N seconds; default 180 (with `--toy`, per release) |
+| `--rounds N` | Stop after N rounds, `_` separators allowed (`10_000_000`); default 20,000,000 per release with `--toy` |
 | `--help` (`-h`) | Show usage |
+
+`--seconds` and `--rounds` cannot be combined. The detector control always runs for
+five seconds. Use `--rounds` to compare variants: each then runs the same number of
+rounds, so `missed` is directly comparable. The drain split and `elapsed` still vary
+with timing.
 
 The default always tests the actual `Tsavorite.core.LightEpoch` from the checked-out
 commit. Garnet.client compiles the same source under its own namespace. Before the
@@ -72,3 +82,29 @@ found none. Use `--seconds` for longer runs. A finite clean run is not proof.
 Run on native Windows or Linux hardware. Emulation does not reliably reproduce the
 target's memory ordering, and the harness rejects detected emulation. Core pinning
 must succeed; CPU affinity restrictions can prevent running the selected layout.
+
+## Toy
+
+`--toy` reduces the race to two memory operations per thread, without LightEpoch,
+in `ToyLitmus`. Its drivers are two pinned threads:
+
+- `SuspenderDriver` clears its slot, then reads `drainCount` (`Release`, then the
+  `Suspend` check), using one of `Foo_Broken` (`Volatile.Write`),
+  `Foo_Fixed_Exchange` (`Interlocked.Exchange`), or `Foo_Fixed_Barrier`
+  (`Volatile.Write` + `Thread.MemoryBarrier`).
+- `BumperDriver` runs `Bar`: it marks the drain pending, increments `drainCount`,
+  then reads the slot (`BumpCurrentEpoch`, then the `SuspendDrain` scan). It also
+  resets the state each round.
+
+Either side that sees the other's store calls `TryDrain`, which claims the pending
+drain with a compare-and-swap before counting it, as LightEpoch claims a drain-list
+entry. Both sides may see each other's store, so the claim keeps a drain from
+running twice. A correct release therefore executes exactly one drain per round, and
+`missed = rounds - executed`.
+
+Each release runs in turn on the same cores, for 20,000,000 rounds by default. On
+native x64 the broken release misses hundreds of drains, and both fences miss none. With
+`--toy`, exit 0 means the broken release reproduced and both fences stayed clean,
+1 means a fence missed a drain, and 2 means the broken release did not reproduce.
+The toy demonstrates the hardware reordering; the default run shows that
+LightEpoch itself is exposed to it.
