@@ -1134,6 +1134,11 @@ namespace Garnet.server
 
             Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSize), "LUA_MINSTACK should be large enough that this never fails");
 
+            if (outerSession.activeDbId != respServerSession.activeDbId && !respServerSession.TrySwitchActiveDatabaseSession(outerSession.activeDbId))
+            {
+                throw new GarnetException($"Could not switch script session to database: {outerSession.activeDbId}");
+            }
+
             preambleOuterSession = outerSession;
             preambleKeyAndArgvCount = count;
             try
