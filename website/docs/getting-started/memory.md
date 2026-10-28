@@ -133,6 +133,11 @@ the logical address of the previous entry in a record chain, followed by the key
 Because `LogMemorySize` accounts for both inline bytes and referenced heap memory, it bounds the total main-log memory regardless
 of the mix of raw strings and data-structure objects in the store.
 
+The startup `Total configured memory limit` diagnostic counts the index budget, main-log target, read-cache target (if
+enabled), and AOF buffers once each. A log without a memory target contributes its page-count cap instead. Log page
+capacity is not added to a target that already covers pages and heap objects. This total is not a process-wide hard
+limit: trimming allows temporary overshoot, and other allocations such as network buffers and runtime overhead are separate.
+
 ## Read Cache
 
 Read cache helps bring in records from disk to memory in a separate read cache region without growing the main log. This helps avoid additional I/O when reading records that are already on the disk. More details on the internals of read cache are available [here](../dev/tsavorite/locking.md#readcache).

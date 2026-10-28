@@ -4,6 +4,8 @@
 using System;
 using System.Linq;
 using Garnet.common;
+using Garnet.server;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -34,6 +36,7 @@ namespace Garnet.test
         [SetUp]
         public void Setup()
         {
+            server = null;
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
         }
 
@@ -60,6 +63,85 @@ namespace Garnet.test
         {
             server?.Dispose();
             TestUtils.OnTearDown();
+        }
+
+        [TestCase(65_536, 0, false, 0, "")]
+        [TestCase(70_000, 0, false, 0, "")]
+        [TestCase(0, 0, false, 0, "")]
+        [TestCase(65_536, 98_304, true, 0, "")]
+        [TestCase(0, 98_304, true, 0, "")]
+        [TestCase(65_536, 0, true, 0, "")]
+        [TestCase(0, 0, true, 0, "")]
+        [TestCase(70_000, 100_000, true, 1, "8m")]
+        [TestCase(70_000, 100_000, true, 4, "8m")]
+        public void ConfiguredMemoryBudgetCountsEachLogOnce(long mainMemory, long readCacheMemory, bool enableReadCache,
+            int aofSublogCount, string indexMaxMemorySize)
+        {
+            const int PageSize = 4096;
+            const int PageCount = 4;
+            const long AofMemoryPerSublog = 65_536;
+            var logger = new CapturingLogger();
+            using var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(new CapturingLoggerProvider(logger)));
+            var options = new GarnetServerOptions
+            {
+                EndPoints = [TestUtils.EndPoint],
+                LogDir = TestUtils.MethodTestDir,
+                CheckpointDir = TestUtils.MethodTestDir,
+                EnableStorageTier = true,
+                LogMemorySize = mainMemory.ToString(),
+                PageSize = PageSize.ToString(),
+                PageCount = PageCount,
+                EnableReadCache = enableReadCache,
+                ReadCacheMemorySize = readCacheMemory.ToString(),
+                ReadCachePageSize = PageSize.ToString(),
+                ReadCachePageCount = PageCount,
+                IndexMemorySize = IndexSize,
+                IndexMaxMemorySize = indexMaxMemorySize,
+                EnableAOF = aofSublogCount > 0,
+                AofPhysicalSublogCount = aofSublogCount > 0 ? aofSublogCount : 1,
+                AofMemorySize = AofMemoryPerSublog.ToString(),
+                AofPageSize = (2 * PageSize).ToString(),
+                UseAofNullDevice = true,
+                DisablePubSub = true,
+                QuietMode = true
+            };
+            server = new GarnetServer(options, loggerFactory);
+
+            var wrapper = server.Provider.StoreWrapper;
+            var store = wrapper.store;
+            var cacheTracker = wrapper.sizeTracker;
+            Assert.That(cacheTracker?.TargetSize ?? 0, Is.EqualTo(mainMemory));
+            Assert.That(cacheTracker?.ReadCacheTargetSize ?? 0, Is.EqualTo(enableReadCache ? readCacheMemory : 0));
+
+            foreach (var (tracker, configuredMemory) in new[]
+            {
+                (store.Log.LogSizeTracker, mainMemory),
+                (store.ReadCache?.LogSizeTracker, enableReadCache ? readCacheMemory : 0)
+            })
+            {
+                if (configuredMemory == 0)
+                {
+                    Assert.That(tracker, Is.Null);
+                    continue;
+                }
+
+                Assert.That(tracker.TargetSize, Is.EqualTo(configuredMemory));
+                Assert.That(tracker.TargetDeltaRange, Is.EqualTo((configuredMemory + configuredMemory / 10, configuredMemory - configuredMemory / 50)));
+                Assert.That(tracker.TotalSize, Is.EqualTo(tracker.logAccessor.MemorySizeBytes + tracker.LogHeapSizeBytes));
+            }
+
+            // The index budget is the larger of the index size and its max size, plus the floor the store's overflow allocator commits.
+            var mainBucketBytes = indexMaxMemorySize.Length == 0 ? 4L << 20 : 8L << 20;
+            var expectedIndexBudget = mainBucketBytes + store.IndexOverflowFloorSizeBytes;
+            Assert.That(options.IndexMemoryBudgetBytes, Is.EqualTo(expectedIndexBudget));
+            var expectedMainBudget = mainMemory > 0 ? mainMemory : PageCount * PageSize;
+            var expectedReadCacheBudget = enableReadCache ? readCacheMemory > 0 ? readCacheMemory : PageCount * PageSize : 0;
+            var expectedTotal = expectedIndexBudget + expectedMainBudget + expectedReadCacheBudget + aofSublogCount * AofMemoryPerSublog;
+            var budgetEntry = logger.Entries.Single(entry => entry.State.ContainsKey("configMemoryLimit"));
+            Assert.That(budgetEntry.State["configMemoryLimit"], Is.EqualTo(expectedTotal));
+            var indexEntry = logger.Entries.Single(entry => entry.State.ContainsKey("keyCapacity"));
+            Assert.That(indexEntry.State["indexMemoryLimit"], Is.EqualTo(expectedIndexBudget));
+            Assert.That(indexEntry.State["keyCapacity"], Is.EqualTo(mainBucketBytes / 64 * 7));
         }
 
         [Test]
