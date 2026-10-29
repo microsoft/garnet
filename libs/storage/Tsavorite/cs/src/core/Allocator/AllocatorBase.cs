@@ -1899,16 +1899,22 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.NoInlining)]
         private protected static void FailFastOnWorkerException(string state, Exception ex)
         {
-            var exceptionDetails = ex.GetType().FullName ?? ex.GetType().Name;
+            // Exception.ToString() is virtual, so an application exception can throw while formatting itself. FailFast formats the
+            // exception it is given and throws instead of terminating if that throws, so such an exception is reported by type only.
+            var exceptionType = ex.GetType().FullName ?? ex.GetType().Name;
+            string exceptionDetails;
+            var reportedException = ex;
             try
             {
-                exceptionDetails = ex.ToString() ?? exceptionDetails;
+                exceptionDetails = ex.ToString() ?? exceptionType;
             }
-            finally
+            catch (Exception formatException)
             {
-                // Exception.ToString() is virtual; always fail fast even if an application exception throws while formatting itself.
-                Environment.FailFast($"{state}{Environment.NewLine}Caught exception:{Environment.NewLine}{exceptionDetails}", ex);
+                exceptionDetails = $"{exceptionType}; its ToString() threw {formatException.GetType().FullName}";
+                reportedException = null;
             }
+
+            Environment.FailFast($"{state}{Environment.NewLine}Caught exception:{Environment.NewLine}{exceptionDetails}", reportedException);
         }
 
         private void OnPagesClosedWorkerCore()
