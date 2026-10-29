@@ -379,8 +379,8 @@ namespace Garnet.server
             => storageSession.SetIsMember(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetIsMember(PinnedSpanByte key, PinnedSpanByte[] members, out int[] result)
-            => storageSession.SetIsMember(key, members, out result, ref objectContext);
+        public GarnetStatus SetIsMember(PinnedSpanByte key, ReadOnlySpan<PinnedSpanByte> members, ref Span<int> result)
+            => storageSession.SetIsMember(key, members, ref result, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SetPop(PinnedSpanByte key, out PinnedSpanByte member)

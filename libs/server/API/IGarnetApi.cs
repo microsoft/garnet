@@ -1801,7 +1801,7 @@ namespace Garnet.server
         /// <param name="members"></param>
         /// <param name="result"></param>
         /// <returns></returns>
-        GarnetStatus SetIsMember(PinnedSpanByte key, PinnedSpanByte[] members, out int[] result);
+        GarnetStatus SetIsMember(PinnedSpanByte key, ReadOnlySpan<PinnedSpanByte> members, ref Span<int> result);
 
         /// <summary>
         /// Iterates over the members of the Set with the given key using a cursor,
