@@ -229,10 +229,9 @@ namespace Tsavorite.core
         /// <remarks>The setter restores the raw <see cref="RecordDataHeader.KeyLength"/> field to
         /// <see cref="ObjectIdMap.ObjectIdSize"/> if a flushed record used those bits for the overflow key's page-count hint. The effective
         /// KeyLength is ObjectIdSize in either state. The restoration uses a local + <see cref="SetDataHeader"/> for atomicity.
-        /// <para>Deliberately leaves ObjectLogPosition alone, unlike the ValueObject setter, which clears it to
-        /// <see cref="ObjectLogPositionInfo.NotSet"/>. The read path assigns this property while materializing an overflow key and then
-        /// reads that word's flag bits to size the value read, so clearing it here would be an intermediate state the rest of the record
-        /// read still depends on. The flush restamps the word for the whole record.</para></remarks>
+        /// <para>Unstamps ObjectLogPosition, since the key has no object-log bytes yet. Unstamping keeps the exact-size flags, which the read
+        /// path, having assigned this property while materializing an overflow key, still uses to size the value read. The flush restamps
+        /// the word for the whole record.</para></remarks>
         public readonly OverflowByteArray KeyOverflow
         {
             get

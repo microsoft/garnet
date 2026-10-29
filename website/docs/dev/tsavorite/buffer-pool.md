@@ -172,8 +172,8 @@ The geometric region emits **two** classes per doubling — a midpoint at `1.5 �
 over-allocation at 1.5×.
 
 The 16 MB ceiling is chosen so that a record built on a multi-MB inline value up to nearly Garnet's ~16 MB
-maximum is pooled rather than bypassed, and so the 4 MB object-log flush buffer lands exactly on a class with
-zero waste. A record at the absolute inline-value cap (`0xFFFFFE` bytes) plus its key and header rounds just
+maximum is pooled rather than bypassed, and so the AOF's 4 MB chunked-object ring (`ChunkedObjectRingBufferSize`)
+lands exactly on a class with zero waste. A record at the absolute inline-value cap (`0xFFFFFE` bytes) plus its key and header rounds just
 past 16 MB and takes the bypass path — intentional, since such maximum-size records are rare and not worth
 parking a buffer larger than 16 MB per thread-class.
 

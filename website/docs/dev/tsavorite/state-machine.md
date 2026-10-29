@@ -530,7 +530,7 @@ captured?"
 ### The window
 
 ```
-PREPARE ──► IN_PROGRESS ──► WAIT_INDEX_CHECKPOINT ──► WAIT_FLUSH ──► REST
+PREPARE ──► IN_PROGRESS ──► WAIT_INDEX_CHECKPOINT ──► WAIT_FLUSH ──► PERSISTENCE_CALLBACK ──► REST
             │                                                   │
             │  fuzzy region opens;                              │  snapshot /
             │  (v+1) operations run at full speed               │  fold-over I/O
@@ -542,10 +542,11 @@ Throughout that span, ordinary `(v+1)` traffic — `Delete`, and RMW that finds 
 expired source — supersedes `(v)` records and would, in the absence of a guard,
 immediately dispose them. Disposal is destructive: it runs
 `LogField.ClearObjectIdAndConvertToInline`, which calls `objectIdMap.Free` and
-flips the field to inline **in the live record**. The snapshot holds a page
-*copy* whose record bytes still carry the old object id, and it resolves ids
-against the **live** map — so once another record reuses that slot, the
-checkpoint serializes an unrelated object.
+flips the field to inline **in the live record**. The Snapshot flush reads the
+live record too: after the disposal it finds an inline field in place of the
+`(v)` value, and a flush that read the object id just before resolves it against
+the **live** map, where another record may already have reused the slot. Either
+way the checkpoint loses the `(v)` value or serializes an unrelated object.
 
 `IsFrozen` exists for exactly this window, and `OnDisposeDeletedSource` declines
 disposal while it holds:
@@ -606,7 +607,7 @@ The two freezes are released by different signals, and that difference matters:
 | Freeze | Released by | Deferred disposal |
 |---|---|---|
 | Flush | `FlushedUntilAddress` passing the record | **Marked** (`RecordInfo.DeferredDispose`) and drained on flush completion, or released at eviction |
-| Checkpoint | the checkpoint completing | **Not marked** — left to eviction |
+| Checkpoint | the session's phase leaving `WAIT_FLUSH` (`IsInV1` turns false), after `PERSISTENCE_CALLBACK`'s before-hook has sampled the recovery end | **Not marked** — left to eviction |
 
 A checkpoint freeze deliberately is *not* marked for the drain. The drain fires
 when the main log's `FlushedUntilAddress` passes the record, which says nothing
@@ -623,7 +624,8 @@ id.
 
 Regression coverage for both arms:
 `CheckpointSharedObjectMutationTests.DeleteDuringCheckpointDoesNotDisposeTheFrozenSource`
-pauses at `WAIT_FLUSH` and deletes, asserting the slot survives;
+pauses on entry to `WAIT_FLUSH`, while the published phase is still `IN_PROGRESS` or
+`WAIT_INDEX_CHECKPOINT`, and deletes, asserting the slot survives;
 `RecordLifecycleTests.FrozenSupersededSourceIsDisposedWhenTheFlushCompletes`
 parks a flush mid-write and asserts disposal is declined and then drained;
 `RecordLifecycleTests.CopyUpdateDuringTheReadOnlyFlushWalkKeepsTheSource` does the

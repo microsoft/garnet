@@ -56,23 +56,27 @@ therefore does not change the object resolved by a live record and does not chan
 
 ## Flush flow
 
-For each page, `ObjectLogWriter` writes out-of-line components to the main `ObjectLog` in record order and stamps their
-resulting positions and hints into the resident page. The page then requests the object log's flush and issues its own
-device writes, and it completes only once both are durable, so `FlushedUntilAddress` never covers a record whose objects
-are not on the device.
+For each page, `ObjectLogWriter` writes out-of-line components to the flush's `ObjectLog` in record order and stamps
+their resulting positions and hints into the resident page: the main object log for a ReadOnly flush, the checkpoint's
+own for a Snapshot flush, and the destination of a version 7 up-conversion during recovery. The page then requests the
+object log's flush and issues its own device writes, and it completes only once both are durable, so
+`FlushedUntilAddress` never covers a record whose objects are not on the device.
 
 Current-format ReadOnly, Snapshot, and recovery flushes write the resident page directly rather than allocating and
 copying a full page image. A write covers whole sectors, `[alignedStartOffset, RoundUp(endOffset, sectorSize))`; bytes
 above the logical endpoint reach disk verbatim, and recovery never parses them because it bounds its record walk by the
-unrounded endpoint. A ReadOnly or Snapshot page whose `objectIdMap` is empty has no out-of-line data, so it writes that
+unrounded endpoint. A ReadOnly flush that starts mid-sector is the exception for its first sector: it writes that
+sector from a pooled buffer holding the sector's durable bytes followed by its own, and issues its writes only after
+the earlier write of that sector completes (see [Object-log serialization](objectlog-serialization.md), section 5.6).
+A ReadOnly or Snapshot page whose `objectIdMap` is empty has no out-of-line data, so it writes that
 span directly without walking its records. ReadOnly releases epoch protection while object serialization and device IO
 run.
 
-Object-allocator Snapshot writes use a fixed-size completion window of up to 64 pages. Several pages may be in flight,
-but `SnapshotFlushCoordination` advances the ReadOnly page limit only through the contiguous completed prefix. A
-ReadOnly flush therefore waits only when it catches an unfinished Snapshot page; completed pages remain available for
-main-object-log restamping and eviction. Real-device allocators without an object log retain uncoordinated parallel
-Snapshot issuance.
+Object-allocator Snapshot writes use a fixed-size completion window of up to 64 pages, with or without an object log.
+Several pages may be in flight, but `SnapshotFlushCoordination` advances the ReadOnly page limit only through the
+contiguous completed prefix. A ReadOnly flush therefore waits only when it catches an unfinished Snapshot page;
+completed pages remain available for main-object-log restamping and eviction. A real-device allocator other than
+`ObjectAllocator` installs no coordination and keeps parallel Snapshot issuance.
 
 The no-copy path requires a record's flush-critical bytes to remain readable until its asynchronous page write
 completes. `OnDispose` implementations must copy off cleanup state and defer clearing those bytes until that write
@@ -80,8 +84,9 @@ finishes.
 
 ## Read and recovery flow
 
-Point reads, scans, and recovery use `ObjectLogReader`. One read fetches the extent a record's position addresses,
-sized by its hint; a directory then gives the exact address and length of every chunk, so an overflow array is
+Point reads, scans, and recovery use `ObjectLogReader`. One read, sized by its hint, fetches the extent a record's
+position addresses; a value-sized extent longer than the 4 MiB first read takes a second. A directory then gives the
+exact address and length of every chunk, so an overflow array is
 allocated once at its final size and a heap-object deserializer reads a dense stream bounded by its own byte count. A
 version 7 object log is read instead through `LegacyObjectLogReader` and its `CircularDiskReadBuffer` read-ahead ring.
 

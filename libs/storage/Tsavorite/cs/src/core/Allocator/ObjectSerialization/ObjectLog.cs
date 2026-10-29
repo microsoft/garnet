@@ -594,7 +594,7 @@ namespace Tsavorite.core
 
         /// <summary>Wait until <paramref name="untilAddress"/> is on the device. The caller is responsible for having requested a flush
         /// that covers it (see <see cref="FlushTail"/>).</summary>
-        /// <remarks>Safe to call while holding the epoch: the flush is completed by work queued on the epoch's drain list, so a holder
+        /// <remarks>Safe to call while holding the epoch: the flush is issued by work queued on the epoch's drain list, so a holder
         /// that merely spun would block the very progress it is waiting for. A caller that does not hold the epoch spins briefly and
         /// then blocks on the allocator's flush event rather than yielding in a loop, since a page write can take milliseconds.</remarks>
         internal void WaitForFlush(long untilAddress)

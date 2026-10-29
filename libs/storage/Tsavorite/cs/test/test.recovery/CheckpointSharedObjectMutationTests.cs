@@ -743,8 +743,8 @@ namespace Tsavorite.test.recovery
         /// the session's <c>IsInV1</c> stays true through <see cref="Phase.WAIT_FLUSH"/> for exactly that reason.
         /// Disposing here would run
         /// <c>LogField.ClearObjectIdAndConvertToInline</c> on the live record: it calls <c>objectIdMap.Free</c> and flips
-        /// the field to inline, while the snapshot holds a page *copy* that still carries the old object id and resolves
-        /// ids against the *live* map — so a later record reusing that slot gets serialized in its place.
+        /// the field to inline, while the snapshot flush reads that live record and resolves its ids against the *live* map,
+        /// so it loses the (v) value, or serializes a later record that reused the slot in its place.
         /// </para>
         /// <para>
         /// This is a different hazard from the one #2101 fixed: <c>CacheSerializedObjectData</c> preserves the (v)
