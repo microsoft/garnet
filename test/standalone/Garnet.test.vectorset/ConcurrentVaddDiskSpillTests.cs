@@ -67,7 +67,7 @@ namespace Garnet.test
         [TestCase(VectorQuantType.XNoQuant_U8)]
         public void ConcurrentVaddToSpilledSetMakesProgress(VectorQuantType quant)
         {
-            var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, enableVectorSetPreview: true);
+            var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
 
             var quantStr = quant.ToString().ToUpperInvariant();
 

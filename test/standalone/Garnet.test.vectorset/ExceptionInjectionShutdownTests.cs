@@ -48,7 +48,7 @@ namespace Garnet.test
         {
             TestUtils.IgnoreIfExceptionInjectionDisabled();
 
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableVectorSetPreview: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
             server.Start();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
