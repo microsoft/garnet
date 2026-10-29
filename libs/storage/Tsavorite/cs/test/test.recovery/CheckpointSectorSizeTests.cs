@@ -140,26 +140,7 @@ namespace Tsavorite.test.recovery
                 using var store = CreateSpanByteStore(log, checkpointManager, indexSize, logMemorySize: logMemorySize);
                 _ = await store.RecoverAsync();
                 AssertStoreSectorSize(store, CheckpointSectorSize);
-
-                using var session = store.NewSession<AdId, AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
-                var bContext = session.BasicContext;
-                AdInput input = default;
-                for (long key = 0; key < NumKeys; key++)
-                {
-                    Output output = default;
-                    var status = bContext.Read(new AdId { adId = key }, ref input, ref output, Empty.Default);
-                    if (status.IsPending)
-                    {
-                        _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
-                        ClassicAssert.IsTrue(outputs.Next());
-                        status = outputs.Current.Status;
-                        output = outputs.Current.Output;
-                        outputs.Current.Dispose();
-                        ClassicAssert.IsFalse(outputs.Next());
-                    }
-                    ClassicAssert.IsTrue(status.Found, $"key {key} not found after recovery");
-                    ClassicAssert.AreEqual(key, output.value.numClicks, $"key {key}");
-                }
+                AssertSpanByteKeysRecovered(store);
             }
             finally
             {
@@ -169,19 +150,106 @@ namespace Tsavorite.test.recovery
         }
 
         /// <summary>
-        /// An in-memory object store snapshots its objects to an object-log device with a larger sector size than its log
-        /// device, and recovers them.
+        /// A checkpoint taken through devices with a larger sector size recovers through devices with a smaller one, as when it is
+        /// copied to another filesystem or shipped to a replica. A hash index smaller than the writer's sector is padded to that
+        /// sector in the index file, so its overflow buckets start where the reader's sector size alone does not place them.
         /// </summary>
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async Task InMemoryObjectStoreRoundTripsThroughLargerCheckpointSector()
+        public async Task SmallIndexRecoversThroughSmallerCheckpointSector()
         {
-            var creator = new StrictSectorNamedDeviceFactoryCreator();
+            const long indexSize = 1L << 10;
+            var writerCreator = CreateLargerSectorWriter(out var readerCreator, out var readerSectorSize);
+            ClassicAssert.AreNotEqual(Utility.RoundUp(indexSize, writerCreator.SectorSize), Utility.RoundUp(indexSize, readerSectorSize),
+                "the writer must pad the index beyond where the reader's sector size alone would place the overflow buckets");
+
+            using (var checkpointManager = CreateCheckpointManager(writerCreator))
+            using (var store = CreateSpanByteStore(new NullDevice(), checkpointManager, indexSize))
+            {
+                AssertStoreSectorSize(store, writerCreator.SectorSize);
+                using (var session = store.NewSession<AdId, AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions()))
+                {
+                    var bContext = session.BasicContext;
+                    for (long key = 0; key < NumKeys; key++)
+                    {
+                        var value = key;
+                        _ = bContext.Upsert(new AdId { adId = key }, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                    }
+                }
+                ClassicAssert.Greater(store.overflowBucketsAllocator.NumAllocations, 0, "a table smaller than a sector must spill the keys into overflow buckets");
+
+                ClassicAssert.IsTrue(store.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot));
+                await store.CompleteCheckpointAsync();
+            }
+            AssertIoWentThroughStrictDevices(writerCreator);
+
+            using (var checkpointManager = CreateCheckpointManager(readerCreator))
+            using (var store = CreateSpanByteStore(new NullDevice(), checkpointManager, indexSize))
+            {
+                _ = await store.RecoverAsync();
+                AssertStoreSectorSize(store, readerSectorSize);
+                AssertSpanByteKeysRecovered(store);
+            }
+        }
+
+        /// <summary>
+        /// Plain local devices to recover through, and strict ones to checkpoint through whose sector size is larger than theirs:
+        /// 4 KiB, or twice the local sector size on a disk that already needs 4 KiB.
+        /// </summary>
+        private static StrictSectorNamedDeviceFactoryCreator CreateLargerSectorWriter(out LocalStorageNamedDeviceFactoryCreator readerCreator, out uint readerSectorSize)
+        {
+            readerCreator = new LocalStorageNamedDeviceFactoryCreator();
+            using (var probe = CreateCheckpointManager(readerCreator))
+                readerSectorSize = probe.GetCheckpointDeviceSectorSize();
+            return new StrictSectorNamedDeviceFactoryCreator(readerSectorSize < CheckpointSectorSize ? CheckpointSectorSize : 2 * readerSectorSize);
+        }
+
+        private static void AssertSpanByteKeysRecovered(TsavoriteKV<StructStoreFunctions, StructAllocator> store)
+        {
+            using var session = store.NewSession<AdId, AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
+            var bContext = session.BasicContext;
+            AdInput input = default;
+            for (long key = 0; key < NumKeys; key++)
+            {
+                Output output = default;
+                var status = bContext.Read(new AdId { adId = key }, ref input, ref output, Empty.Default);
+                if (status.IsPending)
+                {
+                    _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                    ClassicAssert.IsTrue(outputs.Next());
+                    status = outputs.Current.Status;
+                    output = outputs.Current.Output;
+                    outputs.Current.Dispose();
+                    ClassicAssert.IsFalse(outputs.Next());
+                }
+                ClassicAssert.IsTrue(status.Found, $"key {key} not found after recovery");
+                ClassicAssert.AreEqual(key, output.value.numClicks, $"key {key}");
+            }
+        }
+
+        /// <summary>
+        /// An in-memory object store snapshots its objects to an object-log device with a larger sector size than its log
+        /// device, and recovers them through the same devices or, as when the checkpoint is copied to another filesystem,
+        /// through devices with a smaller sector size.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task InMemoryObjectStoreRoundTripsThroughLargerCheckpointSector([Values] bool recoverThroughSmallerSector)
+        {
+            StrictSectorNamedDeviceFactoryCreator creator;
+            INamedDeviceFactoryCreator readerCreator;
+            if (recoverThroughSmallerSector)
+            {
+                creator = CreateLargerSectorWriter(out var localCreator, out _);
+                readerCreator = localCreator;
+            }
+            else
+                readerCreator = creator = new StrictSectorNamedDeviceFactoryCreator();
 
             using (var checkpointManager = CreateCheckpointManager(creator))
             using (var store = CreateObjectStore(checkpointManager))
             {
-                AssertStoreSectorSize(store, CheckpointSectorSize);
+                AssertStoreSectorSize(store, creator.SectorSize);
 
                 using (var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
                 {
@@ -195,7 +263,7 @@ namespace Tsavorite.test.recovery
             }
             AssertIoWentThroughStrictDevices(creator);
 
-            using (var checkpointManager = CreateCheckpointManager(creator))
+            using (var checkpointManager = CreateCheckpointManager(readerCreator))
             using (var store = CreateObjectStore(checkpointManager))
             {
                 _ = await store.RecoverAsync();

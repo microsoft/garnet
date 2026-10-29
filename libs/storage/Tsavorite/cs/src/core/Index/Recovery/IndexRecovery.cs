@@ -79,6 +79,9 @@ namespace Tsavorite.core
 
             BeginMainIndexRecovery(ht_version, info.main_ht_device, info.info.num_ht_bytes, isAsync);
 
+            // The overflow buckets start where the recorded main index ends. The recorded size includes the writer's sector padding,
+            // so rounding it up to this device's sector size leaves it unchanged whenever that sector size divides it; a size recorded
+            // without the padding is padded here as a writer with this device's sector size padded it.
             var alignedIndexSize = (info.info.num_ht_bytes + (deviceSectorSize - 1)) & ~((ulong)deviceSectorSize - 1);
             return alignedIndexSize;
         }
@@ -181,7 +184,9 @@ namespace Tsavorite.core
                     }
                     numBytesRead += chunkSize;
                 }
-                Debug.Assert(numBytesRead == num_bytes);
+
+                // The recorded size can exceed the table by the sector padding written after it.
+                Debug.Assert(numBytesRead <= num_bytes, "The recorded main index size must cover the table");
             }
             catch
             {

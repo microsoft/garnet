@@ -28,7 +28,10 @@ namespace Tsavorite.core
             var deviceSectorSize = _indexCheckpoint.main_ht_device.SectorSize;
             var alignedIndexSize = (ht_num_bytes_written + (deviceSectorSize - 1)) & ~((ulong)deviceSectorSize - 1);
             overflowBucketsAllocator.BeginCheckpoint(_indexCheckpoint.main_ht_device, alignedIndexSize, out ulong ofb_num_bytes_written, UseReadCache, SkipReadCacheBucket, epoch);
-            _indexCheckpoint.info.num_ht_bytes = ht_num_bytes_written;
+
+            // Record the main index's size in the file including its sector padding, where the overflow buckets start, so recovery
+            // locates them through any device whose sector size divides it rather than recomputing the padding from its own.
+            _indexCheckpoint.info.num_ht_bytes = alignedIndexSize;
             _indexCheckpoint.info.num_ofb_bytes = ofb_num_bytes_written;
         }
     }
@@ -41,10 +44,10 @@ namespace Tsavorite.core
         {
             VerifyIndexSectorSize(device);
             VerifyIndexSectorSize(ofbdevice);
-            BeginMainIndexCheckpoint(ht_version, device, out numBytesWritten);
+            BeginMainIndexCheckpoint(ht_version, device, out var htBytesWritten);
             var deviceSectorSize = device.SectorSize;
-            var alignedIndexSize = (numBytesWritten + (deviceSectorSize - 1)) & ~((ulong)deviceSectorSize - 1);
-            overflowBucketsAllocator.BeginCheckpoint(ofbdevice, alignedIndexSize, out ofbnumBytesWritten);
+            numBytesWritten = (htBytesWritten + (deviceSectorSize - 1)) & ~((ulong)deviceSectorSize - 1);
+            overflowBucketsAllocator.BeginCheckpoint(ofbdevice, numBytesWritten, out ofbnumBytesWritten);
             num_ofb_buckets = overflowBucketsAllocator.GetMaxValidAddress();
         }
 
