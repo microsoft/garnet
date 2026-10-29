@@ -208,8 +208,6 @@ namespace Garnet.server
             Reset(false);
         }
 
-        internal void Reset() => Reset(state == TxnState.Running);
-
         /// <summary>
         /// Releases the transaction scratch allocator if it is over its cap, idle, and holds nothing live.
         /// Driven from the session's batch boundary; WATCHed key slices span batches, so the allocator
