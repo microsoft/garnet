@@ -2,21 +2,13 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
-using System.Threading;
-using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
     public partial class VectorManager
     {
-        private readonly ConcurrentDictionary<byte[], int> activeImportFinalizations;
-#if NET9_0_OR_GREATER
-        private readonly ConcurrentDictionary<byte[], int>.AlternateLookup<ReadOnlySpan<byte>> activeImportFinalizationsLookup;
-#endif
-
         /// <summary>
         /// Creates an empty Vector Set.
         /// </summary>
@@ -116,50 +108,20 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// During replication replay, we need to be able to wait for in progress finalization (if any) to complete.
-        /// 
-        /// This does that.
+        /// Attempts to finish importing a Vector Set.
         /// </summary>
-        internal void WaitForImportFinalization(ReadOnlySpan<byte> key)
-        {
-#if !NET9_0_OR_GREATER
-            byte[] keyCopy = null;
-#endif
-
-            while (
-                !quantizationOrImportChannel.IsCompleted &&
-#if NET9_0_OR_GREATER
-                activeImportFinalizationsLookup.ContainsKey(key)
-#else
-                activeImportFinalizations.ContainsKey(keyCopy ??= key.ToArray())
-#endif
-            )
-            {
-                _ = Thread.Yield();
-            }
-        }
-
-        /// <summary>
-        /// Joins or retries finalization while the caller retains the index lifetime lock.
-        /// Partition progress is handle-local; completion and terminal failure are persisted in the index stub.
-        /// </summary>
-        internal NativeDiskANNMethods.DiskANNImportResult FinishImport(ReadOnlySpan<byte> key, ReadOnlySpan<byte> indexConfig)
+        internal bool TryFinishImport(scoped ReadOnlySpan<byte> key, scoped ReadOnlySpan<byte> indexConfig, out ReadOnlySpan<byte> errorMsg)
         {
             if (IsImportFailed(indexConfig))
             {
-                return NativeDiskANNMethods.DiskANNImportResult.FinishFailed;
+                errorMsg = "ERR Vector set import finish or validation failed previously"u8;
+                return false;
             }
 
             if (IsImportCompleted(indexConfig))
             {
-                return NativeDiskANNMethods.DiskANNImportResult.Success;
-            }
-
-            // If there's already an active finalization, don't do anything else
-            var keyCopy = key.ToArray();
-            if (!activeImportFinalizations.TryAdd(keyCopy, 0))
-            {
-                return NativeDiskANNMethods.DiskANNImportResult.Success;
+                errorMsg = default;
+                return true;
             }
 
             ReadIndex(indexConfig, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
@@ -168,46 +130,53 @@ namespace Garnet.server
             {
                 if (!Service.CanImport(context, indexPtr))
                 {
-                    return NativeDiskANNMethods.DiskANNImportResult.TaskFailed;
+                    errorMsg = "ERR Vector Set cannot be imported into"u8;
+                    return false;
                 }
 
                 SetFlags(key, VectorSetFlags.ImportPending, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
             }
 
-            var countdown = new CountdownHolder(quantizationAndImportTasks.Length);
-
-            // Queue up finalization tasks
-            for (var taskIx = 0; taskIx < quantizationAndImportTasks.Length; taskIx++)
+            if (!Service.FinishImport(context, indexPtr))
             {
-                if (!quantizationOrImportChannel.TryPublish(new(keyCopy, QuantizationOrImportStep.FinalizeImport, taskIx, 0, 0, countdown)))
-                {
-                    _ = activeImportFinalizations.TryRemove(keyCopy, out _);
-
-                    return NativeDiskANNMethods.DiskANNImportResult.TaskFailed;
-                }
+                SetFlags(key, VectorSetFlags.ImportPending | VectorSetFlags.ImportFailed, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
+                errorMsg = "ERR Vector set import finish failed"u8;
+                return false;
             }
+
+            SetFlags(key, VectorSetFlags.ImportCompleted, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
 
             ReplicateVectorSetFinishImport(key);
 
-            return NativeDiskANNMethods.DiskANNImportResult.Success;
+            errorMsg = default;
+            return true;
         }
 
-        private bool TryProcessImportPartitionFinalize(ReadOnlySpan<byte> key, ulong context, nint indexPtr, int taskIndex, int taskCount)
+        /// <summary>
+        /// Attempts to verify a partition of an imported Vector Set.
+        /// 
+        /// Failure marks the Vector Set import as failed.
+        /// </summary>
+        internal bool TryVerifyImport(scoped ReadOnlySpan<byte> key, scoped ReadOnlySpan<byte> indexConfig, int taskIndex, int taskCount, out ReadOnlySpan<byte> errorMsg)
         {
-            try
-            {
-                var result = Service.FinishImport(context, indexPtr, taskIndex, taskCount);
+            ReadIndex(indexConfig, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
-                return result == NativeDiskANNMethods.DiskANNImportResult.Success;
-            }
-            catch (Exception exception)
+            if (!IsImportPending(indexConfig))
             {
-                logger?.LogError(exception, "Import finalization partition {taskIndex}/{taskCount} failed for context {context}", taskIndex, taskCount, context);
+                errorMsg = "ERR Vector set is not importing"u8;
+                return false;
             }
 
-            return false;
+            if (!Service.VerifyImport(context, indexPtr, taskIndex, taskCount))
+            {
+                SetFlags(key, VectorSetFlags.ImportPending | VectorSetFlags.ImportFailed, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
+                errorMsg = "ERR Vector set import validation failed"u8;
+                return false;
+            }
+
+            errorMsg = default;
+            return true;
         }
-
 
         private static bool IsImportPending(ReadOnlySpan<byte> indexConfig)
         {

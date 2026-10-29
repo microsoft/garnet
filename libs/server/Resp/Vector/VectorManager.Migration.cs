@@ -160,7 +160,7 @@ namespace Garnet.server
 
             if (invalidMigrationRecord)
             {
-                logger?.LogWarning("Received invalid Vector Set migration record for {key}: {context}, {dimensions}, {reduceDims}, {quantyType}, {buildExplorationFactor}, {numLinks}, {distanceMetric}, {flags}", SpanByte.ToShortString(key), context, dimensions, reduceDims, quantizationAndImportTaskCount, buildExplorationFactor, numLinks, distanceMetric, flags);
+                logger?.LogWarning("Received invalid Vector Set migration record for {key}: {context}, {dimensions}, {reduceDims}, {quantyType}, {buildExplorationFactor}, {numLinks}, {distanceMetric}, {flags}", SpanByte.ToShortString(key), context, dimensions, reduceDims, quantizationTaskCount, buildExplorationFactor, numLinks, distanceMetric, flags);
                 throw new GarnetException("Invalid or corrupt Vector Set index record");
             }
 
@@ -283,7 +283,7 @@ namespace Garnet.server
                     // Post recreation the index might already need quantization - if so, queue it up
                     if (requestQuantization)
                     {
-                        EnqueueQuantization(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, 0, 0, null));
+                        EnqueueQuantization(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
                     }
 
                     // For REPLICAs which are following, we need to fake up a write

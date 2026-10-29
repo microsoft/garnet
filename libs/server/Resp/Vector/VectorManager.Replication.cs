@@ -223,8 +223,6 @@ namespace Garnet.server
 
             Debug.Assert(input.header.cmd is RespCommand.XVCREATE or RespCommand.XVIMPORT, "Only XVCREATE and XVIMPORT should be redirected here");
 
-            WaitForImportFinalization(key);
-
             GarnetStatus status;
             VectorManagerResult result;
             ReadOnlySpan<byte> error;
@@ -245,6 +243,7 @@ namespace Garnet.server
                 {
                     throw new GarnetException("Invalid XVIMPORT FINISH AOF payload");
                 }
+
                 status = session.VectorSetFinishImport(PinnedSpanByte.FromPinnedSpan(key), out result, out error);
             }
             else if (input.parseState.Count == 3 && input.parseState.GetArgSliceByRef(0).Length == sizeof(uint))
@@ -265,6 +264,7 @@ namespace Garnet.server
             {
                 throw new GarnetException("Invalid XVIMPORT AOF payload");
             }
+
             if (status != GarnetStatus.OK || result != VectorManagerResult.OK)
             {
                 throw new GarnetException($"Vector Set import replay failed: {status}, {result}, {Encoding.UTF8.GetString(error)}");
@@ -391,8 +391,6 @@ namespace Garnet.server
         )
         {
             Debug.Assert(Volatile.Read(ref replicationReplayStarted) != -1, "VectorManager replication channels were disposed and HandleVectorSetAddReplication was called");
-
-            WaitForImportFinalization(key);
 
             if (input.arg1 == MigrateElementKeyLogArg)
             {
@@ -765,8 +763,6 @@ namespace Garnet.server
         /// </summary>
         internal void HandleVectorSetRemoveReplication(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input)
         {
-            WaitForImportFinalization(key);
-
             Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
             var element = input.parseState.GetArgSliceByRef(0);
 
@@ -795,8 +791,6 @@ namespace Garnet.server
         /// </summary>
         internal void HandleVectorSetSetAttributeReplication(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input)
         {
-            WaitForImportFinalization(key);
-
             Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
             var element = input.parseState.GetArgSliceByRef(0);
             var attribute = input.parseState.GetArgSliceByRef(1);
