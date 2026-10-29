@@ -247,6 +247,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_HASH_VALUE_IS_NOT_INTEGER => "ERR hash value is not an integer."u8;
         public static ReadOnlySpan<byte> RESP_ERR_HASH_VALUE_IS_NOT_FLOAT => "ERR hash value is not a float."u8;
         public static ReadOnlySpan<byte> RESP_ERR_INCR_DECR_OVERFLOW => "ERR increment or decrement would overflow"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_DECR_OVERFLOW => "ERR decrement would overflow"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_ETAG_OVERFLOW => "ERR ETag would overflow"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE => "ERR value is out of range, must be positive."u8;
         public static ReadOnlySpan<byte> RESP_ERR_PROTOCOL_VALUE_IS_NOT_INTEGER => "ERR Protocol version is not an integer or out of range."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INDEX_OUT_RANGE => "ERR index out of range"u8;
@@ -306,6 +308,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_BUSSYKEY => "BUSYKEY Target key name already exists."u8;
         public static ReadOnlySpan<byte> RESP_ERR_LENGTH_AND_INDEXES => "If you want both the length and indexes, please just use IDX."u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_EXPIRE_TIME => "ERR invalid expire time, must be >= 0"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_EXPIRATION_TICKS => "ERR invalid expiration ticks, must be >= -1"u8;
         public static ReadOnlySpan<byte> RESP_ERR_HCOLLECT_ALREADY_IN_PROGRESS => "ERR HCOLLECT scan already in progress"u8;
         public static ReadOnlySpan<byte> RESP_ERR_ZCOLLECT_ALREADY_IN_PROGRESS => "ERR ZCOLLECT scan already in progress"u8;
         public static ReadOnlySpan<byte> RESP_INVALID_COMMAND_SPECIFIED => "Invalid command specified"u8;

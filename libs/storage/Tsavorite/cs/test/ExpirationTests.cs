@@ -147,6 +147,13 @@ namespace Tsavorite.test.Expiration
                                                 //      NotEquals: Same as ExpireDelete
                                                 //  NotExists: Return false from NIU
 
+            ExpireWithoutInsert,                // Expire the record and resume to an initial update, which declines, so the key is deleted
+                                                //  Mutable:
+                                                //      IPU returns ExpireAndResume; the expired record is tombstoned when NIU returns false
+                                                //  ReadOnly or OnDisk:
+                                                //      NCU returns ExpireAndResume; the expired record is deleted when NIU returns false
+            ExpireThenRejectInsert,             // As ExpireWithoutInsert, but NIU returns true and IU returns false
+
             Revivify                            // TODO - NYI: An Update or RMW operation encounters a tombstoned record of >= size of the new value, so the record is updated.
                                                 //      Test with newsize < space, then again with newsize == original space
                                                 //          Verify tombstone is revivified on later insert (InitialWriter called within Tsavorite-acquired RecordInfo.SpinLock)
@@ -194,6 +201,10 @@ namespace Tsavorite.test.Expiration
                     case TestOp.DeleteIfValueNotEqualsAndStop:
                         // AndStop should have returned from RMW instead during the test, but this is legitimately called from VerifyKeyNotCreated
                         return false;
+                    case TestOp.ExpireWithoutInsert:
+                        return false;
+                    case TestOp.ExpireThenRejectInsert:
+                        return true;
                     case TestOp.Revivify:
                         Assert.Fail($"{input.testOp} should not get here");
                         return false;
@@ -230,6 +241,11 @@ namespace Tsavorite.test.Expiration
                     case TestOp.DeleteIfValueNotEqualsThenInsert:
                     case TestOp.DeleteIfValueNotEqualsAndStop:
                         return field1 != input.comparisonValue;
+                    case TestOp.ExpireWithoutInsert:
+                    case TestOp.ExpireThenRejectInsert:
+                        rmwInfo.Action = RMWAction.ExpireAndResume;
+                        output.result = ExpirationResult.Deleted;
+                        return false;
                     case TestOp.Revivify:
                         Assert.Fail($"{input.testOp} should not get here");
                         return false;
@@ -326,6 +342,10 @@ namespace Tsavorite.test.Expiration
                         }
                         Assert.Fail("Should have returned false from NeedCopyUpdate");
                         return false;
+                    case TestOp.ExpireWithoutInsert:
+                    case TestOp.ExpireThenRejectInsert:
+                        Assert.Fail("Should have returned false from NeedCopyUpdate");
+                        return false;
                     case TestOp.Revivify:
                         Assert.Fail($"{input.testOp} should not get here");
                         return false;
@@ -340,6 +360,8 @@ namespace Tsavorite.test.Expiration
                 ref int newField1 = ref logRecord.ValueSpan.AsRef<int>();
 
                 output.AddFunc(Funcs.InitialUpdater);
+                if (input.testOp == TestOp.ExpireThenRejectInsert)
+                    return false;
                 newField1 = input.value;
 
                 // If InPlaceUpdater returned Delete, let the caller know both operations happened. Similarly, we may be 
@@ -442,6 +464,11 @@ namespace Tsavorite.test.Expiration
                         output.result = ExpirationResult.NotDeleted;
                         output.retrievedValue = newField1;
                         return true;
+                    case TestOp.ExpireWithoutInsert:
+                    case TestOp.ExpireThenRejectInsert:
+                        rmwInfo.Action = RMWAction.ExpireAndResume;
+                        output.result = ExpirationResult.Deleted;
+                        return false;
                     case TestOp.Revivify:
                         Assert.Fail($"{input.testOp} should not get here");
                         return false;
@@ -1107,6 +1134,39 @@ namespace Tsavorite.test.Expiration
 
             // Verify it's not there
             _ = GetRecord(key, new(StatusCode.NotFound), flushMode);
+        }
+
+        /// <summary>
+        /// A record that expires during RMW, when no initial update follows, is deleted rather than left in place, from any region.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        [Category("Smoke"), Category("RMW")]
+        public void ExpireWithoutInsertTest([Values] FlushMode flushMode, [Values(TestOp.ExpireWithoutInsert, TestOp.ExpireThenRejectInsert)] TestOp testOp,
+            [Values(Phase.REST, Phase.PREPARE)] Phase phase)
+        {
+            InitialIncrement();
+            MaybeEvict(flushMode);
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
+
+            Span<int> keySpan = [ModifyKey];
+            ExpirationInput input = new() { testOp = testOp };
+            ExpirationOutput output = new();
+            var status = bContext.RMW(TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(keySpan)), ref input, ref output);
+            if (status.IsPending)
+            {
+                ClassicAssert.AreNotEqual(FlushMode.NoFlush, flushMode);
+                _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                (status, output) = GetSinglePendingResult(completedOutputs);
+            }
+
+            ClassicAssert.IsTrue(status.NotFound, status.ToString());
+            ClassicAssert.IsTrue(status.IsExpired, status.ToString());
+            ClassicAssert.AreEqual(ExpirationResult.Deleted, output.result);
+            var expectedFuncs = testOp == TestOp.ExpireWithoutInsert ? Funcs.NeedInitialUpdate : Funcs.DidInitialUpdate;
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled & Funcs.DidInitialUpdate, output.ToString());
+
+            _ = GetRecord(ModifyKey, new(StatusCode.NotFound), flushMode);
         }
     }
 }

@@ -14,7 +14,7 @@ title: Raw String
     APPEND key value
 ```
 
-If key already exists and is a string, this command appends the value at the end of the string. If key does not exist it is created and set as an empty string. 
+If key already exists and is a string, this command appends the value at the end of the string. If key does not exist it is created and set as an empty string. The result can be at most 512 MB; an append that would exceed this returns an error and leaves the value unchanged.
 
 #### RESP Reply
 
