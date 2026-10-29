@@ -1775,6 +1775,19 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Busy-waits for one second. Run by EXEC, it keeps the locks of the transaction's keys held for that long.
+        /// </summary>
+        private const string BusyWaitOneSecondScript = """
+            local function now()
+                local t = redis.call('TIME')
+                return tonumber(t[1]) * 1000000 + tonumber(t[2])
+            end
+            local deadline = now() + 1000000
+            while now() < deadline do end
+            return 1
+            """;
+
+        /// <summary>
         /// A push run by EXEC notifies the broker while the transaction holds the key's lock. That must not wait for
         /// the broker, which may itself be waiting for the key's lock to serve a client that started waiting on the
         /// key during the transaction.
@@ -1793,19 +1806,9 @@ namespace Garnet.test
             const string dstKey = "txn:push:dst";
             _ = await db.ListRightPushAsync(srcKey, "pushed");
 
-            // Busy-waits for one second, holding the transaction's lock on dstKey while the waiter below starts.
-            const string busyWaitScript = """
-                local function now()
-                    local t = redis.call('TIME')
-                    return tonumber(t[1]) * 1000000 + tonumber(t[2])
-                end
-                local deadline = now() + 1000000
-                while now() < deadline do end
-                return 1
-                """;
-
+            // The script holds the transaction's lock on dstKey while the waiter below starts.
             var tran = db.CreateTransaction();
-            _ = tran.ExecuteAsync("EVAL", busyWaitScript, "0");
+            _ = tran.ExecuteAsync("EVAL", BusyWaitOneSecondScript, "0");
             var push = blockingMove
                 ? tran.ExecuteAsync("BLMOVE", srcKey, dstKey, "LEFT", "LEFT", "0")
                 : tran.ExecuteAsync("LMOVE", srcKey, dstKey, "LEFT", "LEFT");
@@ -1826,6 +1829,58 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength($"*2\r\n${dstKey.Length}\r\n{dstKey}\r\n$6\r\npushed\r\n", waiterResponse);
             ClassicAssert.IsFalse(await db.KeyExistsAsync(srcKey));
             ClassicAssert.IsFalse(await db.KeyExistsAsync(dstKey));
+        }
+
+        /// <summary>
+        /// A blocking command on a key that holds an item serves it whatever its timeout, even while an earlier
+        /// client's first attempt waits for a key that a transaction has locked.
+        /// </summary>
+        [Test]
+        public async Task BlockingCommandOnKeyHoldingAnItemServesItWhateverItsTimeout(
+            [ValueSource(nameof(BlockingCommands))] string command)
+        {
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, enableLua: true);
+            server.Start();
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // The multiplexer above queues commands behind the EXEC, so the command under test needs its own
+            await using var clientRedis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var clientDb = clientRedis.GetDatabase(0);
+
+            var key = $"ready:{command}";
+            var destination = $"{key}:dst";
+            const string lockedKey = "ready:locked";
+
+            _ = IsSortedSetCommand(command)
+                ? await db.ExecuteAsync("ZADD", key, "1", "ready")
+                : await db.ExecuteAsync("RPUSH", key, "ready");
+
+            var tran = db.CreateTransaction();
+            _ = tran.ExecuteAsync("EVAL", BusyWaitOneSecondScript, "0");
+            _ = tran.ExecuteAsync("LPUSH", lockedKey, "pushed");
+            var exec = tran.ExecuteAsync();
+
+            await Task.Delay(200);
+
+            var waiter = Task.Run(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                return (byte[])lcr.SendCommand($"BLPOP {lockedKey} 30", 3).Clone();
+            });
+
+            await Task.Delay(200);
+
+            var result = await clientDb.ExecuteAsync(command, BlockingCommandArgs(command, key, destination, "0.01"))
+                .WaitAsync(NonBlockingReplyTimeout);
+            ClassicAssert.IsFalse(result.IsNull, $"{command} with a 10 ms timeout on a key holding an item returned nil.");
+            CollectionAssert.Contains(Flatten(result).ToArray(), "ready");
+
+            ClassicAssert.IsTrue(await exec.WaitAsync(NonBlockingReplyTimeout));
+            var waiterResponse = await waiter.WaitAsync(NonBlockingReplyTimeout);
+            TestUtils.AssertEqualUpToExpectedLength($"*2\r\n${lockedKey.Length}\r\n{lockedKey}\r\n$6\r\npushed\r\n", waiterResponse);
         }
 
         /// <summary>
