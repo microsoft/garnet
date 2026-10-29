@@ -7123,6 +7123,64 @@
     ]
   },
   {
+    "Command": "REPLCONF",
+    "Name": "REPLCONF",
+    "Summary": "An internal command for configuring the replication stream.",
+    "Group": "Server",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ARGS",
+        "DisplayText": "args",
+        "Type": "Block",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "VALUE",
+            "DisplayText": "value",
+            "Type": "String"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "PSYNC",
+    "Name": "PSYNC",
+    "Summary": "An internal command used in replication.",
+    "Group": "Server",
+    "Complexity": "O(N) where N is the amount of data replicated",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ARGS",
+        "DisplayText": "args",
+        "Type": "Block",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "REPLICATIONID",
+            "DisplayText": "replicationid",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFFSET",
+            "DisplayText": "offset",
+            "Type": "Integer"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "SELECT",
     "Name": "SELECT",
     "Summary": "Changes the selected database.",

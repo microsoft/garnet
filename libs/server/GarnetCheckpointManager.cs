@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Text;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -14,6 +15,13 @@ namespace Garnet.server
     /// </summary>
     public class GarnetCheckpointManager : DeviceLogCommitCheckpointManager
     {
+        readonly bool enableCheckpointLeases;
+
+        /// <summary>
+        /// Whether checkpoint cleanup is managed through explicit leases.
+        /// </summary>
+        internal bool EnableCheckpointLeases => enableCheckpointLeases;
+
         public string CurrentHistoryId { get; set; }
         public string RecoveredHistoryId { get; set; }
         public AofAddress CurrentSafeAofAddress { get; private set; }
@@ -28,13 +36,90 @@ namespace Garnet.server
         /// <param name="removeOutdated">Remove older Tsavorite log commits</param>
         /// <param name="fastCommitThrottleFreq">FastCommit throttle frequency - use only in FastCommit mode</param>
         /// <param name="logger">Logger</param>
-        public GarnetCheckpointManager(int AofPhysicalSublogCount, INamedDeviceFactoryCreator deviceFactoryCreator, ICheckpointNamingScheme checkpointNamingScheme, bool removeOutdated = true, int fastCommitThrottleFreq = 0, ILogger logger = null)
+        public GarnetCheckpointManager(
+            int AofPhysicalSublogCount,
+            INamedDeviceFactoryCreator deviceFactoryCreator,
+            ICheckpointNamingScheme checkpointNamingScheme,
+            bool removeOutdated = true,
+            int fastCommitThrottleFreq = 0,
+            ILogger logger = null,
+            bool enableCheckpointLeases = false)
             : base(deviceFactoryCreator, checkpointNamingScheme, removeOutdated, fastCommitThrottleFreq, logger)
         {
+            this.enableCheckpointLeases = enableCheckpointLeases;
             CurrentHistoryId = null;
             RecoveredHistoryId = null;
             CurrentSafeAofAddress = AofAddress.Create(AofPhysicalSublogCount, 0);
             RecoveredSafeAofAddress = AofAddress.Create(AofPhysicalSublogCount, 0);
+        }
+
+        /// <inheritdoc />
+        public override bool PerformAutomaticCleanup => !enableCheckpointLeases;
+
+        /// <summary>
+        /// Deletes a log checkpoint.
+        /// </summary>
+        internal void DeleteLogCheckpoint(Guid token)
+            => deviceFactory.Delete(checkpointNamingScheme.LogCheckpointBase(token));
+
+        /// <summary>
+        /// Deletes an index checkpoint.
+        /// </summary>
+        internal void DeleteIndexCheckpoint(Guid token)
+            => deviceFactory.Delete(checkpointNamingScheme.IndexCheckpointBase(token));
+
+        /// <summary>
+        /// Commits log checkpoint metadata received from another Garnet server.
+        /// </summary>
+        internal void CommitLogCheckpointFromTransfer(Guid logToken, ReadOnlySpan<byte> checkpointMetadata)
+        {
+            var recoveryInfo = ConvertMetadata(checkpointMetadata);
+            CommitLogCheckpointMetadata(logToken, recoveryInfo.ToByteArray());
+        }
+
+        /// <summary>
+        /// Reads the Garnet replication history stored in a log checkpoint.
+        /// </summary>
+        internal unsafe void GetCheckpointCookieMetadata(
+            Guid logToken,
+            ref AofAddress recoveredSafeAofAddress,
+            out string recoveredHistoryId)
+        {
+            var recoveryInfo = ConvertMetadata(GetLogCheckpointMetadata(logToken));
+            recoveredHistoryId = null;
+            if (recoveryInfo.cookie == null || recoveryInfo.cookie.Length == 0)
+                return;
+
+            if (recoveredSafeAofAddress.Length == 1)
+            {
+                fixed (byte* ptr = recoveryInfo.cookie)
+                {
+                    if (recoveryInfo.cookie.Length < sizeof(int))
+                        throw new GarnetException($"Invalid checkpoint cookie length: {recoveryInfo.cookie.Length}");
+                    var cookieSize = *(int*)ptr;
+                    if (cookieSize < sizeof(long) || recoveryInfo.cookie.Length < sizeof(int) + cookieSize)
+                        throw new GarnetException($"Invalid checkpoint cookie size: {cookieSize}");
+
+                    recoveredSafeAofAddress[0] = *(long*)(ptr + sizeof(int));
+                    if (cookieSize > sizeof(long))
+                        recoveredHistoryId = Encoding.ASCII.GetString(ptr + sizeof(int) + sizeof(long), cookieSize - sizeof(long));
+                }
+                return;
+            }
+
+            using var stream = new MemoryStream(recoveryInfo.cookie);
+            using var reader = new BinaryReader(stream, Encoding.ASCII);
+            recoveredHistoryId = reader.ReadInt32() > 0 ? reader.ReadString() : null;
+            recoveredSafeAofAddress = AofAddress.Deserialize(reader);
+        }
+
+        static HybridLogRecoveryInfo ConvertMetadata(ReadOnlySpan<byte> checkpointMetadata)
+        {
+            HybridLogRecoveryInfo recoveryInfo = new();
+            using var stream = new MemoryStream(checkpointMetadata.ToArray());
+            using var reader = new StreamReader(stream);
+            recoveryInfo.Initialize(reader);
+            return recoveryInfo;
         }
 
         /// <summary>

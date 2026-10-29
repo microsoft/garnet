@@ -263,6 +263,8 @@ namespace CommandInfoUpdater
             new("RESTORE", RespCommand.RESTORE, StoreType.All),
             new("RENAMENX", RespCommand.RENAMENX, StoreType.All),
             new("REPLICAOF", RespCommand.REPLICAOF),
+            new("REPLCONF", RespCommand.REPLCONF),
+            new("PSYNC", RespCommand.PSYNC),
             new("RI.CONFIG", RespCommand.RICONFIG, StoreType.Main),
             new("RI.CREATE", RespCommand.RICREATE, StoreType.Main),
             new("RI.DEL", RespCommand.RIDEL, StoreType.Main),
