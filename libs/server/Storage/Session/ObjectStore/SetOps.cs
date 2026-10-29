@@ -55,13 +55,10 @@ namespace Garnet.server
         /// <param name="saddCount"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        internal unsafe GarnetStatus SetAdd<TObjectContext>(PinnedSpanByte key, PinnedSpanByte[] members, out int saddCount, ref TObjectContext objectContext)
+        internal GarnetStatus SetAdd<TObjectContext>(PinnedSpanByte key, PinnedSpanByte[] members, out int saddCount, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             saddCount = 0;
-
-            if (key.Length == 0)
-                return GarnetStatus.OK;
 
             // Prepare the parse state
             parseState.InitializeWithArguments(members);
@@ -124,7 +121,7 @@ namespace Garnet.server
         {
             sremCount = 0;
 
-            if (key.Length == 0 || members.Length == 0)
+            if (members.Length == 0)
                 return GarnetStatus.OK;
 
             // Prepare the parse state
@@ -149,13 +146,10 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        internal unsafe GarnetStatus SetLength<TObjectContext>(PinnedSpanByte key, out int count, ref TObjectContext objectContext)
+        internal GarnetStatus SetLength<TObjectContext>(PinnedSpanByte key, out int count, ref TObjectContext objectContext)
                 where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             count = 0;
-
-            if (key.Length == 0)
-                return GarnetStatus.OK;
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SCARD };
@@ -176,13 +170,10 @@ namespace Garnet.server
         /// <param name="members"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        internal unsafe GarnetStatus SetMembers<TObjectContext>(PinnedSpanByte key, out PinnedSpanByte[] members, ref TObjectContext objectContext)
+        internal GarnetStatus SetMembers<TObjectContext>(PinnedSpanByte key, out PinnedSpanByte[] members, ref TObjectContext objectContext)
              where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             members = default;
-
-            if (key.Length == 0)
-                return GarnetStatus.OK;
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SMEMBERS };
@@ -231,9 +222,6 @@ namespace Garnet.server
         {
             elements = default;
 
-            if (key.Length == 0)
-                return GarnetStatus.OK;
-
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SPOP };
             var input = new ObjectInput(header, count);
@@ -254,14 +242,36 @@ namespace Garnet.server
         /// <summary>
         /// Moves a member from a source set to a destination set.
         /// If the move was performed, this command returns 1.
-        /// If the member was not found in the source set, or if no operation was performed, this command returns 0.
+        /// If the member was not found in the source set, this command returns 0.
         /// </summary>
         /// <param name="sourceKey"></param>
         /// <param name="destinationKey"></param>
         /// <param name="member"></param>
         /// <param name="smoveResult"></param>
-        internal unsafe GarnetStatus SetMove(PinnedSpanByte sourceKey, PinnedSpanByte destinationKey, PinnedSpanByte member, out int smoveResult)
+        internal GarnetStatus SetMove(PinnedSpanByte sourceKey, PinnedSpanByte destinationKey, PinnedSpanByte member, out int smoveResult)
         {
+            var objectTransactionalContext = txnManager.ObjectTransactionalContext;
+
+            // If the keys are the same, this is equivalent to SISMEMBER
+            var sameKey = sourceKey.ReadOnlySpan.SequenceEqual(destinationKey.ReadOnlySpan);
+            if (sameKey)
+            {
+                scoped Span<int> isMemberRes = stackalloc int[1];
+                ReadOnlySpan<PinnedSpanByte> members = [member];
+                GarnetStatus status;
+                if (txnManager.state == TxnState.Running)
+                {
+                    status = SetIsMember(sourceKey, members, ref isMemberRes, ref objectTransactionalContext);
+                }
+                else
+                {
+                    status = SetIsMember(sourceKey, members, ref isMemberRes, ref objectBasicContext);
+                }
+
+                smoveResult = isMemberRes[0] == 1 ? 1 : 0;
+                return status;
+            }
+
             smoveResult = 0;
 
             var createTransaction = false;
@@ -273,8 +283,6 @@ namespace Garnet.server
                 txnManager.SaveKeyEntryToLock(destinationKey, LockType.Exclusive);
                 _ = txnManager.Run(true);
             }
-
-            var objectTransactionalContext = txnManager.ObjectTransactionalContext;
 
             try
             {
@@ -289,11 +297,6 @@ namespace Garnet.server
 
                 if (srcGetStatus == GarnetStatus.WRONGTYPE || srcObject.GarnetObject is not SetObject)
                     return GarnetStatus.WRONGTYPE;
-
-                // If the keys are the same, no operation is performed.
-                var sameKey = sourceKey.ReadOnlySpan.SequenceEqual(destinationKey.ReadOnlySpan);
-                if (sameKey)
-                    return GarnetStatus.OK;
 
                 // Validate the destination type before removing from the source so that a WRONGTYPE destination
                 // does not lose the member.
@@ -423,7 +426,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, ExpireOption.None, ref setUnifiedTransactionalContext);
+                        _ = EXPIRE(key, TimeSpan.Zero, out _, out _, ExpireOption.None, ref setUnifiedTransactionalContext);
                     }
 
                     count = members.Count;
@@ -594,7 +597,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, ExpireOption.None, ref setUnifiedTransactionalContext);
+                        _ = EXPIRE(key, TimeSpan.Zero, out _, out _, ExpireOption.None, ref setUnifiedTransactionalContext);
                     }
 
                     count = members.Count;
@@ -716,14 +719,9 @@ namespace Garnet.server
         /// <param name="members"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus SetIsMember<TObjectContext>(PinnedSpanByte key, PinnedSpanByte[] members, out int[] result, ref TObjectContext objectContext)
+        public GarnetStatus SetIsMember<TObjectContext>(PinnedSpanByte key, ReadOnlySpan<PinnedSpanByte> members, ref Span<int> result, ref TObjectContext objectContext)
              where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            result = default;
-
-            if (key.Length == 0)
-                return GarnetStatus.OK;
-
             parseState.InitializeWithArguments(members);
 
             // Prepare the input
@@ -737,7 +735,7 @@ namespace Garnet.server
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             if (status == GarnetStatus.OK)
-                result = ProcessRespIntegerArrayOutput(output, out _);
+                ProcessRespIntegerArrayOutput(output, ref result, out _);
 
             return status;
         }
@@ -861,7 +859,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, ExpireOption.None, ref setUnifiedTransactionalContext);
+                        _ = EXPIRE(key, TimeSpan.Zero, out _, out _, ExpireOption.None, ref setUnifiedTransactionalContext);
                     }
 
                     count = diffSet.Count;
