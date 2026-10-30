@@ -254,9 +254,6 @@ namespace Garnet.server
 
                 void UpdateMaxSequenceNumberFromHeader()
                 {
-                    if (!serverOptions.MultiLogEnabled)
-                        return;
-
                     var headerType = (*(AofHeader*)ptr).HeaderType;
                     long sequenceNumber;
                     switch (headerType)

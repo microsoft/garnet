@@ -41,11 +41,6 @@ namespace Tsavorite.core
         void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, IHeapObject srcValueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
              where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor;
-        void PostUpsertOperation<TKey, TSourceLogRecord, TEpochAccessor>(TKey key, ref TInput input, in TSourceLogRecord inputLogRecord,
-            ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-            where TKey : IKey, allows ref struct
-            where TSourceLogRecord : ISourceLogRecord
-            where TEpochAccessor : IEpochAccessor;
         #endregion Upserts
 
         #region RMWs

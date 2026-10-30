@@ -47,7 +47,10 @@ namespace Garnet.test
                 fixed (byte* recordPtr = output.SpanByteAndMemory.ReadOnlySpan)
                 {
                     LogRecord record = new(recordPtr, state.transientObjectIdMap);
-                    UnifiedInput input = new();
+                    UnifiedInput input = new(RespCommand.SET, RespInputFlags.HasEtag, record.Expiration)
+                    {
+                        arg2 = record.ETag
+                    };
                     Status status = context.Upsert((FixedSpanByteKey)Encoding.UTF8.GetBytes(destination), ref input, in record);
                     Assert.That(status.IsCompletedSuccessfully, Is.True);
                 }
@@ -63,6 +66,62 @@ namespace Garnet.test
             RedisResult[] result = (RedisResult[])database.Execute("GETWITHETAG", key);
             Assert.That((long)result[0], Is.EqualTo(tag));
             Assert.That((string)result[1], Is.EqualTo(value));
+        }
+
+        [Test]
+        public unsafe void InputsConditionallySerializeCompatibleEtag([Values(0L, 3L, long.MaxValue)] long etag,
+            [Values] bool unified)
+        {
+            byte[] argument = Encoding.ASCII.GetBytes("value");
+            fixed (byte* argumentPointer = argument)
+            {
+                SessionParseState parseState = default;
+                ReadOnlySpan<PinnedSpanByte> args = [PinnedSpanByte.FromPinnedPointer(argumentPointer, argument.Length)];
+                parseState.InitializeWithArguments(args);
+                var input = new StringInput(RespCommand.SET, ref parseState, arg1: 123,
+                    flags: RespInputFlags.HasEtag)
+                { arg2 = etag };
+                var unifiedInput = new UnifiedInput(RespCommand.SET, ref parseState, arg1: 123,
+                    flags: RespInputFlags.HasEtag)
+                { arg2 = etag };
+                int taggedLength = input.SerializedLength;
+                Assert.That(unifiedInput.SerializedLength, Is.EqualTo(taggedLength));
+                byte[] buffer = new byte[taggedLength];
+                fixed (byte* pointer = buffer)
+                {
+                    Assert.That(unified ? unifiedInput.CopyTo(pointer, buffer.Length) : input.CopyTo(pointer, buffer.Length),
+                        Is.EqualTo(taggedLength));
+                    StringInput decoded = default;
+                    UnifiedInput unifiedDecoded = default;
+                    Assert.That(decoded.DeserializeFrom(pointer), Is.EqualTo(taggedLength));
+                    Assert.That(unifiedDecoded.DeserializeFrom(pointer), Is.EqualTo(taggedLength));
+                    Assert.That(unifiedDecoded.HasEtag, Is.True);
+                    Assert.That(unifiedDecoded.arg2, Is.EqualTo(etag));
+                    Assert.That(unifiedDecoded.arg1, Is.EqualTo(123));
+                    Assert.That(unifiedDecoded.parseState.GetArgSliceByRef(0).ToString(), Is.EqualTo("value"));
+                    Assert.That(decoded.HasEtag, Is.True);
+                    Assert.That(decoded.arg2, Is.EqualTo(etag));
+                    Assert.That(decoded.arg1, Is.EqualTo(123));
+                    Assert.That(decoded.parseState.GetArgSliceByRef(0).ToString(), Is.EqualTo("value"));
+
+                    input.header.flags = 0;
+                    unifiedInput.header.flags = 0;
+                    Assert.That(input.SerializedLength, Is.EqualTo(taggedLength - sizeof(long)));
+                    Assert.That(unifiedInput.SerializedLength, Is.EqualTo(input.SerializedLength));
+                    Assert.That(unified ? unifiedInput.CopyTo(pointer, buffer.Length) : input.CopyTo(pointer, buffer.Length),
+                        Is.EqualTo(input.SerializedLength));
+                    Assert.That(decoded.DeserializeFrom(pointer), Is.EqualTo(input.SerializedLength));
+                    Assert.That(unifiedDecoded.DeserializeFrom(pointer), Is.EqualTo(input.SerializedLength));
+                    Assert.That(unifiedDecoded.HasEtag, Is.False);
+                    Assert.That(unifiedDecoded.arg2, Is.Zero);
+                    Assert.That(unifiedDecoded.arg1, Is.EqualTo(123));
+                    Assert.That(unifiedDecoded.parseState.GetArgSliceByRef(0).ToString(), Is.EqualTo("value"));
+                    Assert.That(decoded.HasEtag, Is.False);
+                    Assert.That(decoded.arg2, Is.Zero);
+                    Assert.That(decoded.arg1, Is.EqualTo(123));
+                    Assert.That(decoded.parseState.GetArgSliceByRef(0).ToString(), Is.EqualTo("value"));
+                }
+            }
         }
 
         [Test]
@@ -166,7 +225,8 @@ namespace Garnet.test
                 return *(AofHeader*)pointer;
         }
 
-        List<byte[]> ReadImportedEntries(int sublogCount)
+        // Returns the AOF entries logged for record upserts
+        unsafe List<byte[]> ReadImportedEntries(int sublogCount, bool rename = false)
         {
             GarnetLog log = server.Provider.StoreWrapper.appendOnlyFile.Log;
             List<byte[]> entries = new();
@@ -177,42 +237,90 @@ namespace Garnet.test
                 using TsavoriteLogScanIterator scan = log.Scan(sublog, log.BeginAddress[sublog], log.TailAddress[sublog]);
                 while (scan.GetNext(out byte[] entry, out int length, out _))
                 {
-                    AofHeader header = ReadHeader(entry);
-                    if (header.opType != AofEntryType.StoreRMW)
-                        continue;
-                    unsafe
+                    var header = ReadHeader(entry);
+                    Assert.That(header.opType, Is.Not.EqualTo(AofEntryType.UnifiedStoreStringUpsert));
+                    if (!rename)
                     {
-                        fixed (byte* pointer = entry)
+                        Assert.That(header.opType, Is.Not.EqualTo(AofEntryType.TxnStart));
+                        Assert.That(header.opType, Is.Not.EqualTo(AofEntryType.TxnCommit));
+                    }
+                    if (header.opType != AofEntryType.StoreUpsert)
+                        continue;
+                    fixed (byte* pointer = entry)
+                    {
+                        StringInput input = default;
+                        if (header.IsChunked)
                         {
-                            if (header.IsChunked)
+                            chunks.Add(entry.AsSpan(0, length).ToArray());
+                            if (!reader.ReadChunk(pointer, length, out var completed))
+                                continue;
+                            try
                             {
-                                chunks.Add(entry.AsSpan(0, length).ToArray());
-                                if (!reader.ReadChunk(pointer, length, out ChunkedAccumulator completed))
-                                    continue;
                                 fixed (byte* inputPointer = completed.input)
-                                {
-                                    StringInput input = default;
                                     input.DeserializeFrom(inputPointer);
-                                    if (input.header.cmd == RespCommand.SETIFGREATER)
-                                        entries.AddRange(chunks);
+                                if (input.header.cmd == RespCommand.SET && input.HasEtag)
+                                {
+                                    Assert.That(input.parseState.Count, Is.Zero);
+                                    entries.AddRange(chunks);
                                 }
-                                chunks.Clear();
-                                completed.ReturnValueChunks();
-                                continue;
                             }
-                            byte* inputPtr = AofHeader.SkipHeader(pointer);
-                            inputPtr += PinnedSpanByte.FromLengthPrefixedPinnedPointer(inputPtr).TotalSize;
-                            StringInput ordinaryInput = default;
-                            ordinaryInput.DeserializeFrom(inputPtr);
-                            if (ordinaryInput.header.cmd != RespCommand.SETIFGREATER)
-                                continue;
+                            finally
+                            {
+                                completed.ReturnValueChunks();
+                            }
+                            chunks.Clear();
+                        }
+                        else
+                        {
+                            byte* inputPointer = AofHeader.SkipHeader(pointer);
+                            inputPointer += PinnedSpanByte.FromLengthPrefixedPinnedPointer(inputPointer).TotalSize;
+                            inputPointer += PinnedSpanByte.FromLengthPrefixedPinnedPointer(inputPointer).TotalSize;
+                            input.DeserializeFrom(inputPointer);
+                            if (input.header.cmd == RespCommand.SET && input.HasEtag)
+                            {
+                                Assert.That(input.parseState.Count, Is.Zero);
+                                entries.Add(entry.AsSpan(0, length).ToArray());
+                            }
                         }
                     }
-                    entries.Add(entry.AsSpan(0, length).ToArray());
                 }
                 reader.DiscardInProgressAccumulations();
             }
             return entries;
+        }
+        [Test]
+        public void ImportReplacesDestinationOnRecovery([Values(1, 2)] int sublogCount,
+            [Values] bool tagged, [Values] bool objectDestination, [Values(32, 8192)] int valueLength)
+        {
+            server.Dispose();
+            server = CreateAofServer(sublogCount, recover: false);
+            server.Start();
+            string value = new('v', valueLength);
+            using (ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                IDatabase database = redis.GetDatabase();
+                if (tagged)
+                    database.Execute("SETIFGREATER", "source", value, 3);
+                else
+                    database.StringSet("source", value);
+                if (objectDestination)
+                    database.HashSet("destination", "field", "old");
+                else
+                    database.Execute("SETIFGREATER", "destination", new string('x', 128), long.MaxValue);
+                database.KeyExpire("destination", TimeSpan.FromMinutes(10));
+                ImportRecord("source", "destination");
+                database.Execute("COMMITAOF");
+            }
+
+            Assert.That(ReadImportedEntries(sublogCount), Has.Count.EqualTo(1));
+
+            server.Dispose(false);
+            server = CreateAofServer(sublogCount, recover: true);
+            server.Start();
+            using ConnectionMultiplexer recovered = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase recoveredDatabase = recovered.GetDatabase();
+            AssertTaggedValue(recoveredDatabase, "destination", tagged ? 3 : 0, value);
+            Assert.That(recoveredDatabase.KeyTimeToLive("destination"), Is.Null);
         }
 
         [Test]
@@ -232,7 +340,10 @@ namespace Garnet.test
                 database.Execute("SETWITHETAG", expiry ? ["source", value, "EX", 300] : ["source", value]);
                 expiration = (long)database.Execute("PEXPIRETIME", "source");
                 if (replace)
-                    database.Execute("SETWITHETAG", "destination", new string('x', valueLength * 2), "EX", 600);
+                {
+                    database.Execute("SETIFGREATER", "destination", new string('x', valueLength * 2), long.MaxValue);
+                    database.KeyExpire("destination", TimeSpan.FromMinutes(10));
+                }
                 if (rename)
                     Assert.That(database.KeyRename("source", "destination"), Is.True);
                 else
@@ -241,8 +352,10 @@ namespace Garnet.test
                 database.Execute("COMMITAOF");
             }
 
-            List<byte[]> importedEntries = ReadImportedEntries(sublogCount);
+            List<byte[]> importedEntries = ReadImportedEntries(sublogCount, rename);
             Assert.That(importedEntries, Is.Not.Empty);
+            if (valueLength <= TsavoriteLog.MinPartialAllocSize)
+                Assert.That(importedEntries, Has.Count.EqualTo(1));
             foreach (byte[] entry in importedEntries)
                 Assert.That(ReadHeader(entry).IsChunked, Is.EqualTo(valueLength > TsavoriteLog.MinPartialAllocSize));
 

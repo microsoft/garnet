@@ -147,7 +147,12 @@ namespace Tsavorite.core
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
                 where TEpochAccessor : IEpochAccessor
-                => sessionFunctions.PostUpsertOperation(key, ref input, in inputLogRecord, ref upsertInfo, epochAccessor);
+            {
+                if (!inputLogRecord.DataHeader.ValueIsObject)
+                    sessionFunctions.PostUpsertOperation(key, ref input, inputLogRecord.ValueSpan, ref upsertInfo, epochAccessor);
+                else
+                    sessionFunctions.PostUpsertOperation(key, ref input, inputLogRecord.ValueObject, ref upsertInfo, epochAccessor);
+            }
         }
     }
 }

@@ -168,29 +168,6 @@ namespace Tsavorite.core
              where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor;
 
-        /// <summary>
-        /// Called after a record-valued Upsert, before releasing its ephemeral lock.
-        /// </summary>
-        /// <param name="key">The destination key passed to Upsert</param>
-        /// <param name="input">The input passed to Upsert</param>
-        /// <param name="inputLogRecord">The source record passed to Upsert</param>
-        /// <param name="upsertInfo">The operation state, including success-dependent user data</param>
-        /// <param name="epochAccessor">The operation's epoch accessor</param>
-        /// <remarks>
-        /// Called on unsuccessful operations too. The default implementation forwards to the existing value callback.
-        /// </remarks>
-        void PostUpsertOperation<TKey, TSourceLogRecord, TEpochAccessor>(TKey key, ref TInput input, in TSourceLogRecord inputLogRecord,
-            ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-            where TKey : IKey, allows ref struct
-            where TSourceLogRecord : ISourceLogRecord
-            where TEpochAccessor : IEpochAccessor
-        {
-            if (inputLogRecord.DataHeader.ValueIsObject)
-                PostUpsertOperation(key, ref input, inputLogRecord.ValueObject, ref upsertInfo, epochAccessor);
-            else
-                PostUpsertOperation(key, ref input, inputLogRecord.ValueSpan, ref upsertInfo, epochAccessor);
-        }
-
         #endregion Upserts
 
         #region RMWs

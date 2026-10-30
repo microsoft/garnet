@@ -112,13 +112,6 @@ namespace Tsavorite.core
             where TOpKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor
             => _clientSession.functions.PostUpsertOperation(key, ref input, srcValueObject, ref upsertInfo, epochAccessor);
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostUpsertOperation<TOpKey, TSourceLogRecord, TEpochAccessor>(TOpKey key, ref TInput input, in TSourceLogRecord inputLogRecord,
-            ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-            where TOpKey : IKey, allows ref struct
-            where TSourceLogRecord : ISourceLogRecord
-            where TEpochAccessor : IEpochAccessor
-            => _clientSession.functions.PostUpsertOperation(key, ref input, in inputLogRecord, ref upsertInfo, epochAccessor);
         #endregion Upserts
 
         #region RMWs

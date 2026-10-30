@@ -117,19 +117,18 @@ value and/or the serialized input, laid out by `TsavoriteLog.Enqueue(header, key
 
 ### Imported strings
 
-Imported ordinary strings retain append-only file version 5 and existing operation layouts.
-A committed transaction contains a destination delete followed by `StoreRMW` with `SETIFGREATER`,
-the original value and entity tag, and the original absolute expiration in `StringInput.arg1`.
-An untagged import uses delete followed by `StoreUpsert`. An existing transaction, including
-`RENAME`, supplies the transaction markers when one is already active.
+A plain string record imported by `RENAME`, migration or diskless sync is logged as a single
+`StoreUpsert` entry (chunked for large values) carrying the value separately and a `StringInput`
+with command `SET`. Its `arg1` is the absolute expiration (0 when absent).
+The `HasEtag` bit in the existing flags byte indicates an explicit ETag in `StringInput.arg2`,
+serialized as an 8-byte integer between `arg1` and the parse state. Without this bit, `arg2`
+is omitted. Imported replacements set the bit even for ETag 0, which clears a destination's ETag.
 
-Replay uses the existing delete and update paths. Incomplete transactions remain unapplied.
-Ordinary and chunked entries use the same operation layouts, which older version-5 binaries can
-parse. Use upgraded readers for recovery when checkpoint truncation leaves a transaction commit
-or abort without its start. Older single-log readers can stop replay at that boundary.
+Replay upserts the value and sets exactly the entity tag and expiration carried by the entry,
+clearing any the destination already had, so no delete or transaction is needed. Plain-string
+`RENAME` is logged this way too; vector and range-index renames keep their existing unified input.
+This backend-only SET encoding is not exposed through RESP and requires updated readers.
 
-Parseable layouts alone do not establish safe mixed-version replication or replication
-stream resumption after restart.
 
 ---
 
