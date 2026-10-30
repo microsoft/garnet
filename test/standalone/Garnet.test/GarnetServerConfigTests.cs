@@ -25,6 +25,57 @@ namespace Garnet.test
     public class GarnetServerConfigTests : TestBase
     {
         [Test]
+        public void DefaultDiskBasedSyncChunkSize()
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(128 << 10));
+            Assert.That(new GarnetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(128 << 10));
+        }
+
+        [TestCase("512", 512)]
+        [TestCase("128k", 128 << 10)]
+        [TestCase("4MB", 4 << 20)]
+        [TestCase("17m", 16 << 20)]
+        [TestCase("64m", 64 << 20)]
+        [TestCase("512m", 512 << 20)]
+        public void DiskBasedSyncChunkSizeConfiguration(string size, int expected)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-disk-based-sync-chunk-size", size], out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.ReplicaDiskBasedSyncChunkSize, Is.EqualTo(size));
+            Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(expected));
+            Assert.That(new GarnetServerOptions { ReplicaDiskBasedSyncChunkSize = size }.GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(expected));
+
+            var json = JsonSerializer.Serialize(new { ReplicaDiskBasedSyncChunkSize = size });
+            Assert.That(TryParseGarnetConfOptions(json, out options, out _, out _), Is.True);
+            Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(expected));
+        }
+
+        [TestCase(null)]
+        [TestCase("")]
+        [TestCase("0")]
+        [TestCase("511")]
+        [TestCase("-1")]
+        [TestCase("1g")]
+        [TestCase("513m")]
+        [TestCase("4mbjunk")]
+        [TestCase("1m1")]
+        [TestCase("18446744073709682688")]
+        [TestCase("999999999999999999999999m")]
+        public void InvalidDiskBasedSyncChunkSize(string size)
+        {
+            var json = JsonSerializer.Serialize(new { ReplicaDiskBasedSyncChunkSize = size });
+            Assert.That(TryParseGarnetConfOptions(json, out _, out var invalidOptions, out _), Is.False);
+            Assert.That(invalidOptions, Does.Contain(nameof(Options.ReplicaDiskBasedSyncChunkSize)));
+            var options = new GarnetServerOptions { ReplicaDiskBasedSyncChunkSize = size };
+            Assert.Throws<ArgumentException>(() => options.GetReplicaDiskBasedSyncChunkSizeBytes());
+            Assert.Throws<ArgumentException>(() => new GarnetServer(options));
+            if (size != null)
+                Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                    ["--repl-disk-based-sync-chunk-size", size], out _, out _, out _, out _, silentMode: true), Is.False);
+        }
+
+        [Test]
         public void DefaultConfigurationOptionsCoverage()
         {
             string json;

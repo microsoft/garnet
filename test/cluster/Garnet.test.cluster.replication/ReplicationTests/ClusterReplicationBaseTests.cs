@@ -483,6 +483,43 @@ namespace Garnet.test.cluster
                 context.ValidateNodeObjects(ref context.kvPairsObj, 1);
         }
 
+        [Category("REPLICATION")]
+        [TestCase("128k")]
+        [TestCase("1m")]
+        [TestCase("4m")]
+        [TestCase("16m")]
+        public void DiskBasedSyncWithConfiguredChunks(string chunkSize)
+        {
+            context.CreateInstances(2, enableAOF: true, lowMemory: true, memorySize: "4m", pageSize: "1m", segmentSize: "4m",
+                useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount,
+                replicaDiskBasedSyncChunkSize: chunkSize);
+            context.CreateConnection(useTLS: useTLS);
+            Assert.That(context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger), Is.EqualTo("OK"));
+            context.clusterTestUtils.BumpEpoch(0, logger: context.logger);
+
+            var primary = context.clusterTestUtils.GetServer(0);
+            var value = new string('v', 256 << 10);
+            for (var i = 0; i < 64; i++)
+            {
+                Assert.That((string)primary.Execute(0, "SET", [$"string:{i}", value]), Is.EqualTo("OK"));
+                Assert.That((int)primary.Execute(0, "HSET", [$"hash:{i}", "field", value]), Is.EqualTo(1));
+            }
+            context.clusterTestUtils.Checkpoint(0, logger: context.logger);
+
+            var primaryId = context.clusterTestUtils.GetNodeIdFromNode(0, context.logger);
+            context.clusterTestUtils.Meet(1, 0, logger: context.logger);
+            context.clusterTestUtils.WaitAll(context.logger);
+            _ = context.clusterTestUtils.ClusterReplicate(1, primaryId, async: false, logger: context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
+
+            var replica = context.clusterTestUtils.GetServer(1);
+            for (var i = 0; i < 64; i++)
+            {
+                Assert.That((string)replica.Execute(0, "GET", [$"string:{i}"], CommandFlags.NoRedirect), Is.EqualTo(value));
+                Assert.That((string)replica.Execute(0, "HGET", [$"hash:{i}", "field"], CommandFlags.NoRedirect), Is.EqualTo(value));
+            }
+        }
+
         [Test, Order(8)]
         [Category("REPLICATION")]
         public void ClusterSRPrimaryRestart([Values] bool performRMW, [Values] bool disableObjects)

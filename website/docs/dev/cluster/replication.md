@@ -38,6 +38,7 @@ The most important options are shown below:
 - CommitFrequencyMs: Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command. To avoid performance degradation when running with FastAofTruncate and/or UseAofNullDevice, one can set the CommitFrequencyMs to -1.
 - AofReplicationRefreshFrequencyMs: "AOF replication (safe tail address) refresh frequency in milliseconds. 0 = auto refresh after every enqueue.
 - ReplicaDisklessSync: Enable diskless sync to avoid disk write amplification when performing full synchronization when a new replica attaches. This options uses the streaming checkpoint feature to ship the store keys to the replica when full synchronization is required.
+- ReplicaDiskBasedSyncChunkSize: Maximum Tsavorite disk-based checkpoint transfer payload on the primary (`--repl-disk-based-sync-chunk-size`, default `128k`). Sizes from 512 bytes through 512 MiB are rounded down to a power of two. Excludes metadata, RangeIndex files, diskless sync and AOF streaming.
 - ReplicaDisklessSyncDelay: How long to wait between sync requests to allow for other replicas to attach in parallel hence amortize the cost of the streaming checkpoint.
 - OnDemandCheckpoint: This options enables taking an on demand checkpoint when a replica attaches. It used to improve the synchronization performance in the event the AOF log has grown too large or when the AOF has been truncated and synchronization requires a fresh checkpoint to correctly synchronize with the replica. If this option is disabled and the AOF log gets truncated, not having enabled this option could break the attach process unless UseAofNullDevice or FastAofTruncate is enabled since in that case we expect data loss.
 - AllowDataLoss (UseAofNullDevice || (FastAofTruncate && !OnDemandCheckpoint): This is an internal flag computed by base flags as indicated. It is used to skip AOF integrity check when an AOF sync task is started. Using this combination of options should be used with caution
@@ -67,6 +68,8 @@ The locking logic is for checkpoints is implemented in ```CheckpointStore.cs```.
 The attaching replica communicates to the corresponding primary which creates a ```ReplicaSyncSession.cs``` for every attaching replica.
 By examining the metadata of the replica the primary decides if a full or partial synchronization is needed
 If full synchronization is necessary the primary will send the latest checkpoint files to the replica in chunks.
+`TsavoriteSnapshotReader` uses `ReplicaDiskBasedSyncChunkSize` for main-log, object-log, snapshot and index file payloads, independently of physical segment sizes. `FileDataSource` bounds reads by the next segment boundary and aligns the final read to the device sector. The checkpoint client's send buffer accommodates the effective chunk plus RESP framing.
+`FileTransmitSource` waits for each `CLUSTER SNAPSHOT_DATA` response before reading the next chunk. The replica acknowledges only after `FileDataSink` completes the device write. Larger configured chunks amortize round-trip and per-operation overhead, but do not overlap reads, writes or acknowledgements. Buffer memory and the unchanged per-chunk sync timeout must be considered when tuning; see the [operator guidance](../../cluster/replication.md#disk-based-full-sync-transfer-size).
 It will then signal the replica to recover its latest checkpoint and replay the AOF log if necessary.
 For partial synchronization, the primary signals the replica to recover from its local checkpoint skipping the step for sending the latest checkpoint
 When the recovery is complete, the primary will initiate a permanent background AofSyncTask by establishing an iterator over its own AOF, starting from the checkpoint covered AOF address.
@@ -244,4 +247,3 @@ This method of parallel replay is subject to the constraint that the transaction
 - **Custom transaction procedures** replay is currently restricted by the fact that the body of the transaction is programmatically defined, disallowing parallel operation replay.
 Hence, only a single designated replay background task is used to execute the entire transaction body sequentially.
 The remaining participating replay tasks suspend their replay operation until the main replay tasks completes.
-

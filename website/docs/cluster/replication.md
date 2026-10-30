@@ -60,6 +60,22 @@ A summary of these options is shown below:
 Using the aforementioned options, we guarantee that no writes are lost while a replica is attaching and replication remains highly performant.
 However, due to the asynchronous nature of replication, if a primary goes down before unexpectedly, the replicas might have not received the latest AOF log records, resulting in lost writes.
 
+## Disk-Based Full-Sync Transfer Size
+
+On the primary, `--repl-disk-based-sync-chunk-size` sets the maximum payload per Tsavorite checkpoint file-transfer request. The default is `128k` (128 KiB). For example:
+
+```bash
+GarnetServer.exe --cluster --aof --repl-disk-based-sync-chunk-size 16m
+```
+
+The equivalent Garnet configuration property and `GarnetServerOptions` field are `ReplicaDiskBasedSyncChunkSize`. This is a startup setting, not a `CONFIG SET` option. It applies to main-log, object-log, snapshot and index checkpoint files; it does not change diskless replication, AOF streaming, checkpoint metadata or RangeIndex file transfers.
+
+Sizes from 512 bytes through 512 MiB are accepted and rounded down to a power of two. Device-backed chunks must be at least one device sector; smaller sector-incompatible settings fail when opening the transfer. Reads stop at physical segment boundaries, and final chunks are sector-aligned, so actual chunks can be smaller than the configured maximum.
+
+Checkpoint shipping waits for the replica's write-completion acknowledgement before reading and sending the next chunk. Higher RTT can therefore limit throughput even when the network and disks have spare bandwidth. Increasing the chunk size amortizes that cost; it does not enable pipelining or guarantee line-rate throughput. For a high-bandwidth link with approximately 1 ms RTT, start by comparing 4, 8, 16, 32 and 64 MiB with the same checkpoint and storage conditions, then choose the smallest size near the measured throughput plateau.
+
+Larger chunks increase aligned I/O buffers and network buffers. The primary's checkpoint client reserves a power-of-two send buffer with framing headroom (at least 1 MiB, otherwise twice the effective chunk size); replicas also need receive and write buffers. Concurrent syncs multiply these costs, and pools can retain buffers after use. The replica's programmatic `GarnetServerOptions.NetworkReceiveBufferMaxSize` setting controls receive-buffer retention, not this chunk limit. The per-chunk `--repl-sync-timeout` remains unchanged, so allow enough time for each larger read, send and replica write.
+
 # Creating a Garnet Cluster with Replication
 
 The process of setting up a cluster with replication is similar to setting up a regular cluster while also enabling the aof option.

@@ -450,6 +450,29 @@ namespace Garnet
     }
 
     /// <summary>
+    /// Validates checkpoint chunks with the same bounds as programmatic server options.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property)]
+    internal sealed class ReplicaDiskBasedSyncChunkSizeValidationAttribute : OptionValidationAttribute
+    {
+        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
+        {
+            if (TryInitialValidation<string>(value, validationContext, out var result, out var size))
+                return result;
+
+            try
+            {
+                _ = new GarnetServerOptions { ReplicaDiskBasedSyncChunkSize = size }.GetReplicaDiskBasedSyncChunkSizeBytes();
+                return ValidationResult.Success;
+            }
+            catch (ArgumentException ex)
+            {
+                return new ValidationResult(ex.Message, [validationContext.MemberName]);
+            }
+        }
+    }
+
+    /// <summary>
     /// Validation logic for an integer representing a percentage (range between 0 and 100)
     /// </summary>
     [AttributeUsage(AttributeTargets.Property)]

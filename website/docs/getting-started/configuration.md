@@ -194,6 +194,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **FastAofTruncate** | ```--fast-aof-truncate``` | ```bool``` |  | Use fast-aof-truncate replication model. |
 | **OnDemandCheckpoint** | ```--on-demand-checkpoint``` | ```bool``` |  | Used with fast-aof-truncate replication model. Take on demand checkpoint to avoid missing data when attaching |
 | **ReplicaDisklessSync** | ```--repl-diskless-sync``` | ```bool``` |  | Whether diskless replication is enabled or not. |
+| **ReplicaDiskBasedSyncChunkSize** | ```--repl-disk-based-sync-chunk-size``` | ```string``` | Memory size from 512 bytes through 512 MiB | Maximum Tsavorite checkpoint transfer chunk on the primary; default `128k`, rounded down to a power of two. Excludes diskless sync, AOF streaming and RangeIndex files. |
 | **ReplicaDisklessSyncDelay** | ```--repl-diskless-sync-delay``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync. |
 | **ReplicaAttachTimeout** | ```--repl-attach-timeout``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Timeout in seconds for replication attach operation. |
 | **ReplicaSyncTimeout** | ```--repl-sync-timeout``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Timeout in seconds for replication sync operations. |

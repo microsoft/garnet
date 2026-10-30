@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using Garnet.common;
 using Garnet.networking;
@@ -655,6 +656,44 @@ namespace Garnet.server
         /// Whether diskless replication is enabled or not.
         /// </summary>
         public bool ReplicaDisklessSync = false;
+
+        /// <summary>
+        /// Maximum disk-based Tsavorite checkpoint transfer chunk, rounded down to a power of two.
+        /// Accepts sizes from 512 bytes through 512 MiB. Configured on the primary.
+        /// </summary>
+        public string ReplicaDiskBasedSyncChunkSize = "128k";
+
+        /// <summary>
+        /// Resolve and validate the disk-based checkpoint transfer chunk size in bytes.
+        /// </summary>
+        public int GetReplicaDiskBasedSyncChunkSizeBytes()
+        {
+            var value = ReplicaDiskBasedSyncChunkSize;
+            var digits = 0;
+            while (digits < value?.Length && value[digits] is >= '0' and <= '9')
+                digits++;
+
+            var multiplier = value?[digits..].ToLowerInvariant() switch
+            {
+                "" => 1L,
+                "k" or "kb" => 1L << 10,
+                "m" or "mb" => 1L << 20,
+                "g" or "gb" => 1L << 30,
+                _ => 0
+            };
+
+            // Leave room for framing in the next power-of-two network buffer.
+            const long MaxChunkSize = 1L << 29;
+            if (multiplier == 0 || !long.TryParse(value.AsSpan(0, digits), NumberStyles.None, CultureInfo.InvariantCulture, out var size) ||
+                size > MaxChunkSize / multiplier || size * multiplier < 512)
+                throw new ArgumentException($"{nameof(ReplicaDiskBasedSyncChunkSize)} '{value}' must be a memory size from 512 bytes through 512 MiB.", nameof(ReplicaDiskBasedSyncChunkSize));
+
+            size *= multiplier;
+            var adjustedSize = PreviousPowerOf2(size);
+            if (size != adjustedSize)
+                logger?.LogInformation("Warning: rounding {option} down to {size} bytes (power of 2)", nameof(ReplicaDiskBasedSyncChunkSize), adjustedSize);
+            return (int)adjustedSize;
+        }
 
         /// <summary>
         /// Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.
