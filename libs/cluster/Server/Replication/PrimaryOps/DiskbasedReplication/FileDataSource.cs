@@ -139,7 +139,7 @@ namespace Garnet.cluster
             SectorAlignedMemory buffer, ulong address, long numBytesToRead)
         {
             var errorCode = lastIOErrorCode;
-            GarnetAsserts.DebugOnlyAssert(errorCode == 0, $"I/O error {errorCode} reading {Type} checkpoint file at address {address}");
+            GarnetAsserts.Assert(errorCode == 0, $"I/O error {errorCode} reading {Type} checkpoint file at address {address}");
             if (errorCode != 0)
             {
                 ExceptionUtils.ThrowException(new GarnetException(
