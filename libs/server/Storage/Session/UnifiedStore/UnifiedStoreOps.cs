@@ -54,6 +54,13 @@ namespace Garnet.server
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
+            if (srcLogRecord.HasNamespace)
+            {
+                // The record is the composite key; its key bytes alone omit the namespace.
+                _ = unifiedContext.Upsert(in srcLogRecord);
+                return GarnetStatus.OK;
+            }
+
             UnifiedInput input = default;
             return SET(srcLogRecord.Key, ref input, in srcLogRecord, ref unifiedContext);
         }
