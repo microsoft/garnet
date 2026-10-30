@@ -127,10 +127,12 @@ Vault names are auto-generated as `kv-{yyyyMMddHHmmss}` to avoid global name col
 ### Tools tarball delivery
 
 Shared Key authorization is disabled, so deployment no longer generates the tools SAS
-or the `tools-sas-url` Key Vault secret, and `refresh-sas` has been removed. The VMSS
-templates and `02-platform/manage-vmss.ps1` still fetch `tools.tar.gz` through that
-SAS secret and must move to managed-identity access (Storage Blob Data Reader)
-before new VMSS instances can bootstrap from this storage account.
+or the `tools-sas-url` Key Vault secret, and `refresh-sas` has been removed.
+`02-platform/manage-vmss.ps1 -Action publish-tools` uploads `tools.tar.gz` with Entra
+auth (requires Storage Blob Data Contributor). VMSS instances download it with their
+managed identity, which needs Storage Blob Data Reader; grant it with
+`manage-vmss.ps1 -Action create -GrantStorageAccess` (requires RBAC Administrator,
+User Access Administrator, or Owner).
 
 ## Region / Location Handling
 

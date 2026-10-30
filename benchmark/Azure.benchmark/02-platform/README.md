@@ -19,18 +19,22 @@ Workstation-side assets that deploy and manage the VMSS compute platform. Run th
 # generated infrastructure parameters, inline-discovers Key Vault + storage, and
 # resolves SSH keys from the security manifest's basePath (normally ~/.ssh). If the generated parameters file is
 # absent on this machine, create offers to stage it from the target resource group.
-.\02-platform\manage-vmss.ps1 -rg <rg> -Action create -DeploymentRole server
+.\02-platform\manage-vmss.ps1 -rg <rg> -Action create -DeploymentRole server -GrantStorageAccess
 
-# Creation stops before ARM deployment unless `tools/tools.tar.gz` exists and
-# the `tools-sas-url` Key Vault secret can download it. Use `-Action publish-tools`
-# for a missing blob or refresh the SAS through deploy-common-resources.ps1.
+# Storage has Shared Key/SAS disabled. Instances download `tools/tools.tar.gz` with
+# the VMSS managed identity, which needs Storage Blob Data Reader on the account.
+# `-GrantStorageAccess` creates that role assignment (requires RBAC Administrator,
+# User Access Administrator, or Owner); without it, an administrator must grant it.
+# Creation stops before ARM deployment unless the blob exists; publish it first with
+# `-Action publish-tools` (requires Storage Blob Data Contributor).
 
 # Deploy a VMSS directly with az (manual KV/storage names)
 az deployment group create `
   --resource-group <rg> `
   --template-file 02-platform\vmss.bicep `
   --parameters @02-platform\vmss-parameters.json `
-  --parameters vmssName=server deploymentRole=server instanceCount=<n>
+  --parameters vmssName=server deploymentRole=server instanceCount=<n> `
+               storageAccountName=<storage> grantStorageAccess=true
 
 # Manage a running VMSS
 .\02-platform\manage-vmss.ps1 -rg <rg> -VmssName server -Action refresh
@@ -51,7 +55,7 @@ az deployment group create `
 > ```powershell
 > az deployment group create --resource-group garnet-bench-eastcan `
 >   --template-file 02-platform\vmss.bicep --parameters @02-platform\vmss-parameters.json `
->   --parameters vmssName=server deploymentRole=server instanceCount=<n> zoneStrategy=none
+>   --parameters vmssName=server deploymentRole=server instanceCount=<n> zoneStrategy=none storageAccountName=<storage>
 > ```
 >
 > **Disabling the PPG:** If no proximity placement group exists in the region (or you want the platform to spread instances for better allocation success), add `enableProximityPlacement=false`. The PPG is also skipped automatically when `proximityId` is empty. A PPG is a single-region resource, so its region must match the VMSS region.
@@ -71,14 +75,14 @@ pwsh .\02-platform\manage-vmss.ps1 --help
 | Action | Description |
 |--------|-------------|
 | `refresh` (default) | Git pull all repos (garnet, valkey, dragonfly, redis, memtier, AzureBench) |
-| `create` | Provision the VMSS from `vmss.bicep`. Confirms the active tenant/subscription/resource group, offers to generate a missing machine-local `vmss-parameters.json` through `01-resources/deploy-common-resources.ps1 -Action stage`, and validates its NSG, VNet, subnets, PPG, locations, subscription, and resource group before deployment. Staging also copies manifest-declared public keys from the local `basePath` (normally `%USERPROFILE%\.ssh`) into the git-ignored security cache. Explicit `-ParametersFile` inputs are never overwritten. Create re-syncs those keys before deployment, inline-discovers the Key Vault, and grants the VMSS managed identity secret-get access. Add `-GrantStorageAccess` to also grant Storage Blob Data Reader (requires **Owner** / **User Access Administrator**). Remaining VM inputs are prompted by az |
+| `create` | Provision the VMSS from `vmss.bicep`. Confirms the active tenant/subscription/resource group, offers to generate a missing machine-local `vmss-parameters.json` through `01-resources/deploy-common-resources.ps1 -Action stage`, and validates its NSG, VNet, subnets, PPG, locations, subscription, and resource group before deployment. Staging also copies manifest-declared public keys from the local `basePath` (normally `%USERPROFILE%\.ssh`) into the git-ignored security cache. Explicit `-ParametersFile` inputs are never overwritten. Create re-syncs those keys before deployment, inline-discovers the Key Vault, and grants the VMSS managed identity secret-get access. Add `-GrantStorageAccess` to also grant the VMSS managed identity Storage Blob Data Reader on the tools storage account (requires **RBAC Administrator**, **User Access Administrator**, or **Owner**); instances need that role to download the tools bundle. Remaining VM inputs are prompted by az |
 | `rebuild` | Git pull + rebuild specified system (requires `-System` parameter) |
-| `deploy` | Fetch the tools bundle and run the full deployment workflow, including ordinary Valkey, TLS-enabled `valkey-server-tls`/`valkey-cli-tls`, and `redis-server-tls`/`redis-cli-tls` |
+| `deploy` | Fetch the tools bundle with the VM managed identity and run the full deployment workflow, including ordinary Valkey, TLS-enabled `valkey-server-tls`/`valkey-cli-tls`, and `redis-server-tls`/`redis-cli-tls` |
 | `install` | Git pull AzureBench + copy scripts to system paths only |
 | `start` | Power on all VMSS instances (`az vmss start`) |
 | `stop` | Deallocate all VMSS instances, stopping compute billing (`az vmss deallocate`) |
 | `restart` | Restart only the failed instances in each VMSS (`az vmss restart --instance-ids`) |
-| `publish-tools` | Package the `tools/` bundle into `tools.tar.gz` and upload it to the shared storage account's blob container (`tools` by default) using the account key. VMSS instances pull this tarball at boot via the policy-bound SAS URL in Key Vault (`tools-sas-url`), so **run this before `create`** (and after changing `tools/`). Override the source with `-ToolsPath`, the container with `-ContainerName`, and the blob name with `-ToolsBlobName` |
+| `publish-tools` | Package the `tools/` bundle into `tools.tar.gz` and upload it to the shared storage account's blob container (`tools` by default) with Entra auth (`--auth-mode login`), so the caller needs **Storage Blob Data Contributor** on the account or container. VMSS instances pull this tarball at boot with their managed identity (Storage Blob Data Reader), so **run this before `create`** (and after changing `tools/`). Override the source with `-ToolsPath`, the container with `-ContainerName`, and the blob name with `-ToolsBlobName` |
 
 ### Examples
 
@@ -131,7 +135,7 @@ pwsh .\02-platform\manage-vmss.ps1 --help
 
 - `vmss.bicep` loads `cloud-config*.yml` with **relative** `loadTextContent`, so those files must stay together in this folder.
 - `manage-vmss.ps1` resolves `tools/manifest.json` (repos/build args) and `../01-resources/security/manifest.json` (SSH keys). It also dot-sources `../03-workload/bench/utils.ps1` for shared helpers, and drives VM-side scripts by their absolute guest paths (`/home/<user>/tools/...`).
-- **`tools/` is the VM guest asset tree, delivered as a tarball (not a git clone).** `manage-vmss.ps1 -Action publish-tools` packages it into `tools.tar.gz` and uploads it to the shared storage account; at boot, cloud-init fetches it via the `tools-sas-url` Key Vault secret, extracts it to `/home/<user>/tools`, and runs `tools/update.ps1 -Run`. Its subfolders express the provisioning-vs-workload split (`bootstrap/` is platform-owned; `cluster/`, `bench/`, `config/` are workload-owned).
+- **`tools/` is the VM guest asset tree, delivered as a tarball (not a git clone).** `manage-vmss.ps1 -Action publish-tools` packages it into `tools.tar.gz` and uploads it to the shared storage account; at boot, cloud-init downloads it with an IMDS managed-identity token (the blob URL is written to `/opt/deploy-actions/storage.env`), extracts it to `/home/<user>/tools`, and runs `tools/update.ps1 -Run`. Its subfolders express the provisioning-vs-workload split (`bootstrap/` is platform-owned; `cluster/`, `bench/`, `config/` are workload-owned).
 
 ## NOTES
 
@@ -165,7 +169,8 @@ az deployment group create `
                operatingSystem=linux `
                vmSKU=Standard_F64s_v2 `
                osDiskType=Premium_LRS `
-               keyVaultName=<owner>-garnet-kv `
+               keyVaultName=<owner>-garnet-kv ``
+               storageAccountName=<storage> `
                linuxImage="{'publisher':'Canonical','offer':'ubuntu-24_04-lts','sku':'server','version':'latest'}"
 ```
 
@@ -182,7 +187,8 @@ az deployment group create `
                operatingSystem=linux `
                vmSKU=Standard_F64s_v2 `
                osDiskType=Premium_LRS `
-               keyVaultName=<owner>-garnet-kv `
+               keyVaultName=<owner>-garnet-kv ``
+               storageAccountName=<storage> `
                linuxImage="{'publisher':'microsoftcblmariner','offer':'azure-linux-3','sku':'azure-linux-3-gen2','version':'latest'}"
 ```
 
@@ -199,7 +205,8 @@ az deployment group create `
                operatingSystem=linux `
                vmSKU=Standard_B16ps_v2 `
                osDiskType=Premium_LRS `
-               keyVaultName=<owner>-garnet-kv `
+               keyVaultName=<owner>-garnet-kv ``
+               storageAccountName=<storage> `
                linuxImage="{'publisher':'microsoftcblmariner','offer':'azure-linux-3','sku':'azure-linux-3-arm64','version':'latest'}"
 ```
 
@@ -217,13 +224,14 @@ az deployment group create `
                vmSKU=Standard_D4s_v3 `
                osDiskType=Premium_LRS `
                adminPassword='YourSecurePass123!' `
-               keyVaultName=<owner>-garnet-kv
+               keyVaultName=<owner>-garnet-kv ``
+               storageAccountName=<storage>
 ```
 
 > **Note:** `adminPassword` is only required for Windows (not fully supported). Linux uses SSH keys.
 > **Note:** `deploymentRole` is required and must be `server` or `client`. It is forwarded to VMSS tags and, for Linux, `/opt/deploy-actions/deployment.env`; it is not inferred from `vmssName`.
 > **Note:** `keyVaultName` is optional. Omit it to skip Key Vault role assignment and private repo cloning.
-> **Note:** `storageAccountName` is optional. When set, the deployment grants the VMSS managed identity the **Storage Blob Data Reader** role on that account (a role assignment, so the deployer needs **Owner** / **User Access Administrator**). Omit it to skip the grant. `-Action create` only supplies it when you pass `-GrantStorageAccess`.
+> **Note:** `storageAccountName` is required: instances download `tools/tools.tar.gz` from it with their managed identity. Add `grantStorageAccess=true` to grant the VMSS identity **Storage Blob Data Reader** on that account (a role assignment, so the deployer needs **RBAC Administrator**, **User Access Administrator**, or **Owner**); otherwise an administrator must grant it. `-Action create` always supplies `storageAccountName` and sets `grantStorageAccess` from `-GrantStorageAccess`.
 
 ### Adding/Removing Repos to Clone
 
