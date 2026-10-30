@@ -24,6 +24,10 @@ namespace Tsavorite.core
         // Initial size of the table
         internal long minTableSize = 16;
 
+        // Alignment, in bytes, of the hash-table versions and overflow-bucket pages: at least the sector size of every
+        // device they are checkpointed to or recovered from, since that IO goes directly to and from them.
+        internal int sectorSize = IDevice.MinDeviceSectorSize;
+
         // Allocator for the hash buckets
         internal MallocFixedPageSize<HashBucket> overflowBucketsAllocator;
         internal MallocFixedPageSize<HashBucket> overflowBucketsAllocatorResize;
@@ -137,7 +141,7 @@ namespace Tsavorite.core
                 if (required > maxMemorySize)
                     maxMemorySize = required;
             }
-            return new(maxMemorySize, overflowBucketsLogger);
+            return new(maxMemorySize, sectorSize, overflowBucketsLogger);
         }
 
         /// <summary>
@@ -183,6 +187,20 @@ namespace Tsavorite.core
             {
                 throw new ArgumentException("Size {0} is not 32-bit");
             }
+            if (sector_size < IDevice.MinDeviceSectorSize || !Utility.IsPowerOfTwo(sector_size))
+            {
+                throw new ArgumentException($"Sector size {sector_size} is not a power of 2 of at least {IDevice.MinDeviceSectorSize}");
+            }
+
+            // The overflow buckets are checkpointed and recovered with the table, so their pages need the same alignment.
+            // The allocator built by the constructor has handed out nothing yet, so replace it with one of the same capacity.
+            sectorSize = sector_size;
+            if (overflowBucketsAllocator.SectorSize < sector_size)
+            {
+                var previous = overflowBucketsAllocator;
+                overflowBucketsAllocator = new(previous.MaxMemorySize, sector_size, overflowBucketsLogger);
+                previous.Dispose();
+            }
 
             minTableSize = size;
             resizeInfo = default;
@@ -215,8 +233,9 @@ namespace Tsavorite.core
                 // deterministically here when no index-checkpoint write is outstanding; otherwise a canceled index
                 // checkpoint may have left an async device write referencing it (StateMachineDriver releases the
                 // state machine on cancellation without draining the index-write TCS), so park it and free it when
-                // the write drains (RetireNativeIndexTable).
-                var block = DirectVirtualMemory.Allocate(size_bytes, sector_size);
+                // the write drains (RetireNativeIndexTable). The size is rounded up to the sector size because a table
+                // smaller than a sector is checkpointed and recovered as one whole sector.
+                var block = DirectVirtualMemory.Allocate(aligned_size_bytes - sector_size, sector_size);
                 var oldBlock = nativeIndex.Blocks[version];
                 nativeIndex.Blocks[version] = block;
                 state[version].tableRaw = null;

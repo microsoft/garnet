@@ -334,6 +334,15 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
+        public uint GetCheckpointDeviceSectorSize()
+        {
+            // The token only names a directory below the base; probing does not create it.
+            var sectorSize = deviceFactory.GetSectorSize(checkpointNamingScheme.HashTable(Guid.Empty));
+            sectorSize = Math.Max(sectorSize, deviceFactory.GetSectorSize(checkpointNamingScheme.LogSnapshot(Guid.Empty)));
+            return Math.Max(sectorSize, deviceFactory.GetSectorSize(checkpointNamingScheme.ObjectLogSnapshot(Guid.Empty)));
+        }
+
+        /// <inheritdoc />
         public void InitializeIndexCheckpoint(Guid indexToken)
         {
         }

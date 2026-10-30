@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -221,9 +222,10 @@ namespace Tsavorite.test
         public void CheckpointSucceedsAfterAllocatorIsExhausted()
         {
             DeleteDirectory(MethodTestDir, wait: true);
+            using var device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ExhaustedCheckpoint.dat"), deleteOnClose: true);
 
             const int LevelCount = 2;
-            using var allocator = new MallocFixedPageSize<HashBucket>(MallocFixedPageSize<HashBucket>.MemorySizeGranularity * LevelCount);
+            using var allocator = new MallocFixedPageSize<HashBucket>(MallocFixedPageSize<HashBucket>.MemorySizeGranularity * LevelCount, (int)device.SectorSize);
 
             var capacity = allocator.GetPageSize() * (long)LevelCount;
             while (allocator.GetMaxValidAddress() < capacity)
@@ -233,7 +235,6 @@ namespace Tsavorite.test
                 _ = Assert.Throws<TsavoriteException>(() => allocator.Allocate());
 
             // BeginCheckpoint turns count into a page-table index range, so a count past capacity would read out of range.
-            using var device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ExhaustedCheckpoint.dat"), deleteOnClose: true);
             allocator.BeginCheckpoint(device, 0, out var numBytes);
             allocator.IsCheckpointCompletedAsync().AsTask().GetAwaiter().GetResult();
             ClassicAssert.AreEqual((ulong)(capacity * MallocFixedPageSize<HashBucket>.RecordSize), numBytes);
@@ -371,7 +372,7 @@ namespace Tsavorite.test
             using var allocator = new MallocFixedPageSize<HashBucket>(granularity * 4);
 
             // A fresh allocator has handed out only its initial block, but has already committed level 0 and level 1.
-            ClassicAssert.AreEqual(MallocFixedPageSize<HashBucket>.GetCommittedSizeForPages(2), allocator.AllocatedSizeBytes,
+            ClassicAssert.AreEqual(MallocFixedPageSize<HashBucket>.GetCommittedSizeForPages(2, allocator.SectorSize), allocator.AllocatedSizeBytes,
                 "Construction commits the first page and pre-allocates its successor");
             ClassicAssert.Less((long)allocator.GetMaxValidAddress() * MallocFixedPageSize<HashBucket>.RecordSize,
                 allocator.AllocatedSizeBytes, "Committed memory must exceed the size implied by the allocation count");
@@ -379,14 +380,60 @@ namespace Tsavorite.test
             // Crossing into the second page commits the third.
             while (allocator.GetMaxValidAddress() <= MallocFixedPageSize<HashBucket>.RecordsPerPage)
                 _ = allocator.Allocate();
-            ClassicAssert.AreEqual(MallocFixedPageSize<HashBucket>.GetCommittedSizeForPages(3), allocator.AllocatedSizeBytes,
+            ClassicAssert.AreEqual(MallocFixedPageSize<HashBucket>.GetCommittedSizeForPages(3, allocator.SectorSize), allocator.AllocatedSizeBytes,
                 "Reaching a page commits its successor");
 
             // Each page is over-allocated so its start can be sector-aligned, so a fully committed allocator costs
             // slightly more than its budget. Reporting that is the point: it is memory the process has actually paid.
-            ClassicAssert.Greater(MallocFixedPageSize<HashBucket>.GetCommittedSizeForPages(4), allocator.MaxMemorySize);
-            ClassicAssert.Less(MallocFixedPageSize<HashBucket>.GetCommittedSizeForPages(4), allocator.MaxMemorySize * 101 / 100,
+            ClassicAssert.Greater(MallocFixedPageSize<HashBucket>.GetCommittedSizeForPages(4, allocator.SectorSize), allocator.MaxMemorySize);
+            ClassicAssert.Less(MallocFixedPageSize<HashBucket>.GetCommittedSizeForPages(4, allocator.SectorSize), allocator.MaxMemorySize * 101 / 100,
                 "The alignment padding must stay a rounding error against the budget, not a second budget");
+        }
+
+        /// <summary>A 12-byte record: not a divisor of any sector size, so a page's slack is rounded up to whole records.</summary>
+        [StructLayout(LayoutKind.Sequential, Size = 12)]
+        private struct TwelveByteRecord
+        {
+            internal int a, b, c;
+        }
+
+        /// <summary>
+        /// A page carries just enough slack to align its start to the sector size, whatever the record size: at least a
+        /// sector, and less than a sector plus a record.
+        /// </summary>
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void PagesCarryJustEnoughSlackToAlignToTheSector([Values(512, 4096, 65536)] int sectorSize)
+        {
+            AssertSlack<HashBucket>(sectorSize);
+            AssertSlack<TwelveByteRecord>(sectorSize);
+
+            static void AssertSlack<TRecord>(int sectorSize)
+            {
+                var name = typeof(TRecord).Name;
+                using var allocator = new MallocFixedPageSize<TRecord>(MallocFixedPageSize<TRecord>.MemorySizeGranularity * 2, sectorSize);
+
+                // Construction commits two pages.
+                ClassicAssert.AreEqual(MallocFixedPageSize<TRecord>.GetMinCommittedMemorySize(sectorSize), allocator.AllocatedSizeBytes, name);
+                var slackBytes = (allocator.AllocatedSizeBytes / 2) - MallocFixedPageSize<TRecord>.MemorySizeGranularity;
+                ClassicAssert.GreaterOrEqual(slackBytes, sectorSize, $"{name}: a page needs a sector of slack to be aligned");
+                ClassicAssert.Less(slackBytes, sectorSize + MallocFixedPageSize<TRecord>.RecordSize, $"{name}: a page needs no more than a sector of slack");
+
+                ClassicAssert.AreEqual(0L, allocator.GetPhysicalAddress(0) % sectorSize, $"{name}: level 0 alignment");
+                ClassicAssert.AreEqual(0L, allocator.GetPhysicalAddress(MallocFixedPageSize<TRecord>.RecordsPerPage) % sectorSize, $"{name}: level 1 alignment");
+            }
+        }
+
+        /// <summary>
+        /// Records of a non-blittable type are used as a managed array and never aligned, so their pages carry no slack.
+        /// </summary>
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void NonBlittablePagesCarryNoSlack()
+        {
+            using var allocator = new MallocFixedPageSize<IHeapContainer<Value>>();
+            ClassicAssert.AreEqual(2 * MallocFixedPageSize<IHeapContainer<Value>>.MemorySizeGranularity, allocator.AllocatedSizeBytes);
+            ClassicAssert.AreEqual(allocator.AllocatedSizeBytes, MallocFixedPageSize<IHeapContainer<Value>>.MinCommittedMemorySize);
         }
 
         /// <summary>
