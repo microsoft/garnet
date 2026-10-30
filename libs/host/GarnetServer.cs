@@ -172,7 +172,7 @@ namespace Garnet
             Debug.Assert(opts != null);
 
             // Validate programmatic options before allocating stores or network buffers.
-            _ = opts.GetReplicaDiskBasedSyncChunkSizeBytes();
+            _ = opts.GetReplicaDiskBasedSyncPipelineDepth();
 
             if (!opts.QuietMode)
             {

@@ -30,6 +30,38 @@ namespace Garnet.test
             Assert.That(ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true), Is.True);
             Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(128 << 10));
             Assert.That(new GarnetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(128 << 10));
+            Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncPipelineDepth(), Is.EqualTo(1));
+            Assert.That(new GarnetServerOptions().GetReplicaDiskBasedSyncPipelineDepth(), Is.EqualTo(1));
+        }
+
+        [TestCase(1, "512m", true)]
+        [TestCase(3, "16m", true)]
+        [TestCase(64, "128k", true)]
+        [TestCase(64, "8m", true)]
+        [TestCase(64, "16m", false)]
+        [TestCase(2, "512m", false)]
+        [TestCase(0, "128k", false)]
+        [TestCase(-1, "128k", false)]
+        [TestCase(65, "128k", false)]
+        [TestCase(int.MaxValue, "512m", false)]
+        public void DiskBasedSyncPipelineConfiguration(int depth, string chunkSize, bool valid)
+        {
+            string[] args = ["--repl-disk-based-sync-pipeline-depth", depth.ToString(),
+                "--repl-disk-based-sync-chunk-size", chunkSize];
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true), Is.EqualTo(valid));
+            var json = JsonSerializer.Serialize(new { ReplicaDiskBasedSyncPipelineDepth = depth, ReplicaDiskBasedSyncChunkSize = chunkSize });
+            Assert.That(TryParseGarnetConfOptions(json, out _, out _, out _), Is.EqualTo(valid));
+            var serverOptions = new GarnetServerOptions { ReplicaDiskBasedSyncChunkSize = chunkSize, ReplicaDiskBasedSyncPipelineDepth = depth };
+            if (valid)
+            {
+                Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncPipelineDepth(), Is.EqualTo(depth));
+                Assert.That(serverOptions.GetReplicaDiskBasedSyncPipelineDepth(), Is.EqualTo(depth));
+            }
+            else
+            {
+                Assert.Throws<ArgumentException>(() => serverOptions.GetReplicaDiskBasedSyncPipelineDepth());
+                Assert.Throws<ArgumentException>(() => new GarnetServer(serverOptions));
+            }
         }
 
         [TestCase("512", 512)]

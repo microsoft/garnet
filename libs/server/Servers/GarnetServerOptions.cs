@@ -664,6 +664,32 @@ namespace Garnet.server
         public string ReplicaDiskBasedSyncChunkSize = "128k";
 
         /// <summary>
+        /// Maximum supported number of unacknowledged checkpoint chunks per replica.
+        /// </summary>
+        public const int ReplicaDiskBasedSyncPipelineDepthMax = 64;
+
+        /// <summary>
+        /// Maximum unacknowledged disk-based Tsavorite checkpoint chunks per replica on the primary.
+        /// Accepts 1 through 64; default 1 disables pipelining.
+        /// Depth times effective chunk size must not exceed 512 MiB.
+        /// </summary>
+        public int ReplicaDiskBasedSyncPipelineDepth = 1;
+
+        /// <summary>
+        /// Validate the pipeline depth and its maximum outstanding payload budget.
+        /// </summary>
+        public int GetReplicaDiskBasedSyncPipelineDepth()
+        {
+            const long MaxOutstandingPayloadBytes = 512L << 20;
+            var chunkSize = GetReplicaDiskBasedSyncChunkSizeBytes();
+            if (ReplicaDiskBasedSyncPipelineDepth is < 1 or > ReplicaDiskBasedSyncPipelineDepthMax ||
+                (long)ReplicaDiskBasedSyncPipelineDepth * chunkSize > MaxOutstandingPayloadBytes)
+                throw new ArgumentException($"{nameof(ReplicaDiskBasedSyncPipelineDepth)} must be from 1 through {ReplicaDiskBasedSyncPipelineDepthMax}, with depth times effective chunk size at most {MaxOutstandingPayloadBytes >> 20} MiB.",
+                    nameof(ReplicaDiskBasedSyncPipelineDepth));
+            return ReplicaDiskBasedSyncPipelineDepth;
+        }
+
+        /// <summary>
         /// Resolve and validate the disk-based checkpoint transfer chunk size in bytes.
         /// </summary>
         public int GetReplicaDiskBasedSyncChunkSizeBytes()

@@ -110,7 +110,7 @@ namespace Garnet.cluster
         {
             foreach (var dataSource in fileDataSources)
             {
-                yield return new FileTransmitSource(dataSource, logger);
+                yield return new FileTransmitSource(dataSource, logger, clusterProvider.serverOptions.GetReplicaDiskBasedSyncPipelineDepth());
             }
 
             foreach (var dataSource in metadataDataSources)

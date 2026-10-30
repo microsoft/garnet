@@ -484,15 +484,19 @@ namespace Garnet.test.cluster
         }
 
         [Category("REPLICATION")]
-        [TestCase("128k")]
-        [TestCase("1m")]
-        [TestCase("4m")]
-        [TestCase("16m")]
-        public void DiskBasedSyncWithConfiguredChunks(string chunkSize)
+        [TestCase("128k", 1)]
+        [TestCase("1m", 1)]
+        [TestCase("4m", 1)]
+        [TestCase("16m", 1)]
+        [TestCase("128k", 3)]
+        [TestCase("1m", 3)]
+        [TestCase("4m", 3)]
+        [TestCase("16m", 3)]
+        public void DiskBasedSyncWithConfiguredChunks(string chunkSize, int pipelineDepth)
         {
             context.CreateInstances(2, enableAOF: true, lowMemory: true, memorySize: "4m", pageSize: "1m", segmentSize: "4m",
                 useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount,
-                replicaDiskBasedSyncChunkSize: chunkSize);
+                replicaDiskBasedSyncChunkSize: chunkSize, replicaDiskBasedSyncPipelineDepth: pipelineDepth);
             context.CreateConnection(useTLS: useTLS);
             Assert.That(context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger), Is.EqualTo("OK"));
             context.clusterTestUtils.BumpEpoch(0, logger: context.logger);

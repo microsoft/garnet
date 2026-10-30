@@ -490,6 +490,10 @@ namespace Garnet
         [Option("repl-disk-based-sync-chunk-size", Required = false, HelpText = "Maximum Tsavorite checkpoint transfer chunk on the primary (512 bytes to 512m, rounds down to power of 2; default 128k). Does not affect diskless sync, AOF streaming or RangeIndex files.")]
         public string ReplicaDiskBasedSyncChunkSize { get; set; }
 
+        [ReplicaDiskBasedSyncPipelineDepthValidation]
+        [Option("repl-disk-based-sync-pipeline-depth", Required = false, HelpText = "Maximum unacknowledged disk-based Tsavorite checkpoint chunks per replica on the primary (1-64, default 1 disables pipelining). Depth times effective chunk size must not exceed 512 MiB.")]
+        public int ReplicaDiskBasedSyncPipelineDepth { get; set; }
+
         [IntRangeValidation(0, int.MaxValue)]
         [Option("repl-diskless-sync-delay", Required = false, HelpText = "Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.")]
         public int ReplicaDisklessSyncDelay { get; set; }
@@ -1039,6 +1043,7 @@ namespace Garnet
                 ReplicaDisklessSyncDelay = ReplicaDisklessSyncDelay,
                 ReplicaSyncTimeout = ReplicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(ReplicaSyncTimeout),
                 ReplicaDiskBasedSyncChunkSize = ReplicaDiskBasedSyncChunkSize,
+                ReplicaDiskBasedSyncPipelineDepth = ReplicaDiskBasedSyncPipelineDepth,
                 ReplicaAttachTimeout = ReplicaAttachTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(ReplicaAttachTimeout),
                 ReplicaDisklessSyncFullSyncAofThreshold = ReplicaDisklessSyncFullSyncAofThreshold,
                 UseAofNullDevice = UseAofNullDevice.GetValueOrDefault(),
