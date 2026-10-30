@@ -500,6 +500,9 @@
             return featuredDatasets;
         }
 
+        // Chart.js keeps every chart in Chart.instances until it is destroyed.
+        const renderedCharts = [];
+
         function renderAllCharts() {
             function renderGraph(parent, name, dataset) {
                 const canvas = document.createElement('canvas');
@@ -574,11 +577,11 @@
                     },
                 };
 
-                new Chart(canvas, {
+                renderedCharts.push(new Chart(canvas, {
                     type: 'line',
                     data,
                     options,
-                });
+                }));
             }
 
             function renderBenchSet(name, benchSet, main) {
@@ -611,14 +614,19 @@
 
             const dataSets = BenchmarkStore.getProcessedData();
             const chartsContainer = document.getElementById('benchmarks-container');
+            for (const chart of renderedCharts.splice(0)) {
+                chart.destroy();
+            }
             chartsContainer.innerHTML = '';
 
             if (SELECTED_BENCHMARK_SET === BENCHMARK_SET_TYPE.FEATURED) {
                 let didRenderBenchmarks = false;
+                // A benchmark picked from the featured list is shown only for the group it was picked from.
+                const benchmarkGroup = getSelectedOptgroup("benchmark-selector");
                 const featuredDataSets = featuredDatasets(dataSets, FEATURED_BENCHMARKS);
                 for (const featuredDataSetName of featuredDataSets.keys()) {
                     const dataSet = dataSets.find(ds => ds.name === featuredDataSetName);
-                    if (shouldShowBenchmarkSet(dataSet.name)) {
+                    if (shouldShowBenchmarkSet(dataSet.name) && (!benchmarkGroup || benchmarkGroup === dataSet.name)) {
                         didRenderBenchmarks = true;
                         renderBenchSet(dataSet.name, dataSet.dataSet, chartsContainer);
                     }
@@ -747,15 +755,6 @@
                         return false;
                     }
                     break;
-            }
-
-            // If the user selected a benchmark while viewing Featured Benchmarks,
-            // we need to use the benchmark group name from the selector dropdown.
-            if (SELECTED_BENCHMARK_SET === BENCHMARK_SET_TYPE.FEATURED) {
-                const benchmarkGroup = getSelectedOptgroup("benchmark-selector");
-                if (benchmarkGroup && benchmarkGroup !== name) {
-                    return false
-                }
             }
 
             return true;
