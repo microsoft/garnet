@@ -9,13 +9,14 @@ One-time deployment of the shared Azure resources the benchmarking environment d
 | Networking | VNet, subnets (management + accelerated), NSG |
 | Placement | Proximity Placement Group |
 | Storage | Storage account + blob container (`node` tarball delivery) |
-| Secrets | Key Vault + SSH key material + tools tarball SAS URL |
+| Secrets | Key Vault + SSH/TLS key material |
 
 ## Contents
 
 | Path | Purpose |
 |------|---------|
 | `deploy-common-resources.ps1` | Deploys network (NSG, VNet, proximity group), storage (storage account), and security (Key Vault + SSH keys) resources, and generates the root `vmss-parameters.json` |
+| `validate-storage-rbac.ps1` | Summarizes Storage RBAC readiness for the active Azure CLI identity and VMSS managed identities; read-only unless `-TestWriteAccess` is supplied |
 | `network/network.bicep` | Network infrastructure template |
 | `network/network-parameters.json` | Network deployment parameters |
 | `storage/storage.bicep` | Storage account + blob container template (deterministic name, `app=azurebench` tag for discovery) |
@@ -42,15 +43,35 @@ One-time deployment of the shared Azure resources the benchmarking environment d
 
 Creates NSG, VNet, a proximity placement group, a storage account, and a Key Vault (copying the manifest public keys into `security/` and uploading the VMSS private key as secret `vmss-ssh-private`). It also generates a private benchmark CA plus role-specific server/client certificates and uploads the complete set to Key Vault. Existing enabled certificate secrets with matching, unexpired metadata are reused; missing, disabled, mismatched, or near-expiry sets are regenerated as one consistent bundle. Local certificate files are written under the git-ignored `security/tls/` directory. Use `-RotateTlsCertificates` to force rotation.
 
-The deployment also publishes a read-only, policy-bound **SAS URL** for the tools tarball blob into the Key Vault (secret `tools-sas-url`) so the VMSS can pull `tools.tar.gz` at boot **without a Storage Blob Data Reader role assignment** (no RBAC required — see [Tools tarball delivery](#tools-tarball-delivery-sas)). Auto-generates `vmss-parameters.json` (written to `02-platform/`) with resource IDs. The storage account and Key Vault names are discovered later by their `app=azurebench` tag / resource-group lookup, so they are **not** written to `vmss-parameters.json`.
+Storage disables Shared Key authorization and local users. This phase creates no role assignments and does not require `Microsoft.Authorization/roleAssignments/write`. Existing accounts are also hardened on `deploy`; this intentionally invalidates their account-key-signed SAS consumers. Migrate running instances before redeploying shared resources. Auto-generates `vmss-parameters.json` (written to `02-platform/`) with resource IDs. Storage and Key Vault names are discovered later by tag / resource-group lookup.
+
+## Validate Storage RBAC Readiness
+
+```powershell
+# Read-only validation: active identity, management permissions, blob read access,
+# Shared Key state, and every VMSS managed identity's blob-read role.
+.\01-resources\validate-storage-rbac.ps1 -rg <resource-group>
+
+# Also validate publisher write/delete access with a temporary blob.
+.\01-resources\validate-storage-rbac.ps1 -rg <resource-group> -TestWriteAccess
+```
+
+The validator discovers the `app=azurebench` storage account by default. Pass
+`-StorageAccount <name>` when the resource group contains no tagged account or when
+you want to validate a different account. It exits nonzero when a required RBAC or
+data-plane check fails. `Create role assignments` requires Role Based Access Control
+Administrator, User Access Administrator, or Owner at the storage or resource-group
+scope (for example via PIM). `Entra blob read/list` requires a Storage Blob Data role
+for your identity; creating the account or Owner/Contributor does not grant it. The
+optional write test uses a unique blob under `rbac-validation/` and
+deletes it before returning.
 
 ### Actions
 
 | Action | Command | Description |
 |--------|---------|-------------|
-| `deploy` (default) | `.\01-resources\deploy-common-resources.ps1` | Deploys shared resources (network, storage, Key Vault + SSH/TLS material, tools SAS) and generates `vmss-parameters.json`. **Idempotent** — checks the resource group and reuses a complete, enabled, matching TLS certificate set until it approaches expiry |
+| `deploy` (default) | `.\01-resources\deploy-common-resources.ps1` | Deploys shared resources (network, storage, Key Vault + SSH/TLS material) and generates `vmss-parameters.json`. Reuses existing resources while enforcing storage hardening and renewing TLS certificates when needed |
 | `stage` | `.\01-resources\deploy-common-resources.ps1 -Action stage -rg <rg>` | Queries existing network resources, copies the manifest-declared public keys from `basePath` (normally `%USERPROFILE%\.ssh`) into the git-ignored `security/` cache, and generates `vmss-parameters.json` (no Azure deployment) |
-| `refresh-sas` | `.\01-resources\deploy-common-resources.ps1 -Action refresh-sas -rg <rg>` | Regenerates the tools tarball SAS and refreshes the `tools-sas-url` Key Vault secret (renews the stored access policy expiry). Run before expiry or after rotating the storage account key |
 
 > **`-Region` (optional):** By default the deploy action uses the resource group's own location (`az group show`). Pass `-Region <region>` to deploy the shared resources (NSG, VNet, proximity group, storage account) into a specific region, e.g. `.\01-resources\deploy-common-resources.ps1 -rg garnet-bench-eastcan -Region canadaeast`. The chosen region is written to `vmss-parameters.json` so the VMSS inherits it. Azure resource locations are **immutable** — if the NSG/VNet/PPG already exist in a different region, delete them first, then redeploy. The region must also be listed in the `@allowed` set in `network/network.bicep` and `storage/storage.bicep`.
 
@@ -103,15 +124,15 @@ Downstream deployments discover the Key Vault dynamically (by resource group / `
 
 Vault names are auto-generated as `kv-{yyyyMMddHHmmss}` to avoid global name collisions and tagged `app=azurebench` for discovery. If a soft-deleted vault with the same name exists, the script attempts to purge it. An existing tagged vault in the resource group is reused instead of creating a new one.
 
-### Tools tarball delivery (SAS)
+### Tools tarball delivery
 
-VMSS instances need the `tools.tar.gz` bundle (the guest-side scripts/config in `02-platform/tools/`), which lives in the storage account's `tools` blob container. Instead of granting the VMSS managed identity a **Storage Blob Data Reader** role assignment — which the deployer's custom role (`Microsoft.Authorization/*/Write` in its NotActions) cannot create — the deploy action publishes a **read-only, policy-bound SAS URL** into the Key Vault:
-
-1. A container **stored access policy** (`vmss-tools-read`, permissions `rl`, expiry `+SasExpiryDays`) is created/updated on the `tools` container. The policy centralizes expiry and revocation.
-2. A policy-bound **SAS** is generated against the account key and combined with the blob endpoint into `https://<account>.blob.core.windows.net/tools/tools.tar.gz?<sas>`.
-3. The URL is stored as Key Vault secret **`tools-sas-url`**. VMSS instances already have Key Vault access, so they read this secret at boot and `curl` the tarball — no RBAC role assignment required.
-
-Upload the bundle with `02-platform/manage-vmss.ps1 -Action publish-tools` (run it before `-Action create`). Because SAS tokens always expire, run `-Action refresh-sas` to renew the policy expiry and regenerate the secret before the SAS lapses (or after rotating the storage account key). `deploy` skips regeneration if the secret already exists; `refresh-sas` forces it. Tune the lifetime with `-SasExpiryDays` (default 365).
+Shared Key authorization is disabled, so deployment no longer generates the tools SAS
+or the `tools-sas-url` Key Vault secret, and `refresh-sas` has been removed.
+`02-platform/manage-vmss.ps1 -Action publish-tools` uploads `tools.tar.gz` with Entra
+auth (requires Storage Blob Data Contributor). VMSS instances download it with their
+managed identity, which needs Storage Blob Data Reader; grant it with
+`manage-vmss.ps1 -Action create -GrantStorageAccess` (requires RBAC Administrator,
+User Access Administrator, or Owner).
 
 ## Region / Location Handling
 
