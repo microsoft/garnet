@@ -97,10 +97,15 @@ namespace Tsavorite.core
         /// Allows the application to snapshot external resources (using <paramref name="logicalAddress"/>
         /// to disambiguate per-flush snapshot identity) and set flags on the live record.
         /// Only called when <see cref="CallOnFlush"/> is true. Default implementation is a no-op.
+        /// <para>An address can be flushed more than once: a store recovered from a checkpoint resumes flushing
+        /// where the checkpoint's flushed region ends, which can be below addresses the run before the restart
+        /// had already flushed. Replace any state left for <paramref name="logicalAddress"/> rather than assume
+        /// there is none.</para>
+        /// <para>Must not throw: flushing cannot continue past a failure here, so an exception terminates the process.</para>
         /// </summary>
         /// <param name="logRecord">The record being flushed (in-memory copy).</param>
         /// <param name="logicalAddress">Logical address of the record being flushed; useful for naming
-        /// per-flush snapshot files immutably.</param>
+        /// per-flush snapshot files.</param>
         void OnFlush(ref LogRecord logRecord, long logicalAddress) { }
 
         /// <summary>

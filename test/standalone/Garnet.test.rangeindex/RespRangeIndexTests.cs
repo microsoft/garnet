@@ -2033,6 +2033,121 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// After recovery from a checkpoint, a stub in the checkpoint's in-memory region is flushed again at its address
+        /// from before the restart, where that run left a flush snapshot holding a write that recovery rolled back. The
+        /// flush must replace that snapshot, whether the stub's tree was restored first (a snapshot of the live tree) or not
+        /// (a copy of the working file); otherwise restoring the tree from it brings the write back.
+        /// </summary>
+        [Test]
+        public void RIFlushAfterRecoveryReplacesPreRestartFlushSnapshotTest([Values] bool restoreTreeFirst)
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, lowMemory: true);
+            server.Start();
+
+            var riLogRoot = Path.Combine(TestUtils.MethodTestDir, "Store", "rangeindex");
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                var store = server.Provider.StoreWrapper.store;
+
+                db.Execute("RI.CREATE", "reflush", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+                db.Execute("RI.SET", "reflush", "field", "value");
+                db.Execute("SAVE");
+
+                // Without AOF, recovery rolls this write back; the flush below records it in the stub's flush snapshot.
+                db.Execute("RI.SET", "reflush", "rolledback", "x");
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            }
+            ClassicAssert.AreEqual(1, Directory.GetFiles(riLogRoot, "*.flush.bftree").Length, "the flush should write the stub's flush snapshot");
+
+            // Restart from the checkpoint, which precedes that flush.
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, lowMemory: true, tryRecover: true);
+            server.Start();
+
+            var log = server.Provider.StoreWrapper.store.Log;
+            var rangeIndexManager = server.Provider.StoreWrapper.rangeIndexManager;
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                if (restoreTreeFirst)
+                    ClassicAssert.IsTrue(db.Execute("RI.GET", "reflush", "rolledback").IsNull, "recovery should roll back the write");
+
+                // Flush the stub again. The wait is bounded, so that a flush that stops fails the test instead of hanging it.
+                var tailAddress = log.TailAddress;
+                log.ShiftReadOnlyAddress(tailAddress, wait: false);
+                ClassicAssert.IsTrue(SpinWait.SpinUntil(() => log.FlushedUntilAddress >= tailAddress, TimeSpan.FromSeconds(10)),
+                    $"flushing stopped at {log.FlushedUntilAddress}, below ReadOnlyAddress {log.ReadOnlyAddress}");
+
+                // Evict the stub, so that the next command restores its tree from the flush snapshot.
+                for (var i = 0; i < 2000; i++)
+                    db.StringSet($"fill{i:D4}", $"data{i:D4}");
+                ClassicAssert.AreEqual(0, rangeIndexManager.LiveIndexCount, "eviction should release the tree");
+
+                ClassicAssert.AreEqual("value", (string)db.Execute("RI.GET", "reflush", "field"));
+                ClassicAssert.IsTrue(db.Execute("RI.GET", "reflush", "rolledback").IsNull,
+                    "the tree was restored from the flush snapshot written before the restart");
+            }
+        }
+
+        /// <summary>
+        /// Recovery itself flushes a stub again at its address from before the restart, when it moves ReadOnlyAddress up to
+        /// the mutable fraction of the recovered log. That flush must replace the flush snapshot the earlier run left there.
+        /// </summary>
+        [Test]
+        public void RIRecoveryFlushReplacesPreRestartFlushSnapshotTest()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, lowMemory: true);
+            server.Start();
+
+            long stubEndAddress;
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                var store = server.Provider.StoreWrapper.store;
+
+                db.Execute("RI.CREATE", "reflush", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+                stubEndAddress = store.Log.TailAddress;
+                db.Execute("RI.SET", "reflush", "field", "value");
+
+                // Records after the stub, so that the recovered log spans more than a page and recovery's ReadOnly shift passes the stub.
+                for (var i = 0; i < 300; i++)
+                    db.StringSet($"pre{i:D4}", $"data{i:D4}");
+                ClassicAssert.Less(store.Log.FlushedUntilAddress, stubEndAddress, "the checkpoint should take the stub from memory");
+                db.Execute("SAVE");
+
+                // Without AOF, recovery rolls this write back; the flush below records it in the stub's flush snapshot.
+                db.Execute("RI.SET", "reflush", "rolledback", "x");
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            }
+
+            // Restart from the checkpoint, with a mutable fraction small enough that recovery makes the stub's page read-only.
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, lowMemory: true, tryRecover: true,
+                mutablePercent: 10, failOnRecoveryError: true);
+            server.Start();
+
+            ClassicAssert.GreaterOrEqual(server.Provider.StoreWrapper.store.Log.FlushedUntilAddress, stubEndAddress, "recovery should flush the stub");
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                // The stub is flushed, so the first command promotes it and restores its tree from the flush snapshot.
+                ClassicAssert.AreEqual("value", (string)db.Execute("RI.GET", "reflush", "field"));
+                ClassicAssert.IsTrue(db.Execute("RI.GET", "reflush", "rolledback").IsNull,
+                    "the tree was restored from the flush snapshot written before the restart");
+            }
+        }
+
+        /// <summary>
         /// Verifies pure AOF-only recovery (no checkpoint). RI.CREATE is replayed to
         /// recreate the BfTree, then RI.SET/RI.DEL operations rebuild the data.
         /// </summary>
