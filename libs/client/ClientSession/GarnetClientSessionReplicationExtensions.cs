@@ -271,9 +271,11 @@ namespace Garnet.client
         {
             // The data payload must fit in the send buffer (as a RESP bulk string) after a flush,
             // otherwise the TryWriteBulkString/Flush loop below will spin forever.
-            if (data.Length > networkBufferSettings.sendBufferSize)
+            const int BulkStringFramingBytes = 1 + 2 + 2; // '$' and two CRLF pairs, excluding length digits.
+            var framedLength = (long)data.Length + NumUtils.CountDigits(data.Length) + BulkStringFramingBytes;
+            if (framedLength > networkBufferSettings.sendBufferSize)
                 ExceptionUtils.ThrowException(new InvalidOperationException(
-                    $"Snapshot data chunk ({data.Length} bytes) exceeds send buffer size ({networkBufferSettings.sendBufferSize} bytes)"));
+                    $"Snapshot data chunk ({data.Length} bytes, {framedLength} bytes with bulk framing) exceeds send buffer size ({networkBufferSettings.sendBufferSize} bytes)"));
 
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             tcsQueue.Enqueue(tcs);

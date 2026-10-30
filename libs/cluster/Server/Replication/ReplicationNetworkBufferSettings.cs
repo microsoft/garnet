@@ -23,9 +23,10 @@ namespace Garnet.cluster
         /// <summary>
         /// NetworkBufferSettings for the replica sync session clients
         /// </summary>
-        const int rssSendBufferSize = 1 << 20;
         const int rssInitialReceiveBufferSize = 1 << 12;
-        public NetworkBufferSettings GetRSSNetworkBufferSettings { get; } = new(rssSendBufferSize, rssInitialReceiveBufferSize);
+        public NetworkBufferSettings GetRSSNetworkBufferSettings => new(
+            Math.Max(1 << 20, 2 * clusterProvider.serverOptions.GetReplicaDiskBasedSyncChunkSizeBytes()),
+            rssInitialReceiveBufferSize);
 
         /// <summary>
         /// NetworkBufferSettings for the client used for InitiateReplicaSync (ReplicateReceiveCheckpoint.cs)

@@ -171,6 +171,9 @@ namespace Garnet
         {
             Debug.Assert(opts != null);
 
+            // Validate programmatic options before allocating stores or network buffers.
+            _ = opts.GetReplicaDiskBasedSyncPipelineDepth();
+
             if (!opts.QuietMode)
             {
                 var red = "\u001b[31m";

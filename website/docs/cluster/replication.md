@@ -60,6 +60,32 @@ A summary of these options is shown below:
 Using the aforementioned options, we guarantee that no writes are lost while a replica is attaching and replication remains highly performant.
 However, due to the asynchronous nature of replication, if a primary goes down before unexpectedly, the replicas might have not received the latest AOF log records, resulting in lost writes.
 
+## Disk-Based Full-Sync Transfer Size
+
+On the primary, `--repl-disk-based-sync-chunk-size` sets the maximum payload per Tsavorite checkpoint file-transfer request. The default is `128k` (128 KiB). For example:
+
+```bash
+GarnetServer.exe --cluster --aof --repl-disk-based-sync-chunk-size 16m
+```
+
+The equivalent Garnet configuration property and `GarnetServerOptions` field are `ReplicaDiskBasedSyncChunkSize`. This is a startup setting, not a `CONFIG SET` option. It applies to main-log, object-log, snapshot and index checkpoint files; it does not change diskless replication, AOF streaming, checkpoint metadata or RangeIndex file transfers.
+
+Sizes from 512 bytes through 512 MiB are accepted and rounded down to a power of two. Device-backed chunks must be at least one device sector; smaller sector-incompatible settings fail when opening the transfer. Reads stop at physical segment boundaries, and final chunks are sector-aligned, so actual chunks can be smaller than the configured maximum.
+
+By default, checkpoint shipping waits for the replica's write-completion acknowledgement before reading and sending the next chunk. Higher RTT can therefore limit throughput even when the network and disks have spare bandwidth. Increasing the chunk size amortizes that cost. For a high-bandwidth link with approximately 1 ms RTT, start by comparing 4, 8, 16, 32 and 64 MiB with the same checkpoint and storage conditions, then choose the smallest size near the measured throughput plateau.
+
+On the primary, `--repl-disk-based-sync-pipeline-depth` allows multiple unacknowledged chunks per replica. The default `1` preserves stop-and-wait behavior; values from 1 through 64 are accepted, provided depth times the effective chunk size does not exceed 512 MiB. The equivalent configuration property and `GarnetServerOptions` field are `ReplicaDiskBasedSyncPipelineDepth`. Like chunk size, this is a startup-only setting with the same file-type scope. For example:
+
+```bash
+GarnetServer.exe --cluster --aof --repl-disk-based-sync-chunk-size 16m --repl-disk-based-sync-pipeline-depth 3
+```
+
+The primary reads and submits chunks sequentially, but can read and send later chunks while previous acknowledgements are outstanding. The replica still writes one chunk at a time and acknowledges only after that write completes. All acknowledgements are drained before sending the file's end marker or advancing to another file. Pipelining can hide acknowledgement latency; it does not make replica writes concurrent or guarantee line-rate throughput. Compare depth 1 with small windows such as 2 or 3 before increasing it.
+
+Larger chunks and deeper windows increase memory costs. The primary's checkpoint client uses power-of-two send buffers with framing headroom (at least 1 MiB each, otherwise twice the effective chunk size); aligned source buffers are returned after their contents are copied into network-owned buffers, without waiting for acknowledgements. Replicas also need receive and aligned write buffers. The 512 MiB window limit bounds unacknowledged payload, not total memory allocation; socket buffers, framing, pool capacity and concurrent syncs add to that cost, and pools can retain buffers after use. Depth 3 does not require three concurrent replica write buffers. The replica's programmatic `GarnetServerOptions.NetworkReceiveBufferMaxSize` setting controls receive-buffer retention, not this chunk limit.
+
+Each chunk's `--repl-sync-timeout` deadline starts when submission begins, including time blocked by socket backpressure, and is not restarted when its response reaches the head of the window. Allow enough time for network transfer and queued replica writes. An error, disconnect, timeout or cancellation aborts the checkpoint connection rather than reusing it with outstanding replies.
+
 # Creating a Garnet Cluster with Replication
 
 The process of setting up a cluster with replication is similar to setting up a regular cluster while also enabling the aof option.

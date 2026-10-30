@@ -22,18 +22,15 @@ namespace Garnet.cluster
         readonly SemaphoreSlim signalCompletion = new(0);
 
         /// <summary>
-        /// Computes the maximum batch size for a given checkpoint file type.
-        /// For segmented types (HLOG, SNAPSHOT), returns the segment size.
-        /// For other types, returns the default batch size.
-        /// The actual read batch is capped at min(DefaultBatchSize, GetMaxBatchSize).
+        /// Returns the physical segment size, or -1 for an unsegmented checkpoint file.
         /// </summary>
-        public static int GetMaxBatchSize(CheckpointFileType type, GarnetServerOptions serverOptions)
+        public static long GetSegmentSize(CheckpointFileType type, GarnetServerOptions serverOptions)
         {
             return type switch
             {
-                CheckpointFileType.STORE_HLOG or CheckpointFileType.STORE_SNAPSHOT => 1 << serverOptions.SegmentSizeBits(isObj: false),
-                CheckpointFileType.STORE_HLOG_OBJ or CheckpointFileType.STORE_SNAPSHOT_OBJ => 1 << serverOptions.SegmentSizeBits(isObj: true),
-                _ => FileDataSource.DefaultBatchSize
+                CheckpointFileType.STORE_HLOG or CheckpointFileType.STORE_SNAPSHOT => 1L << serverOptions.SegmentSizeBits(isObj: false),
+                CheckpointFileType.STORE_HLOG_OBJ or CheckpointFileType.STORE_SNAPSHOT_OBJ => 1L << serverOptions.SegmentSizeBits(isObj: true),
+                _ => -1
             };
         }
 
@@ -113,7 +110,7 @@ namespace Garnet.cluster
         {
             foreach (var dataSource in fileDataSources)
             {
-                yield return new FileTransmitSource(dataSource, logger);
+                yield return new FileTransmitSource(dataSource, logger, clusterProvider.serverOptions.GetReplicaDiskBasedSyncPipelineDepth());
             }
 
             foreach (var dataSource in metadataDataSources)
@@ -124,21 +121,28 @@ namespace Garnet.cluster
 
         private FileDataSource CreateFileDataSource(CheckpointFileType type, Guid token, long startOffset, long endOffset)
         {
+            var maxBatchSize = clusterProvider.serverOptions.GetReplicaDiskBasedSyncChunkSizeBytes();
             var device = CreateCheckpointDevice(type, token);
-            bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
-            var maxBatchSize = Math.Min(FileDataSource.DefaultBatchSize, GetMaxBatchSize(type, clusterProvider.serverOptions));
-
-            return new FileDataSource(
-                type,
-                token,
-                device,
-                startOffset,
-                endOffset,
-                maxBatchSize,
-                timeout,
-                bufferPool,
-                signalCompletion,
-                logger);
+            try
+            {
+                bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
+                return new FileDataSource(
+                    type,
+                    token,
+                    device,
+                    startOffset,
+                    endOffset,
+                    maxBatchSize,
+                    timeout,
+                    bufferPool,
+                    signalCompletion,
+                    logger);
+            }
+            catch
+            {
+                device.Dispose();
+                throw;
+            }
         }
 
         private IDevice CreateCheckpointDevice(CheckpointFileType type, Guid token)
@@ -150,7 +154,7 @@ namespace Garnet.cluster
                 _ => clusterProvider.ReplicationLogCheckpointManager.GetDevice(type, token),
             };
 
-            var segmentSize = GetMaxBatchSize(type, clusterProvider.serverOptions);
+            var segmentSize = GetSegmentSize(type, clusterProvider.serverOptions);
             switch (type)
             {
                 case CheckpointFileType.STORE_HLOG:
