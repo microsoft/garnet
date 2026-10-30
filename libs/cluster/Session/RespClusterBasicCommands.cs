@@ -376,7 +376,7 @@ namespace Garnet.cluster
             {
                 var withMeetSpan = parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
 
-                GarnetAsserts.Assert(withMeetSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMEET));
+                GarnetAsserts.DebugOnlyAssert(withMeetSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMEET));
                 if (withMeetSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMEET))
                     gossipWithMeet = true;
             }
@@ -427,7 +427,7 @@ namespace Garnet.cluster
                         }
 
                         // Remember that this connection is being used for another cluster node to talk to us
-                        GarnetAsserts.Assert(RemoteNodeId is null || RemoteNodeId == other.LocalNodeId, "Node Id shouldn't change once set for a connection");
+                        GarnetAsserts.DebugOnlyAssert(RemoteNodeId is null || RemoteNodeId == other.LocalNodeId, "Node Id shouldn't change once set for a connection");
                         RemoteNodeId = other.LocalNodeId;
                     }
                     else

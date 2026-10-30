@@ -86,7 +86,7 @@ namespace Garnet.cluster
             }
 
             var errorCode = lastIOErrorCode;
-            GarnetAsserts.Assert(errorCode == 0, $"I/O error {errorCode} writing {Type} checkpoint file at address {startAddress}");
+            GarnetAsserts.DebugOnlyAssert(errorCode == 0, $"I/O error {errorCode} writing {Type} checkpoint file at address {startAddress}");
             if (errorCode != 0)
             {
                 ExceptionUtils.ThrowException(new GarnetException(
