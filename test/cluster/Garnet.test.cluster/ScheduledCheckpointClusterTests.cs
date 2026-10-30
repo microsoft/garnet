@@ -4,6 +4,8 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using Garnet.cluster;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -39,6 +41,16 @@ namespace Garnet.test.cluster
         {
             var taskManager = context.nodes[nodeIndex].Provider.StoreWrapper.TaskManager;
             Assert.That(SpinWait.SpinUntil(() => !taskManager.IsRegistered(TaskType.ScheduledCheckpointTask), TimeSpan.FromSeconds(15)), Is.True);
+        }
+
+        [Test, CancelAfter(120_000)]
+        public void DefaultFailoverTimeoutDoesNotExpireImmediately()
+        {
+            context.CreateInstances(1, enableAOF: true);
+            var provider = (ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider;
+            using var session = new FailoverSession(provider, FailoverOption.DEFAULT,
+                TimeSpan.FromSeconds(1), default, provider.clusterManager.clusterConnectionStore.Epoch);
+            Assert.That(session.FailoverTimeout, Is.False);
         }
 
         [Test, CancelAfter(120_000)]

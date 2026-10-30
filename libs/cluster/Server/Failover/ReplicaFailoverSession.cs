@@ -21,11 +21,6 @@ namespace Garnet.cluster
         GarnetClient primaryClient = null;
 
         /// <summary>
-        /// Send page size for GarnetClient
-        /// </summary>
-        const int sendPageSize = 1 << 17;
-
-        /// <summary>
         /// Helper method to establish connection towards remote node
         /// </summary>
         /// <param name="nodeId">Id of node to create connection for</param>
@@ -36,8 +31,6 @@ namespace Garnet.cluster
             var client = new GarnetClient(
                 endpoint,
                 clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
-                sendPageSize: sendPageSize,
-                maxOutstandingTasks: 8,
                 authUsername: clusterProvider.ClusterUsername,
                 authPassword: clusterProvider.ClusterPassword, epoch: epoch, logger: logger);
 
