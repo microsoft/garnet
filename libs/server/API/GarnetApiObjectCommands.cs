@@ -111,8 +111,8 @@ namespace Garnet.server
             => storageSession.SortedSetIncrement(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetIncrement(PinnedSpanByte key, double increment, PinnedSpanByte member, out double newScore)
-            => storageSession.SortedSetIncrement(key, increment, member, out newScore, ref objectContext);
+        public GarnetStatus SortedSetIncrement(PinnedSpanByte key, double increment, PinnedSpanByte member, out double newScore, out bool error)
+            => storageSession.SortedSetIncrement(key, increment, member, out newScore, out error, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetRemoveRange(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
@@ -379,8 +379,8 @@ namespace Garnet.server
             => storageSession.SetIsMember(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetIsMember(PinnedSpanByte key, PinnedSpanByte[] members, out int[] result)
-            => storageSession.SetIsMember(key, members, out result, ref objectContext);
+        public GarnetStatus SetIsMember(PinnedSpanByte key, ReadOnlySpan<PinnedSpanByte> members, ref Span<int> result)
+            => storageSession.SetIsMember(key, members, ref result, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SetPop(PinnedSpanByte key, out PinnedSpanByte member)

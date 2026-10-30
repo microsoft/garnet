@@ -366,32 +366,27 @@ namespace Garnet.server
             return isSuccessful;
         }
 
+        /// <summary>
+        /// Converts inclusive GETRANGE offsets, which count back from the end when negative, into an exclusive range of a
+        /// value of length <paramref name="len"/>. Offsets are clamped to the value, never wrapped.
+        /// </summary>
+        /// <returns>The start and exclusive end of the range; (0, 0) when the range is empty</returns>
         static (int, int) NormalizeRange(int start, int end, int len)
         {
-            // len == 0 has no valid range regardless of start/end; returning early also avoids
-            // a division/modulo by zero below when start < 0.
-            if (len == 0)
+            // A range counted from the end whose end precedes its start is empty
+            if (start < 0 && end < 0 && start > end)
                 return (0, 0);
 
-            if (start >= 0 && start <= len)//start in [0,len]
-            {
-                if (end < 0 && (len + end) > 0)
-                    return (start, len + end + 1);
-                else if (end >= start)
-                    return (start, end < len ? end + 1 : len);
-            }
-            else if (start < 0)
-            {
-                if (start > end) return (0, 0);
-                start %= len;
-                start = start >= 0 ? start : len + start;
-                end = end > len ? len : (end % len);
-                if (end < 0 && (len + end) > 0)
-                    return (start, len + end + 1);
-                else if (end >= start)
-                    return (start, end < len ? (start == end ? end + 1 : end) : len);
-            }
-            return (0, 0);
+            // len is non-negative, so len + offset cannot overflow for a negative offset
+            if (start < 0)
+                start = Math.Max(len + start, 0);
+            if (end < 0)
+                end = Math.Max(len + end, 0);
+            if (end >= len)
+                end = len - 1;
+
+            // An empty value leaves end at -1, below any start
+            return start > end ? (0, 0) : (start, end + 1);
         }
 
         static bool TryInPlaceUpdateNumber(ref LogRecord logRecord, ref StringOutput output, ref RMWInfo rmwInfo, long input)
@@ -486,7 +481,7 @@ namespace Garnet.server
                 val += input;
                 if (!double.IsFinite(val))
                 {
-                    output.OutputFlags |= StringOutputFlags.InvalidTypeError;
+                    output.OutputFlags |= StringOutputFlags.NaNOrInfinityError;
                     return true;
                 }
                 var ndigits = NumUtils.CountCharsInDouble(val, out var _, out var _, out var _);
@@ -517,7 +512,7 @@ namespace Garnet.server
                     val += input;
                     if (!double.IsFinite(val))
                     {
-                        output.OutputFlags |= StringOutputFlags.InvalidTypeError;
+                        output.OutputFlags |= StringOutputFlags.NaNOrInfinityError;
                         return true;
                     }
                     var ndigits = NumUtils.CountCharsInDouble(val, out var _, out var _, out var _);
@@ -653,7 +648,7 @@ namespace Garnet.server
             val += input;
             if (!double.IsFinite(val))
             {
-                output.OutputFlags |= StringOutputFlags.InvalidTypeError;
+                output.OutputFlags |= StringOutputFlags.NaNOrInfinityError;
                 return false;
             }
 
@@ -698,6 +693,19 @@ namespace Garnet.server
                 return false;
             }
 
+            return true;
+        }
+
+        /// <summary>
+        /// Flags an APPEND whose result would exceed the maximum string size.
+        /// </summary>
+        /// <returns>True if the append is rejected</returns>
+        static bool AppendExceedsMaxSize(int originalLength, int appendLength, ref StringOutput output)
+        {
+            if ((long)originalLength + appendLength <= BitmapManager.MaxBitmapPayloadBytes)
+                return false;
+
+            output.OutputFlags |= StringOutputFlags.ValueTooLargeError;
             return true;
         }
 

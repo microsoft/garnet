@@ -82,8 +82,9 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="value">Value</param>
         /// <param name="expiryMs">Expiry in milliseconds, formatted as ASCII digits</param>
+        /// <param name="error">True if <paramref name="expiryMs"/> is not a positive integer or gives an expiration time that is not representable; nothing is written</param>
         /// <returns></returns>
-        GarnetStatus SETEX(PinnedSpanByte key, PinnedSpanByte value, PinnedSpanByte expiryMs);
+        GarnetStatus SETEX(PinnedSpanByte key, PinnedSpanByte value, PinnedSpanByte expiryMs, out bool error);
 
         /// <summary>
         /// SETEX
@@ -91,7 +92,8 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="value">Value</param>
         /// <param name="expiry">Expiry</param>
-        GarnetStatus SETEX(PinnedSpanByte key, PinnedSpanByte value, TimeSpan expiry);
+        /// <param name="error">True if <paramref name="expiry"/> is not positive or gives an expiration time that is not representable; nothing is written</param>
+        GarnetStatus SETEX(PinnedSpanByte key, PinnedSpanByte value, TimeSpan expiry, out bool error);
 
         #endregion
 
@@ -135,8 +137,9 @@ namespace Garnet.server
         /// <param name="key">Key whose value is to be appended</param>
         /// <param name="value">Value to be appended</param>
         /// <param name="output">Length of updated value</param>
+        /// <param name="error">True if the result would be longer than the maximum string size; the value is unchanged</param>
         /// <returns>Operation status</returns>
-        GarnetStatus APPEND(PinnedSpanByte key, PinnedSpanByte value, ref PinnedSpanByte output);
+        GarnetStatus APPEND(PinnedSpanByte key, PinnedSpanByte value, ref PinnedSpanByte output, out bool error);
         #endregion
 
         #region RENAME
@@ -185,9 +188,10 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="expiryMs">Expiry in milliseconds, formatted as ASCII digits</param>
         /// <param name="timeoutSet">Whether timeout was set by the call</param>
+        /// <param name="error">True if <paramref name="expiryMs"/> is not an integer or gives an expiration time that is not representable; the key is unchanged</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus EXPIRE(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus EXPIRE(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, out bool error, ExpireOption expireOption = ExpireOption.None);
 
         /// <summary>
         /// Set a timeout on key using a timeSpan in seconds
@@ -199,14 +203,15 @@ namespace Garnet.server
         GarnetStatus EXPIRE(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output);
 
         /// <summary>
-        /// Set a timeout on key using a timeSpan in seconds
+        /// Set a timeout on key using a timeSpan, to millisecond precision
         /// </summary>
         /// <param name="key">Key</param>
         /// <param name="expiry">Expiry in TimeSpan</param>
         /// <param name="timeoutSet">Whether timeout was set by the call</param>
+        /// <param name="error">True if <paramref name="expiry"/> gives an expiration time that is not representable; the key is unchanged</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus EXPIRE(PinnedSpanByte key, TimeSpan expiry, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus EXPIRE(PinnedSpanByte key, TimeSpan expiry, out bool timeoutSet, out bool error, ExpireOption expireOption = ExpireOption.None);
         #endregion
 
         #region EXPIREAT
@@ -217,9 +222,10 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="expiryTimestamp">Absolute Unix timestamp in seconds</param>
         /// <param name="timeoutSet">Whether timeout was set by the call</param>
+        /// <param name="error">True if <paramref name="expiryTimestamp"/> is not a representable time; the key is unchanged</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus EXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus EXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, out bool error, ExpireOption expireOption = ExpireOption.None);
 
         /// <summary>
         /// Set a timeout on key using absolute Unix timestamp (seconds since January 1, 1970) in milliseconds
@@ -227,9 +233,10 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="expiryTimestamp">Absolute Unix timestamp in milliseconds</param>
         /// <param name="timeoutSet">Whether timeout was set by the call</param>
+        /// <param name="error">True if <paramref name="expiryTimestamp"/> is not a representable time; the key is unchanged</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus PEXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus PEXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, out bool error, ExpireOption expireOption = ExpireOption.None);
 
         #endregion
 
@@ -259,19 +266,22 @@ namespace Garnet.server
         /// Increment (INCR, INCRBY)
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="output"></param>
+        /// <param name="output">The new value</param>
+        /// <param name="error">True if the stored value is not an integer or the result would overflow; the value is unchanged</param>
         /// <param name="incrementCount"></param>
         /// <returns></returns>
-        GarnetStatus Increment(PinnedSpanByte key, out long output, long incrementCount = 1);
+        GarnetStatus Increment(PinnedSpanByte key, out long output, out bool error, long incrementCount = 1);
 
         /// <summary>
         /// Decrement (DECR, DECRBY)
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="output"></param>
+        /// <param name="output">The new value</param>
+        /// <param name="error">True if the stored value is not an integer, the result would overflow, or <paramref name="decrementCount"/>
+        /// is <see cref="long.MinValue"/>; the value is unchanged</param>
         /// <param name="decrementCount"></param>
         /// <returns></returns>
-        GarnetStatus Decrement(PinnedSpanByte key, out long output, long decrementCount = 1);
+        GarnetStatus Decrement(PinnedSpanByte key, out long output, out bool error, long decrementCount = 1);
 
         /// <summary>
         /// Increment by float (INCRBYFLOAT)
@@ -286,10 +296,11 @@ namespace Garnet.server
         /// Increment by float (INCRBYFLOAT)
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="output"></param>
+        /// <param name="output">The new value</param>
+        /// <param name="error">True if the stored value is not a float or the result would not be finite; the value is unchanged</param>
         /// <param name="val"></param>
         /// <returns></returns>
-        GarnetStatus IncrementByFloat(PinnedSpanByte key, out double output, double val);
+        GarnetStatus IncrementByFloat(PinnedSpanByte key, out double output, out bool error, double val);
         #endregion
 
         #region DELETE
@@ -486,8 +497,9 @@ namespace Garnet.server
         /// <param name="increment"></param>
         /// <param name="member"></param>
         /// <param name="newScore"></param>
+        /// <param name="error">True if <paramref name="increment"/> is NaN or the new score would be NaN; nothing is written</param>
         /// <returns></returns>
-        GarnetStatus SortedSetIncrement(PinnedSpanByte key, double increment, PinnedSpanByte member, out double newScore);
+        GarnetStatus SortedSetIncrement(PinnedSpanByte key, double increment, PinnedSpanByte member, out double newScore, out bool error);
 
         /// <summary>
         /// ZREMRANGEBYRANK: Removes all elements in the sorted set stored at key with rank between start and stop.
@@ -1789,7 +1801,7 @@ namespace Garnet.server
         /// <param name="members"></param>
         /// <param name="result"></param>
         /// <returns></returns>
-        GarnetStatus SetIsMember(PinnedSpanByte key, PinnedSpanByte[] members, out int[] result);
+        GarnetStatus SetIsMember(PinnedSpanByte key, ReadOnlySpan<PinnedSpanByte> members, ref Span<int> result);
 
         /// <summary>
         /// Iterates over the members of the Set with the given key using a cursor,
