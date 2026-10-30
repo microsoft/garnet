@@ -44,6 +44,10 @@ run while the manifest still contains placeholder values.
 
 ## Quick Start
 
+Storage uses Entra ID only (Shared Key/SAS disabled). See [README-RBAC.md](README-RBAC.md)
+for the roles and PIM elevation needed to publish tools and grant VMSS storage
+access, and run `01-resources/validate-storage-rbac.ps1 -rg <rg>` to verify them.
+
 ```powershell
 # 1. Deploy infrastructure (network + storage + Key Vault + keys)
 # See 01-resources/README.md.
@@ -58,7 +62,8 @@ pwsh .\01-resources\deploy-common-resources.ps1 `
 
 # 2. Publish the tools bundle before creating any VMSS
 # This requires the storage account from step 1. VM provisioning cannot fetch
-# /home/guser/tools when tools.tar.gz has not been uploaded.
+# /home/guser/tools when tools.tar.gz has not been uploaded. Shared Key is disabled,
+# so the uploader needs Storage Blob Data Contributor on the account or container.
 pwsh .\02-platform\manage-vmss.ps1 `
   --rg testrg `
   --action publish-tools
@@ -66,23 +71,28 @@ pwsh .\02-platform\manage-vmss.ps1 `
 # 3. Deploy server and client VMSS
 # See 02-platform/README.md. DeploymentName identifies the Azure deployment
 # record; the VMSS resource name comes from the vmssName Bicep parameter.
+# -GrantStorageAccess gives the VMSS managed identity Storage Blob Data Reader so
+# instances can download the tools bundle; it requires RBAC Administrator, User
+# Access Administrator, or Owner (e.g. activated through PIM).
 pwsh .\02-platform\manage-vmss.ps1 `
   --rg testrg `
   --action create `
   --deploymentrole server `
-  --deploymentname server-deployment
+  --deploymentname server-deployment `
+  --grantstorageaccess
 
 pwsh .\02-platform\manage-vmss.ps1 `
   --rg testrg `
   --action create `
   --deploymentrole client `
-  --deploymentname client-deployment
+  --deploymentname client-deployment `
+  --grantstorageaccess
 
 # Alternatively, deploy the VMSS directly through Azure CLI:
 az deployment group create --resource-group <rg> --template-file 02-platform\vmss.bicep `
-  --parameters @02-platform\vmss-parameters.json --parameters vmssName=<server-name> deploymentRole=server instanceCount=<n>
+  --parameters @02-platform\vmss-parameters.json --parameters vmssName=<server-name> deploymentRole=server instanceCount=<n> storageAccountName=<storage> grantStorageAccess=true
 az deployment group create --resource-group <rg> --template-file 02-platform\vmss.bicep `
-  --parameters @02-platform\vmss-parameters.json --parameters vmssName=<client-name> deploymentRole=client instanceCount=<n>
+  --parameters @02-platform\vmss-parameters.json --parameters vmssName=<client-name> deploymentRole=client instanceCount=<n> storageAccountName=<storage> grantStorageAccess=true
 
 # 4. Set up and start Garnet on the server VMs
 # serverhost identifies the coordinator VM. This example starts one Garnet
