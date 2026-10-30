@@ -36,16 +36,16 @@ namespace Garnet.server
         {
             var ns = ExtractContextFromNamespaces(namespaceBytes);
 
-#if DEBUG || GARNET_ASSERT
+#if DEBUG
             lock (this)
             {
                 var context = ns & ~(ContextStep - 1);
 
                 var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
 
-                GarnetAsserts.Assert(contextMetadatas[contextIndex].IsInUse(contextIndex != 0, contextValue), "Shouldn't be migrating to an unused context");
-                GarnetAsserts.Assert(contextMetadatas[contextIndex].IsMigrating(contextIndex != 0, contextValue), "Shouldn't be migrating to context not marked for it");
-                GarnetAsserts.Assert(!(contextMetadatas[contextIndex].GetNeedCleanup()?.Contains(contextValue) ?? false), "Shouldn't be migrating into context being deleted");
+                GarnetAsserts.DebugOnlyAssert(contextMetadatas[contextIndex].IsInUse(contextIndex != 0, contextValue), "Shouldn't be migrating to an unused context");
+                GarnetAsserts.DebugOnlyAssert(contextMetadatas[contextIndex].IsMigrating(contextIndex != 0, contextValue), "Shouldn't be migrating to context not marked for it");
+                GarnetAsserts.DebugOnlyAssert(!(contextMetadatas[contextIndex].GetNeedCleanup()?.Contains(contextValue) ?? false), "Shouldn't be migrating into context being deleted");
             }
 #endif
 
@@ -165,13 +165,13 @@ namespace Garnet.server
             GarnetAsserts.Assert(indexPtr == 0, "Shouldn't receive an index pointer during a migration");
 
             // Extra validation in DEBUG
-#if DEBUG || GARNET_ASSERT
+#if DEBUG
             lock (this)
             {
                 var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
 
-                GarnetAsserts.Assert(contextMetadatas[contextIndex].IsInUse(contextIndex != 0, contextValue), "Context should be assigned if we're migrating");
-                GarnetAsserts.Assert(contextMetadatas[contextIndex].IsMigrating(contextIndex != 0, contextValue), "Context should be marked migrating if we're moving an index key in");
+                GarnetAsserts.DebugOnlyAssert(contextMetadatas[contextIndex].IsInUse(contextIndex != 0, contextValue), "Context should be assigned if we're migrating");
+                GarnetAsserts.DebugOnlyAssert(contextMetadatas[contextIndex].IsMigrating(contextIndex != 0, contextValue), "Context should be marked migrating if we're moving an index key in");
             }
 #endif
 
