@@ -373,7 +373,7 @@ if ($permissionsResult.ExitCode -eq 0) {
             'The active identity has Microsoft.Authorization/roleAssignments/write at the storage scope.'
         }
         else {
-            'The active identity cannot create the VMSS Storage Blob Data Reader assignment at this scope.'
+            'Cannot create the VMSS Storage Blob Data Reader assignment. Requires Role Based Access Control Administrator, User Access Administrator, or Owner at this scope.'
         })
 
     Add-Check -Category 'Management' -Name 'Update storage account' `
