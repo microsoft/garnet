@@ -1,0 +1,28 @@
+{
+  "id": "azure/security",
+  "title": "Secure your Azure Cosmos DB Garnet Cache",
+  "description": "Azure Cosmos DB Garnet Cache provides enterprise-grade security features to protect your data. This guide covers the security capabilities and best practices for securing your cache.",
+  "source": "@site/docs/azure/security.md",
+  "sourceDirName": "azure",
+  "slug": "/azure/security",
+  "permalink": "/garnet/docs/azure/security",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/azure/security.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "security",
+    "sidebar_label": "Security",
+    "title": "Secure your Azure Cosmos DB Garnet Cache"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Resiliency",
+    "permalink": "/garnet/docs/azure/resiliency"
+  },
+  "next": {
+    "title": "Monitoring",
+    "permalink": "/garnet/docs/azure/monitoring"
+  }
+}
