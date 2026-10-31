@@ -742,7 +742,8 @@ namespace Garnet.server
                     {
                         // In RESP2, only a small set of commands are allowed while in subscription mode.
                         // RESP3 uses distinct push types for subscription messages, so all commands are valid.
-                        if (isSubscriptionSession && respProtocolVersion == 2 && !cmd.IsAllowedInSubscriptionMode())
+                        // Commands replayed by EXEC were queued before subscription mode began; rejecting them would skip the commit.
+                        if (isSubscriptionSession && respProtocolVersion == 2 && txnManager.state != TxnState.Running && !cmd.IsAllowedInSubscriptionMode())
                         {
                             while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericPubSubCommandNotAllowed, cmd.ToString()), ref dcurr, dend))
                                 SendAndReset();
