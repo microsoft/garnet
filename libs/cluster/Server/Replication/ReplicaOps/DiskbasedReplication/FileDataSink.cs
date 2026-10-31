@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -87,7 +86,7 @@ namespace Garnet.cluster
             }
 
             var errorCode = lastIOErrorCode;
-            Debug.Assert(errorCode == 0, $"I/O error {errorCode} writing {Type} checkpoint file at address {startAddress}");
+            GarnetAsserts.Assert(errorCode == 0, $"I/O error {errorCode} writing {Type} checkpoint file at address {startAddress}");
             if (errorCode != 0)
             {
                 ExceptionUtils.ThrowException(new GarnetException(

@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers.Text;
-using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -113,7 +112,7 @@ namespace Garnet.common
         /// <param name="result">Byte pointer, will be updated to point after the written number</param>
         public static void WriteDouble(double value, int length, ref byte* result)
         {
-            Debug.Assert(!double.IsNaN(value) && !double.IsInfinity(value), "Cannot convert NaN or Infinity to bytes.");
+            GarnetAsserts.Assert(!double.IsNaN(value) && !double.IsInfinity(value), "Cannot convert NaN or Infinity to bytes.");
             var totalLen = CountCharsInDouble(value, out var integerDigits, out var signSize, out var fractionalDigits);
             if (totalLen <= length)
                 WriteDouble(value, integerDigits, fractionalDigits, ref result);
@@ -128,7 +127,7 @@ namespace Garnet.common
         /// <param name="result">Byte pointer, will be updated to point after the written number</param>
         public static void WriteDouble(double value, int integerDigits, int fractionalDigits, ref byte* result)
         {
-            Debug.Assert(!double.IsNaN(value) && !double.IsInfinity(value), "Cannot convert NaN or Infinity to bytes.");
+            GarnetAsserts.Assert(!double.IsNaN(value) && !double.IsInfinity(value), "Cannot convert NaN or Infinity to bytes.");
 
             if (value == 0)
             {
@@ -139,7 +138,7 @@ namespace Garnet.common
             // Fixed-point formatting writes exact digits at any magnitude, in the length CountCharsInDouble counted
             var length = (value < 0 ? 1 : 0) + integerDigits + (fractionalDigits > 0 ? 1 + fractionalDigits : 0);
             var success = value.TryFormat(new Span<byte>(result, length), out var written, FixedPointFormats[fractionalDigits], CultureInfo.InvariantCulture);
-            Debug.Assert(success && written == length, "The value is written in the number of characters that CountCharsInDouble counted");
+            GarnetAsserts.Assert(success && written == length, "The value is written in the number of characters that CountCharsInDouble counted");
             result += written;
         }
 
@@ -463,7 +462,7 @@ namespace Garnet.common
                 return 1;
             }
 
-            Debug.Assert(!double.IsNaN(value) && !double.IsInfinity(value));
+            GarnetAsserts.Assert(!double.IsNaN(value) && !double.IsInfinity(value));
 
             signSize = (byte)(value < 0 ? 1 : 0); // Add sign if the number is negative
             value = Math.Abs(value);
@@ -477,7 +476,7 @@ namespace Garnet.common
             // Count integer digits as formatted: Log10 is inexact just below a power of ten, and rounding can carry into the integer part
             Span<byte> formatted = stackalloc byte[MaximumFormatDoubleLength];
             var success = value.TryFormat(formatted, out var length, FixedPointFormats[fractionalDigits], CultureInfo.InvariantCulture);
-            Debug.Assert(success, "A double without its sign is at most MaximumFormatDoubleLength characters");
+            GarnetAsserts.Assert(success, "A double without its sign is at most MaximumFormatDoubleLength characters");
 
             var dotSize = fractionalDigits != 0 ? 1 : 0; // Add decimal point if there are significant digits
             integerDigits = length - dotSize - fractionalDigits;

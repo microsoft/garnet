@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Linq;
 using Garnet.common;
 using Tsavorite.core;
@@ -286,7 +285,7 @@ namespace Garnet.server
                 // the push cannot fail on type mismatch. If it ever did, the element has already been popped and the
                 // transaction commits unconditionally, so report it to the caller rather than discard it.
                 if (statusOp == GarnetStatus.WRONGTYPE)
-                    Debug.Assert(false, "List push to the LMOVE destination failed after the source pop");
+                    GarnetAsserts.Assert(false, "List push to the LMOVE destination failed after the source pop");
 
                 element = poppedElement.ToArray();
             }

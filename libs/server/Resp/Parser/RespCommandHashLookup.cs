@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics.X86;
@@ -356,7 +355,7 @@ namespace Garnet.server
         {
             // For len >= 8, just read the full ulong
             // For len < 8, read and mask
-            Debug.Assert(len > 0 && len < 8);
+            GarnetAsserts.Assert(len > 0 && len < 8);
 
             return len switch
             {
@@ -377,7 +376,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool MatchName(ref CommandEntry entry, byte* name, int length)
         {
-            Debug.Assert(length > 0, "MatchName: length must be positive");
+            GarnetAsserts.Assert(length > 0, "MatchName: length must be positive");
 
             if (length <= 8)
             {

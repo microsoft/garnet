@@ -391,7 +391,7 @@ namespace Garnet.server
 
         static bool TryInPlaceUpdateNumber(ref LogRecord logRecord, ref StringOutput output, ref RMWInfo rmwInfo, long input)
         {
-            Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
+            GarnetAsserts.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
 
             // Check if the current value in the logRecord contains a valid number and if so, add the input to it.
             if (logRecord.IsPinnedValue)
@@ -468,7 +468,7 @@ namespace Garnet.server
 
         static bool TryInPlaceUpdateNumber(ref LogRecord logRecord, ref StringOutput output, ref RMWInfo rmwInfo, double input)
         {
-            Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
+            GarnetAsserts.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
 
             // Check if the current value in the logRecord contains a valid double and if so, add the input to it.
             if (logRecord.IsPinnedValue)
@@ -714,7 +714,7 @@ namespace Garnet.server
         /// </summary>
         static bool TryCopyValueLengthToOutput(ReadOnlySpan<byte> value, ref StringOutput output)
         {
-            Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in a non-pending context or in a pending context where dst.SpanByte's pointer remains valid");
+            GarnetAsserts.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in a non-pending context or in a pending context where dst.SpanByte's pointer remains valid");
 
             var numDigits = NumUtils.CountDigits(value.Length);
             if (numDigits > output.SpanByteAndMemory.SpanByte.Length)
@@ -870,12 +870,12 @@ namespace Garnet.server
 
             var bitfieldEncodingParsed = input.parseState.TryGetBitfieldEncoding(
                                                 currTokenIdx++, out var bitCount, out var isSigned);
-            Debug.Assert(bitfieldEncodingParsed);
+            GarnetAsserts.Assert(bitfieldEncodingParsed);
             var sign = isSigned ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
 
             // Calculate number offset from bitCount if offsetArg starts with #
             var offsetParsed = input.parseState.TryGetBitfieldOffset(currTokenIdx++, out var offset, out var multiplyOffset);
-            Debug.Assert(offsetParsed);
+            GarnetAsserts.Assert(offsetParsed);
             if (!BitmapManager.TryValidateBitfieldOffset(offset, (byte)bitCount, multiplyOffset, out offset, out _))
                 throw new GarnetException("ERR bit offset is not an integer or out of range");
 
@@ -889,7 +889,7 @@ namespace Garnet.server
             if (currTokenIdx < input.parseState.Count)
             {
                 var overflowTypeParsed = input.parseState.TryGetBitFieldOverflow(currTokenIdx, out var overflowTypeValue);
-                Debug.Assert(overflowTypeParsed);
+                GarnetAsserts.Assert(overflowTypeParsed);
                 overflowType = (byte)overflowTypeValue;
             }
 

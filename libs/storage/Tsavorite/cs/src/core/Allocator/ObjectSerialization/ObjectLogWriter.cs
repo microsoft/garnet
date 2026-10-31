@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using static Tsavorite.core.Utility;
@@ -181,7 +180,7 @@ namespace Tsavorite.core
                 var copyLength = RoundUp(writeBuffer.currentPosition, (int)device.SectorSize) - writeBuffer.currentPosition;
                 if (copyLength != 0)
                 {
-                    Debug.Assert(refCountedGCHandle is null, $"If refCountedGCHandle is not null then buffer.currentPosition ({writeBuffer.currentPosition}) should already be sector-aligned");
+                    GarnetAsserts.Assert(refCountedGCHandle is null, $"If refCountedGCHandle is not null then buffer.currentPosition ({writeBuffer.currentPosition}) should already be sector-aligned");
                     Write(fullDataSpan.Slice(dataStart, copyLength));
                     dataStart += copyLength;
                     flushBuffers.FlushCurrentBuffer();
@@ -213,7 +212,7 @@ namespace Tsavorite.core
                     // writes before calling the main callback, that handles doing the "final" callback). In this case we could defer the "segment id" logic
                     // to StorageDeviceBase, and just have a ulong position, from which we could compute the segment id (e.g. for truncation), and
                     // ObjectLogFilePositionInfo would be simplified.
-                    Debug.Assert(segmentRemainingLen <= int.MaxValue, $"segmentRemainingLen ({segmentRemainingLen}) should be <= int.MaxValue");
+                    GarnetAsserts.Assert(segmentRemainingLen <= int.MaxValue, $"segmentRemainingLen ({segmentRemainingLen}) should be <= int.MaxValue");
 
                     // Create the refcounted pinned GCHandle with a refcount of 1, so that if a read completes while we're still setting up, we won't get an early unpin.
                     refCountedGCHandle ??= new RefCountedPinnedGCHandle(gcHandle, initialCount: 1);
@@ -225,7 +224,7 @@ namespace Tsavorite.core
                         flushBuffers.FlushToDevice(overflowStartPtr + dataStart, (int)segmentRemainingLen, writeCallback);
                         dataStart += (int)segmentRemainingLen;
 
-                        Debug.Assert(flushBuffers.filePosition.RemainingSizeInSegment == 0, $"Expected to be at end of segment but there were {flushBuffers.filePosition.RemainingSizeInSegment} bytes remaining");
+                        GarnetAsserts.Assert(flushBuffers.filePosition.RemainingSizeInSegment == 0, $"Expected to be at end of segment but there were {flushBuffers.filePosition.RemainingSizeInSegment} bytes remaining");
                         flushBuffers.filePosition.AdvanceToNextSegment();
                         segmentRemainingLen = flushBuffers.filePosition.RemainingSizeInSegment;
                     }
@@ -257,7 +256,7 @@ namespace Tsavorite.core
             var segmentRemainingLen = flushBuffers.filePosition.SegmentSize - flushBuffers.GetNextRecordStartPosition().Offset;
             while (data.Length - dataStart > 0)
             {
-                Debug.Assert(writeBuffer.RemainingCapacity > 0,
+                GarnetAsserts.Assert(writeBuffer.RemainingCapacity > 0,
                         $"RemainingCapacity {writeBuffer.RemainingCapacity} should not be 0 (data.Length {data.Length}, dataStart {dataStart}); this should have already triggered an OnChunkComplete call, which would have reset the buffer");
                 cancellationToken.ThrowIfCancellationRequested();   // IDevice does not support cancellation, so just check this here
 
@@ -299,7 +298,7 @@ namespace Tsavorite.core
         {
             // This should only be called when the object serialization hits the end of the buffer; for partial buffers we will call
             // OnSerializeComplete() after the Serialize() call has returned. "End of buffer" ends before lengthSpaceReserve if any.
-            Debug.Assert(writeBuffer.currentPosition == writeBuffer.endPosition, $"CurrentPosition {writeBuffer.currentPosition} must be at writeBuffer.endPosition {writeBuffer.endPosition}).");
+            GarnetAsserts.Assert(writeBuffer.currentPosition == writeBuffer.endPosition, $"CurrentPosition {writeBuffer.currentPosition} must be at writeBuffer.endPosition {writeBuffer.endPosition}).");
 
             flushBuffers.FlushCurrentBuffer();
             writeBuffer = flushBuffers.MoveToAndInitializeNextBuffer();

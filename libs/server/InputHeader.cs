@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -251,7 +250,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public unsafe int CopyTo(byte* dest, int length)
         {
-            Debug.Assert(length >= this.SerializedLength);
+            GarnetAsserts.Assert(length >= this.SerializedLength);
 
             var curr = dest;
 
@@ -385,7 +384,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public unsafe int CopyTo(byte* dest, int length)
         {
-            Debug.Assert(length >= this.SerializedLength);
+            GarnetAsserts.Assert(length >= this.SerializedLength);
 
             var curr = dest;
 
@@ -506,7 +505,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public unsafe int CopyTo(byte* dest, int length)
         {
-            Debug.Assert(length >= this.SerializedLength);
+            GarnetAsserts.Assert(length >= this.SerializedLength);
 
             var curr = dest;
 
@@ -596,7 +595,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public unsafe int CopyTo(byte* dest, int length)
         {
-            Debug.Assert(length >= this.SerializedLength);
+            GarnetAsserts.Assert(length >= this.SerializedLength);
 
             var curr = dest;
 

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Garnet.common
@@ -36,7 +35,7 @@ namespace Garnet.common
         /// </summary>
         public PoolEntry(int size, LimitedFixedBufferPool pool)
         {
-            Debug.Assert(pool != null);
+            GarnetAsserts.Assert(pool != null);
             this.pool = pool;
             this.disposed = false;
             entry = GC.AllocateArray<byte>(size, pinned: true);
@@ -46,7 +45,7 @@ namespace Garnet.common
         /// <inheritdoc />
         public void Dispose()
         {
-            Debug.Assert(!disposed);
+            GarnetAsserts.Assert(!disposed);
             disposed = true;
             pool.Return(this);
         }
@@ -56,7 +55,7 @@ namespace Garnet.common
         /// </summary>
         public void Reuse()
         {
-            Debug.Assert(disposed);
+            GarnetAsserts.Assert(disposed);
             disposed = false;
         }
     }

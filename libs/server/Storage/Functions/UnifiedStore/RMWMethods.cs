@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Tsavorite.core;
 using static Garnet.server.SessionFunctionsUtils;
@@ -32,7 +31,7 @@ namespace Garnet.server
         public bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
             ref UnifiedOutput output, ref RMWInfo rmwInfo)
         {
-            Debug.Assert(logRecord.DataHeader.ValueIsObject || (!logRecord.DataHeader.HasETag && !logRecord.DataHeader.HasExpiration),
+            GarnetAsserts.Assert(logRecord.DataHeader.ValueIsObject || (!logRecord.DataHeader.HasETag && !logRecord.DataHeader.HasExpiration),
                 "Should not have Expiration or ETag on InitialUpdater log records");
 
             return input.header.cmd switch

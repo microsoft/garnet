@@ -355,7 +355,7 @@ namespace Garnet.server
         public TEnum GetEnum<TEnum>(ServerConfigType type) where TEnum : unmanaged, Enum
         {
             AssertKind(type, ConfigKind.Enum);
-            Debug.Assert(Meta[(int)type].EnumType == typeof(TEnum),
+            GarnetAsserts.Assert(Meta[(int)type].EnumType == typeof(TEnum),
                 $"Configuration '{type}' is declared as '{Meta[(int)type].EnumType}' and cannot be read as '{typeof(TEnum)}'.");
 
             // The slot holds the underlying value widened to 64 bits (long)
@@ -567,10 +567,10 @@ namespace Garnet.server
         static int SecondsFromTimeSpan(TimeSpan ts)
             => ts == Timeout.InfiniteTimeSpan || ts < TimeSpan.Zero ? 0 : (int)ts.TotalSeconds;
 
-        [Conditional("DEBUG")]
+        [Conditional("DEBUG"), Conditional("GARNET_ASSERT")]
         static void AssertKind(ServerConfigType type, ConfigKind requestedKind)
         {
-            Debug.Assert((Meta[(int)type].Kind & requestedKind) != 0,
+            GarnetAsserts.Assert((Meta[(int)type].Kind & requestedKind) != 0,
                 $"Configuration '{type}' is declared as {Meta[(int)type].Kind} and cannot be read as {requestedKind}.");
         }
 

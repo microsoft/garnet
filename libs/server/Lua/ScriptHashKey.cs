@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -21,7 +20,7 @@ namespace Garnet.server
 
         internal unsafe ScriptHashKey(ReadOnlySpan<byte> stackSpan)
         {
-            Debug.Assert(stackSpan.Length == SessionScriptCache.SHA1Len, "Only one valid length for script hash keys");
+            GarnetAsserts.Assert(stackSpan.Length == SessionScriptCache.SHA1Len, "Only one valid length for script hash keys");
 
             ptr = (long*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(stackSpan));
         }
@@ -43,7 +42,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public unsafe bool Equals(ScriptHashKey other)
         {
-            Debug.Assert(SessionScriptCache.SHA1Len == 40, "Making a hard assumption that we're comparing 40 bytes");
+            GarnetAsserts.Assert(SessionScriptCache.SHA1Len == 40, "Making a hard assumption that we're comparing 40 bytes");
 
             // We make an assumption that, since we're comparing hashes, if this is called
             // it will _probably_ return true.  So unconditionally check all 40 bytes in

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -43,7 +42,7 @@ namespace Garnet.server
         /// </summary>
         int scratchBufferOffset;
 
-#if DEBUG
+#if DEBUG || GARNET_ASSERT
         /// <summary>
         /// Number of outstanding PinnedSpanByte slices that have been created but not rewound.
         /// Used to detect unsafe multi-alloc patterns where buffer expansion could invalidate earlier pointers.
@@ -87,7 +86,7 @@ namespace Garnet.server
         public void Reset()
         {
             scratchBufferOffset = 0;
-#if DEBUG
+#if DEBUG || GARNET_ASSERT
             outstandingSlices = 0;
 #endif
         }
@@ -151,7 +150,7 @@ namespace Garnet.server
             if (slice.ptr + slice.Length == scratchBufferHead + scratchBufferOffset)
             {
                 scratchBufferOffset -= slice.Length;
-#if DEBUG
+#if DEBUG || GARNET_ASSERT
                 outstandingSlices--;
 #endif
                 slice = default; // invalidate the given ArgSlice
@@ -181,8 +180,8 @@ namespace Garnet.server
         /// </summary>
         public PinnedSpanByte CreateArgSlice(ReadOnlySpan<byte> bytes)
         {
-#if DEBUG
-            Debug.Assert(outstandingSlices == 0,
+#if DEBUG || GARNET_ASSERT
+            GarnetAsserts.Assert(outstandingSlices == 0,
                 "ScratchBufferBuilder already has an outstanding slice. " +
                 "Rewind or reset before creating a new one, or use CreateArgSliceAsOffset, " +
                 "or use ScratchBufferAllocator for slices that must coexist.");
@@ -192,7 +191,7 @@ namespace Garnet.server
             var retVal = PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset, bytes.Length);
             bytes.CopyTo(retVal.Span);
             scratchBufferOffset += bytes.Length;
-#if DEBUG
+#if DEBUG || GARNET_ASSERT
             outstandingSlices++;
 #endif
             return retVal;
@@ -212,8 +211,8 @@ namespace Garnet.server
         /// </summary>
         public PinnedSpanByte CreateArgSlice(string str)
         {
-#if DEBUG
-            Debug.Assert(outstandingSlices == 0,
+#if DEBUG || GARNET_ASSERT
+            GarnetAsserts.Assert(outstandingSlices == 0,
                 "ScratchBufferBuilder already has an outstanding slice. " +
                 "Rewind or reset before creating a new one, or use ScratchBufferAllocator.");
 #endif
@@ -223,7 +222,7 @@ namespace Garnet.server
             var retVal = PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset, length);
             Encoding.UTF8.GetBytes(str, retVal.Span);
             scratchBufferOffset += length;
-#if DEBUG
+#if DEBUG || GARNET_ASSERT
             outstandingSlices++;
 #endif
             return retVal;
@@ -255,8 +254,8 @@ namespace Garnet.server
         /// </summary>
         public PinnedSpanByte FormatScratch(int headerSize, PinnedSpanByte arg)
         {
-#if DEBUG
-            Debug.Assert(outstandingSlices == 0,
+#if DEBUG || GARNET_ASSERT
+            GarnetAsserts.Assert(outstandingSlices == 0,
                 "ScratchBufferBuilder already has an outstanding slice. " +
                 "Rewind or reset before creating a new one, or use ScratchBufferAllocator.");
 #endif
@@ -270,8 +269,8 @@ namespace Garnet.server
             arg.ReadOnlySpan.CopyTo(new Span<byte>(ptr, arg.Length));
 
             scratchBufferOffset += length;
-            Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
-#if DEBUG
+            GarnetAsserts.Assert(scratchBufferOffset <= scratchBuffer.Length);
+#if DEBUG || GARNET_ASSERT
             outstandingSlices++;
 #endif
             return retVal;
@@ -282,8 +281,8 @@ namespace Garnet.server
         /// </summary>
         public PinnedSpanByte CreateArgSlice(int length)
         {
-#if DEBUG
-            Debug.Assert(outstandingSlices == 0,
+#if DEBUG || GARNET_ASSERT
+            GarnetAsserts.Assert(outstandingSlices == 0,
                 "ScratchBufferBuilder already has an outstanding slice. " +
                 "Rewind or reset before creating a new one, or use ScratchBufferAllocator.");
 #endif
@@ -291,8 +290,8 @@ namespace Garnet.server
 
             var retVal = PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset, length);
             scratchBufferOffset += length;
-            Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
-#if DEBUG
+            GarnetAsserts.Assert(scratchBufferOffset <= scratchBuffer.Length);
+#if DEBUG || GARNET_ASSERT
             outstandingSlices++;
 #endif
             return retVal;
@@ -325,8 +324,8 @@ namespace Garnet.server
         /// </summary>
         public PinnedSpanByte FormatScratch(int headerSize, ReadOnlySpan<byte> arg)
         {
-#if DEBUG
-            Debug.Assert(outstandingSlices == 0,
+#if DEBUG || GARNET_ASSERT
+            GarnetAsserts.Assert(outstandingSlices == 0,
                 "ScratchBufferBuilder already has an outstanding slice. " +
                 "Rewind or reset before creating a new one, or use ScratchBufferAllocator.");
 #endif
@@ -340,8 +339,8 @@ namespace Garnet.server
             arg.CopyTo(new Span<byte>(ptr, arg.Length));
 
             scratchBufferOffset += length;
-            Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
-#if DEBUG
+            GarnetAsserts.Assert(scratchBufferOffset <= scratchBuffer.Length);
+#if DEBUG || GARNET_ASSERT
             outstandingSlices++;
 #endif
             return retVal;
@@ -425,8 +424,8 @@ namespace Garnet.server
 
         void ExpandScratchBuffer(int newLength, int? copyLengthOverride = null)
         {
-#if DEBUG
-            Debug.Assert(outstandingSlices == 0,
+#if DEBUG || GARNET_ASSERT
+            GarnetAsserts.Assert(outstandingSlices == 0,
                 "ScratchBufferBuilder is expanding with outstanding slices. " +
                 "Previously returned PinnedSpanByte values will be invalidated. " +
                 "Use ScratchBufferAllocator for slices that must remain valid across allocations, " +

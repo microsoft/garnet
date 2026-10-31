@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -201,7 +200,7 @@ namespace Garnet.cluster
         /// <inheritdoc />
         public void OnCheckpointInitiated(ref AofAddress CheckpointCoveredAofAddress)
         {
-            Debug.Assert(serverOptions.EnableCluster);
+            GarnetAsserts.Assert(serverOptions.EnableCluster);
             if (serverOptions.EnableAOF && clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)
             {
                 // When the replica takes a checkpoint on encountering the checkpoint end marker, it needs to truncate the AOF only
@@ -359,7 +358,7 @@ namespace Garnet.cluster
         {
             get
             {
-                Debug.Assert(serverOptions.EnableCluster);
+                GarnetAsserts.Assert(serverOptions.EnableCluster);
                 return (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager;
             }
         }

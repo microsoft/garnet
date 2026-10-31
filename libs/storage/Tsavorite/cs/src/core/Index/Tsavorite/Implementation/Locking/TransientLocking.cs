@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -62,7 +61,7 @@ namespace Tsavorite.core
         internal void LockForScan<TKey>(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, TKey key)
             where TKey : IKey, allows ref struct
         {
-            Debug.Assert(!stackCtx.recSrc.HasLock, $"Should not call LockForScan if recSrc already has a lock ({stackCtx.recSrc.LockStateString()})");
+            GarnetAsserts.Assert(!stackCtx.recSrc.HasLock, $"Should not call LockForScan if recSrc already has a lock ({stackCtx.recSrc.LockStateString()})");
 
             // This will always be an Ephemeral lock as it is not session-based
             stackCtx = new(storeFunctions.GetKeyHashCode64(key));

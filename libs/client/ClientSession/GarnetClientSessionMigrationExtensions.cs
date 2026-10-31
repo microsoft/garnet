@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -249,7 +248,7 @@ namespace Garnet.client
         {
             SetClusterMigrateHeader(sourceNodeId, replace, isVectorSets: false);
 
-            Debug.Assert(end - curr >= 2);
+            GarnetAsserts.Assert(end - curr >= 2);
             *curr++ = (byte)'\r';
             *curr++ = (byte)'\n';
 
@@ -257,7 +256,7 @@ namespace Garnet.client
             var size = (int)(curr - 2 - head - (ExtraSpace - 4));
             TrackIterationProgress(recordCount, size, completed: true);
             var success = RespWriteUtils.TryWritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
-            Debug.Assert(success);
+            GarnetAsserts.Assert(success);
 
             // Number of key value pairs in payload
             *(int*)head = recordCount;

@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using Garnet.common;
 using HdrHistogram;
@@ -32,7 +31,7 @@ namespace Garnet.server
 
         void Init()
         {
-            Debug.Assert(defaultLatencyTypes.Length == defaultLatencyTypesTicks.Length);
+            GarnetAsserts.Assert(defaultLatencyTypes.Length == defaultLatencyTypesTicks.Length);
             metrics = new LatencyMetricsEntry[defaultLatencyTypes.Length];
             foreach (var cmd in defaultLatencyTypes)
                 metrics[(int)cmd] = new LatencyMetricsEntry(significantDigits);
@@ -144,7 +143,7 @@ namespace Garnet.server
                 return false;
 
             var p = GetPercentiles(idx);
-            Debug.Assert(p != null);
+            GarnetAsserts.Assert(p != null);
 
             string cmdType = eventType.ToString();
             response = $"${cmdType.Length}\r\n{cmdType}\r\n";

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Net.Security;
 using System.Runtime.CompilerServices;
@@ -260,7 +259,7 @@ namespace Garnet.networking
         /// <returns></returns>
         async Task AuthenticateAsServerAsync(SslServerAuthenticationOptions tlsOptions, string remoteEndpointName, CancellationToken token = default)
         {
-            Debug.Assert(readerStatus == TlsReaderStatus.Active);
+            GarnetAsserts.Assert(readerStatus == TlsReaderStatus.Active);
 
             // The deadline is absolute; handshake bytes that arrive before it do not extend it
             using var handshakeDeadline = tlsHandshakeTimeout > TimeSpan.Zero ? CancellationTokenSource.CreateLinkedTokenSource(token) : null;
@@ -334,7 +333,7 @@ namespace Garnet.networking
         /// </summary>
         async Task AuthenticateAsClientAsync(SslClientAuthenticationOptions sslClientOptions, string remoteEndpointName, CancellationToken token)
         {
-            Debug.Assert(readerStatus == TlsReaderStatus.Active);
+            GarnetAsserts.Assert(readerStatus == TlsReaderStatus.Active);
             try
             {
                 await sslStream.AuthenticateAsClientAsync(sslClientOptions, token).ConfigureAwait(false);
@@ -417,7 +416,7 @@ namespace Garnet.networking
                     break;
             }
 
-            Debug.Assert(readerStatus != TlsReaderStatus.Active);
+            GarnetAsserts.Assert(readerStatus != TlsReaderStatus.Active);
             UpdateNetworkBuffers(demand);
         }
 
@@ -645,7 +644,7 @@ namespace Garnet.networking
                 bool retry = false;
                 int count = await readTask.ConfigureAwait(false);
 
-                Debug.Assert(readerStatus == TlsReaderStatus.Active);
+                GarnetAsserts.Assert(readerStatus == TlsReaderStatus.Active);
 
                 if (count == 0)
                 {
@@ -703,7 +702,7 @@ namespace Garnet.networking
 
         async Task SslReaderLoopAsync(bool initialRetry, CancellationToken token = default)
         {
-            Debug.Assert(readerStatus == TlsReaderStatus.Active);
+            GarnetAsserts.Assert(readerStatus == TlsReaderStatus.Active);
 
             try
             {
@@ -719,9 +718,9 @@ namespace Garnet.networking
                     if (transportBytesRead > 0)
                         await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Tls_Pause_With_Partial_Frame).ConfigureAwait(false);
 #endif
-                    Debug.Assert(readerStatus == TlsReaderStatus.Active);
+                    GarnetAsserts.Assert(readerStatus == TlsReaderStatus.Active);
                     int count = await sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), token).ConfigureAwait(false);
-                    Debug.Assert(readerStatus == TlsReaderStatus.Active);
+                    GarnetAsserts.Assert(readerStatus == TlsReaderStatus.Active);
 
                     if (count == 0)
                     {
@@ -823,8 +822,8 @@ namespace Garnet.networking
         [MethodImpl(MethodImplOptions.NoInlining)]
         unsafe void ShrinkNetworkReceiveBuffer(int newSize)
         {
-            Debug.Assert(networkReadHead == 0, "Shouldn't call if remaining data not already moved to head of receive buffer");
-            Debug.Assert(networkBytesRead <= newSize, "Shrink target must hold the bytes already buffered");
+            GarnetAsserts.Assert(networkReadHead == 0, "Shouldn't call if remaining data not already moved to head of receive buffer");
+            GarnetAsserts.Assert(networkBytesRead <= newSize, "Shrink target must hold the bytes already buffered");
 
             var tmp = networkPool.Get(newSize, PoolEntryBufferType.ShrinkNetworkReceiveBuffer);
             if (networkBytesRead > 0)
@@ -887,8 +886,8 @@ namespace Garnet.networking
         [MethodImpl(MethodImplOptions.NoInlining)]
         unsafe void ShrinkTransportReceiveBuffer(int newSize)
         {
-            Debug.Assert(transportReadHead == 0, "Shouldn't call if remaining data not already moved to head of transport buffer");
-            Debug.Assert(transportBytesRead <= newSize, "Shrink target must hold the bytes already buffered");
+            GarnetAsserts.Assert(transportReadHead == 0, "Shouldn't call if remaining data not already moved to head of transport buffer");
+            GarnetAsserts.Assert(transportBytesRead <= newSize, "Shrink target must hold the bytes already buffered");
 
             var tmp = networkPool.Get(newSize, PoolEntryBufferType.ShrinkTransportReceiveBuffer);
             if (transportBytesRead > 0)

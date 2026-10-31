@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -93,7 +92,7 @@ namespace Garnet.server
             if (!quantizationOrImportChannel.TryPublish(state))
             {
                 logger?.LogCritical("VectorManager quantization channel rejected a request");
-                Debug.Assert(false, "VectorManager quantization channel should never drop a request");
+                GarnetAsserts.Assert(false, "VectorManager quantization channel should never drop a request");
             }
         }
 

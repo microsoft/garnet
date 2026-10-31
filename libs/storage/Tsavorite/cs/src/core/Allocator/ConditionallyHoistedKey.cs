@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -105,7 +104,7 @@ namespace Tsavorite.core
         {
             get
             {
-                Debug.Assert(HasNamespace, "Should never be called if !HasNamespace");
+                GarnetAsserts.Assert(HasNamespace, "Should never be called if !HasNamespace");
 
                 if (namespacePtr != null)
                 {
@@ -141,7 +140,7 @@ namespace Tsavorite.core
 
         private ConditionallyHoistedKey(byte* keyPtr, int keyLen, byte* namespacePtr, int namespaceLen)
         {
-            Debug.Assert(namespaceLen > 0, "Shouldn't use this constructor if namespace isn't set");
+            GarnetAsserts.Assert(namespaceLen > 0, "Shouldn't use this constructor if namespace isn't set");
 
             keyAndNamespaceMem = null;
 
@@ -162,7 +161,7 @@ namespace Tsavorite.core
 
         private ConditionallyHoistedKey(SectorAlignedMemory keyArr, int keyLen, int namespaceLen)
         {
-            Debug.Assert(namespaceLen > 0, "Shouldn't use this constructor if namespace isn't set");
+            GarnetAsserts.Assert(namespaceLen > 0, "Shouldn't use this constructor if namespace isn't set");
 
             this.keyPtr = null;
             this.keyAndNamespaceMem = keyArr;
@@ -222,7 +221,7 @@ namespace Tsavorite.core
 
             if (key.IsEmpty)
             {
-                Debug.Assert(!key.HasNamespace, "Empty key should never have a namespace");
+                GarnetAsserts.Assert(!key.HasNamespace, "Empty key should never have a namespace");
                 return default;
             }
 

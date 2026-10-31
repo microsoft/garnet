@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Buffers;
-using System.Diagnostics;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -89,7 +88,7 @@ namespace GarnetJSON
         public GarnetJsonObject(byte type, BinaryReader reader)
             : base(type, reader)
         {
-            Debug.Assert(reader != null);
+            GarnetAsserts.Assert(reader != null);
 
             var jsonString = reader.ReadString();
             rootNode = JsonNode.Parse(jsonString);

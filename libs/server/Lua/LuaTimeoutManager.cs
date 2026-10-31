@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
@@ -298,7 +297,7 @@ namespace Garnet.server.Lua
             // This implies we're retrying due to modification, and the thread doing that update
             // saw our previous removal.  That's fine.
 
-            Debug.Assert(removedAtLeastOnce, "We should have seen at least one removal succeed");
+            GarnetAsserts.Assert(removedAtLeastOnce, "We should have seen at least one removal succeed");
 
             return;
 

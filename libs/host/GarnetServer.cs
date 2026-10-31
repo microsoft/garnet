@@ -169,7 +169,7 @@ namespace Garnet
 
         private void InitializeServer()
         {
-            Debug.Assert(opts != null);
+            GarnetAsserts.Assert(opts != null);
 
             if (!opts.QuietMode)
             {

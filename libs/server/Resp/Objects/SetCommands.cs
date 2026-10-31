@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -441,7 +440,7 @@ namespace Garnet.server
         private unsafe bool SetIsMember<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            Debug.Assert(cmd == RespCommand.SISMEMBER || cmd == RespCommand.SMISMEMBER);
+            GarnetAsserts.Assert(cmd == RespCommand.SISMEMBER || cmd == RespCommand.SMISMEMBER);
 
             var isSingle = cmd == RespCommand.SISMEMBER;
             if (isSingle)

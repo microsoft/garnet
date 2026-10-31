@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -31,7 +30,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void EnterInfallibleAllocationRegion()
         {
-            Debug.Assert(!isInfallible, "Cannot recursively enter an infallible region");
+            GarnetAsserts.Assert(!isInfallible, "Cannot recursively enter an infallible region");
 
             isInfallible = true;
         }
@@ -39,7 +38,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public bool TryExitInfallibleAllocationRegion()
         {
-            Debug.Assert(isInfallible, "Cannot exit an infallible region that hasn't been entered");
+            GarnetAsserts.Assert(isInfallible, "Cannot exit an infallible region that hasn't been entered");
 
             isInfallible = false;
 

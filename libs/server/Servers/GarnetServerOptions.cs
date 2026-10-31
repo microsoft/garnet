@@ -1190,7 +1190,7 @@ namespace Garnet.server
                 logger?.LogInformation("[Store] Using Revivification with custom bins");
 
                 // We use this in the RevivBinRecordCounts and RevivObjBinRecordCount Options help text, so assert it here because we can't use an interpolated string there.
-                System.Diagnostics.Debug.Assert(RevivificationBin.DefaultRecordsPerBin == 256);
+                GarnetAsserts.Assert(RevivificationBin.DefaultRecordsPerBin == 256);
                 kvSettings.RevivificationSettings = new()
                 {
                     NumberOfBinsToSearch = RevivNumberOfBinsToSearch,

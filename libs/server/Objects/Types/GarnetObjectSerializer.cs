@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Buffers;
-using System.Diagnostics;
 using System.IO;
 using System.Text;
 using Garnet.common;
@@ -43,7 +42,7 @@ namespace Garnet.server
         /// <returns></returns>
         public IGarnetObject Deserialize(byte[] data)
         {
-            Debug.Assert(data != null);
+            GarnetAsserts.Assert(data != null);
 
             using var ms = new MemoryStream(data);
             using var binaryReader = new BinaryReader(ms, Encoding.UTF8);
@@ -108,7 +107,7 @@ namespace Garnet.server
         /// <returns></returns>
         public static void Serialize(IGarnetObject obj, out byte[] bytes)
         {
-            Debug.Assert(obj != null);
+            GarnetAsserts.Assert(obj != null);
 
             using var ms = new MemoryStream();
             using var binaryWriter = new BinaryWriter(ms, Encoding.UTF8);

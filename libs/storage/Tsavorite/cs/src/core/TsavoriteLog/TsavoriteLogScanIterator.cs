@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -714,7 +713,7 @@ namespace Tsavorite.core
                     foundCommit = true;
                     info.Initialize(new ReadOnlySpan<byte>((void*)(headerSize + physicalAddress), entryLength));
 
-                    Debug.Assert(info.CommitNum != -1);
+                    GarnetAsserts.Assert(info.CommitNum != -1);
 
                     // If we have already found the commit number we are looking for, can stop early
                     if (info.CommitNum == commitNum) break;

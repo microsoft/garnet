@@ -4,7 +4,6 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -62,9 +61,9 @@ namespace Garnet.server
 
             public readonly bool IsInUse(bool allowZero, ushort context)
             {
-                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
-                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
+                GarnetAsserts.Assert(allowZero || context != 0, "Zero context not permitted here");
+                GarnetAsserts.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                GarnetAsserts.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -74,9 +73,9 @@ namespace Garnet.server
 
             public readonly bool IsMigrating(bool allowZero, ushort context)
             {
-                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
-                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
+                GarnetAsserts.Assert(allowZero || context != 0, "Zero context not permitted here");
+                GarnetAsserts.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                GarnetAsserts.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -86,9 +85,9 @@ namespace Garnet.server
 
             public readonly bool IsCleaningUp(bool allowZero, ulong context)
             {
-                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
-                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
+                GarnetAsserts.Assert(allowZero || context != 0, "Zero context not permitted here");
+                GarnetAsserts.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                GarnetAsserts.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -177,7 +176,7 @@ namespace Garnet.server
                 {
                     var ctx = NextNotInUse(allowZero);
 
-                    Debug.Assert(ctx != null, "Context should be locked, so this should never fail");
+                    GarnetAsserts.Assert(ctx != null, "Context should be locked, so this should never fail");
 
                     reserved.Add(ctx.Value);
 
@@ -190,14 +189,14 @@ namespace Garnet.server
 
             public void MarkInUse(bool allowZero, ushort context, ushort hashSlot)
             {
-                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
-                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
+                GarnetAsserts.Assert(allowZero || context != 0, "Zero context not permitted here");
+                GarnetAsserts.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                GarnetAsserts.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
-                Debug.Assert((inUse & mask) == 0, "About to mark context which is already in use");
+                GarnetAsserts.Assert((inUse & mask) == 0, "About to mark context which is already in use");
                 inUse |= mask;
 
                 slots[(int)bitIx] = hashSlot;
@@ -207,15 +206,15 @@ namespace Garnet.server
 
             public void MarkMigrating(bool allowZero, ushort context)
             {
-                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
-                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
+                GarnetAsserts.Assert(allowZero || context != 0, "Zero context not permitted here");
+                GarnetAsserts.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                GarnetAsserts.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
-                Debug.Assert((inUse & mask) != 0, "About to mark migrating a context which is not in use");
-                Debug.Assert((migrating & mask) == 0, "About to mark migrating a context which is already migrating");
+                GarnetAsserts.Assert((inUse & mask) != 0, "About to mark migrating a context which is not in use");
+                GarnetAsserts.Assert((migrating & mask) == 0, "About to mark migrating a context which is already migrating");
                 migrating |= mask;
 
                 Version++;
@@ -223,16 +222,16 @@ namespace Garnet.server
 
             public void MarkMigrationComplete(bool allowZero, ushort context, ushort hashSlot)
             {
-                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
-                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
+                GarnetAsserts.Assert(allowZero || context != 0, "Zero context not permitted here");
+                GarnetAsserts.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                GarnetAsserts.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
-                Debug.Assert((inUse & mask) != 0, "Should already be in use");
-                Debug.Assert((migrating & mask) != 0, "Should be migrating target");
-                Debug.Assert(slots[(int)bitIx] == ushort.MaxValue, "Hash slot should not be known yet");
+                GarnetAsserts.Assert((inUse & mask) != 0, "Should already be in use");
+                GarnetAsserts.Assert((migrating & mask) != 0, "Should be migrating target");
+                GarnetAsserts.Assert(slots[(int)bitIx] == ushort.MaxValue, "Hash slot should not be known yet");
 
                 migrating &= ~mask;
 
@@ -243,15 +242,15 @@ namespace Garnet.server
 
             public void MarkCleaningUp(bool allowZero, ushort context)
             {
-                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
-                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
+                GarnetAsserts.Assert(allowZero || context != 0, "Zero context not permitted here");
+                GarnetAsserts.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                GarnetAsserts.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
-                Debug.Assert((inUse & mask) != 0, "About to mark for cleanup when not actually in use");
-                Debug.Assert((cleaningUp & mask) == 0, "About to mark for cleanup when already marked");
+                GarnetAsserts.Assert((inUse & mask) != 0, "About to mark for cleanup when not actually in use");
+                GarnetAsserts.Assert((cleaningUp & mask) == 0, "About to mark for cleanup when already marked");
                 cleaningUp |= mask;
 
                 // If this slot were migrating, it isn't anymore
@@ -264,15 +263,15 @@ namespace Garnet.server
 
             public void ClearIsCleaningUp(bool allowZero, ushort context)
             {
-                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
-                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
+                GarnetAsserts.Assert(allowZero || context != 0, "Zero context not permitted here");
+                GarnetAsserts.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                GarnetAsserts.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
-                Debug.Assert((inUse & mask) != 0, "Should be in use if was marked for cleanup");
-                Debug.Assert((cleaningUp & mask) != 0, "About to clear cleanup when not marked for cleanup");
+                GarnetAsserts.Assert((inUse & mask) != 0, "Should be in use if was marked for cleanup");
+                GarnetAsserts.Assert((cleaningUp & mask) != 0, "About to clear cleanup when not marked for cleanup");
                 cleaningUp &= ~mask;
 
                 Version++;
@@ -280,15 +279,15 @@ namespace Garnet.server
 
             public void FinishedCleaningUp(bool allowZero, ushort context)
             {
-                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
-                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
+                GarnetAsserts.Assert(allowZero || context != 0, "Zero context not permitted here");
+                GarnetAsserts.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                GarnetAsserts.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
-                Debug.Assert((inUse & mask) != 0, "Cleaned up context which isn't in use");
-                Debug.Assert((cleaningUp & mask) != 0, "Cleaned up context not marked for it");
+                GarnetAsserts.Assert((inUse & mask) != 0, "Cleaned up context which isn't in use");
+                GarnetAsserts.Assert((cleaningUp & mask) != 0, "Cleaned up context not marked for it");
                 cleaningUp &= ~mask;
                 inUse &= ~mask;
 
@@ -299,15 +298,15 @@ namespace Garnet.server
 
             public void UpdateHashSlot(bool allowZero, ushort context, ushort slot)
             {
-                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
-                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
+                GarnetAsserts.Assert(allowZero || context != 0, "Zero context not permitted here");
+                GarnetAsserts.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                GarnetAsserts.Assert((context / ContextStep) < 64, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
-                Debug.Assert((inUse & mask) != 0, "Updating hash slot for context not in use");
-                Debug.Assert((cleaningUp & mask) == 0, "Updating hash slot for context being cleaned up");
+                GarnetAsserts.Assert((inUse & mask) != 0, "Updating hash slot for context not in use");
+                GarnetAsserts.Assert((cleaningUp & mask) == 0, "Updating hash slot for context being cleaned up");
 
                 slots[(int)bitIx] = slot;
 
@@ -711,7 +710,7 @@ namespace Garnet.server
         /// </summary>
         public static ulong ExtractContextFromNamespaces(ReadOnlySpan<byte> namespaceBytes)
         {
-            Debug.Assert(namespaceBytes.Length is (sizeof(byte) or sizeof(uint)), "Namespace size unexpected");
+            GarnetAsserts.Assert(namespaceBytes.Length is (sizeof(byte) or sizeof(uint)), "Namespace size unexpected");
 
             ulong ns;
             if (namespaceBytes.Length == 1)
@@ -735,8 +734,8 @@ namespace Garnet.server
         /// </summary>
         public static void StoreContextInNamespace(ulong context, ref Span<byte> namespaceBytes)
         {
-            Debug.Assert(namespaceBytes.Length >= sizeof(uint), "Insufficient space in provided Span");
-            Debug.Assert(context is > 0 and <= uint.MaxValue, "Context must be (0, uint.MaxValue]");
+            GarnetAsserts.Assert(namespaceBytes.Length >= sizeof(uint), "Insufficient space in provided Span");
+            GarnetAsserts.Assert(context is > 0 and <= uint.MaxValue, "Context must be (0, uint.MaxValue]");
 
             if (context <= RecordNamespace.MaximumSingleByteNamespaceValue)
             {

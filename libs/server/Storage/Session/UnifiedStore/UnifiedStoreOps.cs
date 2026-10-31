@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -113,7 +112,7 @@ namespace Garnet.server
         {
             var status = unifiedContext.Delete((FixedSpanByteKey)key);
 
-            Debug.Assert(!status.IsPending);
+            GarnetAsserts.Assert(!status.IsPending);
 
             // An expired record is physically deleted but is logically absent, so it is reported as not found
             return status.Found && !status.IsExpired ? GarnetStatus.OK : GarnetStatus.NOTFOUND;

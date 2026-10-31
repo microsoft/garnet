@@ -3,7 +3,6 @@
 
 #pragma warning disable 0162
 
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -48,7 +47,7 @@ namespace Tsavorite.core
         {
             if (asyncTcs is not null)
             {
-                Debug.Assert(remaining > 0);
+                GarnetAsserts.Assert(remaining > 0);
                 if (Interlocked.Decrement(ref remaining) == 0)
                     asyncTcs.TrySetResult(0);
                 return;

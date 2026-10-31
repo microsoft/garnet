@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -205,7 +204,7 @@ namespace Garnet.server
             var arity = cmdInfo.Arity;
 
             // Verify that arity is in the signed byte range (-128 to 127)
-            Debug.Assert(arity is <= sbyte.MaxValue and >= sbyte.MinValue);
+            GarnetAsserts.Assert(arity is <= sbyte.MaxValue and >= sbyte.MinValue);
 
             simpleCmdInfo.Arity = (sbyte)arity;
             simpleCmdInfo.AllowedInTxn = (cmdInfo.Flags & RespCommandFlags.NoMulti) == 0;

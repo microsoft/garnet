@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.common
@@ -122,7 +121,7 @@ namespace Garnet.common
             var maxSize = Math.Max(Math.Max(sendBufferSize, initialReceiveBufferSize), maxReceiveBufferSize);
 
             var levels = LimitedFixedBufferPool.GetLevel(minSize, maxSize) + 1;
-            Debug.Assert(levels >= 0);
+            GarnetAsserts.Assert(levels >= 0);
             levels = Math.Max(4, levels);
 
             if (maxPooledBytes > 0)

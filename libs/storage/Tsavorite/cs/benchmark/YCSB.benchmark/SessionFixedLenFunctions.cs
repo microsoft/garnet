@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Tsavorite.core;
@@ -183,13 +182,13 @@ namespace Tsavorite.benchmark
     {
         public static unsafe ref T AsRef<T>(this Span<byte> spanByte) where T : unmanaged
         {
-            Debug.Assert(spanByte.Length == Unsafe.SizeOf<T>());
+            GarnetAsserts.Assert(spanByte.Length == Unsafe.SizeOf<T>());
             return ref Unsafe.As<byte, T>(ref spanByte[0]);
         }
 
         public static ref readonly T AsRef<T>(this ReadOnlySpan<byte> spanByte) where T : unmanaged
         {
-            Debug.Assert(spanByte.Length == Unsafe.SizeOf<T>());
+            GarnetAsserts.Assert(spanByte.Length == Unsafe.SizeOf<T>());
             return ref MemoryMarshal.Cast<byte, T>(spanByte)[0];
         }
     }

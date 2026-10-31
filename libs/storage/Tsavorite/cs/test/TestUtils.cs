@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -448,21 +447,21 @@ namespace Tsavorite.test
         /// <summary>For use with stack-based single T variable.</summary>
         public static ref T AsRef<T>(this Span<byte> spanByte) where T : unmanaged
         {
-            Debug.Assert(spanByte.Length >= Unsafe.SizeOf<T>(), $"Span<byte> length expected to be >= {Unsafe.SizeOf<T>()} but was {spanByte.Length}");
+            GarnetAsserts.Assert(spanByte.Length >= Unsafe.SizeOf<T>(), $"Span<byte> length expected to be >= {Unsafe.SizeOf<T>()} but was {spanByte.Length}");
             return ref Unsafe.As<byte, T>(ref spanByte[0]);
         }
 
         /// <summary>For use with stack-based byte vector indexed as a vector of T; usually just the 0th item</summary>
         public static ref readonly T AsRef<T>(this ReadOnlySpan<byte> spanByte) where T : unmanaged
         {
-            Debug.Assert(spanByte.Length >= Unsafe.SizeOf<T>(), $"ReadOnlySpan<byte> length expected to be >= {Unsafe.SizeOf<T>()} but was {spanByte.Length}");
+            GarnetAsserts.Assert(spanByte.Length >= Unsafe.SizeOf<T>(), $"ReadOnlySpan<byte> length expected to be >= {Unsafe.SizeOf<T>()} but was {spanByte.Length}");
             return ref MemoryMarshal.Cast<byte, T>(spanByte)[0];
         }
 
         /// <summary>For use with stack-based byte vector indexed as a vector of T; usually just the 0th item</summary>
         public static ref readonly T AsRef<T>(this TestSpanByteKey spanByte) where T : unmanaged
         {
-            Debug.Assert(spanByte.KeyBytes.Length >= Unsafe.SizeOf<T>(), $"ReadOnlySpan<byte> length expected to be >= {Unsafe.SizeOf<T>()} but was {spanByte.KeyBytes.Length}");
+            GarnetAsserts.Assert(spanByte.KeyBytes.Length >= Unsafe.SizeOf<T>(), $"ReadOnlySpan<byte> length expected to be >= {Unsafe.SizeOf<T>()} but was {spanByte.KeyBytes.Length}");
             return ref MemoryMarshal.Cast<byte, T>(spanByte.KeyBytes)[0];
         }
 

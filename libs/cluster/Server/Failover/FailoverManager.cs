@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -38,7 +37,7 @@ namespace Garnet.cluster
             lock (writePauseLock)
             {
                 var count = paused ? Interlocked.Increment(ref writePauseCount) : Interlocked.Decrement(ref writePauseCount);
-                Debug.Assert(count >= 0, "Each write pause release must match an acquisition.");
+                GarnetAsserts.Assert(count >= 0, "Each write pause release must match an acquisition.");
                 if (count == 0)
                 {
                     resumed = writesResumed;

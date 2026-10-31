@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -67,7 +66,7 @@ namespace Tsavorite.core
         internal Status(OperationStatus operationStatus) : this()
         {
             var basicOperationStatus = OperationStatusUtils.BasicOpCode(operationStatus);
-            Debug.Assert(basicOperationStatus <= OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE);
+            GarnetAsserts.Assert(basicOperationStatus <= OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE);
             statusCode = (StatusCode)basicOperationStatus | (StatusCode)((int)operationStatus >> OperationStatusUtils.OpStatusToStatusCodeShift);
         }
 

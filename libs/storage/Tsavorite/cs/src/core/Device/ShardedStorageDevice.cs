@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -67,14 +66,14 @@ namespace Tsavorite.core
         /// <param name="devices">the devices to compose from</param>
         public UniformPartitionScheme(long chunkSize, IList<IDevice> devices)
         {
-            Debug.Assert(devices.Count != 0, "There cannot be zero shards");
-            Debug.Assert(chunkSize > 0, "chunk size should not be negative");
-            Debug.Assert((chunkSize & (chunkSize - 1)) == 0, "Chunk size must be a power of 2");
+            GarnetAsserts.Assert(devices.Count != 0, "There cannot be zero shards");
+            GarnetAsserts.Assert(chunkSize > 0, "chunk size should not be negative");
+            GarnetAsserts.Assert((chunkSize & (chunkSize - 1)) == 0, "Chunk size must be a power of 2");
             Devices = devices;
             this.chunkSize = chunkSize;
             foreach (IDevice device in Devices)
             {
-                Debug.Assert(chunkSize % device.SectorSize == 0, "A single device sector cannot be partitioned");
+                GarnetAsserts.Assert(chunkSize % device.SectorSize == 0, "A single device sector cannot be partitioned");
             }
         }
 

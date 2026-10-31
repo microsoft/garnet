@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
-using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -190,7 +189,7 @@ namespace Garnet.server
                 if (headerType == AofHeaderType.ShardedChunkHeader)
                 {
                     var sh = ((AofShardedChunkHeader*)ptr)->shardedHeader;
-                    Debug.Assert(sh.basicHeader.HeaderType == AofHeaderType.ShardedChunkHeader, "Expected AofHeaderType.ShardedChunkHeader");
+                    GarnetAsserts.Assert(sh.basicHeader.HeaderType == AofHeaderType.ShardedChunkHeader, "Expected AofHeaderType.ShardedChunkHeader");
                     acc.headerType = AofHeaderType.ShardedHeader;
                     acc.sessionID = sh.basicHeader.sessionID;
                     acc.storeVersion = sh.basicHeader.storeVersion;
@@ -199,7 +198,7 @@ namespace Garnet.server
                 else
                 {
                     var bh = ((AofBasicChunkHeader*)ptr)->basicHeader;
-                    Debug.Assert(bh.HeaderType == AofHeaderType.BasicChunkHeader, "Expected AofHeaderType.BasicChunkHeader");
+                    GarnetAsserts.Assert(bh.HeaderType == AofHeaderType.BasicChunkHeader, "Expected AofHeaderType.BasicChunkHeader");
                     acc.headerType = AofHeaderType.BasicHeader;
                     acc.sessionID = bh.sessionID;
                     acc.storeVersion = bh.storeVersion;

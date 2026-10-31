@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -149,8 +148,8 @@ namespace Garnet.server
             nint treeHandle,
             Span<byte> valueSpan)
         {
-            Debug.Assert(Unsafe.SizeOf<RangeIndexStub>() == RangeIndexStub.Size, "Constant stub size is incorrect");
-            Debug.Assert(valueSpan.Length >= RangeIndexStub.Size, $"Value span too small: {valueSpan.Length} < {RangeIndexStub.Size}");
+            GarnetAsserts.Assert(Unsafe.SizeOf<RangeIndexStub>() == RangeIndexStub.Size, "Constant stub size is incorrect");
+            GarnetAsserts.Assert(valueSpan.Length >= RangeIndexStub.Size, $"Value span too small: {valueSpan.Length} < {RangeIndexStub.Size}");
 
             ref var stub = ref Unsafe.As<byte, RangeIndexStub>(ref MemoryMarshal.GetReference(valueSpan));
             stub.TreeHandle = treeHandle;

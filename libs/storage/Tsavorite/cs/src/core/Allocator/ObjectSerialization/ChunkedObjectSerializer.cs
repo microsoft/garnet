@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.IO;
 
 namespace Tsavorite.core.Allocator.ObjectSerialization
@@ -184,7 +183,7 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         {
             // The manual mode has no per-write binding call, so there is nowhere to hand it a pool: it must own its ring.
             // Only the object mode (SetObjectWriteTarget, reached via SetRecord) can rent one.
-            Debug.Assert(managedBuffer is not null, "A pooled ring cannot be used for a manual chunked write; construct with poolRing: false.");
+            GarnetAsserts.Assert(managedBuffer is not null, "A pooled ring cannot be used for a manual chunked write; construct with poolRing: false.");
             this.context = context;
             firstDrainPending = true;
         }

@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
-using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
@@ -65,7 +64,7 @@ namespace Garnet.server
             var keys = preambleKeys;
             var argv = preambleArgv;
 
-            Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSize), "LUA_MINSTACK should be large enough that this never fails");
+            GarnetAsserts.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSize), "LUA_MINSTACK should be large enough that this never fails");
 
             if (!TryResetParameters(keys?.Length ?? 0, argv?.Length ?? 0, out var failingStatus))
             {
@@ -213,7 +212,7 @@ namespace Garnet.server
                 // One for KEYS, one for the key being written;
                 const int NeededStackSpace = 2;
 
-                Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MINSTACK should ensure this always succeeds");
+                GarnetAsserts.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MINSTACK should ensure this always succeeds");
 
                 // Get KEYS on the stack
                 _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, sandboxEnvRegistryIndex);
@@ -260,7 +259,7 @@ namespace Garnet.server
                 // One for ARGV, one for the arg being written
                 const int NeededStackSpace = 2;
 
-                Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MINSTACK should ensure this always succeeds");
+                GarnetAsserts.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MINSTACK should ensure this always succeeds");
 
                 // Get ARGV on the stack
                 _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, sandboxEnvRegistryIndex);
@@ -306,7 +305,7 @@ namespace Garnet.server
                 state.Pop(1);
             }
 
-            Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MIN_STACK is large enough this should never fail");
+            GarnetAsserts.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MIN_STACK is large enough this should never fail");
 
             state.PushNil();
             return 1;
@@ -349,9 +348,9 @@ namespace Garnet.server
         {
             state.CallFromLuaEntered(luaStatePtr);
 
-            Debug.Assert(state.StackTop == 2, "Expected exactly 2 arguments");
-            Debug.Assert(state.Type(1) == LuaType.Table, "Expected table as first argument");
-            Debug.Assert(state.Type(2) == LuaType.Number, "Expected count as second argument");
+            GarnetAsserts.Assert(state.StackTop == 2, "Expected exactly 2 arguments");
+            GarnetAsserts.Assert(state.Type(1) == LuaType.Table, "Expected table as first argument");
+            GarnetAsserts.Assert(state.Type(2) == LuaType.Number, "Expected count as second argument");
 
             // As an internal call, we know these are fine
             var count = (int)state.CheckNumber(2);
@@ -1170,7 +1169,7 @@ namespace Garnet.server
             // Encode the boolean on the top of the stack and remove it
             static int EncodeBool(LuaRunner self)
             {
-                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Boolean, "Expected boolean on top of stack");
+                GarnetAsserts.Assert(self.state.Type(self.state.StackTop) == LuaType.Boolean, "Expected boolean on top of stack");
 
                 var data = self.state.ToBoolean(self.state.StackTop) ? "true"u8 : "false"u8;
 
@@ -1186,7 +1185,7 @@ namespace Garnet.server
             // Encode the nil on the top of the stack and remove it
             static int EncodeNull(LuaRunner self)
             {
-                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Nil, "Expected nil on top of stack");
+                GarnetAsserts.Assert(self.state.Type(self.state.StackTop) == LuaType.Nil, "Expected nil on top of stack");
 
                 var into = self.scratchBufferBuilder.ViewRemainingArgSlice(4).Span;
                 "null"u8.CopyTo(into);
@@ -1200,7 +1199,7 @@ namespace Garnet.server
             // Encode the number on the top of the stack and remove it
             static int EncodeNumber(LuaRunner self)
             {
-                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Number, "Expected number on top of stack");
+                GarnetAsserts.Assert(self.state.Type(self.state.StackTop) == LuaType.Number, "Expected number on top of stack");
 
                 var number = self.state.CheckNumber(self.state.StackTop);
 
@@ -1223,7 +1222,7 @@ namespace Garnet.server
             // Encode the string on the top of the stack and remove it
             static int EncodeString(LuaRunner self)
             {
-                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.String, "Expected string on top of stack");
+                GarnetAsserts.Assert(self.state.Type(self.state.StackTop) == LuaType.String, "Expected string on top of stack");
 
                 self.state.KnownStringToBuffer(self.state.StackTop, out var buff);
 
@@ -1267,7 +1266,7 @@ namespace Garnet.server
             // Encode the table on the top of the stack and remove it
             static int EncodeTable(LuaRunner self, int depth)
             {
-                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Table, "Expected table on top of stack");
+                GarnetAsserts.Assert(self.state.Type(self.state.StackTop) == LuaType.Table, "Expected table on top of stack");
 
                 // 1 for key, 1 for value
                 const int NeededStackSpace = 2;
@@ -1324,7 +1323,7 @@ namespace Garnet.server
             // Encode the table on the top of the stack as an array and remove it
             static int EncodeArray(LuaRunner self, int length, int depth)
             {
-                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Table, "Expected table on top of stack");
+                GarnetAsserts.Assert(self.state.Type(self.state.StackTop) == LuaType.Table, "Expected table on top of stack");
 
                 // 1 for value
                 const int NeededStackSpace = 1;
@@ -1368,7 +1367,7 @@ namespace Garnet.server
             // Encode the table on the top of the stack as an object and remove it
             static int EncodeObject(LuaRunner self, int depth)
             {
-                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Table, "Expected table on top of stack");
+                GarnetAsserts.Assert(self.state.Type(self.state.StackTop) == LuaType.Table, "Expected table on top of stack");
 
                 // Space for key and value and a copy of key
                 const int NeededStackSpace = 3;
@@ -1640,7 +1639,7 @@ namespace Garnet.server
                     self.state.RawSet(obj.Count, tableIndex, ref setInTable);
                 }
 
-                Debug.Assert(setInTable == obj.Count, "Didn't fill table with records");
+                GarnetAsserts.Assert(setInTable == obj.Count, "Didn't fill table with records");
 
                 return 1;
             }
@@ -1727,7 +1726,7 @@ namespace Garnet.server
             // Encode a null-ish value at stackIndex, and remove it
             static bool TryEncodeNull(LuaRunner self, int stackIndex, out int constStrRegisteryIndex)
             {
-                Debug.Assert(self.state.Type(stackIndex) is not (LuaType.Boolean or LuaType.Number or LuaType.String or LuaType.Table), "Expected null-ish type");
+                GarnetAsserts.Assert(self.state.Type(stackIndex) is not (LuaType.Boolean or LuaType.Number or LuaType.String or LuaType.Table), "Expected null-ish type");
 
                 self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span[0] = 0xC0;
                 self.scratchBufferBuilder.MoveOffset(1);
@@ -1741,7 +1740,7 @@ namespace Garnet.server
             // Encode a boolean at stackIndex, and remove it
             static bool TryEncodeBool(LuaRunner self, int stackIndex, out int constStrRegisteryIndex)
             {
-                Debug.Assert(self.state.Type(stackIndex) == LuaType.Boolean, "Expected boolean");
+                GarnetAsserts.Assert(self.state.Type(stackIndex) == LuaType.Boolean, "Expected boolean");
 
                 var value = (byte)(self.state.ToBoolean(stackIndex) ? 0xC3 : 0xC2);
 
@@ -1757,7 +1756,7 @@ namespace Garnet.server
             // Encode a number at stackIndex, and remove it
             static bool TryEncodeNumber(LuaRunner self, int stackIndex, out int constStrRegisteryIndex)
             {
-                Debug.Assert(self.state.Type(stackIndex) == LuaType.Number, "Expected number");
+                GarnetAsserts.Assert(self.state.Type(stackIndex) == LuaType.Number, "Expected number");
 
                 var numRaw = self.state.CheckNumber(stackIndex);
                 var isInt = numRaw == (long)numRaw;
@@ -1922,7 +1921,7 @@ namespace Garnet.server
             // Encodes a string as at stackIndex, and remove it
             static bool TryEncodeBytes(LuaRunner self, int stackIndex, out int constStrRegisteryIndex)
             {
-                Debug.Assert(self.state.Type(stackIndex) == LuaType.String, "Expected string");
+                GarnetAsserts.Assert(self.state.Type(stackIndex) == LuaType.String, "Expected string");
 
                 self.state.KnownStringToBuffer(stackIndex, out var data);
 
@@ -1971,7 +1970,7 @@ namespace Garnet.server
             // Encode a table at stackIndex, and remove it
             static bool TryEncodeTable(LuaRunner self, int stackIndex, int depth, out int constStrRegisteryIndex)
             {
-                Debug.Assert(self.state.Type(stackIndex) == LuaType.Table, "Expected table");
+                GarnetAsserts.Assert(self.state.Type(stackIndex) == LuaType.Table, "Expected table");
 
                 // Space for key and value
                 const int NeededStackSpace = 2;
@@ -2027,8 +2026,8 @@ namespace Garnet.server
             // Encode a table at stackIndex into an array, and remove it
             static bool TryEncodeArray(LuaRunner self, int stackIndex, int depth, int count, out int constStrRegisteryIndex)
             {
-                Debug.Assert(self.state.Type(stackIndex) == LuaType.Table, "Expected table");
-                Debug.Assert(count >= 0, "Array should have positive length");
+                GarnetAsserts.Assert(self.state.Type(stackIndex) == LuaType.Table, "Expected table");
+                GarnetAsserts.Assert(count >= 0, "Array should have positive length");
 
                 // Space for value
                 const int NeededStackSpace = 1;
@@ -2085,8 +2084,8 @@ namespace Garnet.server
             // Encode a table at stackIndex into a map, and remove it
             static bool TryEncodeMap(LuaRunner self, int stackIndex, int depth, int count, out int constStrRegisteryIndex)
             {
-                Debug.Assert(self.state.Type(stackIndex) == LuaType.Table, "Expected table");
-                Debug.Assert(count >= 0, "Map should have positive length");
+                GarnetAsserts.Assert(self.state.Type(stackIndex) == LuaType.Table, "Expected table");
+                GarnetAsserts.Assert(count >= 0, "Map should have positive length");
 
                 // Space for key, value, and copy of key
                 const int NeededStackSpace = 3;
@@ -2669,7 +2668,7 @@ namespace Garnet.server
                     self.state.RawSet(len, mapIndex, ref setInTable);
                 }
 
-                Debug.Assert(setInTable == len, "Didn't fill table with records");
+                GarnetAsserts.Assert(setInTable == len, "Didn't fill table with records");
 
                 constStrErrId = -1;
                 return true;
@@ -2716,7 +2715,7 @@ namespace Garnet.server
 
                     self.state.RawSet(len, mapIndex, ref setInTable);
                 }
-                Debug.Assert(setInTable == len, "Didn't fill table with records");
+                GarnetAsserts.Assert(setInTable == len, "Didn't fill table with records");
 
                 constStrErrId = -1;
                 return true;
@@ -2771,7 +2770,7 @@ namespace Garnet.server
 
                     self.state.RawSet((int)len, mapIndex, ref setInTable);
                 }
-                Debug.Assert(setInTable == len, "Didn't fill table with records");
+                GarnetAsserts.Assert(setInTable == len, "Didn't fill table with records");
 
                 constStrErrId = -1;
                 return true;
@@ -3079,11 +3078,11 @@ namespace Garnet.server
             // 1 for function, 1 for code string, 1 for load mode
             const int NeededStackSpace = 3;
 
-            Debug.Assert(functionRegistryIndex == -1, "Shouldn't compile multiple times");
+            GarnetAsserts.Assert(functionRegistryIndex == -1, "Shouldn't compile multiple times");
 
             state.KnownCallFromLuaEntered(luaState, 0);
 
-            Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MIN_STACK should be high enough that this cannot happen");
+            GarnetAsserts.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MIN_STACK should be high enough that this cannot happen");
 
             _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, loadSandboxedRegistryIndex);
             if (!state.TryPushBuffer(source.Data.Span))
@@ -3108,7 +3107,7 @@ namespace Garnet.server
             {
                 // No error, success!
 
-                Debug.Assert(state.Type(2) == LuaType.Function, "Unexpected type returned from load_sandboxed");
+                GarnetAsserts.Assert(state.Type(2) == LuaType.Function, "Unexpected type returned from load_sandboxed");
 
                 if (!state.TryRef(out functionRegistryIndex))
                 {
@@ -3370,7 +3369,7 @@ namespace Garnet.server
         /// </summary>
         internal static void SetCallbackContext(LuaRunner context)
         {
-            Debug.Assert(CallbackContext == null, "Expected null context");
+            GarnetAsserts.Assert(CallbackContext == null, "Expected null context");
             CallbackContext = context;
         }
 
@@ -3379,7 +3378,7 @@ namespace Garnet.server
         /// </summary>
         internal static void ClearCallbackContext(LuaRunner context)
         {
-            Debug.Assert(ReferenceEquals(CallbackContext, context), "Expected context to match");
+            GarnetAsserts.Assert(ReferenceEquals(CallbackContext, context), "Expected context to match");
             CallbackContext = null;
         }
 

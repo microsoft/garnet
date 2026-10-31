@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Diagnostics;
 #if DEBUG
 using System.Runtime.CompilerServices;
 #endif
@@ -171,7 +170,7 @@ namespace Garnet.server
 
                 // Force completion
                 var res = storageApi.GET_CompletePending(out var iter, wait: true);
-                Debug.Assert(res, "Expected all pending operations to complete");
+                GarnetAsserts.Assert(res, "Expected all pending operations to complete");
 
                 using (iter)
                 {
@@ -216,7 +215,7 @@ namespace Garnet.server
                             }
                         }
 
-                        Debug.Assert(!status.IsPending, "Should have resolved status by now");
+                        GarnetAsserts.Assert(!status.IsPending, "Should have resolved status by now");
 
                         if (status.Found)
                         {

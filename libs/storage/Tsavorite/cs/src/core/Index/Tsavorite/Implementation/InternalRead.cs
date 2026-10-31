@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -139,7 +138,7 @@ namespace Tsavorite.core
                 if (stackCtx.recSrc.LogicalAddress >= hlogBase.BeginAddress)
                 {
                     // On-Disk Region
-                    Debug.Assert(!sessionFunctions.IsTransactionalLocking || LockTable.IsLocked(ref stackCtx.hei), "A Transactional-session Read() of an on-disk key requires a LockTable lock");
+                    GarnetAsserts.Assert(!sessionFunctions.IsTransactionalLocking || LockTable.IsLocked(ref stackCtx.hei), "A Transactional-session Read() of an on-disk key requires a LockTable lock");
 
                     // Note: we do not lock here; we wait until reading from disk, then lock in the ContinuePendingRead chain.
                     if (hlogBase.IsNullDevice)
@@ -150,7 +149,7 @@ namespace Tsavorite.core
                 }
 
                 // No record found
-                Debug.Assert(!sessionFunctions.IsTransactionalLocking || LockTable.IsLocked(ref stackCtx.hei), "A Transactional-session Read() of a non-existent key requires a LockTable lock");
+                GarnetAsserts.Assert(!sessionFunctions.IsTransactionalLocking || LockTable.IsLocked(ref stackCtx.hei), "A Transactional-session Read() of a non-existent key requires a LockTable lock");
                 return OperationStatus.NOTFOUND;
             }
             finally

@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -105,7 +104,7 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                Debug.Assert(!IsSpanByte, "Cannot call MemoryReadOnlySpan when IsSpanByte");
+                GarnetAsserts.Assert(!IsSpanByte, "Cannot call MemoryReadOnlySpan when IsSpanByte");
                 return Memory.Memory.Span.Slice(0, Length);
             }
         }
@@ -118,7 +117,7 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                Debug.Assert(!IsSpanByte, "Cannot call MemoryReadOnlySpan when IsSpanByte");
+                GarnetAsserts.Assert(!IsSpanByte, "Cannot call MemoryReadOnlySpan when IsSpanByte");
                 return Memory.Memory.Span.Slice(0, Length);
             }
         }
@@ -153,7 +152,7 @@ namespace Tsavorite.core
                 memoryPool = MemoryPool<byte>.Shared;
 
             // In case it is still SpanByte, we need to convert it to heap. This should only be done when the SpanByte is too small.
-            Debug.Assert(!IsSpanByte || SpanByte.Length < size, $"SpanByte Length of {SpanByte.Length} is sufficient for size of {size}, so this calling path should have used the SpanByte.");
+            GarnetAsserts.Assert(!IsSpanByte || SpanByte.Length < size, $"SpanByte Length of {SpanByte.Length} is sufficient for size of {size}, so this calling path should have used the SpanByte.");
             ConvertToHeap();
 
             SpanByte.Length = 0;

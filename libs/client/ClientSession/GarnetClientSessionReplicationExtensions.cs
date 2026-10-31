@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -611,7 +610,7 @@ namespace Garnet.client
         /// <exception cref="Exception"></exception>
         public Task<string> ExecuteClusterAppendLogInit(string nodeId, int physicalSublogIdx, long previousAddress, long currentAddress, long nextAddress)
         {
-            Debug.Assert(nodeId != null);
+            GarnetAsserts.Assert(nodeId != null);
 
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             tcsQueue.Enqueue(tcs);

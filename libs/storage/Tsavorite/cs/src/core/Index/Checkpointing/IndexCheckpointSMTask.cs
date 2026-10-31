@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 
 namespace Tsavorite.core
 {
@@ -28,7 +27,7 @@ namespace Tsavorite.core
             switch (next.Phase)
             {
                 case Phase.PREPARE:
-                    Debug.Assert(store._indexCheckpoint.IsDefault);
+                    GarnetAsserts.Assert(store._indexCheckpoint.IsDefault);
                     store._indexCheckpointToken = guid;
                     store.InitializeIndexCheckpoint(store._indexCheckpointToken);
                     store._indexCheckpoint.info.startLogicalAddress = store.hlogBase.GetTailAddress();

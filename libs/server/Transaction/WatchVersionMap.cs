@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Threading;
 using Tsavorite.core;
 
@@ -26,7 +25,7 @@ namespace Garnet.server
         /// </summary>
         public WatchVersionMap(long size)
         {
-            Debug.Assert(Utility.IsPowerOfTwo(size));
+            GarnetAsserts.Assert(Utility.IsPowerOfTwo(size));
             sizeMask = size - 1;
             map = new long[size];
         }

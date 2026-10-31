@@ -1276,7 +1276,7 @@ namespace Tsavorite.core
                                       int uringSqPollIdleMs = 0)
                 : base(filename, EnsureParentDirectoryAndProbeSectorSize(filename), capacity)
         {
-            Debug.Assert(numCompletionThreads >= 1);
+            GarnetAsserts.Assert(numCompletionThreads >= 1);
 
             // The 260-char MAX_PATH limit does not apply to extended-length paths (those prefixed with
             // "\\?\"); only enforce it for normal paths.

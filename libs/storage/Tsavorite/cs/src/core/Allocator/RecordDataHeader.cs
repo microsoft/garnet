@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using static Tsavorite.core.Utility;
@@ -203,7 +202,7 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
-                Debug.Assert((uint)value <= MaxFillerWords, $"FillerWords {value} exceeds {MaxFillerWords}");
+                GarnetAsserts.Assert((uint)value <= MaxFillerWords, $"FillerWords {value} exceeds {MaxFillerWords}");
                 word = (word & ~kFillerWordsMask) | (((ulong)value & kFillerWordsValueMask) << kFillerWordsShift);
             }
         }
@@ -253,7 +252,7 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
-                Debug.Assert((uint)value <= kKeyLengthLowBitsMask, $"KeyLength {value} exceeds {kKeyLengthBits}-bit max");
+                GarnetAsserts.Assert((uint)value <= kKeyLengthLowBitsMask, $"KeyLength {value} exceeds {kKeyLengthBits}-bit max");
                 word = (word & ~kKeyLengthMask) | (((ulong)value & kKeyLengthLowBitsMask) << kKeyLengthShift);
             }
         }
@@ -278,7 +277,7 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
-                Debug.Assert((uint)value <= kValueLengthLowBitsMask, $"ValueLength {value} exceeds {kValueLengthBits}-bit max");
+                GarnetAsserts.Assert((uint)value <= kValueLengthLowBitsMask, $"ValueLength {value} exceeds {kValueLengthBits}-bit max");
                 word = (word & ~kValueLengthMask) | (((ulong)value & kValueLengthLowBitsMask) << kValueLengthShift);
             }
         }
@@ -449,14 +448,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal int ComputeFillerWordsOrSplit(long recordBaseAddress, int totalFiller)
         {
-            Debug.Assert(totalFiller >= 0, $"Total filler {totalFiller} must be non-negative");
+            GarnetAsserts.Assert(totalFiller >= 0, $"Total filler {totalFiller} must be non-negative");
 
             var unalignedSum = GetUnalignedComponentSum();
             var alignedSum = RoundUp(unalignedSum, Constants.kRecordAlignment);
             var implicitFiller = alignedSum - unalignedSum;
             var explicitFiller = totalFiller - implicitFiller;
-            Debug.Assert(explicitFiller >= 0, $"Explicit filler {explicitFiller} must be non-negative");
-            Debug.Assert((explicitFiller & (Constants.kRecordAlignment - 1)) == 0, $"Explicit filler {explicitFiller} must be a multiple of kRecordAlignment");
+            GarnetAsserts.Assert(explicitFiller >= 0, $"Explicit filler {explicitFiller} must be non-negative");
+            GarnetAsserts.Assert((explicitFiller & (Constants.kRecordAlignment - 1)) == 0, $"Explicit filler {explicitFiller} must be a multiple of kRecordAlignment");
 
             var fillerWords = explicitFiller >> Constants.kRecordAlignmentShift;
             if (fillerWords > MaxFillerWords)
@@ -477,8 +476,8 @@ namespace Tsavorite.core
         {
             var retainedExplicitFiller = RecordSplitRetainFillerWords << Constants.kRecordAlignmentShift;        // 512 bytes
             var newRecordBytes = explicitFiller - retainedExplicitFiller;          // must be > 0 since fillerWords > MaxFillerWords > RecordSplitRetainFillerWords
-            Debug.Assert(newRecordBytes >= Constants.FixedHeaderSize, $"Split-off region {newRecordBytes} is smaller than RecordInfo + RDH ({Constants.FixedHeaderSize})");
-            Debug.Assert((newRecordBytes & (Constants.kRecordAlignment - 1)) == 0, $"Split-off region {newRecordBytes} must be a multiple of kRecordAlignment");
+            GarnetAsserts.Assert(newRecordBytes >= Constants.FixedHeaderSize, $"Split-off region {newRecordBytes} is smaller than RecordInfo + RDH ({Constants.FixedHeaderSize})");
+            GarnetAsserts.Assert((newRecordBytes & (Constants.kRecordAlignment - 1)) == 0, $"Split-off region {newRecordBytes} must be a multiple of kRecordAlignment");
 
             var newRecordAddress = recordBaseAddress + alignedSum + retainedExplicitFiller;
 
@@ -628,12 +627,12 @@ namespace Tsavorite.core
         /// <summary>Prepare size metadata for reuse while preserving live framing for concurrent physical scans.</summary>
         internal void InitializeForRevivification(ref RecordSizeInfo sizeInfo)
         {
-            Debug.Assert(KeyIsInline, "Expected Key to be inline in InitializeForRevivification");
-            Debug.Assert(ValueIsInline, "Expected Value to be inline in InitializeForRevivification");
-            Debug.Assert(!HasETag && !HasExpiration, "Expected no optionals in InitializeForRevivification");
+            GarnetAsserts.Assert(KeyIsInline, "Expected Key to be inline in InitializeForRevivification");
+            GarnetAsserts.Assert(ValueIsInline, "Expected Value to be inline in InitializeForRevivification");
+            GarnetAsserts.Assert(!HasETag && !HasExpiration, "Expected no optionals in InitializeForRevivification");
 
             var recordLength = GetRecordLength();
-            Debug.Assert(sizeInfo.AllocatedInlineRecordSize <= recordLength, "Cannot exceed previous Record size in InitializeForRevivification");
+            GarnetAsserts.Assert(sizeInfo.AllocatedInlineRecordSize <= recordLength, "Cannot exceed previous Record size in InitializeForRevivification");
 
             // Ensure the AllocatedInlineRecordSize retains recordLength when LogRecord.InitializeRecord is called
             sizeInfo.AllocatedInlineRecordSize = recordLength;

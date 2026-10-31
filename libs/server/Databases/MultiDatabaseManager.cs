@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -208,7 +207,7 @@ namespace Garnet.server
                 {
                     // Single-DB path: just pause this one DB. multiDbCheckpointingLock is not taken
                     // because multiple per-DB BGSAVEs on different DBs are legal.
-                    Debug.Assert(dbId < databases.ActualSize && databases.Map[dbId] != null);
+                    GarnetAsserts.Assert(dbId < databases.ActualSize && databases.Map[dbId] != null);
 
                     if (!TryPauseCheckpoints(dbId))
                     {
@@ -247,7 +246,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override async Task TakeOnDemandCheckpointAsync(DateTimeOffset entryTime, int dbId = 0)
         {
-            Debug.Assert(dbId < databases.ActualSize && databases.Map[dbId] != null);
+            GarnetAsserts.Assert(dbId < databases.ActualSize && databases.Map[dbId] != null);
 
             // Acquire databasesContentLock (read) so a concurrent swap-db can't mis-attribute LASTSAVE
             // (UpdateLastSaveData uses databases.Map[dbId] at write time).
@@ -304,7 +303,7 @@ namespace Garnet.server
                 {
                     var dbId = activeDbIdsMapSnapshot[i];
                     var db = databasesMapSnapshot[dbId];
-                    Debug.Assert(db != null);
+                    GarnetAsserts.Assert(db != null);
 
                     var dbAofSize = db.AppendOnlyFile.Log.TailAddress.AggregateDiff(db.AppendOnlyFile.Log.BeginAddress);
                     if (dbAofSize > aofSizeLimit)
@@ -357,7 +356,7 @@ namespace Garnet.server
                 {
                     var dbId = activeDbIdsMapSnapshot[i];
                     var db = databasesMapSnapshot[dbId];
-                    Debug.Assert(db != null);
+                    GarnetAsserts.Assert(db != null);
 
                     aofTasks[i] = AwaitCommitAsync(db, db.AppendOnlyFile.Log.CommitAsync(token: token));
                 }
@@ -402,7 +401,7 @@ namespace Garnet.server
         {
             var databasesMapSize = databases.ActualSize;
             var databasesMapSnapshot = databases.Map;
-            Debug.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
+            GarnetAsserts.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
 
             await databasesMapSnapshot[dbId].AppendOnlyFile.Log.CommitAsync(token: token).ConfigureAwait(false);
         }
@@ -426,7 +425,7 @@ namespace Garnet.server
                 {
                     var dbId = activeDbIdsMapSnapshot[i];
                     var db = databasesMapSnapshot[dbId];
-                    Debug.Assert(db != null);
+                    GarnetAsserts.Assert(db != null);
 
                     aofTasks[i] = db.AppendOnlyFile.Log.WaitForCommitAsync(token: token).AsTask();
                 }
@@ -537,7 +536,7 @@ namespace Garnet.server
                 {
                     var dbId = activeDbIdsMapSnapshot[i];
                     var db = databasesMapSnapshot[dbId];
-                    Debug.Assert(db != null);
+                    GarnetAsserts.Assert(db != null);
 
                     try
                     {
@@ -638,7 +637,7 @@ namespace Garnet.server
                 {
                     var dbId = activeDbIdsMapSnapshot[i];
                     var db = databasesMapSnapshot[dbId];
-                    Debug.Assert(db != null);
+                    GarnetAsserts.Assert(db != null);
 
                     db.SizeTracker?.Start(token);
                 }
@@ -826,7 +825,7 @@ namespace Garnet.server
         {
             var databasesMapSize = databases.ActualSize;
             var databasesMapSnapshot = databases.Map;
-            Debug.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
+            GarnetAsserts.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
 
             ResumeCheckpoints(databasesMapSnapshot[dbId]);
         }
@@ -841,7 +840,7 @@ namespace Garnet.server
 
             if (dbId == 0)
             {
-                Debug.Assert(databasesMapSnapshot[0] != null);
+                GarnetAsserts.Assert(databasesMapSnapshot[0] != null);
                 found = true;
                 return databasesMapSnapshot[0];
             }
@@ -1172,7 +1171,7 @@ namespace Garnet.server
         {
             var databasesMapSize = databases.ActualSize;
             var databasesMapSnapshot = databases.Map;
-            Debug.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
+            GarnetAsserts.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
             return databasesMapSnapshot[dbId];
         }
 
