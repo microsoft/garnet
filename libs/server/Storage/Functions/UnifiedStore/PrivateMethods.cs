@@ -32,7 +32,7 @@ namespace Garnet.server
                 input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Log.Enqueue(
-                AofEntryType.UnifiedStoreStringUpsert,
+                input.header.cmd == RespCommand.SET ? AofEntryType.StoreUpsert : AofEntryType.UnifiedStoreStringUpsert,
                 version,
                 sessionID,
                 key,

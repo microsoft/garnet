@@ -252,7 +252,6 @@ namespace Garnet.server
                 // Processed this record successfully
                 return true;
 
-                // U
                 void UpdateMaxSequenceNumberFromHeader()
                 {
                     var headerType = (*(AofHeader*)ptr).HeaderType;

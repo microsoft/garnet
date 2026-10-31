@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -54,8 +54,15 @@ namespace Garnet.server
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            _ = unifiedContext.Upsert(in srcLogRecord);
-            return GarnetStatus.OK;
+            if (srcLogRecord.HasNamespace)
+            {
+                // The record is the composite key; its key bytes alone omit the namespace.
+                _ = unifiedContext.Upsert(in srcLogRecord);
+                return GarnetStatus.OK;
+            }
+
+            UnifiedInput input = default;
+            return SET(srcLogRecord.Key, ref input, in srcLogRecord, ref unifiedContext);
         }
 
         /// <summary>
@@ -72,7 +79,17 @@ namespace Garnet.server
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            _ = unifiedContext.Upsert((FixedSpanByteKey)key, ref input, in srcLogRecord);
+            if (!srcLogRecord.DataHeader.ValueIsObject && srcLogRecord.RecordType == 0)
+            {
+                // Zero explicitly clears an existing ETag during replay.
+                var recordInput = new UnifiedInput(RespCommand.SET, RespInputFlags.HasEtag, srcLogRecord.Expiration)
+                {
+                    arg2 = srcLogRecord.ETag
+                };
+                _ = unifiedContext.Upsert((FixedSpanByteKey)key, ref recordInput, in srcLogRecord);
+            }
+            else
+                _ = unifiedContext.Upsert((FixedSpanByteKey)key, ref input, in srcLogRecord);
             return GarnetStatus.OK;
         }
 
