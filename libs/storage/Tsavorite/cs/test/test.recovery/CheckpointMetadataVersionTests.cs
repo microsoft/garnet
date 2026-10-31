@@ -45,9 +45,7 @@ namespace Tsavorite.test.recovery
             info.objectLogBeginAddress = 3L << 26;
             info.hlogEndObjectLogTail = (3L << 26) + 0x1_2340;
             info.snapshotEndObjectLogTail = 0x9_8760;
-            info.captureIndexPositionWord = 0x5_4320;
-            info.captureIndexSizeHint = 560;
-            info.captureIndexCount = 17;
+            info.snapshotObjectLogStartAddress = 0x5430;
             info.legacyObjectLogSegmentSizeBits = 26;
             info.legacySnapshotStartObjectLogTail = (3L << 26) + 0x1000;
             return info;
@@ -82,9 +80,7 @@ namespace Tsavorite.test.recovery
                 Assert.That(read.objectLogBeginAddress, Is.EqualTo(info.objectLogBeginAddress));
                 Assert.That(read.hlogEndObjectLogTail, Is.EqualTo(info.hlogEndObjectLogTail));
                 Assert.That(read.snapshotEndObjectLogTail, Is.EqualTo(info.snapshotEndObjectLogTail));
-                Assert.That(read.captureIndexPositionWord, Is.EqualTo(info.captureIndexPositionWord));
-                Assert.That(read.captureIndexSizeHint, Is.EqualTo(info.captureIndexSizeHint));
-                Assert.That(read.captureIndexCount, Is.EqualTo(info.captureIndexCount));
+                Assert.That(read.snapshotObjectLogStartAddress, Is.EqualTo(info.snapshotObjectLogStartAddress));
                 Assert.That(read.recoveredTailAddress, Is.EqualTo(info.recoveredTailAddress));
                 Assert.That(read.mainLogRecoveryEndAddress, Is.EqualTo(info.mainLogRecoveryEndAddress));
                 Assert.That(read.snapshotFileLogicalStartAddress, Is.EqualTo(info.snapshotFileLogicalStartAddress));
@@ -108,7 +104,7 @@ namespace Tsavorite.test.recovery
                 Assert.That(read.legacySnapshotStartObjectLogTail, Is.EqualTo(info.legacySnapshotStartObjectLogTail));
                 Assert.That(read.snapshotEndObjectLogTail, Is.EqualTo(info.snapshotEndObjectLogTail));
                 Assert.That(read.objectLogPageSize, Is.Zero);
-                Assert.That(read.captureIndexCount, Is.Zero, "v7 has no capture index");
+                Assert.That(read.snapshotObjectLogStartAddress, Is.EqualTo(read.mainLogRecoveryEndAddress));
             });
         }
 
@@ -176,8 +172,8 @@ namespace Tsavorite.test.recovery
         public void DownlevelMetadataOmitsAppendedLogGeometry()
         {
             var info = MakeInfo();
-            Assert.That(Lines(info.ToByteArray(7)), Has.Length.EqualTo(Lines(info.ToByteArray(8)).Length - 4),
-                "v8 records the object log in six lines (three addresses, then the capture index's position word, size hint and count) where"
+            Assert.That(Lines(info.ToByteArray(7)), Has.Length.EqualTo(Lines(info.ToByteArray(8)).Length - 2),
+                "v8 records the object log in four lines (three object-log addresses and the hybrid-log snapshot-reference lower bound) where"
                 + " v7 used seven (a segment and three two-line positions), and appends five: segmentSize, objectLogSegmentSize, and"
                 + " objectLogPageSize from the store, then the host-supplied databaseMapping length (zero here, so no entries follow) and swapEpoch");
         }
@@ -261,16 +257,10 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("CheckpointRestore")]
-        public void TamperedCaptureIndexFailsChecksum([Values(0, 1, 2)] int field)
+        public void TamperedSnapshotReferenceStartFailsChecksum()
         {
-            // Recovery copies captures from where these fields point, so each is covered by the checksum.
             var info = MakeInfo();
-            var value = field switch
-            {
-                0 => info.captureIndexPositionWord,
-                1 => info.captureIndexSizeHint,
-                _ => info.captureIndexCount,
-            };
+            var value = info.snapshotObjectLogStartAddress;
             var lines = Lines(info.ToByteArray());
             var index = Array.FindIndex(lines, l => l.Trim() == value.ToString());
             Assert.That(index, Is.GreaterThan(AddressSlotLineIndex));

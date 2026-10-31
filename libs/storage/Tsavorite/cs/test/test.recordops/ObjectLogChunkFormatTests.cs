@@ -204,6 +204,42 @@ namespace Tsavorite.test.Objects
         static readonly int[] KeyLengths = [0, 100, 511, 512, 1000, 3000, 9000];
         static readonly int[] ValueLengths = [0, 1, 300, 507, 508, 1016, 1017, 2500, 9000];
 
+        [Test, Category(ObjectLogCategory)]
+        public void RecoveryFindsExactReferencedTailWithoutLoadingTheValue(
+            [Values(0, 100, 9000)] int keyLength,
+            [Values(0, 100, 600, 9000)] int valueLength,
+            [Values] bool smallDirectory)
+        {
+            var directorySize = smallDirectory ? 128 : ObjectLogWriterSettings.DefaultMaxDirectoryRecordSize;
+            CloseLog();
+            OpenLog(directorySize);
+            Write(new TestRecord(0, ValueKind.Overflow, 100));
+            var checkpointTail = objectLog.TailAddress;
+            var record = new TestRecord(keyLength, ValueKind.Overflow, valueLength);
+            Write(record);
+            var requiredTail = objectLog.TailAddress;
+            _ = objectLog.FlushTail(wait: true);
+            CloseLog();
+            OpenLog(directorySize, checkpointTail);
+            objectLog.RecoveryReadOnly = true;
+            countingDevice.ResetReadCount();
+
+            var reference = record.Ref;
+            Assert.That(objectLog.GetReferencedExtentEnd(in reference), Is.EqualTo(requiredTail));
+            var exact = (reference.PositionWord & (reference.KeyIsOverflow
+                ? ObjectLogPositionInfo.kKeyIsExactSizeMask : ObjectLogPositionInfo.kValueIsExactSizeMask)) != 0;
+            Assert.That(countingDevice.ReadCount, Is.EqualTo(exact ? 0 : 1),
+                "Only a non-exact extent requires one framing read; its value must not be loaded");
+            _ = Assert.Throws<TsavoriteException>(() => Write(new TestRecord(0, ValueKind.Overflow, 100)),
+                "Recovery must not append before its tail is established");
+
+            objectLog.RecoveryReadOnly = false;
+            objectLog.RestoreTail(LogAddress.FirstValidAddress, requiredTail);
+            Write(new TestRecord(0, ValueKind.Overflow, 100));
+            ReopenFromDevice(directorySize);
+            Verify(record, "referenced bytes survive restoration and a subsequent sector rewrite");
+        }
+
         /// <summary>Every combination of key length, value kind, and value length round-trips, read from memory and then from the device.</summary>
         [Test, Category(ObjectLogCategory)]
         public void RecordsRoundTripFromMemoryAndDevice([Values] ValueKind valueKind)

@@ -154,12 +154,17 @@ namespace Tsavorite.core
         /// <summary>The checkpoint metadata version being recovered (<see cref="HybridLogRecoveryInfo.hybridLogRecoveryVersion"/>). Selects the
         /// object-log record decode (downlevel cv7 vs current chunk-framed) instead of a per-record position-word flag.</summary>
         internal readonly int checkpointVersion;
+        internal readonly long snapshotReferenceStart;
+        internal readonly long snapshotReferenceEnd;
 
-        internal RecoveryOptions(long fuzzyRegionStartAddress, bool undoNextVersion, int checkpointVersion)
+        internal RecoveryOptions(long fuzzyRegionStartAddress, bool undoNextVersion, int checkpointVersion,
+            long snapshotReferenceStart = 0, long snapshotReferenceEnd = 0)
         {
             this.fuzzyRegionStartAddress = fuzzyRegionStartAddress;
             this.undoNextVersion = undoNextVersion;
             this.checkpointVersion = checkpointVersion;
+            this.snapshotReferenceStart = snapshotReferenceStart;
+            this.snapshotReferenceEnd = snapshotReferenceEnd;
         }
     }
 
@@ -310,8 +315,10 @@ namespace Tsavorite.core
                 : info.legacyObjectLogSegmentSizeBits > 0 ? 1L << info.legacyObjectLogSegmentSizeBits : 0;
             var hybridLogObjectFileStartAddress = objectLogSegmentSize > 0 ? info.objectLogBeginAddress & ~(objectLogSegmentSize - 1) : 0;
             var emptyMainObjectLogEnd = isDownlevel ? info.objectLogBeginAddress : Math.Max(info.objectLogBeginAddress, LogAddress.FirstValidAddress);
-            var hybridLogObjectFileEndAddress = info.hlogEndObjectLogTail > emptyMainObjectLogEnd
-                ? Math.Max(hybridLogObjectFileStartAddress, info.hlogEndObjectLogTail)
+            var mainObjectLogEnd = !isDownlevel && info.useSnapshotFile != 0 && info.snapshotObjectLogStartAddress < info.mainLogRecoveryEndAddress
+                ? Math.Max(info.hlogEndObjectLogTail, hlogBase.ObjectLogFlushedUntilAddress) : info.hlogEndObjectLogTail;
+            var hybridLogObjectFileEndAddress = mainObjectLogEnd > emptyMainObjectLogEnd
+                ? Math.Max(hybridLogObjectFileStartAddress, mainObjectLogEnd)
                 : hybridLogObjectFileStartAddress;
             var emptySnapshotObjectLogEnd = isDownlevel ? 0 : LogAddress.FirstValidAddress;
             var snapshotObjectFileEndAddress = info.snapshotEndObjectLogTail > emptySnapshotObjectLogEnd ? info.snapshotEndObjectLogTail : 0;
@@ -581,7 +588,12 @@ namespace Tsavorite.core
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
                 return -1;
             RecoveryOptions options = new(fuzzyRegionStartAddress: recoveredHLCInfo.info.fuzzyRegionStartAddress, undoNextVersion,
-                checkpointVersion: recoveredHLCInfo.info.hybridLogRecoveryVersion);
+                checkpointVersion: recoveredHLCInfo.info.hybridLogRecoveryVersion,
+                snapshotReferenceStart: recoveredHLCInfo.info.snapshotObjectLogStartAddress,
+                snapshotReferenceEnd: recoveredHLCInfo.info.useSnapshotFile != 0 ? recoveredHLCInfo.info.mainLogRecoveryEndAddress : 0);
+
+            using var snapshotReferencesDevice = options.snapshotReferenceStart < options.snapshotReferenceEnd && hlogBase._wrapper.HasObjectLog
+                ? checkpointManager.GetSnapshotObjectLogDevice(recoveredHLCInfo.info.guid) : null;
 
             // Position the main object log at the checkpoint's tail before anything reads it, so reads are bounded by it and appends -- recovery's
             // copies of snapshot-region objects, and everything after recovery -- start there. Only records in the main-log recovery range
@@ -590,25 +602,11 @@ namespace Tsavorite.core
             // file the downlevel reader reads directly, and its up-conversion writes a fresh object log.
             if (!HybridLogRecoveryInfo.UsesDownlevelObjectLog(recoveredHLCInfo.info.hybridLogRecoveryVersion))
             {
-                var mainObjectLogIsReferenced = recoveredHLCInfo.info.useSnapshotFile == 0
-                    || recoveredHLCInfo.info.mainLogRecoveryEndAddress > recoveredHLCInfo.info.beginAddress;
-                hlogBase.RestoreObjectLog(mainObjectLogIsReferenced ? recoveredHLCInfo.info.objectLogBeginAddress : recoveredHLCInfo.info.hlogEndObjectLogTail,
-                    recoveredHLCInfo.info.hlogEndObjectLogTail);
-
-                // A Snapshot's (v+1) CopyUpdates captured the (v) values of main-log records whose images may hold the null value a later ReadOnly
-                // flush wrote. Repoint those records at copies of their captures before anything reads the main log.
-                if (recoveredHLCInfo.info.useSnapshotFile != 0 && recoveredHLCInfo.info.captureIndexCount > 0)
+                hlogBase.BeginMainObjectLogRecovery(in recoveredHLCInfo.info);
+                if (snapshotReferencesDevice is not null)
                 {
-                    var snapshotObjectLogDevice = checkpointManager.GetSnapshotObjectLogDevice(recoveredHLCInfo.info.guid);
-                    try
-                    {
-                        snapshotObjectLogDevice.Initialize(hlogBase.GetObjectLogSegmentSize());
-                        hlogBase.ApplySnapshotCaptures(snapshotObjectLogDevice, in recoveredHLCInfo.info);
-                    }
-                    finally
-                    {
-                        snapshotObjectLogDevice.Dispose();
-                    }
+                    snapshotReferencesDevice.Initialize(hlogBase.GetObjectLogSegmentSize());
+                    hlogBase.OpenRecoverySnapshotObjectLog(snapshotReferencesDevice, recoveredHLCInfo.info.snapshotEndObjectLogTail);
                 }
             }
 
@@ -622,6 +620,8 @@ namespace Tsavorite.core
                         recoveredHLCInfo.info.nextVersion, CheckpointType.FoldOver, headAddress, options, cancellationToken).ConfigureAwait(false);
                 finalHeadAddress = recoveryStatus.headAddress;
                 readOnlyAddress = tailAddress;
+                if (!HybridLogRecoveryInfo.UsesDownlevelObjectLog(options.checkpointVersion))
+                    hlogBase.CompleteMainObjectLogRecovery(in recoveredHLCInfo.info, finalHeadAddress);
             }
             else
             {
@@ -632,6 +632,9 @@ namespace Tsavorite.core
                 // any flushes to the hybrid log files due to OnPagesMarkedReadOnly while we were flushing to the snapshot files). Object loading is deferred (see below).
                 recoveryStatus = await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, untilAddress: recoveredHLCInfo.info.mainLogRecoveryEndAddress,
                         recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot, headAddress, options, cancellationToken).ConfigureAwait(false);
+                if (!HybridLogRecoveryInfo.UsesDownlevelObjectLog(options.checkpointVersion))
+                    hlogBase.CompleteMainObjectLogRecovery(in recoveredHLCInfo.info, recoveryStatus.headAddress);
+                hlogBase.CloseRecoverySnapshotObjectLog();
 
                 // Then recover snapshot into mutable region. The snapshot-region pages are read (without their objects), flushed to the main log with their objects
                 // copied into the main object log (so they are durable and can be evicted into a smaller memory budget), and then objects are loaded once over the full
@@ -779,6 +782,9 @@ namespace Tsavorite.core
             // process says nothing about the on-disk encoding, and skipping them would leave downlevel records behind.
             if (!upgradeObjectLog && hlogBase.FlushedUntilAddress > scanFromAddress)
                 scanFromAddress = hlogBase.FlushedUntilAddress;
+            if (!upgradeObjectLog && recoveredHLCInfo.info.useSnapshotFile != 0
+                && recoveredHLCInfo.info.snapshotObjectLogStartAddress < recoveredHLCInfo.info.mainLogRecoveryEndAddress)
+                scanFromAddress = Math.Min(scanFromAddress, Math.Max(recoveredHLCInfo.info.beginAddress, recoveredHLCInfo.info.snapshotObjectLogStartAddress));
             return true;
         }
 
@@ -1136,15 +1142,17 @@ namespace Tsavorite.core
             var endLogicalAddressOfPage = hlogBase.GetLogicalAddressOfStartOfPage(page + 1);
             var startPhysicalAddressOfPage = hlogBase.GetPhysicalAddress(startLogicalAddressOfPage);
 
-            if (recoverFromAddress >= endLogicalAddressOfPage)
+            var inspectFromAddress = options.snapshotReferenceStart < options.snapshotReferenceEnd
+                ? Math.Min(recoverFromAddress, options.snapshotReferenceStart) : recoverFromAddress;
+            if (inspectFromAddress >= endLogicalAddressOfPage)
                 return false;
 
             var pageFromAddressOffset = (long)hlogBase.pageHeaderSize;
             var pageUntilAddressOffset = hlogBase.GetPageSize();
 
-            if (recoverFromAddress > startLogicalAddressOfPage)
+            if (inspectFromAddress > startLogicalAddressOfPage)
             {
-                pageFromAddressOffset = hlogBase.GetOffsetOnPage(recoverFromAddress);
+                pageFromAddressOffset = hlogBase.GetOffsetOnPage(inspectFromAddress);
                 Debug.Assert(pageFromAddressOffset >= hlogBase.pageHeaderSize, $"pageFromAddressOffset {pageFromAddressOffset} must be >= hlogBase.pageHeaderSize {hlogBase.pageHeaderSize} (which may be 0)");
             }
             if (untilAddress < endLogicalAddressOfPage)
@@ -1726,12 +1734,29 @@ namespace Tsavorite.core
                 if (!info.Invalid)
                 {
                     var recordLogicalAddress = pageStartLogicalAddress + recordOffset;
+                    if (!isSnapshotPage && info.HasSnapshotObjectLogReference
+                        && (recordLogicalAddress < options.snapshotReferenceStart || recordLogicalAddress >= options.snapshotReferenceEnd))
+                    {
+                        info.SetInvalid();
+                        touched = true;
+                        recordOffset += logRecord.AllocatedSize;
+                        continue;
+                    }
                     if (isSnapshotPage && recordLogicalAddress >= options.fuzzyRegionStartAddress && info.IsInNewVersion)
                     {
                         // Snapshot flush leaves the live v+1 record intact. Recreate the historical snapshot image semantics before
                         // hashing an overflow key or reading any payload: only the stable RDH allocation is needed to reach the next record.
                         touched = true;
                         info.SetInvalid();
+                        recordOffset += logRecord.AllocatedSize;
+                        continue;
+                    }
+
+                    var keepRecord = recordLogicalAddress < options.fuzzyRegionStartAddress || !info.IsInNewVersion || !options.undoNextVersion;
+                    if (!isSnapshotPage && keepRecord && !HybridLogRecoveryInfo.UsesDownlevelObjectLog(options.checkpointVersion))
+                        hlogBase.InspectRecoveryObjectLogReference(in logRecord);
+                    if (recordLogicalAddress < recoverFromAddress)
+                    {
                         recordOffset += logRecord.AllocatedSize;
                         continue;
                     }

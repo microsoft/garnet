@@ -116,7 +116,7 @@ namespace Tsavorite.core
                     store._hybridLogCheckpoint.info.mainLogRecoveryEndAddress = Math.Min(store.hlogBase.IsNullDevice
                         ? store._hybridLogCheckpoint.info.snapshotFileLogicalStartAddress
                         : store.hlogBase.FlushedUntilAddress, store._hybridLogCheckpoint.info.recoveredTailAddress);
-                    ObjectLog_OnSnapshotCapturesEnd();
+                    ObjectLog_OnSnapshotReferencesEnd();
                     ObjectLog_OnPersistenceCallback();
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     store._hybridLogCheckpoint.snapshotFileDevice?.Dispose();

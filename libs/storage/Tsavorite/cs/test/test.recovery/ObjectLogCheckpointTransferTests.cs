@@ -496,7 +496,7 @@ namespace Tsavorite.test.recovery.objects
             }
         }
 
-        private static void CopyRange(string sourceBaseName, string targetBaseName, long startAddress, long endAddress, long segmentSize)
+        internal static void CopyRange(string sourceBaseName, string targetBaseName, long startAddress, long endAddress, long segmentSize)
         {
             for (var segment = startAddress / segmentSize; startAddress < endAddress && segment <= (endAddress - 1) / segmentSize; segment++)
             {
@@ -505,7 +505,7 @@ namespace Tsavorite.test.recovery.objects
                 var to = Math.Min(endAddress, segmentStartAddress + segmentSize) - segmentStartAddress;
 
                 var buffer = new byte[to - from];
-                using (var sourceStream = File.OpenRead($"{sourceBaseName}.{segment}"))
+                using (var sourceStream = new FileStream($"{sourceBaseName}.{segment}", FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                 {
                     _ = sourceStream.Seek(from, SeekOrigin.Begin);
                     sourceStream.ReadExactly(buffer);

@@ -606,6 +606,7 @@ namespace Tsavorite.core
                         // the object (and track sizes) before it is cleared. (If we are called from Pending IO then srcLogRecord will be a DiskLogRecord and we
                         // do not need to serialize data as this is not involved in checkpointing, and the DiskLogRecord is Disposed after we return up the Pending chain.)
                         var isMemoryLogRecord = srcLogRecord.IsMemoryLogRecord;
+                        var captured = false;
                         if (srcLogRecord.DataHeader.ValueIsObject)
                         {
                             var needsSourceImage = isMemoryLogRecord
@@ -613,9 +614,8 @@ namespace Tsavorite.core
 
                             // A Snapshot checkpoint captures the (v) value it needs into its object log.
                             // A read-cache source is a copy of a durable main-log record, so no checkpoint needs its image.
-                            var captured = false;
                             if (needsSourceImage && newLogRecord.Info.IsInNewVersion && srcLogRecord.ValueObject is HeapObjectBase sourceObject
-                                && hlogBase.ActiveSnapshotCaptures is { } snapshotCaptures)
+                                && hlogBase.ActiveSnapshotObjectLog is { } snapshotCaptures)
                             {
                                 captured = stackCtx.recSrc.HasMainLogSrc && TryCaptureCopyUpdateSource(snapshotCaptures, sourceObject,
                                     ref srcLogRecord.AsMemoryLogRecordRef(), stackCtx.recSrc.LogicalAddress, ref newLogRecord);
@@ -634,17 +634,21 @@ namespace Tsavorite.core
                                     hlogBase.logSizeTracker?.IncrementSize(newValueHeap);
                             }
 
-                            if (rmwInfo.ClearSourceValueObject && isMemoryLogRecord)
+                            if ((rmwInfo.ClearSourceValueObject || (captured && !hlogBase.IsNullDevice)) && isMemoryLogRecord)
                             {
                                 ref var srcMemLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
 
                                 // A main-log source that is frozen for flush keeps its value until its flush completes, because the flush
                                 // may still be walking it or writing its page. Mark it for the drain (or eviction) to release, as Delete does;
                                 // the bit is safe to set on a frozen record and is stripped from disk images.
-                                if (stackCtx.recSrc.HasMainLogSrc && hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress))
+                                if (stackCtx.recSrc.HasMainLogSrc && (captured || hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress)))
                                 {
+                                    srcMemLogRecord.InfoRef.DeferredCopyUpdate = true;
                                     srcMemLogRecord.InfoRef.DeferredDispose = true;
                                     hlogBase.NoteDeferredDispose(stackCtx.recSrc.LogicalAddress);
+                                    if (!hlogBase.IsNullDevice && stackCtx.recSrc.LogicalAddress < hlogBase.FlushedUntilAddress)
+                                        hlogBase.DrainDeferredDisposes(stackCtx.recSrc.LogicalAddress,
+                                            stackCtx.recSrc.LogicalAddress + srcMemLogRecord.AllocatedSize);
                                 }
                                 else
                                 {

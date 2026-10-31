@@ -126,17 +126,10 @@ namespace Tsavorite.core
         internal long snapshotEndObjectLogTail;
 
         /// <summary>
-        /// The position word, in a Snapshot checkpoint's object log, of its capture index: where the <c>(v)</c> values that <c>(v+1)</c>
-        /// CopyUpdates captured are, for records below <see cref="mainLogRecoveryEndAddress"/>. Recovery copies them into the main object log
-        /// and repoints the records' main-log images at the copies. Zero when there is no index.
+        /// Lowest main-log address whose image can reference this checkpoint's snapshot object log. Equal to
+        /// <see cref="mainLogRecoveryEndAddress"/> when no main-log image references it.
         /// </summary>
-        internal long captureIndexPositionWord;
-
-        /// <summary>The value size hint the capture index was written with. Zero when there is no index.</summary>
-        internal long captureIndexSizeHint;
-
-        /// <summary>The number of entries in the capture index. Zero when there is no index.</summary>
-        internal long captureIndexCount;
+        internal long snapshotObjectLogStartAddress;
 
         /// <summary>
         /// For a v7 checkpoint only: the segment size bits its object-log positions were split at. Its object log is a dense file read by the
@@ -222,9 +215,7 @@ namespace Tsavorite.core
             objectLogBeginAddress = 0;
             hlogEndObjectLogTail = 0;
             snapshotEndObjectLogTail = 0;
-            captureIndexPositionWord = 0;
-            captureIndexSizeHint = 0;
-            captureIndexCount = 0;
+            snapshotObjectLogStartAddress = 0;
             legacyObjectLogSegmentSizeBits = 0;
             legacySnapshotStartObjectLogTail = 0;
         }
@@ -292,11 +283,7 @@ namespace Tsavorite.core
                 value = reader.ReadLine();
                 snapshotEndObjectLogTail = long.Parse(value);
                 value = reader.ReadLine();
-                captureIndexPositionWord = long.Parse(value);
-                value = reader.ReadLine();
-                captureIndexSizeHint = long.Parse(value);
-                value = reader.ReadLine();
-                captureIndexCount = long.Parse(value);
+                snapshotObjectLogStartAddress = long.Parse(value);
                 legacyObjectLogSegmentSizeBits = 0;
                 legacySnapshotStartObjectLogTail = 0;
                 objectLogFieldsChecksum = ObjectLogFieldsChecksum();
@@ -315,9 +302,7 @@ namespace Tsavorite.core
                 hlogEndObjectLogTail = LegacyWordToAddress(hlogEndWord);
                 legacySnapshotStartObjectLogTail = LegacyWordToAddress(snapshotStartWord);
                 snapshotEndObjectLogTail = LegacyWordToAddress(snapshotEndWord);
-                captureIndexPositionWord = 0;
-                captureIndexSizeHint = 0;
-                captureIndexCount = 0;
+                snapshotObjectLogStartAddress = mainLogRecoveryEndAddress;
                 objectLogFieldsChecksum = beginSegment ^ (long)hlogEndWord ^ (long)snapshotStartWord ^ (long)snapshotEndWord;
             }
 
@@ -478,9 +463,7 @@ namespace Tsavorite.core
                         writer.WriteLine(objectLogBeginAddress);
                         writer.WriteLine(hlogEndObjectLogTail);
                         writer.WriteLine(snapshotEndObjectLogTail);
-                        writer.WriteLine(captureIndexPositionWord);
-                        writer.WriteLine(captureIndexSizeHint);
-                        writer.WriteLine(captureIndexCount);
+                        writer.WriteLine(snapshotObjectLogStartAddress);
                     }
                     else
                     {
@@ -559,8 +542,8 @@ namespace Tsavorite.core
         /// for instance), and xoring equal values would cancel them and leave both unprotected.
         /// </summary>
         private readonly long ObjectLogFieldsChecksum()
-            => Fold(Fold(Fold(Fold(Fold(Fold(FnvOffsetBasis, objectLogBeginAddress), hlogEndObjectLogTail), snapshotEndObjectLogTail),
-                captureIndexPositionWord), captureIndexSizeHint), captureIndexCount);
+            => Fold(Fold(Fold(Fold(FnvOffsetBasis, objectLogBeginAddress), hlogEndObjectLogTail), snapshotEndObjectLogTail),
+                snapshotObjectLogStartAddress);
 
         /// <summary>FNV-1a offset basis, for folding sequences and position-sensitive scalars.</summary>
         private const long FnvOffsetBasis = unchecked((long)14695981039346656037);
@@ -633,8 +616,7 @@ namespace Tsavorite.core
             logger?.LogInformation("Object Log Begin Address: {objectLogBeginAddress}", objectLogBeginAddress);
             logger?.LogInformation("Hybrid Log End Object Log Tail: {hlogEndObjLogTail}", hlogEndObjectLogTail);
             logger?.LogInformation("Snapshot End Object Log Tail: {snapshotEndObjLogTail}", snapshotEndObjectLogTail);
-            logger?.LogInformation("Capture Index: {captureIndexCount} entries at position word {captureIndexPositionWord:X}, size hint {captureIndexSizeHint}",
-                captureIndexCount, captureIndexPositionWord, captureIndexSizeHint);
+            logger?.LogInformation("Snapshot object reference start: {snapshotObjectLogStartAddress}", snapshotObjectLogStartAddress);
             if (databaseMapping?.Length > 0)
                 logger?.LogInformation("Database Mapping (slot -> logical): {databaseMapping}; Swap Epoch: {swapEpoch}", string.Join(",", databaseMapping), swapEpoch);
         }
@@ -651,7 +633,7 @@ namespace Tsavorite.core
         internal ObjectLog snapshotObjectLog;
 
         /// <summary>The <c>(v)</c> values that <c>(v+1)</c> CopyUpdates captured into <see cref="snapshotObjectLog"/>.</summary>
-        internal SnapshotCaptures snapshotCaptures;
+        internal SnapshotObjectLogState snapshotObjectLogState;
         internal SnapshotFlushCoordination snapshotFlushCoordination;
 
         public void Initialize(Guid token, long _version, ICheckpointManager checkpointManager)
@@ -665,7 +647,7 @@ namespace Tsavorite.core
             snapshotFileDevice?.Dispose();
 
             // The object log writes its device, so it goes first, after any capture still writing it.
-            snapshotCaptures?.CloseAndDrain();
+            snapshotObjectLogState?.CloseAndDrain();
             snapshotObjectLog?.Dispose();
             snapshotFileObjectLogDevice?.Dispose();
             snapshotFlushCoordination?.Dispose();

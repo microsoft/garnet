@@ -26,6 +26,12 @@ namespace Tsavorite.core
 
         int serializationPhaseInt;
 
+        /// <summary>Serializes object-log writes through publication of their positions and hints.</summary>
+        internal readonly object ObjectLogPublicationLock = new();
+
+        /// <summary>The snapshot object log that owns the source record's captured reference.</summary>
+        internal ObjectLog SnapshotObjectLog;
+
         /// <summary>The internal serialized bytes of the object.</summary>
         byte[] serializedBytes;
 

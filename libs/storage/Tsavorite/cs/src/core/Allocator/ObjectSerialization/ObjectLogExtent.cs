@@ -146,6 +146,11 @@ namespace Tsavorite.core
         /// <summary>Whether the position is unstamped, so the record has no object-log bytes to read.</summary>
         internal readonly bool IsUnstamped => ObjectLogPositionInfo.WordIsUnstamped(PositionWord);
 
+        /// <summary>Whether the addressed extent is headerless and occupies no bytes.</summary>
+        internal readonly bool ExtentIsEmpty
+            => (PositionWord & (KeyIsOverflow ? ObjectLogPositionInfo.kKeyIsExactSizeMask : ObjectLogPositionInfo.kValueIsExactSizeMask)) != 0
+                && (KeyIsOverflow ? KeySizeHint : ValueSizeHint) == 0;
+
         /// <summary>Build the reference a reader needs from a write's result, as a record stamped with it would carry.</summary>
         internal static ObjectLogRecordRef FromWriteResult(in ObjectLogWriteResult result, bool keyIsOverflow, bool valueIsOverflow, bool valueIsObject)
             => new()

@@ -27,7 +27,7 @@ namespace Tsavorite.core
 #pragma warning disable IDE1006 // Naming Styles: Must begin with uppercase letter
         const int kTotalBits = Size * 8;
 
-        // Other marker bits. Unused* means bits not yet assigned. Numbered Unused0 (highest bit position) down to Unused9
+        // Other marker bits. Unused* means bits not yet assigned. Numbered Unused0 (highest bit position) down to Unused7
         // (just above the high-end RecordInfo bits) so the ToString output prints them in the natural high-to-low bit order.
         const int kIsReadCacheBitOffset = kAddressBits - 1;
         const int kTombstoneBitOffset = kIsReadCacheBitOffset + 1;
@@ -36,9 +36,10 @@ namespace Tsavorite.core
         const int kModifiedBitOffset = kInNewVersionBitOffset + 1;
         const int kSealedBitOffset = kModifiedBitOffset + 1;
         const int kDeferredDisposeBitOffset = kSealedBitOffset + 1;
-        const int kUnused9BitOffset = kDeferredDisposeBitOffset + 1;
-        const int kUnused8BitOffset = kUnused9BitOffset + 1;
-        const int kUnused7BitOffset = kUnused8BitOffset + 1;
+        const int kSnapshotObjectLogBitOffset = kDeferredDisposeBitOffset + 1;
+        const long kSnapshotObjectLogBitMask = 1L << kSnapshotObjectLogBitOffset;
+        const int kDeferredCopyUpdateBitOffset = kSnapshotObjectLogBitOffset + 1;
+        const int kUnused7BitOffset = kDeferredCopyUpdateBitOffset + 1;
         const int kUnused6BitOffset = kUnused7BitOffset + 1;
         const int kUnused5BitOffset = kUnused6BitOffset + 1;
         const int kUnused4BitOffset = kUnused5BitOffset + 1;
@@ -54,8 +55,7 @@ namespace Tsavorite.core
         const long kModifiedBitMask = 1L << kModifiedBitOffset;
         const long kSealedBitMask = 1L << kSealedBitOffset;
         const long kDeferredDisposeBitMask = 1L << kDeferredDisposeBitOffset;
-        const long kUnused9BitMask = 1L << kUnused9BitOffset;
-        const long kUnused8BitMask = 1L << kUnused8BitOffset;
+        const long kDeferredCopyUpdateBitMask = 1L << kDeferredCopyUpdateBitOffset;
         const long kUnused7BitMask = 1L << kUnused7BitOffset;
         const long kUnused6BitMask = 1L << kUnused6BitOffset;
         const long kUnused5BitMask = 1L << kUnused5BitOffset;
@@ -68,6 +68,19 @@ namespace Tsavorite.core
 
         [FieldOffset(0)]
         private long word;
+
+        /// <summary>Whether the disk image references a Snapshot checkpoint's object log.</summary>
+        internal bool HasSnapshotObjectLogReference
+        {
+            readonly get => (word & kSnapshotObjectLogBitMask) != 0;
+            set
+            {
+                if (value)
+                    _ = Interlocked.Or(ref word, kSnapshotObjectLogBitMask);
+                else
+                    _ = Interlocked.And(ref word, ~kSnapshotObjectLogBitMask);
+            }
+        }
 
         // Used by routines to initialize a local recordInfo variable to serve as an initial source for srcRecordInfo, before we have 
         // an in-memory address (or even know if the key will be found in-memory).
@@ -105,9 +118,8 @@ namespace Tsavorite.core
         public void ClearBitsForDiskImages()
         {
             // A Sealed record may become current again during recovery if the RCU-inserted record was not written to disk during a crash. So clear that bit here.
-            // DeferredDispose is in-memory state: the flush writes the live page, so whether the device captured it is nondeterministic, and a recovered
-            // image has no pending flush for it to refer to. Clearing it here is what makes persisting it harmless.
-            word &= ~(kSealedBitMask | kDeferredDisposeBitMask);
+            // Deferred release bits describe in-memory ownership. A recovered image has no pending flush or disposal to claim.
+            word &= ~(kSealedBitMask | kDeferredDisposeBitMask | kDeferredCopyUpdateBitMask);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -344,35 +356,55 @@ namespace Tsavorite.core
             set => word = value ? word | kUnused7BitMask : word & ~kUnused7BitMask;
         }
 
-        internal bool Unused8
+        /// <summary>A deferred CopyUpdate value release, including a sealed checkpoint source.</summary>
+        internal bool DeferredCopyUpdate
         {
-            readonly get => (word & kUnused8BitMask) != 0;
-            set => word = value ? word | kUnused8BitMask : word & ~kUnused8BitMask;
-        }
-
-        internal bool Unused9
-        {
-            readonly get => (word & kUnused9BitMask) != 0;
-            set => word = value ? word | kUnused9BitMask : word & ~kUnused9BitMask;
+            readonly get => (word & kDeferredCopyUpdateBitMask) != 0;
+            set
+            {
+                if (value)
+                    _ = Interlocked.Or(ref word, kDeferredCopyUpdateBitMask);
+                else
+                    _ = Interlocked.And(ref word, ~kDeferredCopyUpdateBitMask);
+            }
         }
 
         internal bool DeferredDispose
         {
             readonly get => (word & kDeferredDisposeBitMask) != 0;
-            set => word = value ? word | kDeferredDisposeBitMask : word & ~kDeferredDisposeBitMask;
+            set
+            {
+                if (value)
+                    _ = Interlocked.Or(ref word, kDeferredDisposeBitMask);
+                else
+                    _ = Interlocked.And(ref word, ~kDeferredDisposeBitMask);
+            }
+        }
+
+        /// <summary>Claim a deferred release once, including when a late mark races the flush completion drain.</summary>
+        internal bool TryTakeDeferredDispose(out bool copyUpdate)
+        {
+            long previous;
+            do
+            {
+                previous = Volatile.Read(ref word);
+                copyUpdate = (previous & kDeferredCopyUpdateBitMask) != 0;
+                if ((previous & kDeferredDisposeBitMask) == 0)
+                    return false;
+            } while (Interlocked.CompareExchange(ref word, previous & ~(kDeferredDisposeBitMask | kDeferredCopyUpdateBitMask), previous) != previous);
+            return true;
         }
 
         public override readonly string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
             static string bstr01(bool value) => value ? "1" : "0";
-            // Unused0..Unused9 printed in declared order (Unused0 leftmost = highest bit position), grouped in 4s separated by '|'.
+            // Unused0..Unused7 printed in declared order (Unused0 leftmost = highest bit position), grouped in 4s separated by '|'.
             var unusedStr = $"{bstr01(Unused0)}{bstr01(Unused1)}{bstr01(Unused2)}{bstr01(Unused3)}"
-                          + $"|{bstr01(Unused4)}{bstr01(Unused5)}{bstr01(Unused6)}{bstr01(Unused7)}"
-                          + $"|{bstr01(Unused8)}{bstr01(Unused9)}";
+                          + $"|{bstr01(Unused4)}{bstr01(Unused5)}{bstr01(Unused6)}{bstr01(Unused7)}";
             return $"prev {AddressString(PreviousAddress)}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(IsSealed)}, rc {bstr(IsReadCache)},"
-                 + $" mod {bstr(Modified)}, inv {bstr(IsInNewVersion)}, defDisp {bstr(DeferredDispose)},"
-                 + $" Unused0-9 {unusedStr}";
+                 + $" mod {bstr(Modified)}, inv {bstr(IsInNewVersion)}, defDisp {bstr(DeferredDispose)}, defCopy {bstr(DeferredCopyUpdate)}, snapshot {bstr(HasSnapshotObjectLogReference)},"
+                 + $" Unused0-7 {unusedStr}";
         }
     }
 }

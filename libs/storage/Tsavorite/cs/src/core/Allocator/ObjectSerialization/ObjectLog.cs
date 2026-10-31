@@ -268,6 +268,8 @@ namespace Tsavorite.core
 
         private long AllocateCore(int numBytes, int minPartialBytes, out int allocatedLength)
         {
+            if (RecoveryReadOnly)
+                throw new TsavoriteException("Cannot append before recovery establishes the object-log tail");
             Debug.Assert(epoch.ThisInstanceProtected(), $"{nameof(Allocate)} must be called inside a {nameof(BeginScope)} scope");
             if (numBytes <= 0 || numBytes > PageSize)
                 ThrowAllocationSize(numBytes);
@@ -362,6 +364,38 @@ namespace Tsavorite.core
         #endregion
 
         #region Reading
+        /// <summary>Read device-backed references while recovery discovers the append tail; no appends are allowed in this mode.</summary>
+        internal bool RecoveryReadOnly { get; set; }
+
+        internal long ReadEndAddress => RecoveryReadOnly ? MaxExclusiveAddress : TailAddress;
+
+        /// <summary>Find the exact end of a record's final extent without materializing its components.</summary>
+        internal long GetReferencedExtentEnd(in ObjectLogRecordRef record)
+        {
+            var address = (long)(record.PositionWord & ObjectLogPositionInfo.AddressMask);
+            var exact = (record.PositionWord & (record.KeyIsOverflow
+                ? ObjectLogPositionInfo.kKeyIsExactSizeMask : ObjectLogPositionInfo.kValueIsExactSizeMask)) != 0;
+            long length;
+            if (exact)
+            {
+                length = record.KeyIsOverflow ? record.KeySizeHint : record.ValueSizeHint;
+                if (length > ObjectLogExtent.ExactCutoff)
+                    throw new TsavoriteException($"Invalid exact object-log extent length {length} at {address}");
+            }
+            else
+            {
+                Span<byte> prefix = stackalloc byte[ObjectLogExtent.LengthPrefixSize];
+                Read(address, prefix.Length, prefix);
+                var payloadLength = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(prefix);
+                if (payloadLength <= ObjectLogExtent.ExactCutoff)
+                    throw new TsavoriteException($"Invalid object-log extent length {payloadLength} at {address}");
+                length = (long)ObjectLogExtent.LengthPrefixSize + payloadLength;
+            }
+            if (address < BeginAddress || length < 0 || length > RemainingOnPage(address) || address > MaxExclusiveAddress - length)
+                throw new TsavoriteException($"Invalid object-log extent of {length} bytes at {address}");
+            return address + length;
+        }
+
         /// <summary>
         /// Read <paramref name="numBytes"/> bytes at <paramref name="logicalAddress"/> into <paramref name="destination"/>, from memory
         /// if the address is still resident and from the device otherwise.
@@ -382,7 +416,7 @@ namespace Tsavorite.core
                 ValidateReadRange(logicalAddress, numBytes, destination.Length);
 
                 // An address at or above HeadAddress cannot be evicted while this scope holds the epoch, so the copy is safe.
-                if (logicalAddress >= allocator.HeadAddress)
+                if (!RecoveryReadOnly && logicalAddress >= allocator.HeadAddress)
                 {
                     new ReadOnlySpan<byte>(GetPhysicalAddress(logicalAddress), numBytes).CopyTo(destination);
                     return;
@@ -469,8 +503,8 @@ namespace Tsavorite.core
                 throw new TsavoriteException($"Object log read length {numBytes} must be greater than zero and no more than the destination length {destinationLength}");
             if (logicalAddress < allocator.BeginAddress)
                 throw new TsavoriteException($"Object log read at address {logicalAddress} is below BeginAddress {allocator.BeginAddress}");
-            if (logicalAddress + numBytes > TailAddress)
-                throw new TsavoriteException($"Object log read of {numBytes} bytes at address {logicalAddress} extends past TailAddress {TailAddress}");
+            if (logicalAddress > ReadEndAddress - numBytes)
+                throw new TsavoriteException($"Object log read of {numBytes} bytes at address {logicalAddress} extends past read end {ReadEndAddress}");
 
             // Reads translate to one device extent, which cannot cross a page because pages are written independently. The format
             // guarantees this by never letting an entry span a page.

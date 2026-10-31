@@ -150,7 +150,9 @@ namespace Tsavorite.core
             var initialRead = sizedByKey
                 ? ObjectLogExtent.KeyInitialRead(record.KeyRdhLengthBits, record.KeySizeHint, isExact: false)
                 : ObjectLogExtent.ValueInitialRead(record.ValueSizeHint, isExact: false);
-            var available = Math.Min(log.RemainingOnPage(topAddress), log.TailAddress - topAddress);
+            var available = log.RecoveryReadOnly
+                ? log.GetReferencedExtentEnd(in record) - topAddress
+                : Math.Min(log.RemainingOnPage(topAddress), log.ReadEndAddress - topAddress);
             if (initialRead < ObjectLogExtent.LengthPrefixSize || available < ObjectLogExtent.LengthPrefixSize)
                 ThrowCorrupt($"a length-prefixed extent at {topAddress} has room for only {Math.Min(initialRead, available)} bytes");
             var readLength = (int)Math.Min(initialRead, available);
@@ -302,8 +304,8 @@ namespace Tsavorite.core
 
         void ValidateExtent(long address, int length)
         {
-            if (address < log.BeginAddress || address + length > log.TailAddress)
-                ThrowCorrupt($"an extent of {length} bytes at {address} is outside the log [{log.BeginAddress}, {log.TailAddress})");
+            if (address < log.BeginAddress || address + length > log.ReadEndAddress)
+                ThrowCorrupt($"an extent of {length} bytes at {address} is outside the log [{log.BeginAddress}, {log.ReadEndAddress})");
             if (log.GetPage(address) != log.GetPage(address + length - 1))
                 ThrowCorrupt($"an extent of {length} bytes at {address} spans a page");
         }

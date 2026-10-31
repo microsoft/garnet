@@ -24,10 +24,12 @@ namespace Tsavorite.test.recovery
     /// source's page, and check that recovery returns the (v) value from whichever log it reads the source from.
     /// </summary>
     [TestFixture]
-    internal class SnapshotCaptureTests : TestBase
+    internal class SnapshotReferenceTests : TestBase
     {
         const int InitialCount = 8;
         const int RmwValue = 99;
+        const long MainLogSegmentSize = 1L << 20;
+        const long ObjectLogSegmentSize = 1L << 30;
 
         /// <summary>When the (v+1) RMW runs relative to the flushes that write the source.</summary>
         public enum RmwOrder
@@ -76,6 +78,9 @@ namespace Tsavorite.test.recovery
         }
 
         TsavoriteKV<ClassStoreFunctions, ClassAllocator> CreateStore(bool overflowKeys = false)
+            => CreateStore(overflowKeys, log, objlog, dir);
+
+        static TsavoriteKV<ClassStoreFunctions, ClassAllocator> CreateStore(bool overflowKeys, IDevice log, IDevice objlog, string dir)
             => new(new()
             {
                 IndexSize = 1L << 13,
@@ -84,10 +89,33 @@ namespace Tsavorite.test.recovery
                 MutableFraction = 0.9,
                 LogMemorySize = 1L << 16,
                 PageSize = 1L << 13,
+                SegmentSize = MainLogSegmentSize,
+                ObjectLogSegmentSize = ObjectLogSegmentSize,
                 MaxInlineKeySize = overflowKeys ? 0 : KVSettings.DefaultMaxInlineKeySize,
                 CheckpointDir = dir
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new SharedListSerializer())
              , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+        [Test]
+        public void SnapshotOwnershipSurvivesClearingTransientReleaseState()
+        {
+            RecordInfo info = default;
+            info.InitializeForNewRecord();
+            info.HasSnapshotObjectLogReference = true;
+            info.DeferredCopyUpdate = true;
+            info.DeferredDispose = true;
+            Assert.That(info.TryTakeDeferredDispose(out var copyUpdate), Is.True);
+            Assert.That(copyUpdate, Is.True);
+            Assert.That(info.TryTakeDeferredDispose(out _), Is.False, "A release must be claimed only once");
+            Assert.That(info.HasSnapshotObjectLogReference, Is.True);
+
+            info.DeferredCopyUpdate = true;
+            info.DeferredDispose = true;
+            info.ClearBitsForDiskImages();
+            Assert.That(info.HasSnapshotObjectLogReference, Is.True);
+            Assert.That(info.DeferredCopyUpdate, Is.False);
+            Assert.That(info.DeferredDispose, Is.False);
+        }
 
         [Test]
         [Category("TsavoriteKV")]
@@ -106,7 +134,7 @@ namespace Tsavorite.test.recovery
             var rmwBeforeCheckpointFlush = order is RmwOrder.BeforeCheckpointFlush or RmwOrder.BeforeCheckpointFlushWithoutReadOnlyFlush;
             var readOnlyFlushesTheSource = order != RmwOrder.BeforeCheckpointFlushWithoutReadOnlyFlush;
             var expectCapture = order != RmwOrder.AfterReadOnlyFlush;
-            var expectIndexEntry = expectCapture && readOnlyFlushesTheSource;
+            var expectMainReference = expectCapture && readOnlyFlushesTheSource && order != RmwOrder.DuringReadOnlyFlush;
 
             using var checkpointFlushAtSource = new ManualResetEventSlim(false);
             using var releaseCheckpointFlushAtSource = new ManualResetEventSlim(false);
@@ -216,7 +244,11 @@ namespace Tsavorite.test.recovery
                         break;
                 }
                 if (readOnlyFlushesTheSource)
+                {
                     Assert.That(store.Log.FlushedUntilAddress, Is.GreaterThanOrEqualTo(sourcePageEnd), "The ReadOnly flush did not write the source's page");
+                    Assert.That(() => store.hlogBase._wrapper.CreateLogRecord(sourceAddress).DataHeader.ValueIsObject, Is.False.After(5000, 10),
+                        "A superseded object's heap must be released after its page is durable, without waiting for eviction");
+                }
 
                 releaseCheckpointFlushAtNextPage.Set();
                 await store.CompleteCheckpointAsync().ConfigureAwait(false);
@@ -227,8 +259,8 @@ namespace Tsavorite.test.recovery
                     persisted.Recover(token, store.checkpointManager);
                     Assert.That(persisted.info.mainLogRecoveryEndAddress > sourceAddress, Is.EqualTo(readOnlyFlushesTheSource),
                         "Recovery must read the source from the main log exactly when the ReadOnly flush wrote it before the checkpoint ended");
-                    Assert.That(persisted.info.captureIndexCount, Is.EqualTo(expectIndexEntry ? 1 : 0),
-                        "Only a capture of a record that recovery reads from the main log is indexed");
+                    Assert.That(persisted.info.snapshotObjectLogStartAddress < persisted.info.mainLogRecoveryEndAddress, Is.EqualTo(expectMainReference),
+                        "Only a main-log image that references the snapshot extends its ownership range");
                 }
                 finally
                 {
@@ -276,6 +308,258 @@ namespace Tsavorite.test.recovery
                     store.Dispose();
                 }
             }
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task ReferencesBelowSnapshotStartAreRepairedOutsideTheResidentRange([Values] bool overflowKeys, [Values] bool useIndex)
+        {
+            var sourceObject = new SharedListHeapObject([1, 2, 3, 4, 5, 6, 7, 8]);
+            var key = new TestObjectKey { key = 1 };
+            Guid token;
+            long sourceAddress;
+            var store = CreateStore(overflowKeys);
+            try
+            {
+                using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions()))
+                {
+                    sourceAddress = store.Log.TailAddress;
+                    _ = session.BasicContext.Upsert(key, sourceObject, Empty.Default);
+                    var nextKey = 2;
+                    while (store.hlogBase.GetPage(store.Log.TailAddress) < 2)
+                        _ = session.BasicContext.Upsert(new TestObjectKey { key = nextKey++ }, new SharedListHeapObject([nextKey]), Empty.Default);
+                    _ = session.BasicContext.Upsert(new TestObjectKey { key = nextKey }, new SharedListHeapObject([nextKey]), Empty.Default);
+                }
+
+                var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
+                store.stateMachineDriver.UnsafeRegisterCallback(pause);
+                try
+                {
+                    Assert.That(store.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot), Is.True);
+                    Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True);
+                    Rmw(store, sourceAddress, expectCapture: true);
+                    store.Log.ShiftReadOnlyAddress(store.hlogBase.GetLogicalAddressOfStartOfPage(1), wait: true);
+                    using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions());
+                    for (var ii = 0; ii < 2000; ii++)
+                        _ = session.BasicContext.Upsert(new TestObjectKey { key = 10000 + ii }, new SharedListHeapObject([ii]), Empty.Default);
+                }
+                finally
+                {
+                    pause.Release.Set();
+                }
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+                HybridLogCheckpointInfo checkpoint = default;
+                try
+                {
+                    checkpoint.Recover(token, store.checkpointManager);
+                    Assert.That(checkpoint.info.snapshotObjectLogStartAddress, Is.EqualTo(sourceAddress));
+                    Assert.That(checkpoint.info.snapshotFileLogicalStartAddress, Is.GreaterThan(sourceAddress));
+                    Assert.That(checkpoint.info.headAddress, Is.GreaterThan(sourceAddress));
+                }
+                finally
+                {
+                    checkpoint.Dispose();
+                }
+            }
+            finally
+            {
+                store.Dispose();
+            }
+
+            for (var recovery = 0; recovery < 2; recovery++)
+            {
+                store = CreateStore(overflowKeys);
+                try
+                {
+                    _ = await store.RecoverAsync(useIndex ? token : default, token).ConfigureAwait(false);
+                    Assert.That(store.Log.HeadAddress, Is.GreaterThan(sourceAddress));
+                    ReadSourceVersion(store, key, sourceAddress, $"disk-only repair, recovery {recovery}");
+                    var ranges = store.GetLogFileSize(token);
+                    Assert.That(ranges.hybridLogObjectFileEndAddress, Is.GreaterThanOrEqualTo(store.hlogBase.ObjectLogFlushedUntilAddress),
+                        "A transfer must include durable repair copies beyond the original metadata tail");
+                    if (recovery == 0)
+                        await VerifyTransferredCheckpoint(overflowKeys, token, ranges, key, sourceAddress).ConfigureAwait(false);
+                    if (recovery == 1)
+                    {
+                        Assert.That(store.TryInitiateFullCheckpoint(out var nextToken, CheckpointType.Snapshot), Is.True);
+                        await store.CompleteCheckpointAsync().ConfigureAwait(false);
+                        Directory.Delete(Path.Combine(dir, "cpr-checkpoints", token.ToString()), recursive: true);
+                        token = nextToken;
+                    }
+                }
+                finally
+                {
+                    store.Dispose();
+                }
+            }
+
+            store = CreateStore(overflowKeys);
+            try
+            {
+                _ = await store.RecoverAsync(useIndex ? token : default, token).ConfigureAwait(false);
+                ReadSourceVersion(store, key, sourceAddress, "checkpoint after recovery, with the original snapshot deleted");
+            }
+            finally
+            {
+                store.Dispose();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task InterruptedReferenceRepairCanBeRetried([Values(1, 2)] int failedRepairPage, [Values] bool overflowKeys)
+        {
+            var controlled = new ControlledReadFailureDevice(log);
+            log = controlled;
+            Guid token;
+            long firstSource, secondSource;
+            var store = CreateStore(overflowKeys);
+            try
+            {
+                using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions()))
+                {
+                    firstSource = store.Log.TailAddress;
+                    _ = session.BasicContext.Upsert(new TestObjectKey { key = 1 }, new SharedListHeapObject([1, 2, 3, 4, 5, 6, 7, 8]), Empty.Default);
+                    var filler = 100;
+                    while (store.hlogBase.GetPage(store.Log.TailAddress) < 1)
+                        _ = session.BasicContext.Upsert(new TestObjectKey { key = filler++ }, new SharedListHeapObject([filler]), Empty.Default);
+                    _ = session.BasicContext.Upsert(new TestObjectKey { key = filler++ }, new SharedListHeapObject([filler]), Empty.Default);
+                    secondSource = store.Log.TailAddress;
+                    _ = session.BasicContext.Upsert(new TestObjectKey { key = 2 }, new SharedListHeapObject([1, 2, 3, 4, 5, 6, 7, 8]), Empty.Default);
+                    while (store.hlogBase.GetPage(store.Log.TailAddress) < 3)
+                        _ = session.BasicContext.Upsert(new TestObjectKey { key = filler++ }, new SharedListHeapObject([filler]), Empty.Default);
+                    _ = session.BasicContext.Upsert(new TestObjectKey { key = filler }, new SharedListHeapObject([filler]), Empty.Default);
+                }
+
+                var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
+                store.stateMachineDriver.UnsafeRegisterCallback(pause);
+                try
+                {
+                    Assert.That(store.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot), Is.True);
+                    Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True);
+                    Rmw(store, firstSource, expectCapture: true);
+                    Rmw(store, secondSource, expectCapture: true, key: 2);
+                    store.Log.ShiftReadOnlyAddress(store.hlogBase.GetLogicalAddressOfStartOfPage(2), wait: true);
+                }
+                finally
+                {
+                    pause.Release.Set();
+                }
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                store.Dispose();
+            }
+
+            store = CreateStore(overflowKeys);
+            try
+            {
+                controlled.FailWriteNumber(controlled.WriteCount + failedRepairPage);
+                _ = Assert.CatchAsync<TsavoriteException>(async () => await store.RecoverAsync(default, token).ConfigureAwait(false));
+                Assert.That(controlled.FailedWriteCount, Is.EqualTo(1));
+                Assert.That(controlled.LastFailedWriteAddress, Is.EqualTo((ulong)((failedRepairPage - 1) * (1L << 13))),
+                    "The interruption must occur while persisting a repaired page, after its object bytes are durable");
+            }
+            finally
+            {
+                store.Dispose();
+            }
+
+            for (var recovery = 0; recovery < 2; recovery++)
+            {
+                store = CreateStore(overflowKeys);
+                try
+                {
+                    _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+                    ReadSourceVersion(store, new TestObjectKey { key = 1 }, firstSource, $"interrupted repair retry {recovery}");
+                    ReadSourceVersion(store, new TestObjectKey { key = 2 }, secondSource, $"interrupted repair retry {recovery}");
+                }
+                finally
+                {
+                    store.Dispose();
+                }
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task LaterCheckpointRejectsObsoleteSnapshotReferences([Values] bool overflowKeys)
+        {
+            Guid firstToken, nextToken;
+            var store = CreateStore(overflowKeys);
+            try
+            {
+                var sourceAddress = store.Log.TailAddress;
+                using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions()))
+                    _ = session.BasicContext.Upsert(new TestObjectKey { key = 1 }, new SharedListHeapObject([1, 2, 3, 4, 5, 6, 7, 8]), Empty.Default);
+
+                var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
+                store.stateMachineDriver.UnsafeRegisterCallback(pause);
+                try
+                {
+                    Assert.That(store.TryInitiateFullCheckpoint(out firstToken, CheckpointType.Snapshot), Is.True);
+                    Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True);
+                    Rmw(store, sourceAddress, expectCapture: true);
+                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                }
+                finally
+                {
+                    pause.Release.Set();
+                }
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+                Assert.That(store.TryInitiateFullCheckpoint(out nextToken, CheckpointType.Snapshot), Is.True);
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+                Directory.Delete(Path.Combine(dir, "cpr-checkpoints", firstToken.ToString()), recursive: true);
+            }
+            finally
+            {
+                store.Dispose();
+            }
+
+            store = CreateStore(overflowKeys);
+            try
+            {
+                _ = await store.RecoverAsync(default, nextToken).ConfigureAwait(false);
+                var functions = new SharedListFunctions();
+                using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(functions);
+                TestObjectInput input = new();
+                TestObjectOutput output = new();
+                var status = session.BasicContext.Read(new TestObjectKey { key = 1 }, ref input, ref output);
+                if (status.IsPending)
+                    _ = session.BasicContext.CompletePending(wait: true);
+                Assert.That(functions.LastRead, Is.Not.Null);
+                Assert.That(functions.LastRead.Items, Has.Count.EqualTo(InitialCount + 1));
+            }
+            finally
+            {
+                store.Dispose();
+            }
+        }
+
+        async Task VerifyTransferredCheckpoint(bool overflowKeys, Guid token, LogFileInfo ranges, TestObjectKey key, long sourceAddress)
+        {
+            var target = Path.Combine(dir, "transferred");
+            var sourceCheckpoint = Path.Combine(dir, "cpr-checkpoints", token.ToString());
+            var targetCheckpoint = Path.Combine(target, "cpr-checkpoints", token.ToString());
+            _ = Directory.CreateDirectory(targetCheckpoint);
+            foreach (var metadata in Directory.GetFiles(sourceCheckpoint, "info.dat*"))
+                File.Copy(metadata, Path.Combine(targetCheckpoint, Path.GetFileName(metadata)));
+
+            objects.ObjectLogCheckpointTransferTests.CopyRange(Path.Combine(dir, "Capture.log"), Path.Combine(target, "Capture.log"),
+                ranges.hybridLogFileStartAddress, ranges.hybridLogFileEndAddress, MainLogSegmentSize);
+            objects.ObjectLogCheckpointTransferTests.CopyRange(Path.Combine(dir, "Capture.obj.log"), Path.Combine(target, "Capture.obj.log"),
+                ranges.hybridLogObjectFileStartAddress, ranges.hybridLogObjectFileEndAddress, ObjectLogSegmentSize);
+            objects.ObjectLogCheckpointTransferTests.CopyRange(Path.Combine(sourceCheckpoint, "snapshot.dat"), Path.Combine(targetCheckpoint, "snapshot.dat"),
+                0, ranges.snapshotFileEndAddress, MainLogSegmentSize);
+            objects.ObjectLogCheckpointTransferTests.CopyRange(Path.Combine(sourceCheckpoint, "snapshot.obj.dat"), Path.Combine(targetCheckpoint, "snapshot.obj.dat"),
+                0, ranges.snapshotObjectFileEndAddress, ObjectLogSegmentSize);
+
+            using var targetLog = Devices.CreateLogDevice(Path.Combine(target, "Capture.log"), deleteOnClose: false);
+            using var targetObjects = Devices.CreateLogDevice(Path.Combine(target, "Capture.obj.log"), deleteOnClose: false);
+            using var targetStore = CreateStore(overflowKeys, targetLog, targetObjects, target);
+            _ = await targetStore.RecoverAsync(default, token).ConfigureAwait(false);
+            ReadSourceVersion(targetStore, key, sourceAddress, "transferred checkpoint after repair");
         }
 
         /// <summary>A failed capture fails the checkpoint, and the store's next checkpoint recovers the value that superseded it.</summary>
@@ -351,22 +635,22 @@ namespace Tsavorite.test.recovery
             }
         }
 
-        static void Rmw(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, long sourceAddress, bool expectCapture)
+        static void Rmw(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, long sourceAddress, bool expectCapture, int key = 1)
         {
             using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions()))
             {
                 var newRecordAddress = store.Log.TailAddress;
                 TestObjectInput input = new() { value = RmwValue };
                 TestObjectOutput output = new();
-                var status = session.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, ref output);
+                var status = session.BasicContext.RMW(new TestObjectKey { key = key }, ref input, ref output);
                 if (status.IsPending)
                     _ = session.BasicContext.CompletePending(wait: true);
                 Assert.That(store.hlogBase._wrapper.CreateLogRecord(newRecordAddress).Info.IsInNewVersion, Is.True, "The RMW was not a (v+1) CopyUpdate");
             }
 
-            var captures = store.hlogBase.ActiveSnapshotCaptures;
+            var captures = store.hlogBase.ActiveSnapshotObjectLog;
             Assert.That(captures, Is.Not.Null, "The Snapshot checkpoint is not capturing");
-            Assert.That(captures.TryGet(sourceAddress, out _), Is.EqualTo(expectCapture),
+            Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).Info.HasSnapshotObjectLogReference, Is.EqualTo(expectCapture),
                 expectCapture ? "The RMW did not capture the source's (v) value" : "The RMW captured a source whose image was durable");
 
             // Releasing a source rewrites its value field as inline. A captured source must keep its object, because the flushes that stamp or

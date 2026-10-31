@@ -157,7 +157,7 @@ namespace Tsavorite.core
         /// </remarks>
         /// <returns>True if the source was captured, so it keeps its value object. False if it needs no capture, because its image is durable
         /// or the checkpoint has stopped capturing; the caller then releases it as when no checkpoint needs its image.</returns>
-        private bool TryCaptureCopyUpdateSource(SnapshotCaptures captures, HeapObjectBase sourceObject, ref LogRecord sourceRecord, long sourceAddress,
+        private bool TryCaptureCopyUpdateSource(SnapshotObjectLogState captures, HeapObjectBase sourceObject, ref LogRecord sourceRecord, long sourceAddress,
             ref LogRecord newLogRecord)
         {
             if (!hlogBase.IsNullDevice && sourceAddress < hlogBase.FlushedUntilAddress)
@@ -182,9 +182,8 @@ namespace Tsavorite.core
         /// <para>
         /// Disposal clears the record's heap fields, which returns the value's <see cref="ObjectIdMap"/> slot to that page's
         /// free list for reuse by another record. A frozen record must keep its value until the flush that is reading it has
-        /// captured it. Two flushes read a record the caller has already deleted: the snapshot flush reads object ids from
-        /// its page copy but resolves them against the live map, and the object allocator's read-only flush serializes and
-        /// writes the live page directly.
+        /// captured it. Both Snapshot and ReadOnly resolve object ids against the live map before copying the completed
+        /// record into an IO-owned image.
         /// </para>
         /// <para>
         /// Only a flush freeze is marked. A checkpoint freeze is deliberately left to eviction, because the drain's release
