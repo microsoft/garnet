@@ -60,6 +60,38 @@ namespace Tsavorite.test
             ClassicAssert.IsTrue(readEntry.SequenceEqual(entry));
         }
 
+        /// <summary>
+        /// Linux limits paths to PATH_MAX rather than Windows' 260-character MAX_PATH. The native device accepts a path that
+        /// leaves room within PATH_MAX for its ".&lt;segment&gt;" suffix, and rejects a longer one when it is created rather than
+        /// on its first IO.
+        /// </summary>
+        [Test]
+        public void NativeDeviceLimitsPathsToPathMaxOnLinux()
+        {
+            if (!OperatingSystem.IsLinux())
+                Assert.Ignore("Windows limits paths that are not extended-length to MAX_PATH.");
+
+            // Directories nearly as deep as PATH_MAX allows; no component may exceed NAME_MAX (255 bytes).
+            var dir = TestUtils.MethodTestDir;
+            while (dir.Length < Native32.LINUX_PATH_MAX - 200)
+                dir = Path.Join(dir, new string('d', 100));
+
+            // The longest path the device accepts leaves 11 bytes for the ".<segment>" suffix.
+            var longestPath = Path.Join(dir, new string('f', Native32.LINUX_PATH_MAX - 11 - dir.Length - 1));
+            ClassicAssert.AreEqual(Native32.LINUX_PATH_MAX - 11, longestPath.Length);
+
+            using (var device = new NativeStorageDevice(longestPath, deleteOnClose: true))
+            {
+                device.Initialize(1L << 30);
+                WriteInto(device, 0, entry, entryLength);
+                ReadInto(device, 0, out var readEntry, entryLength);
+                ClassicAssert.IsTrue(readEntry.SequenceEqual(entry));
+            }
+
+            var ex = Assert.Throws<TsavoriteException>(() => new NativeStorageDevice(longestPath + "f", deleteOnClose: true));
+            StringAssert.Contains("is too long", ex.Message);
+        }
+
         [Test]
         public unsafe void NativeDeviceTest2()
         {

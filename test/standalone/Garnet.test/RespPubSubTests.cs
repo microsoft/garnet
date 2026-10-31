@@ -354,6 +354,39 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Verifies that a SUBSCRIBE queued in MULTI does not stop EXEC from replaying the remaining
+        /// commands and committing, and that the session is in subscription mode afterwards.
+        /// </summary>
+        [Test]
+        public void SubscribeQueuedInMultiCommitsTransactionInResp2()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Bytes);
+
+            ClassicAssert.AreEqual("+OK\r\n", lightClientRequest.Execute("MULTI", 5));
+            ClassicAssert.AreEqual("+QUEUED\r\n", lightClientRequest.Execute("SUBSCRIBE foo", 9));
+            ClassicAssert.AreEqual("+QUEUED\r\n", lightClientRequest.Execute("SET bar value", 9));
+
+            var execResp = "*2\r\n*3\r\n$9\r\nsubscribe\r\n$3\r\nfoo\r\n:1\r\n+OK\r\n";
+            ClassicAssert.AreEqual(execResp, lightClientRequest.Execute("EXEC", execResp.Length));
+
+            // The transaction released its key lock and applied the write
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var get = redis.GetDatabase(0).StringGetAsync("bar");
+            ClassicAssert.IsTrue(get.Wait(TimeSpan.FromSeconds(10)), "Key remained locked after EXEC");
+            ClassicAssert.AreEqual("value", (string)get.Result);
+
+            // The session is now in subscription mode
+            var errorResp = "-ERR Can't execute 'GET': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT are allowed in this context\r\n";
+            ClassicAssert.AreEqual(errorResp, lightClientRequest.Execute("GET bar", errorResp.Length));
+
+            var unsubResp = "*3\r\n$11\r\nunsubscribe\r\n$3\r\nfoo\r\n:0\r\n";
+            ClassicAssert.AreEqual(unsubResp, lightClientRequest.Execute("UNSUBSCRIBE foo", unsubResp.Length));
+
+            var getResp = "$5\r\nvalue\r\n";
+            ClassicAssert.AreEqual(getResp, lightClientRequest.Execute("GET bar", getResp.Length));
+        }
+
+        /// <summary>
         /// Verifies that a RESP3 session in subscription mode can execute PUBLISH (including self-publish
         /// to its own subscribed channel), delivering the self-message without a lock error.
         /// </summary>

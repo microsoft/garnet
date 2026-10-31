@@ -865,8 +865,10 @@ namespace Garnet.server
         public int AdjustedIndexMaxCacheLines;
 
         /// <summary>
-        /// Bytes of hash-index memory the configuration declares a budget for: the larger of <c>IndexMemorySize</c>
-        /// and <c>IndexMaxMemorySize</c>. Set by <see cref="GetSettings"/>.
+        /// Bytes of hash-index memory the configuration budgets for: the larger of <c>IndexMemorySize</c> and
+        /// <c>IndexMaxMemorySize</c>, plus what the store's overflow-bucket allocator commits as soon as it exists. Set by
+        /// <see cref="SetIndexMemoryBudget"/> once the store exists, since that floor depends on the sector size of the
+        /// store's devices.
         /// </summary>
         /// <remarks>
         /// Those settings bound only the main bucket array. The index holds an entry per distinct key, including keys
@@ -1194,8 +1196,8 @@ namespace Garnet.server
                 if (kvSettings.ReadCacheMemorySize > 0)
                 {
                     var pageCount = kvSettings.ReadCacheMemorySize / kvSettings.ReadCachePageSize;
-                    if (kvSettings.PageCount > pageCount)
-                        logger?.LogInformation("[Store] Warning: Read cache overriding specified PageCount of {kvSettingsReadCachePageCount} with smaller page count calculated from LogMemorySize limit divided by PageSize: {pageCount}", kvSettings.ReadCachePageCount, pageCount);
+                    if (kvSettings.ReadCachePageCount > pageCount)
+                        logger?.LogInformation("[Store] Warning: Read cache overriding specified ReadCachePageCount of {kvSettingsReadCachePageCount} with smaller page count calculated from ReadCacheMemorySize limit divided by ReadCachePageSize: {pageCount}", kvSettings.ReadCachePageCount, pageCount);
 
                     var bufferSize = NextPowerOf2(pageCount);
                     logger?.LogInformation("[Store] Read cache enabled with {LogPages} log pages in memory, of which {pageCount} are initially allocated", PrettySize(bufferSize), pageCount);
@@ -1206,10 +1208,10 @@ namespace Garnet.server
                     if (kvSettings.ReadCachePageCount == 0)
                         throw new TsavoriteException($"Read Cache Log Memory size or PageCount must be specified");
                     var bufferSize = (int)NextPowerOf2(kvSettings.ReadCachePageCount);
-                    if (kvSettings.PageCount < bufferSize)
+                    if (kvSettings.ReadCachePageCount < bufferSize)
                     {
-                        logger?.LogInformation("[Store] Warning: Read cache overriding specified PageCount of {kvSettingsReadCachePageCount} with next power of 2 page count {bufferSize}", kvSettings.ReadCachePageCount, bufferSize);
-                        kvSettings.PageCount = bufferSize;
+                        logger?.LogInformation("[Store] Warning: Read cache overriding specified ReadCachePageCount of {kvSettingsReadCachePageCount} with next power of 2 page count {bufferSize}", kvSettings.ReadCachePageCount, bufferSize);
+                        kvSettings.ReadCachePageCount = bufferSize;
                     }
                     logger?.LogInformation("[Store] Read cache enabled with {LogPages} log pages in memory, all of which will be used because there is no MemorySize limit", PrettySize(bufferSize));
                     logger?.LogInformation("[Store] No Read cache log memory size limit will be enforced");
@@ -1288,19 +1290,15 @@ namespace Garnet.server
 
 
         /// <summary>
-        /// Resolve the hash index's two memory bounds: the budget beyond which index memory is charged against the log,
-        /// and the overflow-bucket ceiling. Validates that the ceiling leaves the index able to grow.
+        /// Resolve the hash index's overflow-bucket ceiling, and validate that it leaves the index able to grow. The
+        /// budget beyond which index memory is charged against the log is resolved once the store exists, by
+        /// <see cref="SetIndexMemoryBudget"/>.
         /// </summary>
         /// <param name="kvSettings">Settings being built; receives the resolved overflow threshold.</param>
         /// <param name="indexCacheLines">Main bucket count the index starts at.</param>
         /// <param name="logger">Logger</param>
         private void ConfigureIndexMemory(KVSettings kvSettings, long indexCacheLines, ILogger logger)
         {
-            // The overflow allocator commits its floor as soon as it exists, so that much is inherent to having an index
-            // at the configured size rather than growth to be charged against the log.
-            IndexMemoryBudgetBytes = Math.Max(kvSettings.IndexSize, AdjustedIndexMaxCacheLines * 64L) + KVSettings.OverflowBucketFloorMemorySize;
-            logger?.LogInformation("[Store] Hash index memory budget is {IndexMemoryBudget}; index memory beyond it (overflow buckets) is charged against the log memory size", PrettySize(IndexMemoryBudgetBytes));
-
             // Overflow buckets are reclaimed only by an index resize, which installs a fresh allocator generation, so
             // once the index reaches its max size overflow memory only climbs and nothing else bounds it. The ceiling is
             // a percentage of the main bucket count because overflow buckets chain linearly and are scanned by reads and
@@ -1336,6 +1334,20 @@ namespace Garnet.server
             IndexOverflowMaxMemorySizeBytes = KVSettings.GetIndexOverflowMaxMemorySize(indexCacheLines, IndexOverflowThreshold);
             logger?.LogInformation("[Store] Using hash index overflow threshold of {OverflowThreshold}% of the main bucket count, which is {OverflowMaxSize} at the starting index size and allows average chains of {OverflowChain} overflow buckets",
                 IndexOverflowThreshold, PrettySize(IndexOverflowMaxMemorySizeBytes), IndexOverflowThreshold / 100.0);
+        }
+
+        /// <summary>
+        /// Resolve <see cref="IndexMemoryBudgetBytes"/> for a store built from <paramref name="kvSettings"/>. Called once the
+        /// store exists, because its overflow-bucket floor depends on the sector size the store resolves from its devices.
+        /// </summary>
+        /// <param name="kvSettings">Settings the store was built from.</param>
+        /// <param name="indexOverflowFloorBytes">The store's <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.IndexOverflowFloorSizeBytes"/>.</param>
+        public void SetIndexMemoryBudget(KVSettings kvSettings, long indexOverflowFloorBytes)
+        {
+            // The overflow allocator commits its floor as soon as it exists, so that much is inherent to having an index
+            // at the configured size rather than growth to be charged against the log.
+            IndexMemoryBudgetBytes = Math.Max(kvSettings.IndexSize, AdjustedIndexMaxCacheLines * 64L) + indexOverflowFloorBytes;
+            logger?.LogInformation("[Store] Hash index memory budget is {IndexMemoryBudget}; index memory beyond it (overflow buckets) is charged against the log memory size", PrettySize(IndexMemoryBudgetBytes));
         }
 
         /// <summary>
