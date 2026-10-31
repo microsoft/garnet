@@ -1110,6 +1110,21 @@ namespace Tsavorite.core
 
         private void OnPagesMarkedReadOnlyWorker()
         {
+            try
+            {
+                OnPagesMarkedReadOnlyWorkerCore();
+            }
+            catch (Exception ex)
+            {
+                // OngoingFlushedUntilAddress stays set, so every later OnPagesMarkedReadOnly would leave the flush to this worker and
+                // the log would stall silently. Crash instead: a dump is the only practical way to diagnose this.
+                FailFastOnWorkerException($"OnPagesMarkedReadOnlyWorker failed; allocator state is unrecoverable. "
+                    + $"LastIssuedFlushedUntilAddress={LastIssuedFlushedUntilAddress}, OngoingFlushedUntilAddress={OngoingFlushedUntilAddress}", ex);
+            }
+        }
+
+        private void OnPagesMarkedReadOnlyWorkerCore()
+        {
             while (true)
             {
                 var flushStartAddress = LastIssuedFlushedUntilAddress;
