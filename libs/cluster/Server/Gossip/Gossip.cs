@@ -62,6 +62,159 @@ namespace Garnet.cluster
             => clusterConnectionStore.GetConnectionInfo(nodeId, out info);
 
         /// <summary>
+        /// Grace period applied once to the whole gossip client collection after a swap before the previous
+        /// clients begin graceful retirement. Read live so a CONFIG SET is observed by the next swap.
+        /// Widening this window lets callers that selected a previous client just before the swap finish
+        /// issuing their requests against it rather than observing retirement.
+        /// </summary>
+        TimeSpan GossipClientSwapGrace
+            => TimeSpan.FromSeconds(clusterProvider.storeWrapper.runtimeConfig.GetSeconds(ServerConfigType.GOSSIP_CLIENT_SWAP_GRACE));
+
+        readonly object retireSync = new();
+        readonly List<GarnetServerNode> pendingRetired = [];
+        bool retireTaskActive;
+        bool retireClosed;
+
+        /// <summary>
+        /// Swaps every live gossip client for a new instance built from the current runtime configuration and
+        /// queues the previous clients for graceful retirement by <see cref="TaskType.GossipClientRetireTask"/>.
+        /// Invoked when the GOSSIP_CLIENT configuration group changes via CONFIG SET. No-op once gossip is
+        /// shutting down.
+        /// </summary>
+        public void SwapGossipClients()
+        {
+            if (ctsGossip.IsCancellationRequested)
+                return;
+
+            GarnetServerNode[] retired;
+            try
+            {
+                retired = clusterConnectionStore.SwapAllConnections();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Failed to swap gossip clients after configuration change");
+                return;
+            }
+
+            if (retired.Length == 0)
+                return;
+
+            lock (retireSync)
+            {
+                if (!retireClosed)
+                {
+                    pendingRetired.AddRange(retired);
+                    if (retireTaskActive)
+                        return;
+
+                    retireTaskActive = clusterProvider.storeWrapper.TaskManager.RegisterAndRun(
+                        TaskType.GossipClientRetireTask,
+                        token => Task.Run(() => RetireGossipClientsAsync(token)));
+                    if (retireTaskActive)
+                        return;
+
+                    // Registration fails only when the task manager is disposed; nothing else owns these nodes.
+                    pendingRetired.Clear();
+                }
+            }
+
+            foreach (var node in retired)
+                DisposeRetiredNode(node);
+        }
+
+        /// <summary>
+        /// Retires queued gossip clients in batches until none remain. Each batch waits for the swap grace window
+        /// and then drains gracefully, bounded by the cluster node timeout. Cancellation ends the grace window
+        /// early and forces each drain to dispose its client without waiting for outstanding replies.
+        /// </summary>
+        async Task RetireGossipClientsAsync(CancellationToken token)
+        {
+            while (true)
+            {
+                var grace = GossipClientSwapGrace;
+                if (grace > TimeSpan.Zero && !token.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await Task.Delay(grace, token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                    }
+                }
+
+                GarnetServerNode[] batch;
+                lock (retireSync)
+                {
+                    if (pendingRetired.Count == 0)
+                    {
+                        retireTaskActive = false;
+                        _ = clusterProvider.storeWrapper.TaskManager.TryUnregister(TaskType.GossipClientRetireTask);
+                        return;
+                    }
+
+                    batch = [.. pendingRetired];
+                    pendingRetired.Clear();
+                }
+
+                using var drainCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+                drainCts.CancelAfter(clusterTimeout);
+                var retirements = new Task[batch.Length];
+                for (var i = 0; i < batch.Length; i++)
+                    retirements[i] = RetireNodeAsync(batch[i], drainCts.Token);
+                await Task.WhenAll(retirements).ConfigureAwait(false);
+            }
+        }
+
+        async Task RetireNodeAsync(GarnetServerNode node, CancellationToken token)
+        {
+            try
+            {
+                await node.DisposeGracefullyAsync(token).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Error retiring gossip connection during configuration swap");
+            }
+        }
+
+        void DisposeRetiredNode(GarnetServerNode node)
+        {
+            try
+            {
+                node.Dispose();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Error disposing retired gossip connection");
+            }
+        }
+
+        /// <summary>
+        /// Stops accepting retired gossip clients, cancels <see cref="TaskType.GossipClientRetireTask"/> (forcing
+        /// in-progress drains to dispose their clients) and disposes any clients still queued.
+        /// </summary>
+        void StopGossipClientRetirement()
+        {
+            lock (retireSync)
+                retireClosed = true;
+
+            AsyncUtils.BlockingWait(clusterProvider.storeWrapper.TaskManager.CancelAsync(TaskType.GossipClientRetireTask));
+
+            GarnetServerNode[] leftover;
+            lock (retireSync)
+            {
+                retireTaskActive = false;
+                leftover = [.. pendingRetired];
+                pendingRetired.Clear();
+            }
+
+            foreach (var node in leftover)
+                DisposeRetiredNode(node);
+        }
+
+        /// <summary>
         /// Get link status info for primary of this node.
         /// </summary>
         /// <param name="config">Snapshot of config to use for retrieving that information.</param>
@@ -174,9 +327,11 @@ namespace Garnet.cluster
                 if (gsn == null)
                 {
                     var endpoints = await Format.TryCreateEndpointAsync(address, port, tryConnect: true, logger: logger).ConfigureAwait(false);
-                    if (endpoints == null)
+                    if (endpoints == null || endpoints.Length == 0)
                     {
                         logger?.LogError("Invalid CLUSTER MEET endpoint!");
+                        gossipStats.UpdateMeetRequestsFailed();
+                        return;
                     }
                     gsn = new GarnetServerNode(clusterProvider, endpoints[0], tlsOptions?.TlsClientOptions, clusterConnectionStore.Epoch, logger: logger);
                     created = true;

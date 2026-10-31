@@ -38,6 +38,17 @@ namespace Garnet.test
         /// </summary>
         static readonly TimeSpan Bound = TimeSpan.FromSeconds(30);
 
+        /// <summary>
+        /// Creates a client that admits every request a test issues without waiting for completion capacity,
+        /// so each request is in flight when teardown runs.
+        /// </summary>
+        static client.GarnetClient CreateClient(EndPoint endpoint)
+            => TestUtils.GetGarnetClient(endpoint, networkWriterOptions: client.NetworkWriterOptions.Default with
+            {
+                MaxOutstandingRequests = 4 * RequestCount,
+                MaxOutstandingCompletions = 4 * RequestCount,
+            });
+
         [TearDown]
         public void TearDown() => TestUtils.OnTearDown();
 
@@ -45,7 +56,7 @@ namespace Garnet.test
         public void DisposeWithRequestsInFlightCompletesEveryCaller()
         {
             using var silent = new SilentServer();
-            var client = TestUtils.GetGarnetClient(silent.EndPoint);
+            var client = CreateClient(silent.EndPoint);
             client.Connect();
 
             var issued = new List<Task>();
@@ -74,7 +85,7 @@ namespace Garnet.test
         public void ConcurrentTeardownCompletesEachRequestExactlyOnce()
         {
             using var silent = new SilentServer();
-            var client = TestUtils.GetGarnetClient(silent.EndPoint);
+            var client = CreateClient(silent.EndPoint);
             client.Connect();
 
             var invocations = 0;
@@ -119,7 +130,7 @@ namespace Garnet.test
         public void ThrowingCallbackDoesNotStrandOtherRequests()
         {
             using var silent = new SilentServer();
-            var client = TestUtils.GetGarnetClient(silent.EndPoint);
+            var client = CreateClient(silent.EndPoint);
             client.Connect();
 
             var awaited = new List<Task>();

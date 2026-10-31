@@ -193,11 +193,14 @@ namespace Garnet.server
 
                 if (dynamicSets != null)
                 {
-                    foreach (var (type, value) in dynamicSets)
+                    // Apply the batch and publish each changed configuration group as one consistent versioned
+                    // unit, then notify downstream consumers. A multi-parameter group (e.g. GOSSIP_CLIENT) is
+                    // published once per batch, so swapped-in clients observe every updated value together.
+                    storeWrapper.runtimeConfig.TrySetAll(dynamicSets, error => AppendError(sbErrorMsg, error), group =>
                     {
-                        if (!storeWrapper.runtimeConfig.TrySet(type, value, out var error))
-                            AppendError(sbErrorMsg, error);
-                    }
+                        if (group == ServerConfigGroupType.GOSSIP_CLIENT)
+                            storeWrapper.clusterProvider?.OnGossipClientConfigChanged();
+                    });
                 }
             }
 

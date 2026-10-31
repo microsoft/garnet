@@ -10,6 +10,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.client;
 using Garnet.cluster;
 using Garnet.common;
 using NUnit.Framework;
@@ -257,7 +258,7 @@ namespace Garnet.test.cluster
         [TestCase(1, 1)]
         [TestCase(1, 2)]
         [TestCase(2, 2)]
-        public async Task ReconnectAttemptsTheLatestVersionWithTheSameClient(byte initialVersion, byte reconnectedVersion)
+        public async Task ReconnectAttemptsTheLatestVersionWithANewClient(byte initialVersion, byte reconnectedVersion)
         {
             GarnetServerNode node = null;
             try
@@ -271,13 +272,14 @@ namespace Garnet.test.cluster
 
                 await using (TestPeer peer = new(provider.clusterManager.CurrentConfig, reconnectedVersion))
                 {
-                    Garnet.client.GarnetClient client = node.Client;
+                    GarnetClient client = node.Client;
                     TimeSpan retryDelay = node.RecordConnectionFailure();
                     Assert.That(node.IsInitialized, Is.False);
                     Assert.That(await node.TryInitializeAsync(), Is.False);
                     await Task.Delay(retryDelay + TimeSpan.FromMilliseconds(50), context.cts.Token);
                     Assert.That(await node.TryInitializeAsync(), Is.True);
-                    Assert.That(node.Client, Is.SameAs(client));
+                    Assert.That(node.Client, Is.Not.SameAs(client));
+                    Assert.That(client.Disposed, Is.True);
                     _ = await node.TryMeetAsync(provider.clusterManager.CurrentConfig);
                     byte[] expectedVersions = reconnectedVersion == 1 ? [2, 1] : [2];
                     Assert.That(peer.RequestVersions, Is.EqualTo(expectedVersions));
@@ -290,6 +292,65 @@ namespace Garnet.test.cluster
                 node?.Dispose();
             }
         }
+
+#if DEBUG
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task ReconnectPublishesOnlyAfterConnectAndNeverAfterDisposal(bool disposeDuringConnect)
+        {
+            GarnetServerNode node = null;
+            Task<bool> reconnect = null;
+            using var guard = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            try
+            {
+                await using (TestPeer firstPeer = new(provider.clusterManager.CurrentConfig, supportedVersion: 2))
+                {
+                    node = CreateNode(firstPeer);
+                    Assert.That(await node.TryInitializeAsync(), Is.True);
+                }
+                await using TestPeer peer = new(provider.clusterManager.CurrentConfig, supportedVersion: 2);
+                var previous = node.Client;
+                var retryDelay = node.RecordConnectionFailure();
+                await Task.Delay(retryDelay + TimeSpan.FromMilliseconds(50), guard.Token);
+
+                using var pause = ExceptionInjectionHelper.EnabledScope(ExceptionInjectionType.GarnetClient_Connect_Pause_Before_Publish);
+                reconnect = Task.Run(async () => await node.TryInitializeAsync());
+                try
+                {
+                    await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.GarnetClient_Connect_Pause_Before_Publish)
+                        .WaitAsync(guard.Token);
+                    Assert.That(node.Client, Is.SameAs(previous));
+                    Assert.That(previous.Disposed, Is.False);
+                    if (disposeDuringConnect)
+                        node?.Dispose();
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.EnableException(ExceptionInjectionType.GarnetClient_Connect_Pause_Before_Publish);
+                }
+
+                Assert.That(await reconnect.WaitAsync(guard.Token), Is.EqualTo(!disposeDuringConnect));
+                Assert.That(previous.Disposed, Is.True);
+                Assert.That(node.IsInitialized, Is.EqualTo(!disposeDuringConnect));
+                if (disposeDuringConnect)
+                {
+                    Assert.That(node.Client, Is.SameAs(previous));
+                    Assert.That(await node.TryInitializeAsync(), Is.False);
+                }
+                else
+                {
+                    Assert.That(node.Client, Is.Not.SameAs(previous));
+                    Assert.That(node.Client.IsConnected, Is.True);
+                }
+            }
+            finally
+            {
+                node.Dispose();
+                if (reconnect != null)
+                    await reconnect.WaitAsync(guard.Token);
+            }
+        }
+#endif
 
         [Test]
         public async Task OlderPeerRetryResendsFullConfigurationBeforeHeartbeats()
