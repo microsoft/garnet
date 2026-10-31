@@ -167,8 +167,12 @@ namespace Garnet.server
 
             try
             {
+                // The command blocks only once the broker's first attempt finds no item, so the timeout starts then
+                await observer.WakeupSemaphore.WaitAsync(observer.CancellationTokenSource.Token).ConfigureAwait(false);
+
                 // Wait for either the result found notification or the timeout to expire
-                await observer.ResultFoundSemaphore.WaitAsync(timeout, observer.CancellationTokenSource.Token).ConfigureAwait(false);
+                if (observer.Status == ObserverStatus.WaitingForResult)
+                    await observer.WakeupSemaphore.WaitAsync(timeout, observer.CancellationTokenSource.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -274,14 +278,28 @@ namespace Garnet.server
                     if (keysToObservers.ContainsKey(key) && !keysToObservers[key].IsEmpty)
                         continue;
 
-                    // The key has an empty observer queue, try to retrieve next available item
-                    if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: true,
-                            out _, out var result))
-                        continue;
+                    // Hold the status lock across the pop so that CLIENT UNBLOCK or a disconnect cannot complete the
+                    // observer between taking the item and handing it over
+                    observer.ObserverStatusLock.WriteLock();
+                    try
+                    {
+                        // An observer completed before reaching the broker takes no item and is not enqueued
+                        if (observer.Status != ObserverStatus.WaitingForResult)
+                            return;
 
-                    // An item was found - set the observer result and return
-                    sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
-                    observer.HandleSetResult(result);
+                        // The key has an empty observer queue, try to retrieve next available item
+                        if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: true,
+                                out _, out var result))
+                            continue;
+
+                        // An item was found - set the observer result and return
+                        sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
+                        observer.HandleSetResult(result, true);
+                    }
+                    finally
+                    {
+                        observer.ObserverStatusLock.WriteUnlock();
+                    }
 
                     // The key still has an empty observer queue, and the current observer retrieved a result, so we can remove the key.
                     keysToObservers.Remove(key);
@@ -297,6 +315,9 @@ namespace Garnet.server
 
                     keysToObservers[key].Enqueue(observer);
                 }
+
+                // Start the observer's timeout
+                observer.WakeupSemaphore.Release();
             }
             finally
             {

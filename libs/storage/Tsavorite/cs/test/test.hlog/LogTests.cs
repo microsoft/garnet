@@ -309,6 +309,90 @@ namespace Tsavorite.test
             ClassicAssert.AreEqual(numEntries, counter.count);
         }
 
+        /// <summary>
+        /// A disposed log writes nothing more to its commit directory, so a commit whose metadata write is in progress
+        /// finishes before <see cref="TsavoriteLog.Dispose"/> returns.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteLog")]
+        public void DisposeWaitsForACommitMetadataWriteInProgress()
+        {
+            device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "Tsavoritelog.log"), deleteOnClose: true);
+            using var holding = new HoldingLogCommitManager(manager);
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, LogCommitManager = holding, TryRecoverLatest = false });
+            var disposing = log;
+            log = null;
+
+            try
+            {
+                _ = disposing.Enqueue(entry);
+                disposing.Commit();
+                ClassicAssert.IsTrue(holding.entered.Wait(TimeSpan.FromSeconds(30)), "The commit did not reach its metadata write");
+
+                var dispose = Task.Factory.StartNew(disposing.Dispose, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+                ClassicAssert.IsFalse(dispose.Wait(TimeSpan.FromMilliseconds(500)), "Dispose returned while a commit was still writing its metadata");
+
+                holding.release.Set();
+                ClassicAssert.IsTrue(dispose.Wait(TimeSpan.FromSeconds(30)), "Dispose did not return once the commit finished");
+            }
+            finally
+            {
+                holding.release.Set();
+            }
+        }
+
+        /// <summary>
+        /// A log disposed from its own commit callback, which runs on the commit worker, finishes disposing.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteLog")]
+        public void ALogDisposedFromItsCommitCallbackFinishesDisposing()
+        {
+            device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "Tsavoritelog.log"), deleteOnClose: true);
+            var disposing = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, LogCommitManager = manager, TryRecoverLatest = false });
+
+            using var disposed = new ManualResetEventSlim();
+            _ = disposing.Enqueue(entry);
+            _ = disposing.CommitStrongly(out _, out _, callback: () =>
+            {
+                disposing.Dispose();
+                disposed.Set();
+            });
+
+            ClassicAssert.IsTrue(disposed.Wait(TimeSpan.FromSeconds(30)), "Disposing a log from its commit callback did not return");
+        }
+
+        /// <summary>
+        /// Holds each commit's metadata write until released.
+        /// </summary>
+        sealed class HoldingLogCommitManager(ILogCommitManager inner) : ILogCommitManager
+        {
+            internal readonly ManualResetEventSlim entered = new(), release = new();
+
+            public void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum, bool forceWriteMetadata)
+            {
+                entered.Set();
+                release.Wait();
+                inner.Commit(beginAddress, untilAddress, commitMetadata, commitNum, forceWriteMetadata);
+            }
+
+            public byte[] GetCommitMetadata(long commitNum) => inner.GetCommitMetadata(commitNum);
+
+            public IEnumerable<long> ListCommits() => inner.ListCommits();
+
+            public void RemoveCommit(long commitNum) => inner.RemoveCommit(commitNum);
+
+            public void RemoveAllCommits() => inner.RemoveAllCommits();
+
+            public void OnRecovery(long commitNum) => inner.OnRecovery(commitNum);
+
+            public void Dispose()
+            {
+                entered.Dispose();
+                release.Dispose();
+            }
+        }
+
         internal class TestConsumer : ILogEntryConsumer
         {
             private readonly Counter counter;
