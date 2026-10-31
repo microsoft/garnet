@@ -1828,6 +1828,9 @@ namespace Tsavorite.core
             try
             {
                 result = logWriter.WriteRecordObjects(in keyOverflow, default, valueIsObject: true, valueObject);
+
+                // Test-only interleave point: a capture of this record must wait here for the claim.
+                ObjectFlushInjection.At(ObjectFlushPhase.ClaimHeld, logicalAddress);
                 StampFlushedRecord(ref logRecord, in result);
                 if (flushRequestState == FlushRequestState.ReadOnly)
                     finalWord = HeapObjectBase.ReadOnlyStampedWord;

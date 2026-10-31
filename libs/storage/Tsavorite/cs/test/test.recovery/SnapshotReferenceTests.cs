@@ -859,6 +859,67 @@ namespace Tsavorite.test.recovery
             }
         }
 
+        /// <summary>
+        /// A flush holds the claim on the source's object from its object-log write through its stamp, so a capture cannot interleave with
+        /// that stamp. The capture waits for the claim, then finds the source published by the Snapshot flush and only marks it.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task CaptureWaitsForTheFlushThatHoldsTheClaim([Values] bool overflowKeys)
+        {
+            if (!ObjectFlushInjection.IsAvailable)
+                Assert.Ignore("ObjectFlushInjection is compiled out in Release, so the Checkpoint Flush cannot be held.");
+
+            var key = new TestObjectKey { key = 1 };
+            Guid token;
+            long sourceAddress;
+            using var flushHoldsClaim = new ManualResetEventSlim(false);
+            using var releaseFlush = new ManualResetEventSlim(false);
+            var store = CreateStore(overflowKeys);
+            try
+            {
+                sourceAddress = UpsertSource(store, key);
+                ObjectFlushInjection.Hook = (phase, logicalAddress) =>
+                {
+                    if (phase == ObjectFlushPhase.ClaimHeld && logicalAddress == sourceAddress && !flushHoldsClaim.IsSet)
+                    {
+                        flushHoldsClaim.Set();
+                        _ = releaseFlush.Wait(TimeSpan.FromSeconds(30));
+                    }
+                };
+                Assert.That(store.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot), Is.True);
+                Assert.That(flushHoldsClaim.Wait(TimeSpan.FromSeconds(30)), Is.True, "The Checkpoint Flush never claimed the source");
+
+                // The CopyUpdate blocks in its capture until the flush releases the claim, so a short wait times out.
+                var rmw = Task.Run(() => Rmw(store, sourceAddress, expectCapture: true));
+                Assert.That(rmw.Wait(TimeSpan.FromMilliseconds(250)), Is.False, "The capture did not wait for the claim of the flush publishing the source");
+                var stampBeforeRelease = store.hlogBase._wrapper.CreateLogRecord(sourceAddress).GetObjectLogRecordRef();
+                releaseFlush.Set();
+                Assert.That(rmw.Wait(TimeSpan.FromSeconds(30)), Is.True, "The capture did not complete after the flush released its claim");
+                Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).GetObjectLogRecordRef(), Is.Not.EqualTo(stampBeforeRelease),
+                    "The flush did not stamp the source");
+                Assert.That(SourceIsMarked(store, sourceAddress), Is.True, "The flush's stamp cleared the capture's marker");
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                releaseFlush.Set();
+                ObjectFlushInjection.Reset();
+                store.Dispose();
+            }
+
+            store = CreateStore(overflowKeys);
+            try
+            {
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+                ReadSourceVersion(store, key, sourceAddress, "capture that waited for the flush's claim");
+            }
+            finally
+            {
+                store.Dispose();
+            }
+        }
+
         async Task VerifyTransferredCheckpoint(bool overflowKeys, Guid token, LogFileInfo ranges, TestObjectKey key, long sourceAddress)
         {
             var target = Path.Combine(dir, "transferred");
@@ -904,12 +965,14 @@ namespace Tsavorite.test.recovery
 
                 var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
                 store.stateMachineDriver.UnsafeRegisterCallback(pause);
+                ValueTask completion;
                 try
                 {
                     Assert.That(store.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot), Is.True);
                     Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True, "The checkpoint did not reach IN_PROGRESS");
 
                     sourceObject.ThrowOnSerialize = true;
+                    var tailBeforeRmw = store.Log.TailAddress;
                     using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions()))
                     {
                         TestObjectInput input = new() { value = RmwValue };
@@ -918,14 +981,18 @@ namespace Tsavorite.test.recovery
                         Assert.That(status.IsCompletedSuccessfully, Is.True, "A failed capture must not fail the RMW");
                     }
                     sourceObject.ThrowOnSerialize = false;
-                    Assert.That(shared, Has.Count.EqualTo(InitialCount + 1), "The RMW did not take the CopyUpdate path");
+                    Assert.That(store.Log.TailAddress, Is.GreaterThan(tailBeforeRmw), "The RMW did not take the CopyUpdate path");
+                    Assert.That(shared, Has.Count.EqualTo(InitialCount + 1), "The RMW did not apply its change");
                     Assert.That(sourceObject.SerializeAttempts, Is.GreaterThan(0), "The RMW did not attempt a capture");
+
+                    // Observe the checkpoint before releasing it: once it has aborted, CompleteCheckpointAsync has no checkpoint to report on.
+                    completion = store.CompleteCheckpointAsync();
                 }
                 finally
                 {
                     pause.Release.Set();
                 }
-                _ = Assert.CatchAsync<TsavoriteException>(async () => await store.CompleteCheckpointAsync().ConfigureAwait(false),
+                _ = Assert.CatchAsync<TsavoriteException>(async () => await completion.ConfigureAwait(false),
                     "A checkpoint whose capture failed must not complete");
 
                 // The next checkpoint has the (v+1) record, which needs no capture.

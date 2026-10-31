@@ -17,6 +17,10 @@ namespace Tsavorite.core
         /// flush window here, so <c>IsFrozenForFlush</c> holds for its address.</summary>
         AfterRecordWritten,
 
+        /// <summary>The flush holds the claim on the record's value object and has written the object to the object log, but has not
+        /// stamped the record. A capture of the record waits for the claim here.</summary>
+        ClaimHeld,
+
         /// <summary>Snapshot coordination has entered <c>CapturingCutoff</c> but has not yet sampled the ReadOnly cutoff. This is
         /// the window in which a ReadOnly worker can publish <c>LastIssuedFlushedUntilAddress</c> and must still be classified
         /// correctly, either inside the cutoff cohort or as post-cutoff. The address passed is the cutoff candidate at entry.</summary>
