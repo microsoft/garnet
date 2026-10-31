@@ -33,6 +33,9 @@ namespace Garnet.cluster
         unsafe byte* dcurr, dend;
         long localCurrentEpoch = 0;
 
+        // Session whose epoch is released while waiting for a key; null when this session's own epoch is
+        ClusterSession epochOwner;
+
         public long LocalCurrentEpoch => Volatile.Read(ref localCurrentEpoch);
 
         bool readOnlySession;
@@ -53,7 +56,7 @@ namespace Garnet.cluster
                 return;
 
             // Failover drains session epochs before releasing the pause.
-            ReleaseCurrentEpoch();
+            ReleaseEpochForWait();
             try
             {
                 // Keep short pauses allocation-free; task blocking lets the pool compensate for longer waits.
@@ -66,7 +69,7 @@ namespace Garnet.cluster
             }
             finally
             {
-                AcquireCurrentEpoch();
+                AcquireEpochAfterWait();
             }
         }
 
@@ -246,6 +249,25 @@ namespace Garnet.cluster
         /// Announces this session as idle after all epoch-protected work is complete.
         /// </summary>
         public void ReleaseCurrentEpoch() => Volatile.Write(ref localCurrentEpoch, 0);
+
+        /// <inheritdoc/>
+        public void SetEpochOwner(IClusterSession owner) => epochOwner = (ClusterSession)owner;
+
+        /// <summary>
+        /// Releases the epoch that this session's progress is gated on, before a wait that depends on other sessions
+        /// moving past a configuration change.
+        /// </summary>
+        void ReleaseEpochForWait() => (epochOwner ?? this).ReleaseCurrentEpoch();
+
+        /// <summary>
+        /// Re-acquires the epoch released by <see cref="ReleaseEpochForWait"/>.
+        /// </summary>
+        void AcquireEpochAfterWait() => (epochOwner ?? this).AcquireCurrentEpoch();
+
+        /// <summary>
+        /// The epoch announced by the session that <see cref="ReleaseEpochForWait"/> and <see cref="AcquireEpochAfterWait"/> act on.
+        /// </summary>
+        long EpochForWait => (epochOwner ?? this).LocalCurrentEpoch;
 
         /// <summary>
         /// Release epoch, wait for config transition and re-acquire the epoch
