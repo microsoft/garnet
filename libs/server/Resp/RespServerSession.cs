@@ -53,6 +53,21 @@ namespace Garnet.server
         public CommandStats GetCommandStats => commandStats;
 
         /// <summary>
+        /// Updates the session's command counters for a command that did not pass through the message loop,
+        /// as the loop does for each command it processes.
+        /// </summary>
+        /// <param name="cmd">The command that was executed or rejected.</param>
+        internal void CountCommandProcessed(RespCommand cmd)
+        {
+            if (sessionMetrics == null)
+                return;
+
+            sessionMetrics.total_commands_processed++;
+            sessionMetrics.total_write_commands_processed += cmd.OneIfWrite();
+            sessionMetrics.total_read_commands_processed += cmd.OneIfRead();
+        }
+
+        /// <summary>
         /// Get a copy of latencyMetrics
         /// </summary>
         public GarnetLatencyMetricsSession GetLatencyMetrics() => LatencyMetrics;
@@ -337,6 +352,7 @@ namespace Garnet.server
             clusterSession = cp?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, storageSession.stringBasicContext, storageSession.vectorBasicContext, networkSender, logger);
             clusterSession?.SetUserHandle(this._userHandle);
             sessionScriptCache?.SetUserHandle(this._userHandle);
+            sessionScriptCache?.SetEpochOwner(clusterSession);
 
             parseState.Initialize();
             readHead = 0;

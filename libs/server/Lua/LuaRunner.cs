@@ -164,6 +164,9 @@ namespace Garnet.server
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly RespServerSession respServerSession;
 
+        // The ASKING state of the connection running the script, applied to each command the script issues
+        byte scriptAsking;
+
         readonly ScratchBufferBuilder scratchBufferBuilder;
         readonly TxnKeyEntries txnKeyEntries;
         readonly bool txnMode;
@@ -1136,6 +1139,7 @@ namespace Garnet.server
 
             preambleOuterSession = outerSession;
             preambleKeyAndArgvCount = count;
+            scriptAsking = outerSession.SessionAsking;
             try
             {
                 LuaRunnerTrampolines.SetCallbackContext(this);
@@ -1181,6 +1185,7 @@ namespace Garnet.server
             }
             finally
             {
+                scriptAsking = 0;
                 LuaRunnerTrampolines.ClearCallbackContext(this);
             }
         }

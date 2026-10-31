@@ -754,9 +754,23 @@ namespace Garnet.server
         /// <returns></returns>
         unsafe PinnedSpanByte ProcessRespSingleTokenOutput(ObjectOutput output)
         {
+            _ = TryProcessRespSingleTokenOutput(output, out var result);
+            return result;
+        }
+
+        /// <summary>
+        /// Converts a single token in RESP format to ArgSlice type, distinguishing a nil token from a
+        /// zero-length one. Both convert to an empty <see cref="PinnedSpanByte"/>, so callers that need to
+        /// tell "no value" from "empty value" apart must use the return value rather than the length.
+        /// </summary>
+        /// <param name="output">The RESP format output object</param>
+        /// <param name="result">The converted token, empty if the token was nil</param>
+        /// <returns>True if the token held a value, false if it was nil</returns>
+        unsafe bool TryProcessRespSingleTokenOutput(ObjectOutput output, out PinnedSpanByte result)
+        {
             byte* element = null;
             var len = 0;
-            PinnedSpanByte result;
+            result = default;
 
             var outputSpan = output.SpanByteAndMemory.ReadOnlySpan;
             try
@@ -768,13 +782,13 @@ namespace Garnet.server
 
                     if (!RespReadUtils.TryReadPtrWithSignedLengthHeader(ref element, ref len, ref refPtr, end)
                         || len < 0)
-                        return default;
+                        return false;
                     result = PinnedSpanByte.FromPinnedPointer(element, len);
 
-                    // When output uses heap Memory, the finally block will dispose it, invalidating
-                    // the PinnedSpanByte pointer. Copy data to scratch buffer while still pinned.
-                    // CreateArgSlice allocates pinned space and copies the data into it.
-                    if (result.Length > 0 && !output.SpanByteAndMemory.IsSpanByte)
+                    // The output buffer does not outlive this call: a pooled one is disposed in the
+                    // finally block, and a caller-supplied stack one dies when the caller returns.
+                    // Copy into scratch space, which the caller may hold on to.
+                    if (result.Length > 0)
                         result = scratchBufferAllocator.CreateArgSlice(result.ReadOnlySpan);
                 }
             }
@@ -784,7 +798,7 @@ namespace Garnet.server
                     output.SpanByteAndMemory.Memory.Dispose();
             }
 
-            return result;
+            return true;
         }
 
         /// <summary>
