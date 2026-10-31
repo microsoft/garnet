@@ -2,10 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -2152,6 +2154,43 @@ namespace Garnet.test
             var values = db.ListRange(key);
             ClassicAssert.AreEqual(1, values.Length);
             ClassicAssert.AreEqual("listItem", (string)values[0]);
+        }
+
+        [Test]
+        public void ExpiryCommandOnExpiredKeyReturnsZero([Values(false, true)] bool isObject, [Values("EXPIRE", "PEXPIRE", "PERSIST")] string command)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "myKey";
+            if (isObject)
+                db.HashSet(key, "field", "value");
+            else
+                db.StringSet(key, "value");
+            db.KeyExpire(key, TimeSpan.FromMilliseconds(1));
+            Thread.Sleep(50);
+
+            var reply = command == "PERSIST" ? db.Execute(command, key) : db.Execute(command, key, "100");
+            ClassicAssert.AreEqual(ResultType.Integer, reply.Resp2Type);
+            ClassicAssert.AreEqual(0, (int)reply);
+            ClassicAssert.IsFalse(db.KeyExists(key));
+        }
+
+        [Test]
+        public void SetBitOnExpiredKeyStartsFromZeroes()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // The expired value is as long as the bitmap SETBIT creates, so its record is reused without growing
+            var key = "myKey";
+            db.StringSet(key, "garnet-string", TimeSpan.FromMilliseconds(1));
+            Thread.Sleep(50);
+
+            ClassicAssert.IsFalse(db.StringSetBit(key, 100, true));
+            var expected = new byte[13];
+            expected[12] = 0x08;
+            ClassicAssert.AreEqual(expected, (byte[])db.StringGet(key));
         }
 
         [Test]
@@ -6182,6 +6221,190 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(unblockTasks.All(x => (int)x.Result == 0));
             }
         }
+
+        /// <summary>
+        /// The broker's first attempt on behalf of a new observer pops the item out of the list and only then
+        /// hands it to the observer. CLIENT UNBLOCK targets the same observer as soon as it is registered, which
+        /// is before that attempt runs. Unless the attempt and the hand-off are atomic with respect to the
+        /// unblock, the unblock can claim the observer in between: the client is told it was unblocked and the
+        /// item, already popped, belongs to nobody.
+        /// <para>
+        /// Two invariants are checked per round. The item is either handed to the popping client or still in
+        /// the list, never neither; and the client gets exactly one reply for its BLPOP. A second reply
+        /// desynchronizes the connection, so from then on every command reads the previous command's reply.
+        /// PING is the probe for that -- its reply can only land where expected if BLPOP wrote exactly one.
+        /// </para>
+        /// <para>
+        /// Raw sockets rather than StackExchange.Redis: it multiplexes, so its keep-alive cannot get past an
+        /// in-flight blocking command on the same connection, and on a machine short of cores its watchdog
+        /// tears the connection down. That failure arrives as a parse error or a dead socket, which masks the
+        /// invariants under test rather than reporting them.
+        /// </para>
+        /// <para>
+        /// The race it guards needs a completion to land inside a few instructions on the receive path, so it
+        /// is reproduced by starving the server of cores:
+        /// <c>DOTNET_PROCESSOR_COUNT=2 taskset -c 0,1 dotnet test ... --filter
+        /// FullyQualifiedName~ClientUnblockRacingAPopNeverLoses</c>. Against the defect this fails within a
+        /// handful of runs; with it fixed it stays green.
+        /// </para>
+        /// </summary>
+        [Test]
+        public void ClientUnblockRacingAPopNeverLosesTheItemAndWritesExactlyOneReply()
+        {
+            const int Workers = 8;
+            const int RoundsPerWorker = 500;
+            const string ValuePrefix = "unblockRaceValue";
+
+            const string Pong = "+PONG\r\n";
+            const string Unblocked = "-UNBLOCKED client unblocked via CLIENT UNBLOCK\r\n";
+
+            var blockers = new Socket[Workers];
+            var admins = new Socket[Workers];
+            var clientIds = new string[Workers];
+            for (var i = 0; i < Workers; i++)
+            {
+                blockers[i] = RawConnect();
+                admins[i] = RawConnect();
+                RawSend(blockers[i], "CLIENT", "ID");
+                clientIds[i] = RawReadUntil(blockers[i], "\r\n")[1..^2];
+            }
+
+            var failures = new ConcurrentQueue<string>();
+            var delivered = 0;
+            var stop = false;
+
+            try
+            {
+                Parallel.For(0, Workers, worker =>
+                {
+                    var key = $"unblockReplyCountKey:{worker}";
+                    var blocker = blockers[worker];
+                    var admin = admins[worker];
+                    var clientId = clientIds[worker];
+
+                    for (var round = 0; round < RoundsPerWorker; round++)
+                    {
+                        if (Volatile.Read(ref stop))
+                            return;
+
+                        // A per-round value makes a reply from an earlier round distinguishable from this round's.
+                        var value = $"{ValuePrefix}{round}";
+                        var popped = $"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n";
+                        RawSend(admin, "RPUSH", key, value);
+                        if (RawReadUntil(admin, "\r\n") != ":1\r\n")
+                        {
+                            failures.Enqueue($"worker {worker} round {round}: RPUSH did not return 1");
+                            Volatile.Write(ref stop, true);
+                            return;
+                        }
+
+                        // The item is already there, so the pop resolves on the broker's first attempt,
+                        // which is what the unblock races.
+                        RawSend(blocker, "BLPOP", key, "10");
+                        RawSend(admin, "CLIENT", "UNBLOCK", clientId, "ERROR");
+                        _ = RawReadUntil(admin, "\r\n");
+
+                        RawSend(blocker, "PING");
+                        var got = RawReadUntil(blocker, Pong);
+
+                        var blpop = got[..^Pong.Length];
+                        if (blpop != Unblocked && blpop != popped)
+                        {
+                            failures.Enqueue($"worker {worker} round {round}: expected exactly one BLPOP reply before the PONG, got {Escape(got)}");
+                            Volatile.Write(ref stop, true);
+                            return;
+                        }
+
+                        // The item was either handed to the popping client or is still in the list. Never neither.
+                        var gotItem = blpop == popped;
+                        RawSend(admin, "LLEN", key);
+                        var remaining = RawReadUntil(admin, "\r\n");
+                        var expected = gotItem ? ":0\r\n" : ":1\r\n";
+                        if (remaining != expected)
+                        {
+                            failures.Enqueue($"worker {worker} round {round}: BLPOP {(gotItem ? "returned" : "did not return")} the item, LLEN was {Escape(remaining)}");
+                            Volatile.Write(ref stop, true);
+                            return;
+                        }
+
+                        if (gotItem)
+                        {
+                            _ = Interlocked.Increment(ref delivered);
+                        }
+                        else
+                        {
+                            RawSend(admin, "DEL", key);
+                            _ = RawReadUntil(admin, "\r\n");
+                        }
+                    }
+                });
+            }
+            finally
+            {
+                for (var i = 0; i < Workers; i++)
+                {
+                    blockers[i].Dispose();
+                    admins[i].Dispose();
+                }
+            }
+
+            ClassicAssert.IsEmpty(failures, string.Join(" ;; ", failures.Take(4)));
+
+            // Guards against the race never being set up at all, e.g. if the unblock always arrived first.
+            ClassicAssert.Greater(delivered, 0, "No round delivered the item, so the pop path was never exercised.");
+        }
+
+        static Socket RawConnect()
+        {
+            var s = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true, ReceiveTimeout = 30_000 };
+            s.Connect(TestUtils.EndPoint);
+            return s;
+        }
+
+        static void RawSend(Socket s, params string[] parts)
+        {
+            var sb = new StringBuilder();
+            _ = sb.Append('*').Append(parts.Length).Append("\r\n");
+            foreach (var p in parts)
+                _ = sb.Append('$').Append(p.Length).Append("\r\n").Append(p).Append("\r\n");
+            var bytes = Encoding.ASCII.GetBytes(sb.ToString());
+            var sent = 0;
+            while (sent < bytes.Length)
+                sent += s.Send(bytes, sent, bytes.Length - sent, SocketFlags.None);
+        }
+
+        /// <summary>
+        /// Reads until the accumulated response ends with <paramref name="suffix"/>, so that anything the
+        /// server wrote before it is kept and can be reported.
+        /// </summary>
+        static string RawReadUntil(Socket s, string suffix)
+        {
+            var sb = new StringBuilder();
+            var buf = new byte[8 * 1024];
+            while (sb.Length < 64 * 1024)
+            {
+                int n;
+                try
+                {
+                    n = s.Receive(buf);
+                }
+                catch (SocketException e)
+                {
+                    throw new Exception($"connection dropped after {Escape(sb.ToString())}: {e.SocketErrorCode}");
+                }
+
+                if (n == 0)
+                    throw new Exception($"connection closed after {Escape(sb.ToString())}");
+
+                _ = sb.Append(Encoding.ASCII.GetString(buf, 0, n));
+                if (sb.Length >= suffix.Length && sb.ToString().EndsWith(suffix, StringComparison.Ordinal))
+                    return sb.ToString();
+            }
+
+            throw new Exception($"never saw the end of the reply: {Escape(sb.ToString())}");
+        }
+
+        static string Escape(string s) => s.Replace("\r", "\\r").Replace("\n", "\\n");
 
         [Test]
         [TestCase(-1, Description = "Unblock with invalid client ID")]

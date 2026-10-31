@@ -30,6 +30,11 @@ namespace Garnet.common
             Enum.GetValues<ExceptionInjectionType>().Select(_ => false).ToArray();
 
         /// <summary>
+        /// Threads waiting in <see cref="WaitOnClear"/>, per exception injection type
+        /// </summary>
+        static readonly int[] WaitingOnClearCounts = new int[ExceptionInjectionTypes.Length];
+
+        /// <summary>
         /// Check if exception is enabled
         /// </summary>
         /// <param name="exceptionType"></param>
@@ -230,9 +235,29 @@ namespace Garnet.common
         /// <returns></returns>
         public static void WaitOnClear(ExceptionInjectionType exceptionType)
         {
-            while (ExceptionInjectionTypes[(int)exceptionType])
-                Thread.Yield();
+            if (!ExceptionInjectionTypes[(int)exceptionType])
+                return;
+
+            _ = Interlocked.Increment(ref WaitingOnClearCounts[(int)exceptionType]);
+            try
+            {
+                while (ExceptionInjectionTypes[(int)exceptionType])
+                    Thread.Yield();
+            }
+            finally
+            {
+                _ = Interlocked.Decrement(ref WaitingOnClearCounts[(int)exceptionType]);
+            }
         }
+
+        /// <summary>
+        /// Number of callers waiting in <see cref="WaitOnClear"/> or <see cref="WaitOnClearAsync"/> for the given
+        /// condition to be cleared
+        /// </summary>
+        /// <param name="exceptionType"></param>
+        /// <returns></returns>
+        public static int WaitingOnClear(ExceptionInjectionType exceptionType)
+            => Volatile.Read(ref WaitingOnClearCounts[(int)exceptionType]);
 
         /// <summary>
         /// Wait on clear condition
@@ -241,16 +266,27 @@ namespace Garnet.common
         /// <returns></returns>
         public static async Task WaitOnClearAsync(ExceptionInjectionType exceptionType)
         {
-            while (IsEnabled(exceptionType))
+            if (!IsEnabled(exceptionType))
+                return;
+
+            _ = Interlocked.Increment(ref WaitingOnClearCounts[(int)exceptionType]);
+            try
             {
-                Task task;
-                lock (@lock)
+                while (IsEnabled(exceptionType))
                 {
-                    if (!IsEnabled(exceptionType))
-                        break;
-                    task = update.Task;
+                    Task task;
+                    lock (@lock)
+                    {
+                        if (!IsEnabled(exceptionType))
+                            break;
+                        task = update.Task;
+                    }
+                    await task.ConfigureAwait(false);
                 }
-                await task.ConfigureAwait(false);
+            }
+            finally
+            {
+                _ = Interlocked.Decrement(ref WaitingOnClearCounts[(int)exceptionType]);
             }
         }
     }

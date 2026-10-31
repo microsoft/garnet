@@ -158,6 +158,12 @@ namespace Tsavorite.core
         public RMWAction Action { get; set; }
 
         /// <summary>
+        /// Set true by InPlaceUpdater when it returns true without having changed the record, so Tsavorite leaves the
+        /// record's Modified bit as it was.
+        /// </summary>
+        public bool RecordUnchanged { get; set; }
+
+        /// <summary>
         /// User-defined byte of data associated with the operation
         /// </summary>
         public byte UserData { get; set; }
