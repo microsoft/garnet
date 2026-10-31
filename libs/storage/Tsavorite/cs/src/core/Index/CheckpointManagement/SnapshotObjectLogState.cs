@@ -10,13 +10,24 @@ namespace Tsavorite.core
     internal sealed class SnapshotObjectLogState
     {
         internal readonly ObjectLog Log;
+
+        /// <summary>This checkpoint's tag in an object's phase word (<see cref="HeapObjectBase"/>), which tells a capture or a stamp
+        /// by this checkpoint from one left by an earlier checkpoint.</summary>
+        internal readonly int Tag;
+
         readonly ManualResetEventSlim drained = new(false);
         int inFlight;
         int closed;
         Exception failure;
         long lowestMainLogAddress = long.MaxValue;
 
-        internal SnapshotObjectLogState(ObjectLog log) => Log = log ?? throw new ArgumentNullException(nameof(log));
+        internal SnapshotObjectLogState(ObjectLog log, int tag)
+        {
+            Log = log ?? throw new ArgumentNullException(nameof(log));
+            if (tag < 0 || tag > HeapObjectBase.MaxCheckpointTag)
+                throw new ArgumentOutOfRangeException(nameof(tag));
+            Tag = tag;
+        }
 
         internal Exception Failure => Volatile.Read(ref failure);
 

@@ -151,9 +151,11 @@ namespace Tsavorite.core
         /// main log has no durable image, so its sources are always captured.</para>
         /// <para>A durable source is released as when no checkpoint needs its image, because no flush walks it again. The Checkpoint Flush
         /// starts at <c>snapshotFileLogicalStartAddress</c>, which is no lower than the <c>FlushedUntilAddress</c> of any CopyUpdate before it
-        /// was sampled; and above it, the ReadOnly flush that made the source durable waited for the Checkpoint Flush to complete its page.</para>
-        /// <para>A captured source keeps its value object. Releasing it rewrites its value field as inline, and both the Checkpoint Flush,
-        /// which stamps the capture, and the ReadOnly flush, whose image recovery repoints at the capture, may still walk the record.</para>
+        /// was sampled; and above it, the ReadOnly flush that made the source durable waited for the Checkpoint Flush to complete its page.
+        /// A source whose ReadOnly flush has written it but is not yet durable is not captured either, and its release waits for that flush.</para>
+        /// <para>A captured source keeps its value object until its ReadOnly flush is durable, or until eviction on a NullDevice main log.
+        /// Releasing it rewrites its value field as inline, and both the Checkpoint Flush and the ReadOnly flush may still walk the record;
+        /// each finds the capture through the object's phase and keeps the record's reference to it.</para>
         /// </remarks>
         /// <returns>True if the source was captured, so it keeps its value object. False if it needs no capture, because its image is durable
         /// or the checkpoint has stopped capturing; the caller then releases it as when no checkpoint needs its image.</returns>
@@ -182,8 +184,9 @@ namespace Tsavorite.core
         /// <para>
         /// Disposal clears the record's heap fields, which returns the value's <see cref="ObjectIdMap"/> slot to that page's
         /// free list for reuse by another record. A frozen record must keep its value until the flush that is reading it has
-        /// captured it. Both Snapshot and ReadOnly resolve object ids against the live map before copying the completed
-        /// record into an IO-owned image.
+        /// captured it. Two flushes read a record the caller has already deleted: the snapshot flush reads object ids from
+        /// its page copy but resolves them against the live map, and the object allocator's read-only flush serializes and
+        /// writes the live page directly.
         /// </para>
         /// <para>
         /// Only a flush freeze is marked. A checkpoint freeze is deliberately left to eviction, because the drain's release

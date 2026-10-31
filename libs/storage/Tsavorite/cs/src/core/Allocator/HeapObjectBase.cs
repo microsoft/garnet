@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -17,23 +18,60 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public long HeapMemorySize { get; protected set; }
 
-        /// <summary>The current internal serialization phase of the object.</summary>
-        SerializationPhase SerializationPhase
-        {
-            get => (SerializationPhase)serializationPhaseInt;
-            set => serializationPhaseInt = (int)value;
-        }
-
+        /// <summary>The object's phase word: a <see cref="SerializationPhase"/> in the low <see cref="PhaseBits"/> bits, and for
+        /// <see cref="SerializationPhase.SNAPSHOT_STAMPED"/> and <see cref="SerializationPhase.CAPTURED"/> the tag of the Snapshot checkpoint
+        /// they belong to in the bits above.</summary>
+        /// <remarks>
+        /// <para>The phase records which writer last published this object's record: a flush or a Snapshot checkpoint's capture writes the
+        /// object to an object log and stamps the record with the position. A writer holds the object's claim
+        /// (<see cref="SerializationPhase.SERIALIZING"/>) from that write until its stamps are complete, so two writers never interleave
+        /// their stamps. The claim and the phase live in this existing field, so publication adds no per-object memory.</para>
+        /// <para>A capture uses the phase to avoid rewriting a record whose image a device write may be reading: once a flush of the active
+        /// checkpoint has published the record, the capture changes at most its marker bit. That is what lets the flushes write the live page
+        /// rather than a copy of it. See website/docs/dev/tsavorite/objectlog-serialization.md section 13.</para>
+        /// <para>This assumes the object belongs to one record. A copy-to-tail can still attach it to a second one; that sharing is separate.</para>
+        /// </remarks>
         int serializationPhaseInt;
-
-        /// <summary>Serializes object-log writes through publication of their positions and hints.</summary>
-        internal readonly object ObjectLogPublicationLock = new();
-
-        /// <summary>The snapshot object log that owns the source record's captured reference.</summary>
-        internal ObjectLog SnapshotObjectLog;
 
         /// <summary>The internal serialized bytes of the object.</summary>
         byte[] serializedBytes;
+
+        /// <summary>The object whose claim the current thread holds while it writes the object to an object log, so <see cref="Serialize"/>
+        /// called back by the store's value serializer runs under that claim rather than waiting for it.</summary>
+        [ThreadStatic]
+        static HeapObjectBase publishingObject;
+
+        /// <summary>Number of low bits of the phase word that hold the <see cref="SerializationPhase"/>.</summary>
+        internal const int PhaseBits = 3;
+        const int PhaseMask = (1 << PhaseBits) - 1;
+
+        /// <summary>The largest Snapshot checkpoint tag a phase word holds; tags wrap at this value.</summary>
+        internal const int MaxCheckpointTag = int.MaxValue >> PhaseBits;
+
+        /// <summary>The phase word of a superseded object that has no cached bytes.</summary>
+        internal const int SupersededWord = (int)SerializationPhase.SERIALIZED;
+
+        /// <summary>The phase word a ReadOnly flush leaves.</summary>
+        internal const int ReadOnlyStampedWord = (int)SerializationPhase.READONLY_STAMPED;
+
+        /// <summary>The phase word a Snapshot flush of the checkpoint tagged <paramref name="checkpointTag"/> leaves.</summary>
+        internal static int SnapshotStampedWord(int checkpointTag) => (int)SerializationPhase.SNAPSHOT_STAMPED | (checkpointTag << PhaseBits);
+
+        /// <summary>The phase word a capture by the checkpoint tagged <paramref name="checkpointTag"/> leaves.</summary>
+        internal static int CapturedWord(int checkpointTag) => (int)SerializationPhase.CAPTURED | (checkpointTag << PhaseBits);
+
+        static SerializationPhase PhaseOf(int word) => (SerializationPhase)(word & PhaseMask);
+
+        static bool IsSupersededWord(int word) => PhaseOf(word) is SerializationPhase.SERIALIZED or SerializationPhase.CAPTURED;
+
+        /// <summary>Whether <paramref name="word"/> says the Snapshot flush of the checkpoint tagged <paramref name="checkpointTag"/> published the record.</summary>
+        internal static bool IsSnapshotStampedBy(int word, int checkpointTag) => word == SnapshotStampedWord(checkpointTag);
+
+        /// <summary>Whether <paramref name="word"/> says a ReadOnly flush published the record.</summary>
+        internal static bool IsReadOnlyStamped(int word) => word == ReadOnlyStampedWord;
+
+        /// <summary>Whether <paramref name="word"/> says the checkpoint tagged <paramref name="checkpointTag"/> captured the object.</summary>
+        internal static bool IsCapturedBy(int word, int checkpointTag) => word == CapturedWord(checkpointTag);
 
         /// <summary>
         /// Create a cloned (shallow copy) of this object
@@ -49,8 +87,47 @@ namespace Tsavorite.core
         /// <summary>
         /// Transition the serialization phase of the object.
         /// </summary>
+        /// <remarks>Compares and sets the whole phase word, so it matches only a phase that carries no checkpoint tag.</remarks>
         public bool MakeTransition(SerializationPhase expectedPhase, SerializationPhase nextPhase)
             => Interlocked.CompareExchange(ref serializationPhaseInt, (int)nextPhase, (int)expectedPhase) == (int)expectedPhase;
+
+        /// <summary>Wait until no thread holds this object's claim, then take it unless the object is superseded.</summary>
+        /// <param name="priorWord">The phase word found. Pass it, or the word for what the claim published, to <see cref="ReleaseClaim"/>.</param>
+        /// <returns>True if this thread now holds the claim. False if the object is superseded; it is never claimed again, because a
+        /// CopyUpdate's new record shares its collections and may already have changed them.</returns>
+        /// <remarks>Waits by yielding, as every claim wait on this object does: a claim is held across an object-log write, which can take
+        /// as long as serializing the object.</remarks>
+        internal bool TryClaim(out int priorWord)
+        {
+            while (true)
+            {
+                var word = Volatile.Read(ref serializationPhaseInt);
+                if (PhaseOf(word) == SerializationPhase.SERIALIZING)
+                {
+                    _ = Thread.Yield();
+                    continue;
+                }
+                priorWord = word;
+                if (IsSupersededWord(word))
+                    return false;
+                if (Interlocked.CompareExchange(ref serializationPhaseInt, (int)SerializationPhase.SERIALIZING, word) == word)
+                    return true;
+            }
+        }
+
+        /// <summary>End a claim taken by <see cref="TryClaim"/>, leaving the phase word <paramref name="word"/>.</summary>
+        internal void ReleaseClaim(int word)
+        {
+            Debug.Assert(PhaseOf(Volatile.Read(ref serializationPhaseInt)) == SerializationPhase.SERIALIZING, "ReleaseClaim without a claim");
+            Volatile.Write(ref serializationPhaseInt, word);
+        }
+
+        /// <summary>While this thread writes <paramref name="claimedObject"/>, whose claim it holds, to an object log, let
+        /// <see cref="Serialize"/> run under that claim.</summary>
+        internal static void BeginClaimedWrite(HeapObjectBase claimedObject) => publishingObject = claimedObject;
+
+        /// <summary>End the write begun by <see cref="BeginClaimedWrite"/>.</summary>
+        internal static void EndClaimedWrite() => publishingObject = null;
 
         /// <inheritdoc />
         public abstract void Dispose();
@@ -61,53 +138,55 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public void Serialize(BinaryWriter writer)
         {
+            // Called back by the value serializer inside a flush's or a capture's object-log write: that writer holds the claim, and never
+            // claims a superseded object.
+            if (ReferenceEquals(publishingObject, this))
+            {
+                WriteType(writer, isNull: false);
+                DoSerialize(writer);
+                return;
+            }
+
             while (true)
             {
-                // This is probably called from Flush, including for checkpoints. If CopyUpdate() has already serialized the object, we will use that
-                // serialized state. Otherwise, we will serialize the object directly to the writer, and not create the serialized byte[]; only
-                // CopyUpdater does that, as it must ensure the object's (v1) data is not changed during the checkpoint.
-                if (SerializationPhase == SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING))
+                var word = Volatile.Read(ref serializationPhaseInt);
+                if (PhaseOf(word) == SerializationPhase.SERIALIZING)
                 {
-                    // Directly serialize to wire, do not cache serialized state. Restore REST even if DoSerialize
-                    // throws: leaving the object in SERIALIZING would make every later Serialize() and
-                    // CacheSerializedObjectData() spin on it forever, wedging the checkpoint pipeline.
-                    try
-                    {
-                        WriteType(writer, isNull: false);
-                        DoSerialize(writer);
-                    }
-                    finally
-                    {
-                        SerializationPhase = SerializationPhase.REST;
-                    }
-                    return;
+                    // A flush, a capture, CacheSerializedObjectData or another Serialize holds the claim.
+                    _ = Thread.Yield();
+                    continue;
                 }
 
-                // If we are here, SerializationPhase is one of the .SERIALIZ* states. This means that one of the following is true:
-                // - Another thread is currently serializing this object (e.g. checkpoint and eviction)
-                // - CopyUpdate() is serializing this object
-                // - Serialization is complete. If the serializedBytes array is null, the object has been superseded in the database so is no
-                //   longer reachable, so we can write a null indicator: either no checkpoint needed its (v) image, a checkpoint has completed
-                //   and cleared it, or a Snapshot checkpoint captured it into its own object log.
-
-                if (SerializationPhase == SerializationPhase.SERIALIZED)
+                if (IsSupersededWord(word))
                 {
-                    // If serialized state is cached, use that
-                    var _serialized = serializedBytes;
-                    if (_serialized != null)
+                    // A CopyUpdate superseded this object, and its new record may have changed the collections this object shares with
+                    // it. Write the (v) bytes CacheSerializedObjectData cached, if any; otherwise a null value: no checkpoint needed the
+                    // (v) image, a checkpoint has completed and cleared it, or a Snapshot checkpoint captured it into its own object log.
+                    var serialized = serializedBytes;
+                    if (serialized != null)
                     {
                         WriteType(writer, isNull: false);
-                        writer.Write(_serialized);
+                        writer.Write(serialized);
                     }
                     else
-                    {
-                        // Write null object to stream
                         WriteType(writer, isNull: true);
-                    }
                     return;
                 }
 
-                Thread.Yield();
+                // Claim the object so no CopyUpdate changes it while it is written, and restore the phase it had: this serialization
+                // publishes nothing. Restore it even if DoSerialize throws, or every later claim would wait forever.
+                if (Interlocked.CompareExchange(ref serializationPhaseInt, (int)SerializationPhase.SERIALIZING, word) != word)
+                    continue;
+                try
+                {
+                    WriteType(writer, isNull: false);
+                    DoSerialize(writer);
+                }
+                finally
+                {
+                    Volatile.Write(ref serializationPhaseInt, word);
+                }
+                return;
             }
         }
 
@@ -149,45 +228,32 @@ namespace Tsavorite.core
 
             // Create a serialized version for checkpoint version (v). This is only done for CopyUpdate during a checkpoint, to preserve the (v) data
             // of the object during a checkpoint while the (v+1) version of the record may modify the shallow-copied internal structures.
-            while (true)
+            // CopyUpdate holds the tag chain's lock, so no other CopyUpdate runs on this object; a flush or a Serialize may hold the claim,
+            // which TryClaim waits out. An object already superseded has its final bytes, or none.
+            if (!TryClaim(out var priorWord))
+                return true;
+            try
             {
-                if (SerializationPhase == (int)SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING))
-                {
-                    try
-                    {
-                        using var ms = new MemoryStream();
-                        using var writer = new BinaryWriter(ms, Encoding.UTF8);
-                        DoSerialize(writer);
-                        serializedBytes = ms.ToArray();
-                    }
-                    catch
-                    {
-                        // Publish no partial capture, and do not strand the object in SERIALIZING.
-                        serializedBytes = null;
-                        SerializationPhase = SerializationPhase.REST;
-                        throw;
-                    }
-
-                    SerializationPhase = SerializationPhase.SERIALIZED;    // This is the only place .SERIALIZED is set
-                    break;
-                }
-
-                // If we're here, serializationState is one of the .SERIALIZ* states. CopyUpdate has a lock on the tag chain, so no other thread will
-                // be running CopyUpdate. Therefore there are two possibilities:
-                // 1. CopyUpdate has been called before and the state is .SERIALIZED and '_serialized' is created. We're done.
-                // 2. Serialize() is running (likely in a Flush()) and the state is .SERIALIZING. We will Yield and loop to wait for it to finish.
-                if (SerializationPhase >= SerializationPhase.SERIALIZED)
-                    break;
-
-                _ = Thread.Yield();
+                using var ms = new MemoryStream();
+                using var writer = new BinaryWriter(ms, Encoding.UTF8);
+                DoSerialize(writer);
+                serializedBytes = ms.ToArray();
+            }
+            catch
+            {
+                // Publish no partial capture, and do not strand the object in SERIALIZING.
+                serializedBytes = null;
+                ReleaseClaim(priorWord);
+                throw;
             }
 
+            ReleaseClaim(SupersededWord);    // The only place a superseded object gets cached bytes
             return true;
         }
 
         /// <summary>
-        /// Finish a Snapshot checkpoint's capture of this object as a CopyUpdate source: give the new record its clone, then mark this object
-        /// superseded with no serialized bytes.
+        /// Finish a Snapshot checkpoint's capture of this object as a CopyUpdate source: give the new record its clone, and make sure this object
+        /// is superseded. The capture has already set its final phase unless it failed before claiming the object.
         /// </summary>
         /// <remarks>
         /// The capture wrote this object's (v) value to the checkpoint's object log, so a later flush of the superseded record writes the null
@@ -203,17 +269,16 @@ namespace Tsavorite.core
             MarkSuperseded();
         }
 
-        /// <summary>Whether a CopyUpdate has superseded this object, so it has reached its final serialization phase.</summary>
-        internal bool IsSuperseded => Volatile.Read(ref serializationPhaseInt) >= (int)SerializationPhase.SERIALIZED;
-
-        /// <summary>Move to the final serialization phase without caching bytes, once any serialization in progress completes.</summary>
+        /// <summary>Move to the final serialization phase without caching bytes, once any claim in progress ends.</summary>
         void MarkSuperseded()
         {
             while (true)
             {
-                if (SerializationPhase == SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZED))
+                var word = Volatile.Read(ref serializationPhaseInt);
+                if (IsSupersededWord(word))
                     return;
-                if (SerializationPhase >= SerializationPhase.SERIALIZED)
+                if (PhaseOf(word) != SerializationPhase.SERIALIZING
+                        && Interlocked.CompareExchange(ref serializationPhaseInt, SupersededWord, word) == word)
                     return;
                 _ = Thread.Yield();
             }

@@ -49,6 +49,10 @@ namespace Tsavorite.core
         /// <summary>The captures of the Snapshot checkpoint in progress: published at its PREPARE, before any (v+1) CopyUpdate can supersede a (v)
         /// value, and withdrawn when it completes or aborts. Null otherwise.</summary>
         SnapshotObjectLogState snapshotObjectLogState;
+
+        /// <summary>The tag of the last Snapshot checkpoint published; see <see cref="SnapshotObjectLogState.Tag"/>.</summary>
+        int lastSnapshotCheckpointTag;
+
         ObjectLogRecordRef recoveryHighWaterReference;
 
         /// <summary>The epoch shared by this allocator's object logs, created with the first of them. Sharing it keeps each store to one more
@@ -89,9 +93,10 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>
         /// This allocator resolves objectIds against the live <see cref="ObjectIdMap"/>, stamps ObjectLogPosition and size hints
-        /// into the live record, then copies the record into an IO-owned page image with the epoch suspended. Disposal before that copy
-        /// can release a captured object or clear the just-stamped fields through <see cref="LogRecord.ClearOptionals"/>.
-        /// Such a record keeps its heap and metadata until the flush completes; its release is marked
+        /// into the live record, and writes the live page to the device with the epoch suspended. Disposal in that window
+        /// corrupts the image two ways: releasing the heap can persist a Valid record whose ObjectLogPosition refers to a freed -
+        /// or recycled, hence unrelated - object, and <see cref="LogRecord.ClearOptionals"/> zeroes the ObjectLogPosition field
+        /// this flush just stamped. Such a record keeps its heap and metadata until the window closes; its release is marked
         /// with <see cref="RecordInfo.DeferredDispose"/> and run by the drain on flush completion, or by eviction.
         /// <para>
         /// The upper bound is <see cref="AllocatorBase{TStoreFunctions, TAllocator}.SafeReadOnlyAddress"/>, not
@@ -813,7 +818,14 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         internal override SnapshotObjectLogState BeginSnapshotObjectLog(ObjectLog snapshotObjectLog)
         {
-            var captures = snapshotObjectLog is null ? null : new SnapshotObjectLogState(snapshotObjectLog);
+            SnapshotObjectLogState captures = null;
+            if (snapshotObjectLog is not null)
+            {
+                // Tags wrap at MaxCheckpointTag. Two checkpoints could be confused only if an object kept a stamp or capture through that
+                // many later checkpoints without its record being flushed or evicted.
+                var tag = Interlocked.Increment(ref lastSnapshotCheckpointTag) & HeapObjectBase.MaxCheckpointTag;
+                captures = new SnapshotObjectLogState(snapshotObjectLog, tag);
+            }
             Volatile.Write(ref snapshotObjectLogState, captures);
             return captures;
         }
@@ -829,25 +841,69 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        /// <remarks>
+        /// <para>The capture claims the source object, which waits out a flush that is writing it, and then acts on what was published:</para>
+        /// <list type="bullet">
+        /// <item>The ReadOnly flush wrote the record: its main-log image holds the <c>(v)</c> value, and its device write may still be reading
+        /// the record. Capture nothing. If the record is at or above the main-log recovery end, recovery reads its snapshot image instead,
+        /// which the Snapshot flush wrote before the ReadOnly flush could.</item>
+        /// <item>This checkpoint's Snapshot flush wrote the record: its stamp is the <c>(v)</c> value in this checkpoint's object log, and its
+        /// device write may still be reading the record. Only set the marker, so the ReadOnly flush keeps that stamp. The marker is one
+        /// <see cref="RecordInfo"/> word, so a device sees it set or clear.</item>
+        /// <item>Otherwise no flush of this checkpoint has published the record, so none is reading its fields: write the value to this
+        /// checkpoint's object log, stamp the record, then set the marker.</item>
+        /// </list>
+        /// <para>So no capture rewrites a record's position or hints under a device write, and the flushes can write the live page.</para>
+        /// </remarks>
         internal override bool TryCaptureCopyUpdateSource(SnapshotObjectLogState captures, ref LogRecord sourceRecord, long logicalAddress)
         {
             if (!captures.TryBeginCapture())
                 return false;
+            HeapObjectBase sourceObject = null;
+            var claimed = false;
+            var finalWord = HeapObjectBase.SupersededWord;
+            var captured = true;
             try
             {
                 // The source is a (v) record held by this CopyUpdate, so its components cannot change until PostCopyUpdater runs.
                 if (!sourceRecord.TryGetOutOfLineComponents(out var keyOverflow, out _, out var valueObject))
                     throw new TsavoriteException($"Could not capture the out-of-line components of the CopyUpdate source at {logicalAddress}");
 
-                if (valueObject is not HeapObjectBase sourceObject)
-                    throw new TsavoriteException($"The CopyUpdate source at {logicalAddress} does not support Snapshot publication");
-                lock (sourceObject.ObjectLogPublicationLock)
+                sourceObject = valueObject as HeapObjectBase
+                    ?? throw new TsavoriteException($"The CopyUpdate source at {logicalAddress} does not support Snapshot capture");
+                claimed = sourceObject.TryClaim(out var priorWord);
+                if (!claimed)
                 {
-                    using var writer = new ObjectLogWriter<TStoreFunctions>(captures.Log, storeFunctions, objectLogWriterSettings);
-                    var result = writer.WriteRecordObjects(in keyOverflow, default, valueIsObject: true, valueObject);
-                    sourceRecord.SetObjectLogPositionAndHints(in result);
-                    sourceObject.SnapshotObjectLog = captures.Log;
+                    // A capture follows a successful CAS, so the source cannot have been superseded before it.
+                    Debug.Fail($"The CopyUpdate source at {logicalAddress} was already superseded");
+                    return HeapObjectBase.IsCapturedBy(priorWord, captures.Tag);
+                }
+
+                if (HeapObjectBase.IsReadOnlyStamped(priorWord))
+                    captured = false;
+                else if (HeapObjectBase.IsSnapshotStampedBy(priorWord, captures.Tag))
+                {
                     sourceRecord.InfoRef.HasSnapshotObjectLogReference = true;
+                    finalWord = HeapObjectBase.CapturedWord(captures.Tag);
+                }
+                else
+                {
+                    ObjectLogWriteResult result;
+                    HeapObjectBase.BeginClaimedWrite(sourceObject);
+                    try
+                    {
+                        using var writer = new ObjectLogWriter<TStoreFunctions>(captures.Log, storeFunctions, objectLogWriterSettings);
+                        result = writer.WriteRecordObjects(in keyOverflow, default, valueIsObject: true, valueObject);
+                    }
+                    finally
+                    {
+                        HeapObjectBase.EndClaimedWrite();
+                    }
+
+                    // Stamp before marking: a flush that sees the marker keeps the stamp.
+                    sourceRecord.SetObjectLogPositionAndHints(in result);
+                    sourceRecord.InfoRef.HasSnapshotObjectLogReference = true;
+                    finalWord = HeapObjectBase.CapturedWord(captures.Tag);
                 }
             }
             catch (Exception ex)
@@ -857,9 +913,11 @@ namespace Tsavorite.core
             }
             finally
             {
+                if (claimed)
+                    sourceObject.ReleaseClaim(finalWord);
                 captures.EndCapture();
             }
-            return true;
+            return captured;
         }
 
         /// <inheritdoc/>
@@ -1410,15 +1468,19 @@ namespace Tsavorite.core
                     writeInlineOnly = true;
             }
 
-            // Recovery writes the live page exclusively. Object-bearing Snapshot and ReadOnly flushes copy each record under its
-            // publication guard into an IO-owned image, so a later capture cannot change fields the device is still reading.
-            // Fuzzy v+1 records remain unchanged and recovery rejects them before interpreting their payload.
+            // All object-log flush modes stamp and write the live page. Recovery has exclusive access. Snapshot writes one page at a time
+            // and keeps ReadOnly one page behind its completion watermark; ReadOnly subsequently resolves objects through objectIdMap and
+            // replaces Snapshot positions with main-object-log positions. Fuzzy v+1 records remain unchanged and recovery rejects them
+            // before interpreting their payload. A Snapshot checkpoint's capture of a CopyUpdate source rewrites the record's position and
+            // hints only while no flush of that checkpoint has published the record; afterwards it sets at most the record's marker bit,
+            // which is one RecordInfo word. Each publisher holds the value object's claim from its object-log write through its stamps, so
+            // a flush and a capture never interleave their stamps. See TryCaptureCopyUpdateSource and PublishFlushedObject.
             //
             // A front-partial ReadOnly flush starts after bytes that this flush sequence has already made durable, and its device write
             // rounds down to a sector boundary, so it writes those bytes again. It takes them from the PartialSectorImage the previous
             // flush kept, or reads them back from the device, never from the live page: the records there may have changed in memory since
-            // they became durable, and the durable bytes may be a completed checkpoint's image. Recovery's resident bytes below the start
-            // are the ones it read from the device, and a snapshot file is never read below its
+            // they became durable, and the durable bytes may be a completed checkpoint's image. Recovery and Snapshot write the live page:
+            // recovery's resident bytes below the start are the ones it read from the device, and a snapshot file is never read below its
             // start. The write likewise rounds UP at the logical end, carrying live bytes above the endpoint to disk verbatim; see the
             // write span comment below for why those bytes are never read back.
             //
@@ -1463,17 +1525,14 @@ namespace Tsavorite.core
 
                 // Record traversal and metadata stamping are page-relative. The page remains resident until this flush's callback completes.
                 var recordsBasePtr = (byte*)logPagePointer;
-                var outputPagePtr = recordsBasePtr;
-                if (!isRecovery && !writeInlineOnly)
-                {
-                    var image = bufferPool.Get(AlignedPageSizeBytes, clearOnReturn: false);
-                    asyncResult.freeBuffer2 = image;
-                    outputPagePtr = image.aligned_pointer;
-                    Buffer.MemoryCopy(recordsBasePtr, outputPagePtr, AlignedPageSizeBytes, endOffset);
-                }
 
                 if (objectLog is not null && !writeInlineOnly)
                     logWriter = new(objectLog, storeFunctions, objectLogWriterSettings);
+
+                // A Snapshot flush publishes for its own checkpoint, which stays published until the flush completes: an abort waits for the
+                // flush before unpublishing it. A ReadOnly flush reads the active checkpoint per record instead; see PublishFlushedObject.
+                var snapshotFlushState = asyncResult.flushRequestState == FlushRequestState.Snapshot && ActiveSnapshotObjectLog is { } activeState
+                    && ReferenceEquals(activeState.Log, objectLog) ? activeState : null;
 
                 // Whether this flush appended to objectLog, so the page must wait for those bytes to be durable.
                 var wroteObjects = false;
@@ -1491,7 +1550,6 @@ namespace Tsavorite.core
                     // Increment for next iteration; use allocatedSize because that is what LogicalAddress is based on.
                     var logRecord = new LogRecord(physicalAddress, objectIdMap);
                     var logRecordSize = logRecord.AllocatedSize;
-                    var imageCopied = false;
 
                     // Skip object serialization for Invalid records, including IsNull; the page write below still carries their inline
                     // image. ReadOnlyAddress has advanced, so a record's version and inline data are stable here, but elision can still
@@ -1526,42 +1584,17 @@ namespace Tsavorite.core
                                     // persists, recovery skips the image, and the superseding record (already CAS'd into the chain) wins.
                                     if (captureIsComplete && logRecord.Info.Valid)
                                     {
-                                        var heapObject = valueObject as HeapObjectBase;
-                                        var publicationLock = heapObject?.ObjectLogPublicationLock;
-                                        if (publicationLock is not null)
-                                            Monitor.Enter(publicationLock);
-                                        try
+                                        // WriteRecordObjects can wait on object-log IO and must not hold the epoch. Stamping writes the position
+                                        // word and the key/value read-size hints into the record image being flushed. In-memory readers mask
+                                        // via ObjectIdMap.GetIndex, so stamping a live page is non-destructive. RDH lengths remain exact.
+                                        if (valueObject is HeapObjectBase heapObject)
+                                            wroteObjects |= PublishFlushedObject(heapObject, ref logRecord, logicalAddress, in keyOverflow, logWriter,
+                                                asyncResult.flushRequestState, snapshotFlushState);
+                                        else
                                         {
-                                            var state = ActiveSnapshotObjectLog;
-                                            var snapshotReference = logRecord.Info.HasSnapshotObjectLogReference
-                                                && heapObject?.SnapshotObjectLog is { } sourceLog
-                                                && (ReferenceEquals(sourceLog, objectLog)
-                                                    || (asyncResult.flushRequestState == FlushRequestState.ReadOnly && ReferenceEquals(sourceLog, state?.Log)));
-                                            if (snapshotReference)
-                                            {
-                                                if (asyncResult.flushRequestState == FlushRequestState.ReadOnly)
-                                                    state.NoteMainLogReference(logicalAddress);
-                                            }
-                                            else
-                                            {
-                                                var result = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow,
-                                                    logRecord.DataHeader.ValueIsObject, valueObject);
-                                                logRecord.SetObjectLogPositionAndHints(in result);
-                                                logRecord.InfoRef.HasSnapshotObjectLogReference = false;
-                                                wroteObjects = true;
-                                            }
-                                            // The async write owns an immutable image; a later capture may restamp the live record.
-                                            if (outputPagePtr != recordsBasePtr)
-                                            {
-                                                Buffer.MemoryCopy((void*)physicalAddress, outputPagePtr + (physicalAddress - (long)recordsBasePtr),
-                                                    logRecordSize, logRecordSize);
-                                                imageCopied = true;
-                                            }
-                                        }
-                                        finally
-                                        {
-                                            if (publicationLock is not null)
-                                                Monitor.Exit(publicationLock);
+                                            var result = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, logRecord.DataHeader.ValueIsObject, valueObject);
+                                            StampFlushedRecord(ref logRecord, in result);
+                                            wroteObjects = true;
                                         }
 
                                         // Test-only interleave point: the record's bytes are now in the object log and its position is stamped,
@@ -1629,15 +1662,12 @@ namespace Tsavorite.core
                         }
                         else
                         {
-                            // Snapshot copies v+1 records unchanged. Recovery rejects them from the persisted fuzzy
+                            // Snapshot writes the live page, so leave v+1 records unchanged. Recovery rejects them from the persisted fuzzy
                             // boundary before hashing an overflow key or interpreting payload bytes.
                             Debug.Assert(asyncResult.flushRequestState == FlushRequestState.Snapshot);
                         }
                     } // endif record id Valid
 
-                    if (outputPagePtr != recordsBasePtr && !imageCopied)
-                        Buffer.MemoryCopy((void*)physicalAddress, outputPagePtr + (physicalAddress - (long)recordsBasePtr),
-                            logRecordSize, logRecordSize);
                     logicalAddress += logRecordSize;    // advance in main log
                     physicalAddress += logRecordSize;   // advance in source buffer
                 }
@@ -1649,7 +1679,7 @@ namespace Tsavorite.core
                 // Write the page span.
                 {
                     // Write whole sectors: [alignedStartOffset, RoundUp(endOffset)). Bytes above the logical endpoint go to disk verbatim
-                    // from the page image, because they are never read back:
+                    // from the live page, because they are never read back:
                     //   - the next ReadOnly flush starts at the endpoint and writes this sector again;
                     //   - recovery bounds its record walk by maxAddressOffsetOnPage, which is the UNROUNDED endpoint, so records above
                     //     the endpoint are never parsed and their object-log position words are never interpreted; and
@@ -1657,12 +1687,12 @@ namespace Tsavorite.core
                     //     boundary page at snapshotScanFromAddress), so a snapshot object-log position cannot be read as a main-log one.
                     // PageSize >= sectorSize and AlignedPageSizeBytes == RoundUp(PageSize, sectorSize), so the span stays within the page.
                     var writeAddress = alignedMainLogFlushPageAddress + (uint)alignedStartOffset;
-                    var writePtr = outputPagePtr + alignedStartOffset;
+                    var writePtr = (byte*)logPagePointer + alignedStartOffset;
                     var writeLength = RoundUp(endOffset, deviceSectorSize) - alignedStartOffset;
                     Debug.Assert(writeLength > 0, $"Flush of page {flushPage} produced an empty write span");
 
                     // A ReadOnly flush that starts mid-sector writes that sector from firstSector, which holds the durable bytes below its
-                    // start; complete it with this flush's bytes from the start. The rest is written from its page image.
+                    // start; complete it with the live bytes from the start. The rest of the span is written from the live page.
                     byte* firstSectorPtr = null;
                     var firstSectorLength = 0;
                     if (firstSector is not null)
@@ -1677,7 +1707,7 @@ namespace Tsavorite.core
 
                     if (asyncResult.flushRequestState == FlushRequestState.ReadOnly)
                     {
-                        RecordPartialSectorImage(pageStart, alignedStartOffset, endOffset, outputPagePtr, firstSector);
+                        RecordPartialSectorImage(pageStart, alignedStartOffset, endOffset, (byte*)logPagePointer, firstSector);
 
                         // The previous flush also wrote the sector this one starts in. Devices do not order overlapping writes, so let that
                         // write complete first, or it could land after this one and replace the records stamped here with their image from
@@ -1731,6 +1761,90 @@ namespace Tsavorite.core
                     throw;
                 }
             }
+        }
+
+        /// <summary>
+        /// Stamp a flushed record with the position and hints of what the flush wrote for it, and clear its marker: the stamp is now a
+        /// position in the flush's own object log, not a Snapshot checkpoint's capture.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void StampFlushedRecord(ref LogRecord logRecord, in ObjectLogWriteResult result)
+        {
+            logRecord.SetObjectLogPositionAndHints(in result);
+            if (logRecord.Info.HasSnapshotObjectLogReference)
+                logRecord.InfoRef.HasSnapshotObjectLogReference = false;
+        }
+
+        /// <summary>
+        /// Publish a flushed record whose value is a <see cref="HeapObjectBase"/>: write its out-of-line components to the flush's object log
+        /// and stamp it, or keep its reference to the active Snapshot checkpoint's capture.
+        /// </summary>
+        /// <param name="valueObject">The record's value object</param>
+        /// <param name="logRecord">The record, on the live page</param>
+        /// <param name="logicalAddress">The record's address</param>
+        /// <param name="keyOverflow">The record's overflow key, or default</param>
+        /// <param name="logWriter">The writer for the flush's object log</param>
+        /// <param name="flushRequestState">Whether this is a Snapshot or a ReadOnly flush</param>
+        /// <param name="snapshotFlushState">For a Snapshot flush, its checkpoint; otherwise null</param>
+        /// <returns>True if this wrote to the flush's object log.</returns>
+        /// <remarks>
+        /// <para>The flush claims the object, which waits out a capture or a serializer that holds it, then writes the object, stamps the
+        /// record, and leaves the object's phase saying which flush published it: <see cref="SerializationPhase.SNAPSHOT_STAMPED"/> with
+        /// this checkpoint's tag, or <see cref="SerializationPhase.READONLY_STAMPED"/>. A capture reads that phase to decide what it may still
+        /// change in the record; see <see cref="TryCaptureCopyUpdateSource"/>.</para>
+        /// <para>A superseded object is never claimed: the CopyUpdate's new record shares its collections and may have changed them. If the
+        /// active checkpoint captured it, the record's stamp and marker are that capture, which the flush keeps; a ReadOnly flush also
+        /// records the lowest main-log image that keeps one, which bounds what recovery repoints. Otherwise the flush writes what a
+        /// superseded object serializes as: a null value, or the bytes CacheSerializedObjectData cached.</para>
+        /// </remarks>
+        private bool PublishFlushedObject(HeapObjectBase valueObject, ref LogRecord logRecord, long logicalAddress, in OverflowByteArray keyOverflow,
+            ObjectLogWriter<TStoreFunctions> logWriter, FlushRequestState flushRequestState, SnapshotObjectLogState snapshotFlushState)
+        {
+            ObjectLogWriteResult result;
+            if (!valueObject.TryClaim(out var priorWord))
+            {
+                if (logRecord.Info.HasSnapshotObjectLogReference)
+                {
+                    // A ReadOnly flush reads the active checkpoint only after finding the capture, because a checkpoint that started during
+                    // this walk may be the one that captured the record. If the capturing checkpoint has since ended, it no longer needs this
+                    // image: this flush had not completed when it sampled its main-log recovery end, so it recovers the record from its
+                    // snapshot file. The record is superseded, so no later checkpoint needs its value either.
+                    var state = flushRequestState == FlushRequestState.Snapshot ? snapshotFlushState : ActiveSnapshotObjectLog;
+                    if (state is not null && HeapObjectBase.IsCapturedBy(priorWord, state.Tag))
+                    {
+                        if (flushRequestState == FlushRequestState.ReadOnly)
+                            state.NoteMainLogReference(logicalAddress);
+                        return false;
+                    }
+                }
+                result = logWriter.WriteRecordObjects(in keyOverflow, default, valueIsObject: true, valueObject);
+                StampFlushedRecord(ref logRecord, in result);
+                return true;
+            }
+
+            // On failure, restore the phase this flush found: it published nothing.
+            var finalWord = priorWord;
+            HeapObjectBase.BeginClaimedWrite(valueObject);
+            try
+            {
+                result = logWriter.WriteRecordObjects(in keyOverflow, default, valueIsObject: true, valueObject);
+                StampFlushedRecord(ref logRecord, in result);
+                if (flushRequestState == FlushRequestState.ReadOnly)
+                    finalWord = HeapObjectBase.ReadOnlyStampedWord;
+                else if (snapshotFlushState is not null)
+                {
+                    // A ReadOnly flush writes a page in the Snapshot flush's range only after the Snapshot flush has written it, and below that
+                    // range the Snapshot flush writes nothing.
+                    Debug.Assert(!HeapObjectBase.IsReadOnlyStamped(priorWord), $"The Snapshot flush found the record at {logicalAddress} already published by a ReadOnly flush");
+                    finalWord = HeapObjectBase.SnapshotStampedWord(snapshotFlushState.Tag);
+                }
+            }
+            finally
+            {
+                HeapObjectBase.EndClaimedWrite();
+                valueObject.ReleaseClaim(finalWord);
+            }
+            return true;
         }
 
         /// <summary>

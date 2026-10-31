@@ -19,9 +19,9 @@ namespace Tsavorite.test.recovery
     using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>;
 
     /// <summary>
-    /// A (v+1) CopyUpdate during a Snapshot checkpoint captures the (v) value it supersedes into the checkpoint's object log, unless the
-    /// value's main-log image is already durable. These tests order the CopyUpdate against the Checkpoint Flush and the ReadOnly flush of the
-    /// source's page, and check that recovery returns the (v) value from whichever log it reads the source from.
+    /// A (v+1) CopyUpdate during a Snapshot checkpoint captures the (v) value it supersedes into the checkpoint's object log, unless a
+    /// ReadOnly flush has already written the value's main-log image. These tests order the CopyUpdate against the Checkpoint Flush and the
+    /// ReadOnly flush of the source's page, and check that recovery returns the (v) value from whichever log it reads the source from.
     /// </summary>
     [TestFixture]
     internal class SnapshotReferenceTests : TestBase
@@ -34,15 +34,20 @@ namespace Tsavorite.test.recovery
         /// <summary>When the (v+1) RMW runs relative to the flushes that write the source.</summary>
         public enum RmwOrder
         {
-            /// <summary>Before the Checkpoint Flush walks the source; the ReadOnly flush then writes the source's page before the checkpoint
-            /// samples the main log's recovery end, so recovery reads the source from the main log.</summary>
+            /// <summary>Before the Checkpoint Flush walks the source, so the capture writes the (v) value; the ReadOnly flush then writes the
+            /// source's page before the checkpoint samples the main log's recovery end, so recovery reads the source from the main log.</summary>
             BeforeCheckpointFlush,
 
-            /// <summary>After the Checkpoint Flush serializes the source, before its page write completes; the ReadOnly flush then writes the
-            /// source's page before the checkpoint samples the main log's recovery end.</summary>
+            /// <summary>After the Checkpoint Flush serializes the source, before its page write completes, so the capture only marks the
+            /// record; the ReadOnly flush then writes the source's page before the checkpoint samples the main log's recovery end.</summary>
             DuringCheckpointFlush,
 
-            /// <summary>After the ReadOnly flush serializes the source, before its page write completes.</summary>
+            /// <summary>While the ReadOnly flush walks the source's page, before it reaches the source. The Checkpoint Flush has written the
+            /// source, so the capture only marks the record, and the ReadOnly flush keeps the reference.</summary>
+            DuringReadOnlyFlushBeforeSource,
+
+            /// <summary>After the ReadOnly flush serializes the source, before its page write completes. That write holds the (v) value, so
+            /// nothing is captured, and the source's release waits for the write.</summary>
             DuringReadOnlyFlush,
 
             /// <summary>After the ReadOnly flush has written the source's page, so its image is durable and nothing is captured.</summary>
@@ -133,8 +138,9 @@ namespace Tsavorite.test.recovery
 
             var rmwBeforeCheckpointFlush = order is RmwOrder.BeforeCheckpointFlush or RmwOrder.BeforeCheckpointFlushWithoutReadOnlyFlush;
             var readOnlyFlushesTheSource = order != RmwOrder.BeforeCheckpointFlushWithoutReadOnlyFlush;
-            var expectCapture = order != RmwOrder.AfterReadOnlyFlush;
-            var expectMainReference = expectCapture && readOnlyFlushesTheSource && order != RmwOrder.DuringReadOnlyFlush;
+            var rmwDuringReadOnlyFlush = order is RmwOrder.DuringReadOnlyFlushBeforeSource or RmwOrder.DuringReadOnlyFlush;
+            var expectCapture = order is not (RmwOrder.AfterReadOnlyFlush or RmwOrder.DuringReadOnlyFlush);
+            var expectMainReference = expectCapture && readOnlyFlushesTheSource;
 
             using var checkpointFlushAtSource = new ManualResetEventSlim(false);
             using var releaseCheckpointFlushAtSource = new ManualResetEventSlim(false);
@@ -182,8 +188,19 @@ namespace Tsavorite.test.recovery
                     _ => -1,
                 };
                 var nextPage = sourcePage + 1;
+
+                // The ReadOnly flush is held at the source before it claims the source's object (AfterCapture), or after it has written the
+                // object and stamped the record (AfterRecordWritten).
+                var readOnlyFlushHoldPhase = order == RmwOrder.DuringReadOnlyFlushBeforeSource ? ObjectFlushPhase.AfterCapture : ObjectFlushPhase.AfterRecordWritten;
                 ObjectFlushInjection.Hook = (phase, logicalAddress) =>
                 {
+                    if (rmwDuringReadOnlyFlush && phase == readOnlyFlushHoldPhase && logicalAddress == sourceAddress && checkpointFlushAtNextPage.IsSet
+                        && !readOnlyFlushAtSource.IsSet)
+                    {
+                        readOnlyFlushAtSource.Set();
+                        _ = releaseReadOnlyFlushAtSource.Wait(TimeSpan.FromSeconds(30));
+                        return;
+                    }
                     if (phase != ObjectFlushPhase.AfterRecordWritten)
                         return;
                     if (logicalAddress == checkpointFlushHoldAddress && !checkpointFlushAtSource.IsSet)
@@ -196,12 +213,6 @@ namespace Tsavorite.test.recovery
                         checkpointFlushAtNextPage.Set();
                         _ = releaseCheckpointFlushAtNextPage.Wait(TimeSpan.FromSeconds(30));
                     }
-                    else if (order == RmwOrder.DuringReadOnlyFlush && logicalAddress == sourceAddress && checkpointFlushAtNextPage.IsSet
-                        && !readOnlyFlushAtSource.IsSet)
-                    {
-                        readOnlyFlushAtSource.Set();
-                        _ = releaseReadOnlyFlushAtSource.Wait(TimeSpan.FromSeconds(30));
-                    }
                 };
 
                 Assert.That(store.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot), Is.True);
@@ -210,7 +221,7 @@ namespace Tsavorite.test.recovery
                 {
                     Assert.That(checkpointFlushAtSource.Wait(TimeSpan.FromSeconds(30)), Is.True, "The Checkpoint Flush never reached its hold point");
                     if (rmwBeforeCheckpointFlush || order == RmwOrder.DuringCheckpointFlush)
-                        Rmw(store, sourceAddress, expectCapture);
+                        Rmw(store, sourceAddress, expectCapture, expectStampUnchanged: order == RmwOrder.DuringCheckpointFlush);
                     releaseCheckpointFlushAtSource.Set();
                 }
 
@@ -229,10 +240,14 @@ namespace Tsavorite.test.recovery
                         store.Log.ShiftReadOnlyAddress(sourcePageEnd, wait: true);
                         break;
 
+                    case RmwOrder.DuringReadOnlyFlushBeforeSource:
                     case RmwOrder.DuringReadOnlyFlush:
                         var readOnlyShift = Task.Run(() => store.Log.ShiftReadOnlyAddress(sourcePageEnd, wait: true));
                         Assert.That(readOnlyFlushAtSource.Wait(TimeSpan.FromSeconds(30)), Is.True, "The ReadOnly flush never reached the source");
-                        Rmw(store, sourceAddress, expectCapture);
+
+                        // The Checkpoint Flush has published the source, and here the ReadOnly flush is walking its page, so the capture must
+                        // not rewrite the stamp either flush may be writing. Without a capture, the source's release waits for the write.
+                        Rmw(store, sourceAddress, expectCapture, expectStampUnchanged: true, expectDeferredRelease: !expectCapture);
                         releaseReadOnlyFlushAtSource.Set();
                         Assert.That(readOnlyShift.Wait(TimeSpan.FromSeconds(30)), Is.True, "The ReadOnly shift did not complete");
                         break;
@@ -537,6 +552,313 @@ namespace Tsavorite.test.recovery
             }
         }
 
+        /// <summary>
+        /// A capture outlives its checkpoint while its source stays unflushed. The source's next flush, by a ReadOnly flush with no checkpoint
+        /// active or by the next checkpoint's Snapshot flush, writes the superseded value and clears the marker rather than keep a reference into
+        /// the completed checkpoint's object log, which the next checkpoint's recovery would resolve in its own object log.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task CaptureIsNotKeptAfterItsCheckpoint([Values] bool readOnlyFlushFirst, [Values] bool overflowKeys)
+        {
+            var key = new TestObjectKey { key = 1 };
+            Guid firstToken, secondToken;
+            long sourceAddress, newAddress;
+            var store = CreateStore(overflowKeys);
+            try
+            {
+                sourceAddress = UpsertSource(store, key);
+
+                // The first checkpoint captures the source, and completes with the source unflushed.
+                var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
+                store.stateMachineDriver.UnsafeRegisterCallback(pause);
+                try
+                {
+                    Assert.That(store.TryInitiateFullCheckpoint(out firstToken, CheckpointType.Snapshot), Is.True);
+                    Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True);
+                    newAddress = store.Log.TailAddress;
+                    Rmw(store, sourceAddress, expectCapture: true);
+                }
+                finally
+                {
+                    pause.Release.Set();
+                }
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+                Assert.That(store.Log.FlushedUntilAddress, Is.LessThanOrEqualTo(sourceAddress), "The source must still be unflushed");
+                Assert.That(SourceIsMarked(store, sourceAddress), Is.True, "The marker should outlive its checkpoint while the source is unflushed");
+
+                if (readOnlyFlushFirst)
+                {
+                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                    Assert.That(SourceIsMarked(store, sourceAddress), Is.False, "A ReadOnly flush kept the capture of a completed checkpoint");
+                }
+
+                Assert.That(store.TryInitiateFullCheckpoint(out secondToken, CheckpointType.Snapshot), Is.True);
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+                Assert.That(SourceIsMarked(store, sourceAddress), Is.False, "The next checkpoint's Snapshot flush kept the capture of a completed checkpoint");
+            }
+            finally
+            {
+                store.Dispose();
+            }
+
+            // The second checkpoint recovers the CopyUpdate's value, and the first still recovers the captured (v) value.
+            store = CreateStore(overflowKeys);
+            try
+            {
+                _ = await store.RecoverAsync(default, secondToken).ConfigureAwait(false);
+                ReadSourceVersion(store, key, newAddress, "second checkpoint", expectedCount: InitialCount + 1);
+            }
+            finally
+            {
+                store.Dispose();
+            }
+
+            store = CreateStore(overflowKeys);
+            try
+            {
+                _ = await store.RecoverAsync(default, firstToken).ConfigureAwait(false);
+                ReadSourceVersion(store, key, sourceAddress, "first checkpoint");
+            }
+            finally
+            {
+                store.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A Snapshot flush's stamp outlives its checkpoint while the record stays mutable, and an in-place update then changes the value it
+        /// recorded. The next checkpoint's capture must write the updated value rather than take the earlier checkpoint's stamp as its own.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task CaptureAfterAnInPlaceUpdateWritesTheUpdatedValue([Values] bool overflowKeys)
+        {
+            var key = new TestObjectKey { key = 1 };
+            Guid token;
+            long sourceAddress;
+            var store = CreateStore(overflowKeys);
+            try
+            {
+                sourceAddress = UpsertSource(store, key);
+
+                // The first checkpoint's Snapshot flush writes the source and stamps it.
+                Assert.That(store.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot), Is.True);
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+                var firstStamp = store.hlogBase._wrapper.CreateLogRecord(sourceAddress).GetObjectLogRecordRef();
+
+                // With no checkpoint active, the mutable source is updated in place, which leaves that stamp.
+                using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions()))
+                {
+                    var tail = store.Log.TailAddress;
+                    TestObjectInput input = new() { value = RmwValue };
+                    TestObjectOutput output = new();
+                    _ = session.BasicContext.RMW(key, ref input, ref output);
+                    Assert.That(store.Log.TailAddress, Is.EqualTo(tail), "The RMW did not update the source in place");
+                }
+                Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).GetObjectLogRecordRef(), Is.EqualTo(firstStamp));
+
+                // The next checkpoint's CopyUpdate captures the updated value.
+                var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
+                store.stateMachineDriver.UnsafeRegisterCallback(pause);
+                try
+                {
+                    Assert.That(store.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot), Is.True);
+                    Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True);
+                    Rmw(store, sourceAddress, expectCapture: true);
+                    Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).GetObjectLogRecordRef(), Is.Not.EqualTo(firstStamp),
+                        "The capture took the earlier checkpoint's stamp as its own");
+                }
+                finally
+                {
+                    pause.Release.Set();
+                }
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                store.Dispose();
+            }
+
+            store = CreateStore(overflowKeys);
+            try
+            {
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+                ReadSourceVersion(store, key, sourceAddress, "capture after an in-place update", expectedCount: InitialCount + 1);
+            }
+            finally
+            {
+                store.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A NullDevice main log holds no (v) image, so a (v+1) CopyUpdate captures its source even below FlushedUntilAddress, and the captured
+        /// source keeps its value object until eviction. With the Checkpoint Flush already past the source, the capture only marks it.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task NullDeviceMainLogRecoversTheCapturedValue([Values] bool afterCheckpointFlush, [Values] bool overflowKeys)
+        {
+            if (afterCheckpointFlush && !ObjectFlushInjection.IsAvailable)
+                Assert.Ignore("ObjectFlushInjection is compiled out in Release, so the Checkpoint Flush cannot be held.");
+
+            var key = new TestObjectKey { key = 1 };
+            Guid token;
+            long sourceAddress;
+            using var checkpointFlushAtSource = new ManualResetEventSlim(false);
+            using var releaseCheckpointFlushAtSource = new ManualResetEventSlim(false);
+            using (var nullLog = new NullDevice())
+            using (var nullObjects = new NullDevice())
+            {
+                var store = CreateStore(overflowKeys, nullLog, nullObjects, dir);
+                try
+                {
+                    sourceAddress = UpsertSource(store, key);
+                    if (afterCheckpointFlush)
+                    {
+                        ObjectFlushInjection.Hook = (phase, logicalAddress) =>
+                        {
+                            if (phase == ObjectFlushPhase.AfterRecordWritten && logicalAddress == sourceAddress && !checkpointFlushAtSource.IsSet)
+                            {
+                                checkpointFlushAtSource.Set();
+                                _ = releaseCheckpointFlushAtSource.Wait(TimeSpan.FromSeconds(30));
+                            }
+                        };
+                        Assert.That(store.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot), Is.True);
+                        Assert.That(checkpointFlushAtSource.Wait(TimeSpan.FromSeconds(30)), Is.True, "The Checkpoint Flush never reached the source");
+                        Rmw(store, sourceAddress, expectCapture: true, expectStampUnchanged: true);
+                        releaseCheckpointFlushAtSource.Set();
+                    }
+                    else
+                    {
+                        // A NullDevice main log advances FlushedUntilAddress past the source without writing it.
+                        store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                        Assert.That(store.Log.FlushedUntilAddress, Is.GreaterThan(sourceAddress));
+                        var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
+                        store.stateMachineDriver.UnsafeRegisterCallback(pause);
+                        try
+                        {
+                            Assert.That(store.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot), Is.True);
+                            Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True);
+                            Rmw(store, sourceAddress, expectCapture: true);
+                        }
+                        finally
+                        {
+                            pause.Release.Set();
+                        }
+                    }
+                    await store.CompleteCheckpointAsync().ConfigureAwait(false);
+                    Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).DataHeader.ValueIsObject, Is.True,
+                        "A captured source on a NullDevice main log must keep its value object until eviction");
+                }
+                finally
+                {
+                    releaseCheckpointFlushAtSource.Set();
+                    ObjectFlushInjection.Reset();
+                    store.Dispose();
+                }
+            }
+
+            using var recoveryLog = new NullDevice();
+            using var recoveryObjects = new NullDevice();
+            var recovered = CreateStore(overflowKeys, recoveryLog, recoveryObjects, dir);
+            try
+            {
+                _ = await recovered.RecoverAsync(default, token).ConfigureAwait(false);
+                ReadSourceVersion(recovered, key, sourceAddress, "NullDevice main log");
+            }
+            finally
+            {
+                recovered.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A checkpoint can start while a ReadOnly flush walks the source's page, and capture the source before the flush reaches it. The flush
+        /// must find that checkpoint when it reaches the source, and keep the capture: the checkpoint recovers the source from the main log.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task ReadOnlyFlushKeepsTheCaptureOfACheckpointThatStartsDuringItsWalk([Values] bool overflowKeys)
+        {
+            if (!ObjectFlushInjection.IsAvailable)
+                Assert.Ignore("ObjectFlushInjection is compiled out in Release, so the ReadOnly flush cannot be held.");
+
+            var key = new TestObjectKey { key = 1 };
+            Guid token;
+            long sourceAddress;
+            using var readOnlyFlushAtSource = new ManualResetEventSlim(false);
+            using var releaseReadOnlyFlushAtSource = new ManualResetEventSlim(false);
+            var store = CreateStore(overflowKeys);
+            try
+            {
+                sourceAddress = UpsertSource(store, key);
+
+                // Hold the ReadOnly flush at the source before it claims the source's object.
+                ObjectFlushInjection.Hook = (phase, logicalAddress) =>
+                {
+                    if (phase == ObjectFlushPhase.AfterCapture && logicalAddress == sourceAddress && !readOnlyFlushAtSource.IsSet)
+                    {
+                        readOnlyFlushAtSource.Set();
+                        _ = releaseReadOnlyFlushAtSource.Wait(TimeSpan.FromSeconds(30));
+                    }
+                };
+                var readOnlyShift = Task.Run(() => store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true));
+                Assert.That(readOnlyFlushAtSource.Wait(TimeSpan.FromSeconds(30)), Is.True, "The ReadOnly flush never reached the source");
+                Assert.That(store.hlogBase.ActiveSnapshotObjectLog, Is.Null, "The ReadOnly flush must start its walk with no checkpoint active");
+
+                var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
+                store.stateMachineDriver.UnsafeRegisterCallback(pause);
+                try
+                {
+                    Assert.That(store.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot), Is.True);
+                    Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True);
+                    Rmw(store, sourceAddress, expectCapture: true);
+                    releaseReadOnlyFlushAtSource.Set();
+                    Assert.That(readOnlyShift.Wait(TimeSpan.FromSeconds(30)), Is.True, "The ReadOnly shift did not complete");
+                    Assert.That(SourceIsMarked(store, sourceAddress), Is.True,
+                        "The ReadOnly flush replaced the capture of the checkpoint that started during its walk");
+                }
+                finally
+                {
+                    releaseReadOnlyFlushAtSource.Set();
+                    pause.Release.Set();
+                }
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+
+                HybridLogCheckpointInfo persisted = default;
+                try
+                {
+                    persisted.Recover(token, store.checkpointManager);
+                    Assert.That(persisted.info.mainLogRecoveryEndAddress, Is.GreaterThan(sourceAddress), "The checkpoint must recover the source from the main log");
+                    Assert.That(persisted.info.snapshotObjectLogStartAddress, Is.EqualTo(sourceAddress),
+                        "Recovery must repoint the source's main-log image at the capture");
+                }
+                finally
+                {
+                    persisted.Dispose();
+                }
+            }
+            finally
+            {
+                releaseReadOnlyFlushAtSource.Set();
+                ObjectFlushInjection.Reset();
+                store.Dispose();
+            }
+
+            store = CreateStore(overflowKeys);
+            try
+            {
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+                ReadSourceVersion(store, key, sourceAddress, "capture by a checkpoint that started during the ReadOnly flush's walk");
+            }
+            finally
+            {
+                store.Dispose();
+            }
+        }
+
         async Task VerifyTransferredCheckpoint(bool overflowKeys, Guid token, LogFileInfo ranges, TestObjectKey key, long sourceAddress)
         {
             var target = Path.Combine(dir, "transferred");
@@ -635,8 +957,19 @@ namespace Tsavorite.test.recovery
             }
         }
 
-        static void Rmw(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, long sourceAddress, bool expectCapture, int key = 1)
+        /// <summary>Run a (v+1) CopyUpdate of the source at <paramref name="sourceAddress"/>, and check what it left in the source record.</summary>
+        /// <param name="store">The store</param>
+        /// <param name="sourceAddress">The source record's address</param>
+        /// <param name="expectCapture">Whether the CopyUpdate captures the source, which marks the record</param>
+        /// <param name="key">The source's key</param>
+        /// <param name="expectStampUnchanged">Whether a flush of this checkpoint already published the source, so the CopyUpdate must leave its
+        /// stamp alone</param>
+        /// <param name="expectDeferredRelease">Whether a source that is not captured is frozen for an in-flight flush, so it keeps its value
+        /// object until that flush completes</param>
+        static void Rmw(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, long sourceAddress, bool expectCapture, int key = 1,
+            bool expectStampUnchanged = false, bool expectDeferredRelease = false)
         {
+            var priorStamp = store.hlogBase._wrapper.CreateLogRecord(sourceAddress).GetObjectLogRecordRef();
             using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions()))
             {
                 var newRecordAddress = store.Log.TailAddress;
@@ -651,15 +984,21 @@ namespace Tsavorite.test.recovery
             var captures = store.hlogBase.ActiveSnapshotObjectLog;
             Assert.That(captures, Is.Not.Null, "The Snapshot checkpoint is not capturing");
             Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).Info.HasSnapshotObjectLogReference, Is.EqualTo(expectCapture),
-                expectCapture ? "The RMW did not capture the source's (v) value" : "The RMW captured a source whose image was durable");
+                expectCapture ? "The RMW did not capture the source's (v) value" : "The RMW captured a source whose (v) value a ReadOnly flush had written");
+            if (expectStampUnchanged)
+                Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).GetObjectLogRecordRef(), Is.EqualTo(priorStamp),
+                    "The RMW restamped a source that a flush had already published");
 
             // Releasing a source rewrites its value field as inline. A captured source must keep its object, because the flushes that stamp or
-            // write its record may still walk it; a durable source must be released, as it would be outside a checkpoint.
-            Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).DataHeader.ValueIsObject, Is.EqualTo(expectCapture),
-                expectCapture ? "The captured source released its value object" : "The durable source kept its value object");
+            // write its record may still walk it; so must a source frozen for an in-flight flush. Any other source must be released, as it
+            // would be outside a checkpoint.
+            var expectValueObject = expectCapture || expectDeferredRelease;
+            Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).DataHeader.ValueIsObject, Is.EqualTo(expectValueObject),
+                expectValueObject ? "The source released its value object while a flush could still walk it" : "The durable source kept its value object");
         }
 
-        static void ReadSourceVersion(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, TestObjectKey key, long sourceAddress, string when)
+        static void ReadSourceVersion(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, TestObjectKey key, long sourceAddress, string when,
+            int expectedCount = InitialCount)
         {
             var functions = new SharedListFunctions();
             using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(functions);
@@ -671,8 +1010,22 @@ namespace Tsavorite.test.recovery
 
             Assert.That(functions.LastReadAddress, Is.EqualTo(sourceAddress), $"Recovery should resolve the key to the (v) record ({when})");
             Assert.That(functions.LastRead, Is.Not.Null, $"The recovered (v) record holds no object value ({when})");
-            Assert.That(functions.LastRead.Items, Has.Count.EqualTo(InitialCount),
-                $"The recovered (v) record carries {functions.LastRead.Items.Count} items rather than its own {InitialCount} ({when})");
+            Assert.That(functions.LastRead.Items, Has.Count.EqualTo(expectedCount),
+                $"The recovered (v) record carries {functions.LastRead.Items.Count} items rather than its own {expectedCount} ({when})");
+        }
+
+        static bool SourceIsMarked(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, long sourceAddress)
+            => store.hlogBase._wrapper.CreateLogRecord(sourceAddress).Info.HasSnapshotObjectLogReference;
+
+        static long UpsertSource(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, TestObjectKey key)
+        {
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions());
+            var sourceAddress = store.Log.TailAddress;
+            List<int> items = [];
+            for (var ii = 1; ii <= InitialCount; ++ii)
+                items.Add(ii);
+            _ = session.BasicContext.Upsert(key, new SharedListHeapObject(items), Empty.Default);
+            return sourceAddress;
         }
 
         /// <summary>A <see cref="SharedListHeapObject"/>-compatible object whose serialization can be made to fail.</summary>

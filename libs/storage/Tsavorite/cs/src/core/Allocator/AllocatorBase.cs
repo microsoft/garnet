@@ -65,9 +65,12 @@ namespace Tsavorite.core
         /// <summary>Stop publishing <paramref name="captures"/>, if they are still published.</summary>
         internal virtual void EndSnapshotObjectLog(SnapshotObjectLogState captures) { }
 
-        /// <summary>Write the (v) out-of-line components of <paramref name="sourceRecord"/>, the source of a (v+1) CopyUpdate, to the checkpoint's
-        /// object log. Only implemented by ObjectAllocator.</summary>
-        /// <returns>False if <paramref name="captures"/> no longer admits captures, so the source needs none.</returns>
+        /// <summary>Capture the (v) value of <paramref name="sourceRecord"/>, the source of a (v+1) CopyUpdate, for the Snapshot checkpoint
+        /// <paramref name="captures"/>: make the record's stamp a position of that value in the checkpoint's object log, and mark the record. Only
+        /// implemented by ObjectAllocator.</summary>
+        /// <returns>True if the record now references the checkpoint's capture, or the capture failed and so did the checkpoint. False if the
+        /// source needs no capture: the checkpoint no longer admits captures, or a ReadOnly flush has already written the (v) value to the main
+        /// log.</returns>
         internal virtual bool TryCaptureCopyUpdateSource(SnapshotObjectLogState captures, ref LogRecord sourceRecord, long logicalAddress) => false;
 
         /// <summary>Inspect a main-log reference before the recovery append tail is established.</summary>

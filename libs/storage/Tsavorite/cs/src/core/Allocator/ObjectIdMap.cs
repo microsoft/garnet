@@ -30,8 +30,8 @@ namespace Tsavorite.core
         //                 ObjectLogExtent.LargeValueHint; for a KEY slot they are the low 9 bits of an exact page count whose high
         //                 10 bits are in raw RDH KeyLength.
         // Either way the hint lets IO for Read/RMW and recovery size the initial object-log read without an RDH length field
-        // (those are reserved for hybrid values). The stamp is applied to the live slot before copying the disk image,
-        // so all in-memory reads of the slot as an index MUST go through GetIndex to mask off the hint bits.
+        // (those are reserved for hybrid values). The stamp is applied to the disk image (and, on the no-copy live-page flush,
+        // to the live slot), so all in-memory reads of the slot as an index MUST go through GetIndex to mask off the hint bits.
 
         /// <summary>Number of low bits of the objectId slot used for the ObjectIdMap index (23 bits &gt;&gt; the 22 bits a max-size page needs).</summary>
         internal const int ObjectIdIndexBits = 23;
