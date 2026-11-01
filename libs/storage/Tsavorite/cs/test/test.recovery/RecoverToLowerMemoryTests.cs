@@ -3,6 +3,8 @@
 
 using System;
 using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -143,6 +145,64 @@ namespace Tsavorite.test.recovery
                     try { Directory.Delete(dir, recursive: true); } catch { }
                 }
             }
+        }
+
+        /// <summary>
+        /// Recovery replays the index from below the checkpoint's HeadAddress (here from BeginAddress, as there is no index checkpoint), so it reads
+        /// pages it does not keep, and must evict them: nothing frees a page below HeadAddress afterward, so the tail would reuse its slot without
+        /// clearing it. A memory size below BufferSize - 1 pages puts HeadAddress inside the last read batch, which leaves such pages resident.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoveryLeavesNoPageAllocatedBelowHeadAddress([Values(CheckpointType.FoldOver, CheckpointType.Snapshot)] CheckpointType checkpointType,
+            [Values(5, 6)] int memoryPages)
+        {
+            const int numRecords = 2000;
+            var keyArray = new byte[sizeof(long)];
+            var checkpointDir = Path.Combine(MethodTestDir, "checkpoints");
+            using var log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "hlog.log"), deleteOnClose: false);
+            using var objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "hlog.obj.log"), deleteOnClose: false);
+            var memorySize = MinKvLogPageSize * memoryPages;
+
+            Guid token;
+            using (var store1 = CreateStore(log, objlog, checkpointDir, memorySize))
+            {
+                using (var session = store1.NewSession<TestSpanByteKey, long, long, Empty, MyFunctions>(new MyFunctions()))
+                {
+                    var bContext = session.BasicContext;
+                    for (long key = 0; key < numRecords; key++)
+                    {
+                        var keySpan = new Span<byte>(keyArray);
+                        keySpan.AsRef<long>() = key;
+                        _ = bContext.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+                    }
+                }
+                var (success, checkpointToken) = await store1.TakeHybridLogCheckpointAsync(checkpointType).ConfigureAwait(false);
+                ClassicAssert.IsTrue(success);
+                token = checkpointToken;
+            }
+
+            using var store2 = CreateStore(log, objlog, checkpointDir, memorySize);
+            _ = await store2.RecoverAsync(default, token).ConfigureAwait(false);
+            var allocator = store2.hlogBase;
+            var headPage = allocator.GetPage(allocator.HeadAddress);
+            var tailPage = allocator.GetPage(allocator.GetTailAddress());
+            Assert.That(headPage, Is.GreaterThan(allocator.GetPage(allocator.BeginAddress)), "Recovery must read pages below HeadAddress");
+
+            // Without a size tracker an evicted page keeps its memory, cleared, so check content rather than allocation. Every allocated slot that holds
+            // no recovered data (the next page, allocated ahead, or a page evicted below HeadAddress) must be clear past its header, or the tail
+            // will later build a page over the old page's bytes.
+            var dataSlots = Enumerable.Range(headPage, tailPage + 1 - headPage).Select(page => allocator.GetPageIndexForPage(page)).ToHashSet();
+            var pageSize = (int)allocator.GetPageSize();
+            var bytes = new byte[pageSize - allocator.pageHeaderSize];
+            var uncleared = Enumerable.Range(0, allocator.BufferSize).Where(slot =>
+            {
+                if (!allocator.IsAllocated(slot) || dataSlots.Contains(slot))
+                    return false;
+                Marshal.Copy(new IntPtr(allocator.GetPhysicalAddress(allocator.GetLogicalAddressOfStartOfPage(slot)) + allocator.pageHeaderSize), bytes, 0, bytes.Length);
+                return bytes.AsSpan().IndexOfAnyExcept((byte)0) >= 0;
+            }).ToList();
+            Assert.That(uncleared, Is.Empty, $"Slots holding no recovered data (HeadAddress is on page {headPage}) still hold an old page's bytes");
         }
 
         static TsavoriteKV<LargeObjStoreFunctions, LargeObjAllocator> CreateObjectStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize)

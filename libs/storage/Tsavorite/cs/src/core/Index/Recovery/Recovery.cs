@@ -907,6 +907,27 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Evict the pages the read loop brought in below <see cref="RecoveryStatus.headAddress"/>. Recovery reads them only to replay the index
+        /// (it starts at the index checkpoint's address, or at BeginAddress without one), and any it changed have been flushed. Nothing else evicts
+        /// below headAddress, and <see cref="AllocatorBase{TStoreFunctions, TAllocator}.RecoveryReset"/> starts ClosedUntilAddress there, so a page
+        /// left as read would never be freed or cleared, and the tail would later reuse its slot as is: the page header's object-log floor and any
+        /// bytes past the last record would be the old page's.
+        /// </summary>
+        /// <param name="recoveryStatus">The <see cref="RecoveryStatus"/> instance</param>
+        /// <param name="startPage">The first page the read loop read</param>
+        /// <param name="endPage">The page after the last page the read loop read</param>
+        private void EvictPagesReadBelowHeadAddress(RecoveryStatus recoveryStatus, int startPage, int endPage)
+        {
+            // A later page read into the same slot replaced an earlier one, so only the last BufferSize pages read can still hold their own slots.
+            var headPage = hlogBase.GetPage(recoveryStatus.headAddress);
+            for (var page = Math.Max(startPage, endPage - hlogBase.BufferSize); page < headPage; page++)
+            {
+                if (hlogBase.IsAllocated(hlogBase.GetPageIndexForPage(page)))
+                    hlogBase.EvictPageForRecovery(page);
+            }
+        }
+
         private async ValueTask<long> ReadPagesForRecoveryAsync(long untilAddress, RecoveryStatus recoveryStatus, int endPage,
             int numPagesToReadPerIteration, int page, CancellationToken cancellationToken, long mergeFromAddress = -1)
         {
@@ -989,6 +1010,7 @@ namespace Tsavorite.core
             }
 
             await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
+            EvictPagesReadBelowHeadAddress(recoveryStatus, startPage, endPage);
 
             if (upgradeObjectLog)
             {
