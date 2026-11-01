@@ -1162,14 +1162,7 @@ namespace Garnet.server
                 exclusive = true;
             }
 
-            if (NumUtils.TryParseWithInfinity(val, out valueDouble))
-            {
-                if (exclusive && double.IsInfinity(valueDouble))
-                    exclusive = false;
-                return true;
-            }
-
-            return false;
+            return NumUtils.TryParseWithInfinity(val, out valueDouble);
         }
 
         /// <summary>
