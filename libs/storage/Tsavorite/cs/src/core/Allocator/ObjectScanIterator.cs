@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
@@ -19,11 +20,13 @@ namespace Tsavorite.core
         private readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
         private readonly AllocatorBase<TStoreFunctions, TAllocator> hlogBase;
         private readonly BlittableFrame frame;
+        private readonly ObjectScanFrame[] objectFrames;
 
         private SectorAlignedMemory recordBuffer;
         private readonly bool assumeInMemory;
 
         private DiskLogRecord diskLogRecord;
+        private bool currentRecordFromDisk;
 
         /// <summary>
         /// Constructor
@@ -49,7 +52,10 @@ namespace Tsavorite.core
             this.hlogBase = hlogBase;
             this.assumeInMemory = assumeInMemory;
             if (frameSize > 0)
+            {
                 frame = new BlittableFrame(frameSize, hlogBase.PageSize, hlogBase.GetDeviceSectorSize());
+                objectFrames = new ObjectScanFrame[frameSize];
+            }
             InitializeReadBuffers(hlogBase);
         }
 
@@ -65,7 +71,10 @@ namespace Tsavorite.core
             this.hlogBase = hlogBase;
             assumeInMemory = false;
             if (frameSize > 0)
+            {
                 frame = new BlittableFrame(frameSize, hlogBase.PageSize, hlogBase.GetDeviceSectorSize());
+                objectFrames = new ObjectScanFrame[frameSize];
+            }
         }
 
         #region TODO Unify with SpanByteScanIterator
@@ -92,12 +101,7 @@ namespace Tsavorite.core
 
         private bool InitializeGetNextAndAcquireEpoch(out long stopAddress)
         {
-            if (diskLogRecord.IsSet)
-            {
-                hlogBase._wrapper.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
-                diskLogRecord.Dispose();
-            }
-            diskLogRecord = default;
+            DisposeCurrentRecord();
             currentAddress = nextAddress;
 
             // Acquire the epoch BEFORE sampling Initializing / TailAddress / HeadAddress /
@@ -268,6 +272,7 @@ namespace Tsavorite.core
                             Buffer.MemoryCopy((byte*)physicalAddress, remapPtr, allocatedSize, allocatedSize);
                             var memoryLogRecord = hlogBase._wrapper.CreateRemappedLogRecordOverPinnedTransientMemory(currentAddress, (long)remapPtr);
                             diskLogRecord = new DiskLogRecord(in memoryLogRecord);
+                            currentRecordFromDisk = false;
                         }
                         finally
                         {
@@ -283,10 +288,10 @@ namespace Tsavorite.core
                             $"Record at {currentAddress} of size {allocatedSize} extends past FlushedUntilAddress {hlogBase.FlushedUntilAddress}");
 
                         // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
-                        // DiskLogRecord.Dispose() invokes IHeapObject.Dispose on any deserialized value object for all callers
-                        // (pending-op ctx, scan iteration, cluster streaming), unless the object is transferred out (e.g. via CopyToTail).
-                        var logRecord = new LogRecord(physicalAddress, hlogBase._wrapper.TransientObjectIdMap);
+                        // The frame owns every deserialized record, including ones skipped by this iterator.
+                        var logRecord = new LogRecord(physicalAddress, objectFrames[currentPage % frameSize].objectIdMap);
                         diskLogRecord = new(logRecord);
+                        currentRecordFromDisk = true;
                         // Fire OnDiskRead so app can invalidate stale TreeHandles, etc., on records loaded from disk.
                         if (hlogBase.storeFunctions.CallOnDiskRead)
                             hlogBase.storeFunctions.OnDiskRead(ref diskLogRecord.logRecord);
@@ -451,16 +456,66 @@ namespace Tsavorite.core
         public override void Dispose()
         {
             base.Dispose();
-            if (diskLogRecord.IsSet)
-                hlogBase._wrapper.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
-            recordBuffer?.Return();
-            recordBuffer = null;
-            //TODOobjDispose("Dispose objects in frame");
-            frame?.Dispose();
+            ExceptionDispatchInfo disposalError = null;
+            try
+            {
+                try
+                {
+                    DisposeCurrentRecord();
+                }
+                catch (Exception ex)
+                {
+                    disposalError = ExceptionDispatchInfo.Capture(ex);
+                }
+                if (objectFrames is not null)
+                {
+                    foreach (var objectFrame in objectFrames)
+                    {
+                        try
+                        {
+                            objectFrame?.Clear(hlogBase.storeFunctions);
+                        }
+                        catch (Exception ex)
+                        {
+                            disposalError ??= ExceptionDispatchInfo.Capture(ex);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                recordBuffer?.Return();
+                recordBuffer = null;
+                frame?.Dispose();
+            }
+            disposalError?.Throw();
+        }
+
+        private void DisposeCurrentRecord()
+        {
+            if (!diskLogRecord.IsSet)
+                return;
+            try
+            {
+                // Buffered resident records own only remapped slots, not the heap objects they reference.
+                if (currentRecordFromDisk)
+                    hlogBase._wrapper.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+            }
+            finally
+            {
+                diskLogRecord.Dispose();
+                diskLogRecord = default;
+            }
         }
 
         internal override void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress, TContext context, ref CountdownEvent completed,
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
-            => hlogBase.AsyncReadPageFromDeviceToFrame(readBuffers, readPage, untilAddress, AsyncReadPageFromDeviceToFrameCallback, context, frame, ref completed, devicePageOffset, device, objectLogDevice, cts);
+        {
+            var objectFrame = objectFrames[readPage % frameSize] ??= new();
+            // ScanIteratorBase has drained the prior load before claiming this frame for another page.
+            objectFrame.Clear(hlogBase.storeFunctions);
+            hlogBase.AsyncReadPageFromDeviceToFrame(readBuffers, readPage, untilAddress, AsyncReadPageFromDeviceToFrameCallback, context, frame,
+                ref completed, devicePageOffset, device, objectLogDevice, cts, objectFrame);
+        }
     }
 }
