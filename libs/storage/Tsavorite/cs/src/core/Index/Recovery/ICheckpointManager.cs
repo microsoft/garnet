@@ -146,6 +146,15 @@ namespace Tsavorite.core
         IDevice GetSnapshotObjectLogDevice(Guid token);
 
         /// <summary>
+        /// Get the largest sector size, in bytes, of the devices returned by <see cref="GetIndexDevice(Guid)"/>,
+        /// <see cref="GetSnapshotLogDevice(Guid)"/> and <see cref="GetSnapshotObjectLogDevice(Guid)"/>, without creating
+        /// any of them. A store calls this once, when it is created, and aligns its log pages, hash index and overflow
+        /// buckets to at least this size so that its checkpoints can be written to and recovered from those devices.
+        /// </summary>
+        /// <returns>The sector size; the default implementation returns <see cref="IDevice.MinDeviceSectorSize"/>.</returns>
+        uint GetCheckpointDeviceSectorSize() => IDevice.MinDeviceSectorSize;
+
+        /// <summary>
         /// Cleanup all data (subfolder) related to the given guid by this manager
         /// </summary>
         public void Purge(Guid token);

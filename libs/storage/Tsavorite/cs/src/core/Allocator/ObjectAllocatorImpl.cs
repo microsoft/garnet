@@ -548,13 +548,16 @@ namespace Tsavorite.core
             if (addressOfStartOfMainLogPage <= PageSize + PageHeader.Size)
                 return objectLogSegment;
 
-            var buffer = bufferPool.Get(sectorSize);
+            // Flushes pad the main log only to its device's sector size, so read one such sector: the allocator's sector size can be
+            // larger and would run past the end of a partly flushed page.
+            var readLength = device.SectorSize;
+            var buffer = bufferPool.Get((int)readLength);
             try
             {
-                if (!TryReadDevice(device, (ulong)addressOfStartOfMainLogPage, (IntPtr)buffer.aligned_pointer, (uint)sectorSize,
+                if (!TryReadDevice(device, (ulong)addressOfStartOfMainLogPage, (IntPtr)buffer.aligned_pointer, readLength,
                     nameof(GetLowestObjectLogSegmentInUse), out var errorCode, out var numBytesRead, out var ioException))
                 {
-                    throw CreateReadException(nameof(GetLowestObjectLogSegmentInUse), (ulong)addressOfStartOfMainLogPage, (uint)sectorSize,
+                    throw CreateReadException(nameof(GetLowestObjectLogSegmentInUse), (ulong)addressOfStartOfMainLogPage, readLength,
                         errorCode, numBytesRead, ioException);
                 }
 
@@ -824,8 +827,10 @@ namespace Tsavorite.core
                 {
                     // TODO: This will potentially overwrite partial sectors (with the same data) if this is a partial flush; a workaround would be difficult.
                     // TODO: Cache the last sector flushed in readBuffers so we can avoid this Read.
+                    // The earlier flush padded its write to the log device's sector size, as this one does, so read back one such sector;
+                    // the allocator's sector size can be larger and would run past the end of what was written.
                     var readAddress = alignedMainLogFlushPageAddress + (ulong)alignedStartOffset;
-                    if (!TryReadDevice(device, readAddress, (IntPtr)srcBuffer.aligned_pointer, (uint)sectorSize,
+                    if (!TryReadDevice(device, readAddress, (IntPtr)srcBuffer.aligned_pointer, device.SectorSize,
                         "Partial-sector flush read-back", out var errorCode, out var numBytesRead, out var ioException))
                     {
                         callback(errorCode, numBytesRead, asyncResult, ioException);
