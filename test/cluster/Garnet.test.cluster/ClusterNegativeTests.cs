@@ -455,7 +455,7 @@ namespace Garnet.test.cluster
                 ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint);
 
                 var respReplicate = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
-                var expected = "The operation has timed out.";
+                var expected = "Checkpoint acknowledgement timed out for STORE_INDEX [address:0,length:131072]";
                 ClassicAssert.AreEqual(expected, respReplicate);
             }
             finally
