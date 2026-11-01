@@ -17,11 +17,6 @@ namespace Garnet.cluster
     /// </summary>
     internal class FileDataSource : ISnapshotDataSource
     {
-        /// <summary>
-        /// Default batch size for non-segmented checkpoint files.
-        /// </summary>
-        internal const int DefaultBatchSize = 1 << 17;
-
         private readonly int maxBatchSize;
         private readonly TimeSpan timeout;
         private readonly ILogger logger;
@@ -47,7 +42,7 @@ namespace Garnet.cluster
         /// <param name="device">The initialized device to read from.</param>
         /// <param name="startOffset">The start offset.</param>
         /// <param name="endOffset">The end offset.</param>
-        /// <param name="maxBatchSize">Maximum bytes to read per chunk (will be further capped by sector alignment).</param>
+        /// <param name="maxBatchSize">Maximum bytes per chunk; must be a positive multiple of the device sector size.</param>
         /// <param name="timeout">Timeout for async read operations.</param>
         /// <param name="bufferPool">Shared sector-aligned buffer pool for read operations.</param>
         /// <param name="signalCompletion">Shared semaphore for async I/O completion signaling.</param>
@@ -64,6 +59,9 @@ namespace Garnet.cluster
             SemaphoreSlim signalCompletion,
             ILogger logger = null)
         {
+            if (maxBatchSize < device.SectorSize || maxBatchSize % device.SectorSize != 0)
+                throw new ArgumentException($"Chunk size {maxBatchSize} must be a positive multiple of device sector size {device.SectorSize}.", nameof(maxBatchSize));
+
             Type = type;
             Token = token;
             Device = device;
@@ -89,6 +87,8 @@ namespace Garnet.cluster
             var chunkStartAddress = CurrentOffset;
             var remainingBytes = EndOffset - CurrentOffset;
             var size = (int)Math.Min(remainingBytes, maxBatchSize);
+            if (Device.SegmentSize > 0)
+                size = (int)Math.Min(size, Device.SegmentSize - CurrentOffset % Device.SegmentSize);
 
             var (buffer, bytesRead) = await ReadIntoAsync(Device, (ulong)CurrentOffset, size, cancellationToken).ConfigureAwait(false);
             CurrentOffset += bytesRead;

@@ -142,6 +142,10 @@ namespace Garnet.networking
         readonly byte[] transportSendBuffer;
         readonly unsafe byte* transportSendBufferPtr;
 
+        // Receive cleanup owns one interest. Clients retaining raw plaintext pointers acquire another
+        // before Start; the last release returns the buffer, independently of socket shutdown.
+        int transportSendBufferOwners = 1;
+
         /* Wrapper for buffer used to write directly to the network */
         readonly TNetworkSender networkSender;
 
@@ -997,6 +1001,25 @@ namespace Garnet.networking
             => transportSendBufferPtr + transportSendBuffer.Length;
 
         /// <summary>
+        /// Retains the TLS plaintext send buffer for an external sender. Call before starting the handler.
+        /// </summary>
+        protected void RetainTransportSendBuffer()
+        {
+            Debug.Assert(disposeCount == 0);
+            if (transportSendBufferEntry != null)
+                Interlocked.Increment(ref transportSendBufferOwners);
+        }
+
+        /// <summary>
+        /// Releases one TLS plaintext-buffer owner without waiting for the other owner or closing the socket.
+        /// </summary>
+        protected void ReleaseTransportSendBuffer()
+        {
+            if (transportSendBufferEntry != null && Interlocked.Decrement(ref transportSendBufferOwners) == 0)
+                transportSendBufferEntry.Dispose();
+        }
+
+        /// <summary>
         /// Implementation of dispose for network handler.
         /// Expected to be called exactly once, by the same thread that listens to network
         /// and calls the mono-threaded ProcessMessage.
@@ -1012,20 +1035,30 @@ namespace Garnet.networking
                 return;
             }
 
-            cancellationTokenSource?.Cancel();
-            serverHook.DisposeMessageConsumer(this);
-            networkSender.Dispose();
-            sslStream?.Dispose();
-            // Release the reader so it sees the cancellation
-            receivedData?.Release();
-            receivedData?.Dispose();
-            // Release the expecter so it sees the cancellation
-            expectingData?.Release();
-            expectingData?.Dispose();
-            cancellationTokenSource?.Dispose();
-            networkReceiveBufferEntry?.Dispose();
-            transportSendBufferEntry?.Dispose();
-            transportReceiveBufferEntry?.Dispose();
+            try
+            {
+                cancellationTokenSource?.Cancel();
+                serverHook.DisposeMessageConsumer(this);
+                networkSender.Dispose();
+                sslStream?.Dispose();
+                // Release the reader so it sees the cancellation
+                receivedData?.Release();
+                receivedData?.Dispose();
+                // Release the expecter so it sees the cancellation
+                expectingData?.Release();
+                expectingData?.Dispose();
+                cancellationTokenSource?.Dispose();
+                networkReceiveBufferEntry?.Dispose();
+                transportReceiveBufferEntry?.Dispose();
+            }
+            finally
+            {
+                ReleaseTransportSendBuffer();
+#if DEBUG
+                if (transportSendBufferEntry != null)
+                    _ = ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Tls_Signal_After_Handler_Dispose);
+#endif
+            }
         }
 
         /// <inheritdoc />
