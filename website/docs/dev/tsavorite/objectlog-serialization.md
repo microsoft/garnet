@@ -990,6 +990,9 @@ Indentation is call depth. Component branches and lifetime changes are included 
   - `ObjectAllocatorImpl.LoadObjectsForRecoveryPass2(...)`
     - `DeserializeObjectsOnPage(...)`
       - stop the walk at the page-extent guard (zeroed `RecordDataHeader`, non-positive or overrunning allocated size)
+      - invalid object record, including a main-log image that references a checkpoint's object log (invalidated here)
+        -> `MaterializeObjectsWithoutReading(...)`: empty components, so every slot on the page indexes its map, which a
+        scan that includes closed records resolves
       - first pass: scan same-device object-bearing records until one read-ring capacity is covered, contributing no
         range for a record with no readable position
       - include the final scanned record's first-component hint
@@ -1715,7 +1718,7 @@ Finally the checkpoint flushes its object log and records the log's durable end 
 
 Recovery first walks main-log record images and repairs the index without loading full objects. A marked record in
 `[L, M)` reads any required overflow key from the selected snapshot; a marked record outside that range is obsolete
-and is invalidated before key access.
+and is invalidated before key access, and Pass 2 gives it empty components (section 9.4).
 
 During the same walk, recovery retains the highest main-object-log position and its hints, not the last hybrid-log
 record. Snapshot-relative positions are excluded. The highest reference can belong to a record already repaired by

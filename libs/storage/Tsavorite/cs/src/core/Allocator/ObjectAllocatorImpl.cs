@@ -2461,18 +2461,19 @@ namespace Tsavorite.core
                         break;
                     recordAddress += allocatedSize;
 
-                    if (!logRecord.DataHeader.RecordHasObjects || !logRecord.Info.Valid)
+                    if (!logRecord.DataHeader.RecordHasObjects)
                         continue;
-                    if (objectLogDevice is null && logRecord.Info.HasSnapshotObjectLogReference)
-                    {
-                        logRecord.InfoRef.SetInvalid();
-                        continue;
-                    }
 
-                    // Reading from a record with no readable position would consume another record's bytes; see RecordHasNoReadablePosition.
-                    // Materialize its components without reading, so the record is still accounted for, and leave the recovered-object
-                    // accounting alone because the record added no object-log bytes.
-                    if (RecordHasNoReadablePosition(in logRecord))
+                    // A main-log image that references a checkpoint's object log has no components in the main object log.
+                    if (objectLogDevice is null && logRecord.Info.Valid && logRecord.Info.HasSnapshotObjectLogReference)
+                        logRecord.InfoRef.SetInvalid();
+
+                    // A record whose components are not read gets empty ones, so that every slot on the page indexes objectIdMap: an image's
+                    // slots index the map of the page it was flushed from, and a scan that includes closed records resolves the slots of invalid
+                    // records too. This covers invalid records, which are never read, and a record with no readable position, whose read would
+                    // consume another record's bytes (see RecordHasNoReadablePosition). Neither added object-log bytes, so the recovered-object
+                    // accounting is unchanged, and eviction skips invalid records.
+                    if (!logRecord.Info.Valid || RecordHasNoReadablePosition(in logRecord))
                     {
                         logRecord.MaterializeObjectsWithoutReading();
                         continue;

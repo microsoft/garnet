@@ -237,8 +237,9 @@ namespace Tsavorite.core
                         OperationStackContext<TStoreFunctions, TAllocator> stackCtx = default;
                         try
                         {
-                            // Lock to ensure no value tearing while copying to temp storage.
-                            if (store is not null)
+                            // Lock to ensure no value tearing while copying to temp storage. Only a valid record is updated in place, so an invalid one
+                            // needs no lock; locking would also hash its key, which recovery may have left empty (see DeserializeObjectsOnPage).
+                            if (store is not null && !recordInfo.Invalid)
                             {
                                 var logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress, physicalAddress);
                                 store.LockForScan(ref stackCtx, logRecord);

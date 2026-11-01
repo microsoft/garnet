@@ -250,7 +250,9 @@ namespace Tsavorite.core
             long numPending = 0;
             while (iter.GetNext())
             {
-                if (!iter.Info.Tombstone || includeTombstones)
+                // A record that is Invalid but not Sealed was never live, or recovery discarded it, so no lookup reports it. Among invalid records,
+                // only an elided one, which is also Sealed, can be a key's version at a bounded maxAddress. Traceback skips the same records.
+                if ((!iter.Info.Tombstone || includeTombstones) && (!iter.Info.Invalid || iter.Info.IsSealed))
                 {
                     var status = bContext.ConditionalScanPush(scanCursorState, in iter, iter.CurrentAddress, iter.NextAddress, maxAddress);
                     if (status.IsPending)

@@ -553,6 +553,94 @@ namespace Tsavorite.test.recovery
         }
 
         /// <summary>
+        /// Recovery invalidates some records without reading their components: the capturing checkpoint's (v+1) record, and, recovering a later
+        /// checkpoint, the source's main-log image that references the capturing checkpoint's object log. Their slots must still index their
+        /// page's map, holding empty components, because a scan that includes closed records, such as a bounded ScanCursor, resolves them; and a
+        /// bounded ScanCursor must not report them, since neither was ever the live version of its key in the recovered store.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoveryGivesInvalidRecordsEmptyComponents([Values] bool fromCapturingCheckpoint, [Values] bool overflowKeys)
+        {
+            var key = new TestObjectKey { key = 1 };
+            Guid capturingToken, laterToken;
+            long sourceAddress, newAddress;
+            var store = CreateStore(overflowKeys);
+            try
+            {
+                sourceAddress = UpsertSource(store, key);
+
+                // The ReadOnly flush writes the source's page while the capturing checkpoint is active, so its image keeps the reference.
+                var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
+                store.stateMachineDriver.UnsafeRegisterCallback(pause);
+                try
+                {
+                    Assert.That(store.TryInitiateFullCheckpoint(out capturingToken, CheckpointType.Snapshot), Is.True);
+                    Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True);
+                    newAddress = store.Log.TailAddress;
+                    Rmw(store, sourceAddress, expectCapture: true);
+                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                }
+                finally
+                {
+                    pause.Release.Set();
+                }
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+                Assert.That(store.TryInitiateFullCheckpoint(out laterToken, CheckpointType.Snapshot), Is.True);
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                store.Dispose();
+            }
+
+            store = CreateStore(overflowKeys);
+            try
+            {
+                _ = await store.RecoverAsync(default, fromCapturingCheckpoint ? capturingToken : laterToken).ConfigureAwait(false);
+                var (liveAddress, invalidAddress, liveCount) = fromCapturingCheckpoint
+                    ? (sourceAddress, newAddress, InitialCount)
+                    : (newAddress, sourceAddress, InitialCount + 1);
+
+                var invalid = store.hlogBase._wrapper.CreateLogRecord(invalidAddress);
+                Assert.That(invalid.Info.Invalid, Is.True, "Recovery did not invalidate the record");
+                Assert.That(invalid.ValueObject, Is.Null, "The invalid record's value slot does not hold an empty component");
+                if (overflowKeys)
+                    Assert.That(invalid.Key.Length, Is.Zero, "The invalid record's key slot does not hold an empty component");
+
+                var scan = new ReportedRecordScan();
+                using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions());
+                _ = session.IterateLookupSnapshot(ref scan);
+                (long address, int count)[] expected = [(liveAddress, liveCount)];
+                Assert.That(scan.Reported, Is.EqualTo(expected), "The scan did not report exactly the live record and its value");
+            }
+            finally
+            {
+                store.Dispose();
+            }
+        }
+
+        /// <summary>Collects the address and item count of each record a scan reports; an invalid record's count is -1.</summary>
+        sealed class ReportedRecordScan : IScanIteratorFunctions
+        {
+            internal readonly List<(long address, int count)> Reported = [];
+
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                where TSourceLogRecord : ISourceLogRecord
+            {
+                cursorRecordResult = CursorRecordResult.Accept;
+                Reported.Add((recordMetadata.Address, logRecord.Info.Invalid ? -1 : ((SharedListHeapObject)logRecord.ValueObject).Items.Count));
+                return true;
+            }
+
+            public void OnException(Exception exception, long numberOfRecords) => Assert.Fail($"The scan failed after {numberOfRecords} records: {exception}");
+
+            public bool OnStart(long beginAddress, long endAddress) => true;
+
+            public void OnStop(bool completed, long numberOfRecords) { }
+        }
+
+        /// <summary>
         /// A capture outlives its checkpoint while its source stays unflushed. The source's next flush, by a ReadOnly flush with no checkpoint
         /// active or by the next checkpoint's Snapshot flush, writes the superseded value and clears the marker rather than keep a reference into
         /// the completed checkpoint's object log, which the next checkpoint's recovery would resolve in its own object log.
