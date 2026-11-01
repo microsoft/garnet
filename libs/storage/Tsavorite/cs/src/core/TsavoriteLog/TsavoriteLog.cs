@@ -701,7 +701,7 @@ namespace Tsavorite.core
             // slot column is no longer referenced.
             epoch.ReleaseUserWord(inflightWord);
             commitQueue.Dispose();
-            _ = commitTcs.TrySetException(new ObjectDisposedException("TsavoriteLog has been disposed"));
+            FailCommitTask(commitTcs, new ObjectDisposedException("TsavoriteLog has been disposed"));
             allocator.Dispose();
             if (isEpochOwned)
                 epoch.Dispose();
@@ -2822,6 +2822,13 @@ namespace Tsavorite.core
             }
         }
 
+        private static void FailCommitTask(TaskCompletionSource<LinkedCommitInfo> source, Exception exception)
+        {
+            _ = source.TrySetException(exception);
+            // The log owns this shared notification task even when no caller awaits it.
+            _ = source.Task.Exception;
+        }
+
         private void SerialCommitCallbackWorker(CommitInfo commitInfo)
         {
             if (commitInfo.ErrorCode != 0)
@@ -2833,7 +2840,7 @@ namespace Tsavorite.core
                 {
                     var oldCommitTcs = commitTcs;
                     commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    _ = oldCommitTcs.TrySetException(exception);
+                    FailCommitTask(oldCommitTcs, exception);
                     // Silently set flushed until past this range
                     _ = Utility.MonotonicUpdate(ref allocator.FlushedUntilAddress, commitInfo.UntilAddress, out _);
                     allocator.UnsafeSkipError(commitInfo);
@@ -2842,7 +2849,7 @@ namespace Tsavorite.core
                 {
                     cannedException = exception;
                     // Make sure future waiters do not get a fresh tcs
-                    _ = commitTcs.TrySetException(cannedException);
+                    FailCommitTask(commitTcs, cannedException);
                 }
                 return;
             }
