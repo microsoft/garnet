@@ -189,5 +189,13 @@ namespace Garnet.common
         /// decremented the send count and before it releases the waiter.
         /// </summary>
         Sender_Pause_Before_Slot_Release,
+        /// <summary>
+        /// Checkpoint sender: pause while holding its plaintext send-buffer pointer, before copying the payload.
+        /// </summary>
+        Checkpoint_Pause_Before_Payload_Copy,
+        /// <summary>
+        /// TLS handler: signal that receive-side resource cleanup has finished.
+        /// </summary>
+        Tls_Signal_After_Handler_Dispose,
     }
 }

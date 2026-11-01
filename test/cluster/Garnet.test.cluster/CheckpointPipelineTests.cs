@@ -4,7 +4,9 @@
 using System;
 using System.IO;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,7 +22,114 @@ namespace Garnet.test.cluster
     public class CheckpointPipelineTests : TestBase
     {
         [TearDown]
-        public void TearDown() => TestUtils.OnTearDown();
+        public void TearDown()
+        {
+            ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Checkpoint_Pause_Before_Payload_Copy);
+            ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Tls_Signal_After_Handler_Dispose);
+            TestUtils.OnTearDown();
+        }
+
+        [TestCase("cancel")]
+        [TestCase("timeout")]
+        [TestCase("error")]
+        [TestCase("disconnect")]
+        public async Task TlsAbortDoesNotRecycleAnActiveSubmissionBuffer(string failure)
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const ExceptionInjectionType pause = ExceptionInjectionType.Checkpoint_Pause_Before_Payload_Copy;
+            const ExceptionInjectionType cleanedUp = ExceptionInjectionType.Tls_Signal_After_Handler_Dispose;
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            using var cancel = new CancellationTokenSource();
+            using var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var settings = new NetworkBufferSettings(1 << 20, 4096);
+            using var pool = settings.CreateBufferPool();
+            var certificate = TestUtils.GetClientCertificate();
+            var tls = new SslClientAuthenticationOptions
+            {
+                TargetHost = "GarnetTest",
+                RemoteCertificateValidationCallback = TestUtils.ValidateServerCertificate,
+            };
+            using var client = new GarnetClientSession(listener.LocalEndpoint, settings, pool, tls);
+            var accept = listener.AcceptTcpClientAsync(timeout.Token);
+            var connect = client.ConnectAsync(token: timeout.Token);
+            using var peer = await accept;
+            using var stream = new SslStream(peer.GetStream());
+            await stream.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = certificate }, timeout.Token);
+            await connect;
+            var originalBuffer = GetTlsSendBuffer(client);
+            var source = new TestSource(6) { BlockReadAt = 1 };
+            using var transmitter = new FileTransmitSource(source, pipelineDepth: 3);
+            var transfer = Task.Run(() => transmitter.TransmitAsync(client,
+                failure == "timeout" ? TimeSpan.FromSeconds(2) : Timeout.InfiniteTimeSpan, cancel.Token));
+            try
+            {
+                _ = await ReadChunkAsync(stream, timeout.Token);
+                await source.ReadBlocked.Task.WaitAsync(timeout.Token);
+                ExceptionInjectionHelper.EnableException(pause);
+                ExceptionInjectionHelper.EnableException(cleanedUp);
+                source.ResumeRead.SetResult();
+                await ExceptionInjectionHelper.WaitOnClearAsync(pause).WaitAsync(timeout.Token);
+
+                // The second submission holds a raw pointer while the first acknowledgement can fail.
+                // Wait for actual receive cleanup, not a delay that merely makes the race more likely.
+                if (failure == "cancel")
+                    await cancel.CancelAsync();
+                else if (failure == "error")
+                    await ReplyAsync(stream, "-ERR TLS submission failure\r\n", timeout.Token);
+                else if (failure == "disconnect")
+                    peer.Dispose();
+                await ExceptionInjectionHelper.WaitOnClearAsync(cleanedUp).WaitAsync(timeout.Token);
+                Assert.That(transfer.IsCompleted, Is.False, "The producer must still be parked inside submission");
+                Assert.That(pool.LiveBytes, Is.EqualTo(settings.sendBufferSize),
+                    "Receive cleanup must leave the producer's TLS plaintext buffer checked out");
+
+                using var healthy = new GarnetClientSession(listener.LocalEndpoint, settings, pool, tls);
+                var healthyAccept = listener.AcceptTcpClientAsync(timeout.Token);
+                var healthyConnect = healthy.ConnectAsync(token: timeout.Token);
+                using var healthyPeer = await healthyAccept;
+                using var healthyStream = new SslStream(healthyPeer.GetStream());
+                await healthyStream.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = certificate }, timeout.Token);
+                await healthyConnect;
+                Assert.That(GetTlsSendBuffer(healthy), Is.Not.SameAs(originalBuffer));
+                var ping = healthy.ExecuteAsync("PING");
+                Assert.That(await ReadLineAsync(healthyStream, timeout.Token), Is.EqualTo("*1"));
+                Assert.That(await ReadLineAsync(healthyStream, timeout.Token), Is.EqualTo("$4"));
+                Assert.That(await ReadLineAsync(healthyStream, timeout.Token), Is.EqualTo("PING"));
+                await ReplyAsync(healthyStream, "+PONG\r\n", timeout.Token);
+                Assert.That(await ping.WaitAsync(timeout.Token), Is.EqualTo("PONG"));
+
+                ExceptionInjectionHelper.EnableException(pause);
+                var exception = await CaptureFailureAsync(transfer.WaitAsync(timeout.Token));
+                if (failure == "timeout")
+                    Assert.That(exception, Is.TypeOf<TimeoutException>());
+                if (failure == "cancel")
+                    Assert.That(exception, Is.InstanceOf<OperationCanceledException>());
+                if (failure == "error")
+                    Assert.That(exception.Message, Does.Contain("TLS submission failure"));
+                ExceptionInjectionHelper.EnableException(cleanedUp);
+                healthy.Dispose();
+                client.Dispose();
+                await ExceptionInjectionHelper.WaitOnClearAsync(cleanedUp).WaitAsync(timeout.Token);
+                Assert.That(pool.LiveBytes, Is.Zero, "Both connections must return every buffer exactly once");
+            }
+            finally
+            {
+                // Release both rendezvous even if an assertion fails, before disposing the source or pool.
+                await cancel.CancelAsync();
+                source.ResumeRead.TrySetResult();
+                ExceptionInjectionHelper.EnableException(pause);
+                _ = await CaptureFailureAsync(transfer.WaitAsync(timeout.Token));
+            }
+        }
+
+        static byte[] GetTlsSendBuffer(GarnetClientSession client)
+        {
+            var handler = typeof(GarnetClientSession).GetField("networkHandler", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(client);
+            var field = handler.GetType().BaseType.BaseType.GetField("transportSendBufferEntry", BindingFlags.Instance | BindingFlags.NonPublic);
+            return ((PoolEntry)field.GetValue(handler)).entry;
+        }
 
         [TestCase(1)]
         [TestCase(3)]
@@ -182,19 +291,30 @@ namespace Garnet.test.cluster
             Assert.That(source.ReadCount, Is.EqualTo(source.BlockReadAt));
         }
 
-        [TestCase(false)]
-        [TestCase(true)]
-        public async Task StalledSocketSendCanBeAborted(bool cancelTransfer)
+        [TestCase(false, false)]
+        [TestCase(true, false)]
+        [TestCase(false, true)]
+        [TestCase(true, true)]
+        public async Task StalledSocketSendCanBeAborted(bool cancelTransfer, bool useTls)
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
             using var cancel = new CancellationTokenSource();
             using var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Server.ReceiveBufferSize = 1024;
             listener.Start();
-            using var client = new GarnetClientSession(listener.LocalEndpoint, new NetworkBufferSettings(512 << 10, 4096));
+            var tls = useTls ? new SslClientAuthenticationOptions
+            {
+                TargetHost = "GarnetTest",
+                RemoteCertificateValidationCallback = TestUtils.ValidateServerCertificate,
+            } : null;
+            using var client = new GarnetClientSession(listener.LocalEndpoint, new NetworkBufferSettings(512 << 10, 4096), tlsOptions: tls);
             var accept = listener.AcceptTcpClientAsync(timeout.Token);
-            await client.ConnectAsync(token: timeout.Token);
+            var connect = client.ConnectAsync(token: timeout.Token);
             using var peer = await accept;
+            using var tlsStream = useTls ? new SslStream(peer.GetStream()) : null;
+            if (useTls)
+                await tlsStream.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = TestUtils.GetClientCertificate() }, timeout.Token);
+            await connect;
             var source = new TestSource(256, 256 << 10);
             using var transmitter = new FileTransmitSource(source, pipelineDepth: 64);
             var transfer = Task.Run(() => transmitter.TransmitAsync(client,
@@ -247,10 +367,10 @@ namespace Garnet.test.cluster
             return null;
         }
 
-        private static async Task ReplyAsync(NetworkStream stream, string response, CancellationToken token)
+        private static async Task ReplyAsync(Stream stream, string response, CancellationToken token)
             => await stream.WriteAsync(Encoding.ASCII.GetBytes(response), token);
 
-        private static async Task<(long Address, byte[] Data)> ReadChunkAsync(NetworkStream stream, CancellationToken token)
+        private static async Task<(long Address, byte[] Data)> ReadChunkAsync(Stream stream, CancellationToken token)
         {
             Assert.That(await ReadLineAsync(stream, token), Is.EqualTo("*6"));
             var args = new byte[6][];
@@ -270,7 +390,7 @@ namespace Garnet.test.cluster
             return (long.Parse(Encoding.ASCII.GetString(args[4])), args[5]);
         }
 
-        private static async Task<string> ReadLineAsync(NetworkStream stream, CancellationToken token)
+        private static async Task<string> ReadLineAsync(Stream stream, CancellationToken token)
         {
             var line = new StringBuilder();
             var one = new byte[1];

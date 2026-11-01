@@ -280,6 +280,9 @@ namespace Garnet.client
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             tcsQueue.Enqueue(tcs);
             byte* curr = offset;
+#if DEBUG
+            ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Checkpoint_Pause_Before_Payload_Copy);
+#endif
             int arraySize = 6;
 
             while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))

@@ -43,12 +43,18 @@ namespace Garnet.cluster
             // acknowledgements, overlapping reads and blocked sends without cancelling the caller's source.
             using var abort = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-            // Close only the socket here; disposing send buffers must wait for the sender to unwind.
-            using var closeOnAbort = abort.Token.Register(gcs.CloseConnection);
-
             // Capture the first reported failure atomically across the sender, response tasks and timeout callbacks.
             // Aborting can surface cancellation/disposal exceptions elsewhere; rethrow the captured cause after cleanup.
             var firstFailure = new TaskCompletionSource<Exception>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            // Record caller cancellation before closing can turn a blocked TLS write into an I/O error.
+            // Close immediately; GCS retains plaintext across receive cleanup until its owner unwinds and disposes.
+            using var closeOnAbort = abort.Token.Register(() =>
+            {
+                if (cancellationToken.IsCancellationRequested)
+                    _ = firstFailure.TrySetResult(new OperationCanceledException(cancellationToken));
+                gcs.CloseConnection();
+            });
 
             // Send chunks serially, allowing a bounded FIFO of outstanding acknowledgements.
             // Only this async flow mutates pending; response continuations cannot change its head across an await.

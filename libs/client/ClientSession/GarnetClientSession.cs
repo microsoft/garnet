@@ -164,12 +164,20 @@ namespace Garnet.client
                 messageConsumer: this,
                 networkSendThrottleMax: networkSendThrottleMax,
                 logger: logger);
-            networkHandler.Start(sslOptions, EndPoint.ToString(), token);
-            networkSender = networkHandler.GetNetworkSender();
-            networkSender.GetResponseObject();
-            offset = networkSender.GetResponseObjectHead();
-            end = networkSender.GetResponseObjectTail();
-            numCommands = 0;
+            try
+            {
+                networkHandler.Start(sslOptions, EndPoint.ToString(), token);
+                networkSender = networkHandler.GetNetworkSender();
+                networkSender.GetResponseObject();
+                offset = networkSender.GetResponseObjectHead();
+                end = networkSender.GetResponseObjectTail();
+                numCommands = 0;
+            }
+            catch
+            {
+                CleanupFailedConnection();
+                throw;
+            }
 
             try
             {
@@ -185,6 +193,7 @@ namespace Garnet.client
             catch (Exception e)
             {
                 logger?.LogError(e, "AUTH returned error");
+                CleanupFailedConnection();
                 throw;
             }
 
@@ -199,6 +208,7 @@ namespace Garnet.client
             catch (Exception e)
             {
                 logger?.LogError(e, "Client set info returned error!");
+                CleanupFailedConnection();
                 throw;
             }
         }
@@ -217,15 +227,23 @@ namespace Garnet.client
                 messageConsumer: this,
                 networkSendThrottleMax: networkSendThrottleMax,
                 logger: logger);
-            await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
-            networkSender = networkHandler.GetNetworkSender();
-            networkSender.GetResponseObject();
-            unsafe
+            try
             {
-                offset = networkSender.GetResponseObjectHead();
-                end = networkSender.GetResponseObjectTail();
+                await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
+                networkSender = networkHandler.GetNetworkSender();
+                networkSender.GetResponseObject();
+                unsafe
+                {
+                    offset = networkSender.GetResponseObjectHead();
+                    end = networkSender.GetResponseObjectTail();
+                }
+                numCommands = 0;
             }
-            numCommands = 0;
+            catch
+            {
+                CleanupFailedConnection();
+                throw;
+            }
 
             try
             {
@@ -241,6 +259,7 @@ namespace Garnet.client
             catch (Exception e)
             {
                 logger?.LogError(e, "AUTH returned error");
+                CleanupFailedConnection();
                 throw;
             }
 
@@ -255,6 +274,7 @@ namespace Garnet.client
             catch (Exception e)
             {
                 logger?.LogError(e, "Client set info returned error!");
+                CleanupFailedConnection();
                 throw;
             }
         }
@@ -406,13 +426,7 @@ namespace Garnet.client
         public Task ReconnectAsync(int timeoutMs = 0, CancellationToken token = default)
         {
             if (Disposed) throw new ObjectDisposedException("GarnetClientSession");
-            try
-            {
-                networkSender?.ReturnResponseObject();
-                socket?.Dispose();
-                networkHandler?.Dispose();
-            }
-            catch { }
+            DisposeConnection();
             return ConnectAsync(timeoutMs, token);
         }
 
@@ -420,8 +434,9 @@ namespace Garnet.client
         /// Closes the underlying connection so a thread blocked on network I/O through this session
         /// fails fast, without disposing the session itself. The session expects mono-threaded access,
         /// so a caller that is not the thread using the session must not dispose it: doing so races
-        /// that thread's use of the send buffer it has rented. Closing the connection is safe because
-        /// it only invalidates the socket, leaving the buffer owned by the thread that rented it.
+        /// that thread's use of the send buffer it has rented. Socket closure also triggers receive-side
+        /// TLS cleanup, but the GCS owner's lease keeps its plaintext buffer out of the pool until the
+        /// mono-threaded owner unwinds and disposes or replaces the connection.
         ///
         /// The session is not reusable afterwards: the request is sticky, so a later
         /// <see cref="ReconnectAsync"/> or <see cref="Connect"/> throws.
@@ -461,10 +476,60 @@ namespace Garnet.client
         {
             if (Interlocked.Increment(ref disposed) > 1) return;
 
-            networkSender?.ReturnResponseObject();
-            socket?.Dispose();
-            networkHandler?.Dispose();
-            if (!usingManagedNetworkPool) networkPool.Dispose();
+            try
+            {
+                DisposeConnection();
+            }
+            finally
+            {
+                if (!usingManagedNetworkPool) networkPool.Dispose();
+            }
+        }
+
+        // Only the mono-threaded GCS owner reaches this path. Socket closure may already have started
+        // handler cleanup elsewhere; neither release order may recycle TLS plaintext still in use.
+        unsafe void DisposeConnection()
+        {
+            var handler = networkHandler;
+            try
+            {
+                try
+                {
+                    networkSender?.ReturnResponseObject();
+                }
+                finally
+                {
+                    try
+                    {
+                        socket?.Dispose();
+                    }
+                    finally
+                    {
+                        handler?.Dispose();
+                    }
+                }
+            }
+            finally
+            {
+                handler?.ReleaseClientSendBuffer();
+                networkHandler = null;
+                networkSender = null;
+                socket = null;
+                offset = end = null;
+            }
+        }
+
+        void CleanupFailedConnection()
+        {
+            try
+            {
+                DisposeConnection();
+            }
+            catch (Exception cleanupException)
+            {
+                // Preserve the connection failure rather than replacing it with a cleanup failure.
+                logger?.LogWarning(cleanupException, "Error cleaning up failed GarnetClientSession connection");
+            }
         }
 
         /// <summary>
