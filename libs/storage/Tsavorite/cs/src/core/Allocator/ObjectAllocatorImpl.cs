@@ -2309,8 +2309,8 @@ namespace Tsavorite.core
                 return true;
             }
 
-            // The overflow key did not match, so get the previous record.
-            prevAddressToRead = (*(RecordInfo*)ctx.record.GetValidPointer()).PreviousAddress;
+            // The overflow key did not match, so get the previous record. The base call transferred ctx.record to diskLogRecord.
+            prevAddressToRead = diskLogRecord.Info.PreviousAddress;
             return false;
         }
 
@@ -2338,9 +2338,14 @@ namespace Tsavorite.core
                 {
                     // This assignment also allocates the slot in ObjectIdMap, replacing the size hint the flush stamped in the objectId slot.
                     logRecord.KeyOverflow = reader.ReadKey();
-                    if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, logRecord))
-                        return false;
                     keyWasSet = true;
+                    if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, logRecord))
+                    {
+                        // Release the key, and clear the value field, which still holds the flush's slot id and size hint rather than a
+                        // transient slot, so the caller's dispose of the record frees nothing it does not own.
+                        logRecord.OnDeserializationError(keyWasSet);
+                        return false;
+                    }
                 }
 
                 if (recordRef.ValueIsOverflow)

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -260,6 +261,58 @@ namespace Tsavorite.test
             }
 
             Assert.That(scanned, Is.EqualTo(numRecords), "every zero-length-component record must still be returned by the scan");
+        }
+
+        /// <summary>
+        /// A pending read that walks past records with other overflow keys in its hash chain finds the older key, and frees only the transient
+        /// slots it allocated. A mismatched record's value field still holds its flushed slot id, which is not a transient slot.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void PendingReadPastOtherOverflowKeysFreesOnlyItsOwnSlots()
+        {
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "OverflowKeyChain.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "OverflowKeyChain.obj.log"), deleteOnClose: true);
+
+            // A modulo of 1 hashes every key to 0, so all records share one hash chain.
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                LogMemorySize = 1L << 15,
+                PageSize = MinKvLogPageSize
+            }, StoreFunctions.Create(new TestObjectValueComparerModulo(1), () => new TestObjectValue.Serializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            const int numRecords = 3;
+            using var session = store.NewSession<OverflowTestKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            var context = session.BasicContext;
+            for (var ii = 0; ii < numRecords; ++ii)
+                _ = context.Upsert(new OverflowTestKey(ii), new TestObjectValue { value = ii }, Empty.Default);
+            store.Log.FlushAndEvict(wait: true);
+
+            // Key 0 is the oldest, so its read walks past the record of every other key.
+            TestObjectInput input = new();
+            TestObjectOutput output = new();
+            var status = context.Read(new OverflowTestKey(0), ref input, ref output, Empty.Default);
+            if (status.IsPending)
+            {
+                Assert.That(context.CompletePendingWithOutputs(out var outputs, wait: true), Is.True);
+                (status, output) = GetSinglePendingResult(outputs);
+            }
+            Assert.That(status.Found, Is.True, "The read did not find the oldest key past the others");
+            Assert.That(output.value.value, Is.EqualTo(0));
+
+            // Every pending read has completed, so each slot the transient map has handed out is free again, exactly once.
+            var transientMap = store.hlogBase._wrapper.TransientObjectIdMap;
+            List<int> freeSlots = [];
+            while (transientMap.freeSlots.TryPop(out var slot))
+                freeSlots.Add(slot);
+            Assert.That(freeSlots, Has.All.LessThan(transientMap.Count), "A read freed a slot the transient map never handed out");
+            Assert.That(freeSlots, Is.Unique, "A read freed a transient slot twice");
         }
 
         [Test]
