@@ -61,12 +61,13 @@ namespace Tsavorite.core
 
             // Create devices to read from using Async API
             info.main_ht_device = checkpointManager.GetIndexDevice(token);
-            var sectorSize = info.main_ht_device.SectorSize;
+            VerifyIndexSectorSize(info.main_ht_device);
+            var deviceSectorSize = info.main_ht_device.SectorSize;
 
             if (state[ht_version].size != info.info.table_size)
             {
                 // This will allocate over any existing table for this version and initialize the new table size
-                Initialize(info.info.table_size, (int)sectorSize);
+                Initialize(info.info.table_size, sectorSize);
             }
 
             // The buckets about to be recovered belong to the checkpointed table, so rebuild the allocator for the size
@@ -78,7 +79,10 @@ namespace Tsavorite.core
 
             BeginMainIndexRecovery(ht_version, info.main_ht_device, info.info.num_ht_bytes, isAsync);
 
-            var alignedIndexSize = (info.info.num_ht_bytes + (sectorSize - 1)) & ~((ulong)sectorSize - 1);
+            // The overflow buckets start where the recorded main index ends. The recorded size includes the writer's sector padding,
+            // so rounding it up to this device's sector size leaves it unchanged whenever that sector size divides it; a size recorded
+            // without the padding is padded here as a writer with this device's sector size padded it.
+            var alignedIndexSize = (info.info.num_ht_bytes + (deviceSectorSize - 1)) & ~((ulong)deviceSectorSize - 1);
             return alignedIndexSize;
         }
 
@@ -95,11 +99,13 @@ namespace Tsavorite.core
         internal async ValueTask RecoverFuzzyIndexAsync(int ht_version, IDevice device, ulong num_ht_bytes, IDevice ofbdevice, int num_buckets, ulong num_ofb_bytes,
                 CancellationToken cancellationToken, long maxIoBytesPerRequest = Constants.kMaxIoBytesPerRequest)
         {
+            VerifyIndexSectorSize(device);
+            VerifyIndexSectorSize(ofbdevice);
             BeginMainIndexRecovery(ht_version, device, num_ht_bytes, isAsync: true, maxIoBytesPerRequest);
             await recoveryCountdown.WaitAsync(cancellationToken).ConfigureAwait(false);
             ThrowIfMainIndexRecoveryFailed();
-            var sectorSize = device.SectorSize;
-            var alignedIndexSize = (num_ht_bytes + (sectorSize - 1)) & ~((ulong)sectorSize - 1);
+            var deviceSectorSize = device.SectorSize;
+            var alignedIndexSize = (num_ht_bytes + (deviceSectorSize - 1)) & ~((ulong)deviceSectorSize - 1);
             await overflowBucketsAllocator.RecoverAsync(ofbdevice, alignedIndexSize, num_buckets, num_ofb_bytes, cancellationToken).ConfigureAwait(false);
         }
 
@@ -143,6 +149,10 @@ namespace Tsavorite.core
 
             uint chunkSize = (uint)(totalSize / numChunks);
             Debug.Assert(chunkSize <= maxIoBytesPerRequest, "Index recovery chunk exceeds the maximum device request size");
+
+            // A table smaller than a device sector was written as one whole sector, and is read back the same way into
+            // its allocation, which is rounded up to the table's sector size.
+            var readSize = Math.Max(chunkSize, device.SectorSize);
             mainIndexRecoveryError = null;
             recoveryCountdown = new CountdownWrapper(numChunks, isAsync);
             HashBucket* start = state[version].tableAligned;
@@ -156,11 +166,11 @@ namespace Tsavorite.core
                     IntPtr chunkStartBucket = (IntPtr)(((byte*)start) + (index * chunkSize));
                     HashIndexPageAsyncReadResult result = default;
                     result.chunkIndex = index;
-                    result.numBytesToRead = chunkSize;
+                    result.numBytesToRead = readSize;
                     result.retirementGuard = new(0);
                     try
                     {
-                        device.ReadAsync(numBytesRead, chunkStartBucket, chunkSize, AsyncPageReadCallback, result);
+                        device.ReadAsync(numBytesRead, chunkStartBucket, readSize, AsyncPageReadCallback, result);
                     }
                     catch
                     {
@@ -174,7 +184,9 @@ namespace Tsavorite.core
                     }
                     numBytesRead += chunkSize;
                 }
-                Debug.Assert(numBytesRead == num_bytes);
+
+                // The recorded size can exceed the table by the sector padding written after it.
+                Debug.Assert(numBytesRead <= num_bytes, "The recorded main index size must cover the table");
             }
             catch
             {

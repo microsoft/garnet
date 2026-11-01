@@ -31,12 +31,15 @@ namespace Tsavorite.test.recovery
         private const int NumAdds = 1 << 14;
         private const int Seed = 123;
 
-        /// <summary>One sector: smaller than the single overflow-bucket level a lightly loaded table produces, so a
-        /// device capped at this length truncates that level's transfer.</summary>
-        private const uint OneSector = 512;
+        /// <summary>A table this small for <see cref="NumAdds"/> entries spills them into overflow buckets spanning
+        /// several sectors, so a device capped at one sector truncates the overflow buckets' transfer.</summary>
+        private const int OverflowTableSizeInBuckets = 1 << 10;
 
         private TsavoriteBase table;
         private TruncatingIoDevice htDevice, ofbDevice;
+
+        /// <summary>Sector size of the checkpoint devices, to which the hash index is aligned.</summary>
+        private int SectorSize => (int)htDevice.SectorSize;
 
         [SetUp]
         public void Setup()
@@ -60,10 +63,10 @@ namespace Tsavorite.test.recovery
         }
 
         /// <summary>Populate a hash table with pseudo-random tags and entries derived from <paramref name="seed"/>.</summary>
-        private static unsafe TsavoriteBase CreatePopulatedTable(int seed, int sizeInBuckets, int numAdds)
+        private unsafe TsavoriteBase CreatePopulatedTable(int seed, int sizeInBuckets, int numAdds)
         {
             var newTable = new TsavoriteBase();
-            newTable.Initialize(sizeInBuckets, 512);
+            newTable.Initialize(sizeInBuckets, SectorSize);
 
             var keyGenerator = new Random(seed);
             var valueGenerator = new Random(seed + 1);
@@ -76,6 +79,12 @@ namespace Tsavorite.test.recovery
             }
             return newTable;
         }
+
+        /// <summary>Assert that the overflow buckets of <paramref name="populated"/> are written as more than one sector,
+        /// which a test that caps the device at one sector relies on to truncate their transfer.</summary>
+        private void AssertOverflowBucketsSpanSeveralSectors(TsavoriteBase populated)
+            => ClassicAssert.Greater((long)populated.overflowBucketsAllocator.GetMaxValidAddress() * HashBucketSize, (long)ofbDevice.SectorSize,
+                "The overflow buckets must span more than one sector for a one-sector cap to truncate their transfer");
 
         /// <summary>Verify that every tag is present in both tables with the same entry.</summary>
         private static void AssertTablesMatch(int seed, int numAdds, TsavoriteBase expected, TsavoriteBase actual)
@@ -172,9 +181,10 @@ namespace Tsavorite.test.recovery
         [Category("Smoke")]
         public void OverflowBucketCheckpointFailsOnShortWrite()
         {
-            table = CreatePopulatedTable(Seed, TableSizeInBuckets, NumAdds);
+            table = CreatePopulatedTable(Seed, OverflowTableSizeInBuckets, NumAdds);
+            AssertOverflowBucketsSpanSeveralSectors(table);
 
-            ofbDevice.MaxBytesPerRequest = OneSector;
+            ofbDevice.MaxBytesPerRequest = ofbDevice.SectorSize;
 
             table.TakeIndexFuzzyCheckpoint(0, htDevice, out _, ofbDevice, out _, out _);
 
@@ -201,7 +211,7 @@ namespace Tsavorite.test.recovery
             var recovered = new TsavoriteBase();
             try
             {
-                recovered.Initialize(TableSizeInBuckets, 512);
+                recovered.Initialize(TableSizeInBuckets, SectorSize);
                 var ex = Assert.ThrowsAsync<TsavoriteIOException>(async ()
                     => await recovered.RecoverFuzzyIndexAsync(0, htDevice, htBytesWritten, ofbDevice, numOfbBuckets, ofbBytesWritten, default));
                 StringAssert.Contains("Main index recovery failed", ex.Message);
@@ -219,16 +229,17 @@ namespace Tsavorite.test.recovery
         [Category("Smoke")]
         public void OverflowBucketRecoveryFailsOnShortRead()
         {
-            table = CreatePopulatedTable(Seed, TableSizeInBuckets, NumAdds);
+            table = CreatePopulatedTable(Seed, OverflowTableSizeInBuckets, NumAdds);
+            AssertOverflowBucketsSpanSeveralSectors(table);
             table.TakeIndexFuzzyCheckpoint(0, htDevice, out var htBytesWritten, ofbDevice, out var ofbBytesWritten, out var numOfbBuckets);
             table.IsIndexFuzzyCheckpointCompletedAsync().AsTask().Wait();
 
-            ofbDevice.MaxBytesPerRequest = OneSector;
+            ofbDevice.MaxBytesPerRequest = ofbDevice.SectorSize;
 
             var recovered = new TsavoriteBase();
             try
             {
-                recovered.Initialize(TableSizeInBuckets, 512);
+                recovered.Initialize(OverflowTableSizeInBuckets, SectorSize);
                 var ex = Assert.ThrowsAsync<TsavoriteIOException>(async ()
                     => await recovered.RecoverFuzzyIndexAsync(0, htDevice, htBytesWritten, ofbDevice, numOfbBuckets, ofbBytesWritten, default));
                 StringAssert.Contains("Overflow-bucket recovery failed", ex.Message);
@@ -254,7 +265,7 @@ namespace Tsavorite.test.recovery
             var recovered = new TsavoriteBase();
             try
             {
-                recovered.Initialize(TableSizeInBuckets, 512);
+                recovered.Initialize(TableSizeInBuckets, SectorSize);
                 await recovered.RecoverFuzzyIndexAsync(0, htDevice, htBytesWritten, ofbDevice, numOfbBuckets, ofbBytesWritten, CancellationToken.None);
 
                 var ofbWriteBytes = ofbDevice.Writes.Sum(write => (long)write.length);
@@ -295,7 +306,7 @@ namespace Tsavorite.test.recovery
             var recovered = new TsavoriteBase();
             try
             {
-                recovered.Initialize(multiChunkTableSize, 512);
+                recovered.Initialize(multiChunkTableSize, SectorSize);
                 await recovered.RecoverFuzzyIndexAsync(0, htDevice, htBytesWritten, ofbDevice, numOfbBuckets, ofbBytesWritten, CancellationToken.None);
                 AssertTablesMatch(Seed, NumAdds, table, recovered);
             }
@@ -336,7 +347,7 @@ namespace Tsavorite.test.recovery
             var recovered = new TsavoriteBase();
             try
             {
-                recovered.Initialize(TableSizeInBuckets, 512);
+                recovered.Initialize(TableSizeInBuckets, SectorSize);
                 await recovered.RecoverFuzzyIndexAsync(0, htDevice, htBytesWritten, ofbDevice, numOfbBuckets, ofbBytesWritten, CancellationToken.None, maxIoBytesPerRequest);
 
                 AssertChunksTile(htDevice.Reads.ToArray(), htBytesWritten, maxIoBytesPerRequest);
@@ -370,7 +381,7 @@ namespace Tsavorite.test.recovery
             var recovered = new TsavoriteBase();
             try
             {
-                recovered.Initialize(TableSizeInBuckets, 512);
+                recovered.Initialize(TableSizeInBuckets, SectorSize);
                 await recovered.RecoverFuzzyIndexAsync(0, htZeroCount, htBytesWritten, ofbZeroCount, numOfbBuckets, ofbBytesWritten, CancellationToken.None);
                 AssertTablesMatch(Seed, NumAdds, table, recovered);
             }
@@ -400,7 +411,7 @@ namespace Tsavorite.test.recovery
             var recovered = new TsavoriteBase();
             try
             {
-                recovered.Initialize(TableSizeInBuckets, 512);
+                recovered.Initialize(TableSizeInBuckets, SectorSize);
 
                 var recovery = Task.Run(async ()
                     => await recovered.RecoverFuzzyIndexAsync(0, failing, htBytesWritten, ofbDevice, numOfbBuckets, ofbBytesWritten, CancellationToken.None, maxIoBytesPerRequest));
@@ -457,7 +468,7 @@ namespace Tsavorite.test.recovery
             var recovered = new TsavoriteBase();
             try
             {
-                recovered.Initialize(TableSizeInBuckets, 512);
+                recovered.Initialize(TableSizeInBuckets, SectorSize);
                 var ex = Assert.ThrowsAsync<TsavoriteIOException>(async ()
                     => await recovered.RecoverFuzzyIndexAsync(0, failing, htBytesWritten, ofbDevice, numOfbBuckets, ofbBytesWritten, default));
                 StringAssert.Contains("Main index recovery failed", ex.Message);
@@ -486,7 +497,7 @@ namespace Tsavorite.test.recovery
             var recovered = new TsavoriteBase { checkpointManager = new SingleDeviceCheckpointManager(deferring) };
             try
             {
-                recovered.Initialize(TableSizeInBuckets, 512);
+                recovered.Initialize(TableSizeInBuckets, SectorSize);
 
                 var info = new IndexCheckpointInfo();
                 info.info.token = Guid.NewGuid();
@@ -540,7 +551,7 @@ namespace Tsavorite.test.recovery
             var recovered = new TsavoriteBase();
             try
             {
-                recovered.Initialize(TableSizeInBuckets, 512);
+                recovered.Initialize(TableSizeInBuckets, SectorSize);
 
                 var recovery = Task.Run(async ()
                     => await recovered.RecoverFuzzyIndexAsync(0, failing, htBytesWritten, ofbDevice, numOfbBuckets, ofbBytesWritten, CancellationToken.None, maxIoBytesPerRequest));
@@ -575,7 +586,7 @@ namespace Tsavorite.test.recovery
             // and so has no callback of its own to retire it.
             const int numRecords = (2 << 16) + 1;
 
-            var allocator = new MallocFixedPageSize<HashBucket>();
+            var allocator = new MallocFixedPageSize<HashBucket>(MallocFixedPageSize<HashBucket>.DefaultMaxMemorySize, (int)ofbDevice.SectorSize);
             for (var ii = 0; ii < numRecords; ii++)
                 _ = allocator.Allocate();
 
@@ -666,7 +677,7 @@ namespace Tsavorite.test.recovery
         [Category("Smoke")]
         public void OverflowBucketCheckpointFailsWhenTheFinalLevelCompletesThenThrows()
         {
-            var allocator = new MallocFixedPageSize<HashBucket>();
+            var allocator = new MallocFixedPageSize<HashBucket>(MallocFixedPageSize<HashBucket>.DefaultMaxMemorySize, (int)ofbDevice.SectorSize);
             _ = allocator.Allocate();
 
             // Not disposed here: it wraps ofbDevice, which the fixture teardown owns.
@@ -703,11 +714,12 @@ namespace Tsavorite.test.recovery
         [Category("Smoke")]
         public void OverflowBucketRecoveryReadsSectorAlignedFinalLevel()
         {
-            // 17 records of 12 bytes is 204 bytes, which the checkpoint rounds up to one 512-byte sector. 512 is not a
-            // multiple of 12, so a record count round-trip loses the remainder.
+            // 17 records of 12 bytes is 204 bytes, which the checkpoint rounds up to one sector. A sector is a power of two
+            // of at least 512 bytes, so it is not a multiple of 12 and a record count round-trip loses the remainder.
             const int numRecords = 17;
+            var sectorSize = ofbDevice.SectorSize;
 
-            var allocator = new MallocFixedPageSize<TwelveByteRecord>();
+            var allocator = new MallocFixedPageSize<TwelveByteRecord>(MallocFixedPageSize<TwelveByteRecord>.DefaultMaxMemorySize, (int)sectorSize);
             for (var ii = 0; ii < numRecords; ii++)
                 _ = allocator.Allocate();
 
@@ -715,11 +727,11 @@ namespace Tsavorite.test.recovery
             allocator.IsCheckpointCompletedAsync().AsTask().Wait();
             allocator.Dispose();
 
-            ClassicAssert.AreEqual(0UL, numBytesWritten % OneSector, "The checkpoint always sector-aligns its final level");
+            ClassicAssert.AreEqual(0UL, numBytesWritten % sectorSize, "The checkpoint always sector-aligns its final level");
             ClassicAssert.AreNotEqual(0UL, numBytesWritten % 12, "This test is only meaningful when the persisted size is not a whole number of records");
 
             ofbDevice.Reads.Clear();
-            var recovered = new MallocFixedPageSize<TwelveByteRecord>();
+            var recovered = new MallocFixedPageSize<TwelveByteRecord>(MallocFixedPageSize<TwelveByteRecord>.DefaultMaxMemorySize, (int)sectorSize);
             try
             {
                 var numBytesRead = recovered.RecoverAsync(ofbDevice, 0, numRecords, numBytesWritten, CancellationToken.None).AsTask().GetAwaiter().GetResult();
@@ -727,7 +739,7 @@ namespace Tsavorite.test.recovery
 
                 // Every read must be sector aligned, or a device opened with O_DIRECT rejects it outright.
                 foreach (var (_, length) in ofbDevice.Reads)
-                    ClassicAssert.AreEqual(0, length % OneSector, $"Read of {length} bytes is not sector aligned");
+                    ClassicAssert.AreEqual(0, length % sectorSize, $"Read of {length} bytes is not sector aligned");
             }
             finally
             {
@@ -745,7 +757,7 @@ namespace Tsavorite.test.recovery
         {
             var shard0 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "Shard0.dat"), deleteOnClose: true);
             var shard1 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "Shard1.dat"), deleteOnClose: true);
-            using var sharded = new ShardedStorageDevice(new UniformPartitionScheme(IDevice.MinDeviceSectorSize, shard0, shard1));
+            using var sharded = new ShardedStorageDevice(new UniformPartitionScheme(Math.Max(shard0.SectorSize, shard1.SectorSize), shard0, shard1));
             sharded.Initialize(segmentSize: 1L << 30, epoch: null);
 
             table = CreatePopulatedTable(Seed, TableSizeInBuckets, NumAdds);

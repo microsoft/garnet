@@ -702,6 +702,22 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SRANDMEMBERRejectsUnrepresentableCount()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = new RedisKey("myset");
+            _ = db.SetAdd(key, ["one", "two", "three"]);
+
+            // A negative count asks for that many members with repeats, and int.MinValue has no positive counterpart
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("SRANDMEMBER", key, int.MinValue));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER), ex.Message);
+
+            var members = (RedisValue[])db.Execute("SRANDMEMBER", key, "-5");
+            ClassicAssert.AreEqual(5, members.Length);
+        }
+
+        [Test]
         [TestCase("1,2,3", "2,3,4", 2, null, Description = "Basic intersection")]
         [TestCase("1,2,3", "", 0, null, Description = "Intersection with empty set")]
         [TestCase("1,2,3", "4,5,6", 0, null, Description = "No intersection")]

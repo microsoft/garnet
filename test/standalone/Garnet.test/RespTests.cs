@@ -276,6 +276,57 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// RESTORE sets its TTL in milliseconds, including TTLs too long for an int.
+        /// </summary>
+        [Test]
+        public void RestoreTtlIsInMilliseconds()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "val");
+            var dump = db.KeyDump("mykey")!;
+            db.KeyDelete("mykey");
+
+            foreach (var ttl in new[] { TimeSpan.FromHours(1), TimeSpan.FromDays(30) })
+            {
+                db.KeyRestore("mykey", dump, ttl);
+                var restoredTtl = db.KeyTimeToLive("mykey");
+                ClassicAssert.IsNotNull(restoredTtl, ttl.ToString());
+                ClassicAssert.Greater(restoredTtl.Value, ttl - TimeSpan.FromMinutes(1), ttl.ToString());
+                ClassicAssert.LessOrEqual(restoredTtl.Value, ttl, ttl.ToString());
+                db.KeyDelete("mykey");
+            }
+        }
+
+        /// <summary>
+        /// RESTORE rejects a TTL that is not an integer, is negative, or gives an unrepresentable expiration, and creates no key.
+        /// </summary>
+        [Test]
+        public void RestoreRejectsInvalidTtl()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "val");
+            var dump = db.KeyDump("mykey")!;
+            db.KeyDelete("mykey");
+
+            foreach (var (ttl, expected) in new (object, string)[]
+            {
+                ("abc", "ERR value is not an integer or out of range."),
+                ("1.5", "ERR value is not an integer or out of range."),
+                (-1, "ERR invalid expire time, must be >= 0"),
+                (long.MaxValue, "ERR invalid expire time in 'restore' command"),
+            })
+            {
+                var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("RESTORE", "mykey", ttl, dump));
+                ClassicAssert.AreEqual(expected, ex.Message, ttl.ToString());
+                ClassicAssert.IsFalse(db.KeyExists("mykey"), ttl.ToString());
+            }
+        }
+
+        /// <summary>
         /// Tests that DUMP command returns payload with 6 bit encoded length
         /// </summary>
         [Test]
@@ -1424,7 +1475,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            string[] values = ["", "7 3", "02+(34", "笑い男", "01", "-01", "7ab"];
+            string[] values = ["", "7 3", "02+(34", "笑い男", "01", "-01", "7ab", "--5", "-+5", "+5", "+05", "+0", "-0"];
 
             for (var i = 0; i < values.Length; i++)
             {
@@ -1495,6 +1546,165 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("ERR value is not an integer or out of range.", msg);
             }
             ClassicAssert.IsTrue(exception);
+        }
+
+        [Test]
+        [TestCase(1L)]
+        [TestCase(100L)]
+        public void SingleIncrementFromLongMinValue(long increment)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "test";
+            db.StringSet(key, long.MinValue.ToString(CultureInfo.InvariantCulture));
+
+            var result = increment == 1 ? db.StringIncrement(key) : db.StringIncrement(key, increment);
+            var expected = long.MinValue + increment;
+
+            ClassicAssert.AreEqual(expected, result);
+            ClassicAssert.AreEqual(expected.ToString(CultureInfo.InvariantCulture), db.StringGet(key).ToString());
+        }
+
+        /// <summary>
+        /// A stored long.MinValue is a valid integer on the copy-update path (record in the read-only region) and in the
+        /// record sizing that precedes it. Decrementing it overflows and leaves the value unchanged.
+        /// </summary>
+        [Test]
+        public void IncrementFromLongMinValueInReadOnlyRegion()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var store = server.Provider.StoreWrapper.store;
+            var minValue = long.MinValue.ToString(CultureInfo.InvariantCulture);
+
+            _ = db.StringSet("incr", minValue);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            ClassicAssert.AreEqual(long.MinValue + 1, db.StringIncrement("incr"));
+            ClassicAssert.AreEqual((long.MinValue + 1).ToString(CultureInfo.InvariantCulture), (string)db.StringGet("incr"));
+
+            _ = db.StringSet("decr", minValue);
+            var ex = ClassicAssert.Throws<RedisServerException>(() => db.StringDecrement("decr"));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", ex.Message);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            ex = ClassicAssert.Throws<RedisServerException>(() => db.StringDecrement("decr"));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", ex.Message);
+            ClassicAssert.AreEqual(minValue, (string)db.StringGet("decr"));
+        }
+
+        /// <summary>
+        /// Incrementing a stored value that is not a number is an error reply on the in-place path and on the copy-update
+        /// path (record in the read-only region), and leaves the value unchanged.
+        /// </summary>
+        [Test]
+        public void IncrementOfNonNumberIsAnError([Values("INCR", "INCRBY", "DECR", "DECRBY", "INCRBYFLOAT")] string cmd)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var store = server.Provider.StoreWrapper.store;
+            var expectedError = cmd == "INCRBYFLOAT" ? "ERR value is not a valid float" : "ERR value is not an integer or out of range.";
+
+            _ = db.StringSet("key", "hello");
+            foreach (var readOnlyRegion in new[] { false, true })
+            {
+                if (readOnlyRegion)
+                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+                var ex = ClassicAssert.Throws<RedisServerException>(() => _ = cmd is "INCR" or "DECR" ? db.Execute(cmd, "key") : db.Execute(cmd, "key", "1"));
+                ClassicAssert.AreEqual(expectedError, ex.Message);
+                ClassicAssert.AreEqual("hello", (string)db.StringGet("key"));
+            }
+        }
+
+        /// <summary>
+        /// A stored integer must be canonical: INCR and DECR reject a '+' sign and -0 on the copy-update and in-place paths.
+        /// </summary>
+        [Test]
+        public void IncrementOfNonCanonicalIntegerIsAnError([Values("+5", "+05", "+0", "-0")] string stored, [Values] bool readOnlyRegion)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var store = server.Provider.StoreWrapper.store;
+
+            _ = db.StringSet("key", stored);
+            if (readOnlyRegion)
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+            foreach (var cmd in new[] { "INCR", "DECR" })
+            {
+                var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute(cmd, "key"));
+                ClassicAssert.AreEqual("ERR value is not an integer or out of range.", ex.Message, cmd);
+                ClassicAssert.AreEqual(stored, (string)db.StringGet("key"), cmd);
+            }
+        }
+
+        /// <summary>
+        /// DECRBY negates its argument, and -long.MinValue does not fit in a long.
+        /// </summary>
+        [Test]
+        public void DecrementByLongMinValueIsRejected()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var minValue = long.MinValue.ToString(CultureInfo.InvariantCulture);
+
+            _ = db.StringSet("existing", 5);
+            var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("DECRBY", "existing", minValue));
+            ClassicAssert.AreEqual("ERR decrement would overflow", ex.Message);
+            ClassicAssert.AreEqual("5", (string)db.StringGet("existing"));
+
+            ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("DECRBY", "missing", minValue));
+            ClassicAssert.AreEqual("ERR decrement would overflow", ex.Message);
+            ClassicAssert.IsFalse(db.KeyExists("missing"));
+
+            // The most negative decrement that can be negated is applied
+            _ = db.StringSet("boundary", -5);
+            var result = (long)db.Execute("DECRBY", "boundary", (-long.MaxValue).ToString(CultureInfo.InvariantCulture));
+            ClassicAssert.AreEqual(long.MaxValue - 5, result);
+        }
+
+        /// <summary>
+        /// Integer arguments must be canonical: a lone sign, a '+' sign and -0 are rejected. Read as 0, EXPIRE would delete the key.
+        /// </summary>
+        [Test]
+        public void NonCanonicalIntegerArgumentsAreRejected([Values("-", "+", "+5", "+0", "-0")] string arg)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            _ = db.StringSet("key", "10");
+
+            var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("INCRBY", "key", arg));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", ex.Message);
+            ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EXPIRE", "key", arg));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", ex.Message);
+            ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SETRANGE", "key", arg, "x"));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", ex.Message);
+            ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("BITFIELD", "key", "GET", "u8", arg));
+            ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range", ex.Message);
+
+            ClassicAssert.AreEqual("10", (string)db.StringGet("key"));
+            ClassicAssert.IsNull(db.KeyTimeToLive("key"));
+        }
+
+        /// <summary>
+        /// 32-bit integer arguments reject leading zeros, as 64-bit integer arguments do.
+        /// </summary>
+        [Test]
+        public void LeadingZerosInIntegerArgumentsAreRejected()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            _ = db.StringSet("key", "0123456789");
+
+            foreach (var arg in new[] { "01", "-01", "007" })
+            {
+                var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GETRANGE", "key", arg, "5"));
+                ClassicAssert.AreEqual("ERR value is not an integer or out of range.", ex.Message);
+                ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SETRANGE", "key", arg, "x"));
+                ClassicAssert.AreEqual("ERR value is not an integer or out of range.", ex.Message);
+            }
+
+            ClassicAssert.AreEqual("0123456789", (string)db.StringGet("key"));
+            ClassicAssert.AreEqual("01", (string)db.Execute("GETRANGE", "key", "0", "1"));
         }
 
         /// <summary>
@@ -1611,11 +1821,88 @@ namespace Garnet.test
                 db.StringSet(key, (double)initialValue);
             else if (initialValue is string)
                 db.StringSet(key, (string)initialValue);
+            var storedValue = (string)db.StringGet(key);
 
-            // TODO: This is RedisServerException in the InPlaceUpdater call, but GetRMWModifiedFieldInfo currently throws RedisConnectionException.
-            // This can be different in CIs vs. locally.
-            Assert.That(() => db.Execute("INCRBYFLOAT", key, incrByValue),
-                    Throws.TypeOf<RedisServerException>().Or.TypeOf<RedisConnectionException>());
+            // An increment that overflows to infinity is an error reply that leaves the value unchanged
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("INCRBYFLOAT", key, incrByValue));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR), ex.Message);
+            ClassicAssert.AreEqual(storedValue, (string)db.StringGet(key));
+        }
+
+        /// <summary>
+        /// INCRBYFLOAT validates and sizes a copy-updated record (record in the read-only region) exactly as the in-place
+        /// path does: a leading zero is a valid float, and a stored value that the update rejects is left unchanged.
+        /// </summary>
+        [Test]
+        public void IncrementByFloatInReadOnlyRegion()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var store = server.Provider.StoreWrapper.store;
+
+            _ = db.StringSet("leadingZero", "05");
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            ClassicAssert.AreEqual(123456794.125, db.StringIncrement("leadingZero", 123456789.125));
+            ClassicAssert.AreEqual("123456794.125", (string)db.StringGet("leadingZero"));
+
+            foreach (var (stored, increment) in new[] { ("--5", -4.0), ("-+5", 1.0), ("Infinity", 1.0), ("1e308", 1e308) })
+            {
+                _ = db.StringSet("rejected", stored);
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.StringIncrement("rejected", increment), stored);
+                ClassicAssert.AreEqual(stored, (string)db.StringGet("rejected"));
+            }
+        }
+
+        [Test]
+        public void IncrementByFloatRejectsNaN([Values("nan", "NaN", "-NaN")] string nan)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("INCRBYFLOAT", "missing", nan));
+            ClassicAssert.AreEqual("ERR value is not a valid float", ex.Message);
+            ClassicAssert.IsFalse(db.KeyExists("missing"));
+
+            _ = db.StringSet("existing", "1.5");
+            ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("INCRBYFLOAT", "existing", nan));
+            ClassicAssert.AreEqual("ERR value is not a valid float", ex.Message);
+            ClassicAssert.AreEqual("1.5", (string)db.StringGet("existing"));
+        }
+
+        /// <summary>
+        /// INCRBYFLOAT stores digits that parse back to its result, in exactly the space it sizes for them: just below a power
+        /// of ten, where a logarithm counts one digit too many, and at magnitudes up to the largest double.
+        /// </summary>
+        [Test]
+        public void IncrementByFloatStoresExactDigits([Values] bool readOnlyRegion)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var store = server.Provider.StoreWrapper.store;
+
+            foreach (var (stored, expected) in new[]
+            {
+                ("99.99999999999999", "99.99999999999999"),
+                ("-99.99999999999999", "-99.99999999999999"),
+                ("9999999999999998", "9999999999999998"),
+                ("1e23", "99999999999999991611392"),
+                ("1.7976931348623157e308", double.MaxValue.ToString("F0", CultureInfo.InvariantCulture)),
+            })
+            {
+                // Created by the increment
+                _ = db.KeyDelete("key");
+                ClassicAssert.AreEqual(expected, (string)db.Execute("INCRBYFLOAT", "key", stored), stored);
+                ClassicAssert.AreEqual(expected, (string)db.StringGet("key"), stored);
+
+                // Updated by the increment, which parses the stored digits
+                _ = db.StringSet("key", stored);
+                if (readOnlyRegion)
+                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                ClassicAssert.AreEqual(expected, (string)db.Execute("INCRBYFLOAT", "key", "0"), stored);
+                ClassicAssert.AreEqual(expected, (string)db.Execute("INCRBYFLOAT", "key", "0"), stored);
+                ClassicAssert.AreEqual(double.Parse(stored, CultureInfo.InvariantCulture), double.Parse((string)db.StringGet("key"), CultureInfo.InvariantCulture), stored);
+            }
         }
 
         [Test]
@@ -3901,7 +4188,7 @@ namespace Garnet.test
 
             //-len < s < 0 < e < len where len + s < e
             resp = (string)db.StringGetRange(key, -4, 8);
-            ClassicAssert.AreEqual(value.Substring(value.Length - 4, 2), resp);
+            ClassicAssert.AreEqual(value.Substring(value.Length - 4, 3), resp);
 
             //-len < s < e < 0
             resp = (string)db.StringGetRange(key, -4, -1);
@@ -3934,7 +4221,7 @@ namespace Garnet.test
 
             //equal offsets
             resp = db.StringGetRange(key, -101, -101);
-            ClassicAssert.AreEqual("9", resp);
+            ClassicAssert.AreEqual("0", resp);
 
             //start larger than end
             resp = db.StringGetRange(key, -1, -3);
@@ -3957,9 +4244,7 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Regression test for GETRANGE on a key holding an empty string throwing
-        /// DivideByZeroException when start is negative (NormalizeRange's start %= len hits
-        /// len == 0). Real Redis returns an empty string for any range on an empty value.
+        /// GETRANGE on a key holding an empty string returns an empty string for any range.
         /// </summary>
         [Test]
         public void GetRangeEmptyValueTest()
@@ -3981,6 +4266,49 @@ namespace Garnet.test
 
             resp = (string)db.StringGetRange(key, 0, -1);
             ClassicAssert.AreEqual(string.Empty, resp);
+        }
+
+        /// <summary>
+        /// GETRANGE offsets count back from the end when negative and are clamped to the value, never wrapped, for every
+        /// combination of in-range, negative and out-of-range offsets.
+        /// </summary>
+        [Test]
+        public void GetRangeClampsOffsetsToTheValue()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string key = "rangeKey";
+            const string value = "0123456789";
+            _ = db.StringSet(key, value);
+
+            int[] offsets = [.. Enumerable.Range(-15, 28), int.MinValue, int.MinValue + 1, int.MaxValue];
+            foreach (var start in offsets)
+            {
+                foreach (var end in offsets)
+                {
+                    var actual = (string)db.StringGetRange(key, start, end);
+                    ClassicAssert.AreEqual(ExpectedRange(value, start, end), actual, $"GETRANGE {start} {end}");
+                }
+            }
+
+            static string ExpectedRange(string s, long start, long end)
+            {
+                long len = s.Length;
+                if (start < 0 && end < 0 && start > end)
+                    return string.Empty;
+                if (start < 0)
+                    start = len + start;
+                if (end < 0)
+                    end = len + end;
+                if (start < 0)
+                    start = 0;
+                if (end < 0)
+                    end = 0;
+                if (end >= len)
+                    end = len - 1;
+                return start > end || len == 0 ? string.Empty : s.Substring((int)start, (int)(end - start + 1));
+            }
         }
 
         [Test]
@@ -4064,6 +4392,49 @@ namespace Garnet.test
             resp = db.StringGet(key);
             ClassicAssert.AreEqual(value, resp);
             ClassicAssert.IsTrue(db.KeyDelete(key));
+        }
+
+        /// <summary>
+        /// APPEND rejects a result longer than the maximum string size, as SETRANGE does, and leaves the value unchanged.
+        /// </summary>
+        [Test]
+        public void AppendBeyondMaxSizeIsRejected()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Build a value of exactly the maximum size on the server, without sending it over the wire
+            var key = "maxSized";
+            var maxSize = BitmapManager.MaxBitmapPayloadBytes;
+            ClassicAssert.AreEqual(maxSize, (long)db.Execute("SETRANGE", key, maxSize - 1, "x"));
+
+            var ex = Assert.Throws<RedisServerException>(() => db.StringAppend(key, "y"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_STRING_EXCEEDS_MAX_SIZE), ex.Message);
+            ClassicAssert.AreEqual(maxSize, db.StringLength(key));
+
+            // Appending nothing does not grow the value, so it is allowed
+            ClassicAssert.AreEqual(maxSize, db.StringAppend(key, ""));
+            ClassicAssert.IsTrue(db.KeyDelete(key));
+        }
+
+        /// <summary>
+        /// APPEND to an expired key starts a new value, whether the expired record is updated in place or in the read-only region.
+        /// </summary>
+        [Test]
+        public void AppendToExpiredKeyStartsNewValue([Values] bool readOnlyRegion)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var store = server.Provider.StoreWrapper.store;
+
+            _ = db.StringSet("key", "old", TimeSpan.FromMilliseconds(10));
+            if (readOnlyRegion)
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            Thread.Sleep(100);
+
+            ClassicAssert.AreEqual(3, db.StringAppend("key", "new"));
+            ClassicAssert.AreEqual("new", (string)db.StringGet("key"));
+            ClassicAssert.IsNull(db.KeyTimeToLive("key"));
         }
 
         [Test]

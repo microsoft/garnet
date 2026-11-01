@@ -86,24 +86,24 @@ namespace Garnet.server
             => storageSession.RMW_UnifiedStore(key, ref input, ref output, ref unifiedContext);
 
         /// <inheritdoc />
-        public unsafe GarnetStatus EXPIRE(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None)
-            => storageSession.EXPIRE(key, expiryMs, out timeoutSet, expireOption, ref unifiedContext);
+        public unsafe GarnetStatus EXPIRE(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, out bool error, ExpireOption expireOption = ExpireOption.None)
+            => storageSession.EXPIRE(key, expiryMs, out timeoutSet, out error, expireOption, ref unifiedContext);
 
         /// <inheritdoc />
-        public GarnetStatus EXPIRE(PinnedSpanByte key, TimeSpan expiry, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None)
-            => storageSession.EXPIRE(key, expiry, out timeoutSet, expireOption, ref unifiedContext);
+        public GarnetStatus EXPIRE(PinnedSpanByte key, TimeSpan expiry, out bool timeoutSet, out bool error, ExpireOption expireOption = ExpireOption.None)
+            => storageSession.EXPIRE(key, expiry, out timeoutSet, out error, expireOption, ref unifiedContext);
 
         #endregion
 
         #region EXPIREAT
 
         /// <inheritdoc />
-        public GarnetStatus EXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None)
-            => storageSession.EXPIREAT(key, expiryTimestamp, out timeoutSet, expireOption, ref unifiedContext);
+        public GarnetStatus EXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, out bool error, ExpireOption expireOption = ExpireOption.None)
+            => storageSession.EXPIREAT(key, expiryTimestamp, out timeoutSet, out error, expireOption, ref unifiedContext);
 
         /// <inheritdoc />
-        public GarnetStatus PEXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None)
-            => storageSession.EXPIREAT(key, expiryTimestamp, out timeoutSet, expireOption, ref unifiedContext, milliseconds: true);
+        public GarnetStatus PEXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, out bool error, ExpireOption expireOption = ExpireOption.None)
+            => storageSession.EXPIREAT(key, expiryTimestamp, out timeoutSet, out error, expireOption, ref unifiedContext, milliseconds: true);
 
         #endregion
 

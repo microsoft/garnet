@@ -35,9 +35,8 @@ namespace Tsavorite.core
             overflowBucketsAllocatorResize.Dispose();
             overflowBucketsAllocatorResize = null;
 
-            // The superseded generation is gone, so charge the settled index size and wake the resizer rather than
-            // leaving the log over budget until its next periodic sample. Signalling earlier, while both generations
-            // are live, would evict against a peak that this line is about to retract.
+            // The superseded generation is gone, so resample the index memory charged against the log and wake the
+            // resizer if it grew, rather than leaving the log over budget until its next periodic sample.
             RefreshIndexMemoryCharge();
         }
 

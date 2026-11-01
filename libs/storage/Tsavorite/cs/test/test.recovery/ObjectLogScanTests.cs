@@ -547,14 +547,17 @@ namespace Tsavorite.test
         {
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectScanEndInsideRecordTest.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectScanEndInsideRecordTest.obj.log"), deleteOnClose: true);
+
+            // Records never span pages, so a sector boundary can run through a record only if a page holds several sectors.
+            var pageSize = Math.Max(MinKvLogPageSize, 2L * Math.Max(log.SectorSize, objlog.SectorSize));
             store = new(new()
             {
                 IndexSize = 1L << 13,
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
-                LogMemorySize = 1L << 15,
-                PageSize = MinKvLogPageSize
+                LogMemorySize = 8 * pageSize,
+                PageSize = pageSize
             }, StoreFunctions.Create(comparer, () => new TestObjectValue.Serializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

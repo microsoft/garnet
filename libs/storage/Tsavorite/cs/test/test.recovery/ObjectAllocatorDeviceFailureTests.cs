@@ -21,8 +21,11 @@ namespace Tsavorite.test
         private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
         private ControlledReadFailureDevice logDevice;
         private ControlledReadFailureDevice objectLogDevice;
+        private DeviceLogCommitCheckpointManager checkpointManager;
         private ManualResetEventSlim flushFailureEvent;
         private CommitInfo flushFailure;
+        private ManualResetEventSlim flushedToTargetEvent;
+        private long flushTargetAddress;
 
         [SetUp]
         public void Setup()
@@ -30,6 +33,8 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
             flushFailure = default;
             flushFailureEvent = new(false);
+            flushedToTargetEvent = new(false);
+            flushTargetAddress = long.MaxValue;
         }
 
         [TearDown]
@@ -37,12 +42,16 @@ namespace Tsavorite.test
         {
             store?.Dispose();
             store = null;
+            checkpointManager?.Dispose();
+            checkpointManager = null;
             logDevice?.Dispose();
             logDevice = null;
             objectLogDevice?.Dispose();
             objectLogDevice = null;
             flushFailureEvent?.Dispose();
             flushFailureEvent = null;
+            flushedToTargetEvent?.Dispose();
+            flushedToTargetEvent = null;
             OnTearDown();
         }
 
@@ -177,10 +186,103 @@ namespace Tsavorite.test
             Assert.That(objectLogDevice.RemoveSegmentCount, Is.GreaterThan(0));
         }
 
-        private void CreateStore(bool useLargeObjects, bool captureFlushFailures, long segmentSize = 1L << 30, long objectLogSegmentSize = 1L << 30)
+        /// <summary>
+        /// A store whose checkpoint devices have a larger sector size than its log device aligns its pages to that larger size, but
+        /// pads each partial flush of the main log only to the log device's sector size. The next partial flush reads back the sector
+        /// the previous one ended in, and must read only that sector: more runs past the end of what was written, failing the flush.
+        /// </summary>
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(ObjectIdMapCategory)]
+        public void PartialSectorReadBackStaysWithinTheLogDeviceSector()
+        {
+            CreateStore(useLargeObjects: false, captureFlushFailures: true, largerCheckpointSector: true);
+            Assert.That(store.hlogBase.GetDeviceSectorSize(), Is.GreaterThan(logDevice.SectorSize),
+                "The store must align its pages to the checkpoint devices' larger sector size.");
+
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            var context = session.BasicContext;
+
+            _ = context.Upsert(new TestObjectKey { key = 1 }, new TestObjectValue { value = 1 }, Empty.Default);
+            store.Log.Flush(wait: true);
+            var firstFlushEnd = store.Log.FlushedUntilAddress;
+            Assert.That(firstFlushEnd % logDevice.SectorSize, Is.Not.Zero,
+                "The first flush must end mid-sector so the next flush performs a sector read-back.");
+
+            _ = context.Upsert(new TestObjectKey { key = 2 }, new TestObjectValue { value = 2 }, Empty.Default);
+            var secondFlushEnd = store.Log.TailAddress;
+            Volatile.Write(ref flushTargetAddress, secondFlushEnd);
+            store.Log.Flush(wait: false);
+
+            // A failed flush never advances FlushedUntilAddress, so wait for whichever of success or failure is reported.
+            var signaled = WaitHandle.WaitAny([flushedToTargetEvent.WaitHandle, flushFailureEvent.WaitHandle], TimeSpan.FromSeconds(10));
+            Assert.That(signaled, Is.Not.EqualTo(WaitHandle.WaitTimeout), "The flush neither completed nor failed.");
+            Assert.That(flushFailureEvent.IsSet, Is.False, $"The flush failed: {flushFailure.Exception?.Message ?? $"error {flushFailure.ErrorCode}"}");
+            Assert.That(store.Log.FlushedUntilAddress, Is.EqualTo(secondFlushEnd));
+            Assert.That(logDevice.LastReadAddress, Is.EqualTo((ulong)RoundDown(firstFlushEnd, (int)logDevice.SectorSize)));
+            Assert.That(logDevice.LastReadLength, Is.EqualTo(logDevice.SectorSize), "The read-back must be one sector of the log device.");
+
+            // Both records read back intact from the device, including the first, whose last sector the second flush rewrote.
+            store.Log.FlushAndEvict(wait: true);
+            var input = new TestObjectInput();
+            for (var key = 1; key <= 2; key++)
+            {
+                var output = new TestObjectOutput();
+                var status = context.Read(new TestObjectKey { key = key }, ref input, ref output, Empty.Default);
+                if (status.IsPending)
+                    (status, output) = context.GetSinglePendingResult();
+                Assert.That(status.Found, Is.True, $"key {key} not found");
+                Assert.That(output.value.value, Is.EqualTo(key), $"key {key}");
+            }
+        }
+
+        /// <summary>
+        /// Truncation reads the page header at the start of the page holding the new begin address, and that page may be on the
+        /// device only in part. With checkpoint devices whose sector size is larger than the log device's, the read must still be
+        /// one sector of the log device, to which the flushes padded the page.
+        /// </summary>
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(ObjectIdMapCategory)]
+        public void PageHeaderReadStaysWithinTheLogDeviceSector()
+        {
+            CreateStore(useLargeObjects: false, captureFlushFailures: false, largerCheckpointSector: true);
+
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            var context = session.BasicContext;
+
+            // Fill until the tail is just past the header of the third page, then flush, leaving that page on the device only in part.
+            for (var key = 0; store.hlogBase.GetPage(store.Log.TailAddress) < 2 || store.hlogBase.GetOffsetOnPage(store.Log.TailAddress) <= PageHeader.Size; key++)
+                _ = context.Upsert(new TestObjectKey { key = key }, new TestObjectValue { value = key }, Empty.Default);
+            var truncateAddress = store.Log.TailAddress;
+            store.Log.Flush(wait: true);
+            Assert.That(RoundUp(store.hlogBase.GetOffsetOnPage(truncateAddress), (int)logDevice.SectorSize), Is.LessThan(store.hlogBase.GetDeviceSectorSize()),
+                "The page must be on the device only up to a point short of one of the store's sectors.");
+
+            store.Log.ShiftBeginAddress(truncateAddress, truncateLog: false);
+            var truncateMethod = store.hlogBase.GetType().GetMethod("TruncateUntilAddressBlocking", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(truncateMethod, Is.Not.Null);
+            Assert.DoesNotThrow(() => _ = truncateMethod.Invoke(store.hlogBase, [truncateAddress]));
+
+            Assert.That(logDevice.LastReadAddress, Is.EqualTo((ulong)store.hlogBase.GetAddressOfStartOfPageOfAddress(truncateAddress)));
+            Assert.That(logDevice.LastReadLength, Is.EqualTo(logDevice.SectorSize), "The page-header read must be one sector of the log device.");
+            Assert.That(logDevice.TruncateUntilAddressCount, Is.EqualTo(1));
+        }
+
+        private void CreateStore(bool useLargeObjects, bool captureFlushFailures, long segmentSize = 1L << 30, long objectLogSegmentSize = 1L << 30,
+            bool largerCheckpointSector = false)
         {
             logDevice = new(Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectAllocatorDeviceFailureTests.log"), deleteOnClose: true));
             objectLogDevice = new(Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectAllocatorDeviceFailureTests.obj.log"), deleteOnClose: true));
+
+            var pageSize = MinKvLogPageSize;
+            if (largerCheckpointSector)
+            {
+                // The store aligns its pages to the largest sector size of its log and checkpoint devices, provided a page holds it.
+                var checkpointSectorSize = Math.Max(StrictSectorNamedDeviceFactoryCreator.DefaultSectorSize, 2 * logDevice.SectorSize);
+                checkpointManager = new(new StrictSectorNamedDeviceFactoryCreator(checkpointSectorSize), new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "checkpoints")));
+                pageSize = Math.Max(pageSize, (int)checkpointSectorSize);
+            }
 
             var storeFunctions = useLargeObjects
                 ? StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestLargeObjectValue.Serializer(), DefaultRecordTriggers.Instance)
@@ -192,10 +294,11 @@ namespace Tsavorite.test
                 LogDevice = logDevice,
                 ObjectLogDevice = objectLogDevice,
                 MutableFraction = 0.1,
-                LogMemorySize = 1L << (MinKvLogPageSizeBits + 5),
-                PageSize = MinKvLogPageSize,
+                LogMemorySize = 32L * pageSize,
+                PageSize = pageSize,
                 SegmentSize = segmentSize,
                 ObjectLogSegmentSize = objectLogSegmentSize,
+                CheckpointManager = checkpointManager,
                 loggerFactory = TestLoggerFactory
             }, storeFunctions, (allocatorSettings, functions) =>
             {
@@ -204,7 +307,11 @@ namespace Tsavorite.test
                     allocatorSettings.flushCallback = info =>
                     {
                         if (info.ErrorCode == 0)
+                        {
+                            if (info.UntilAddress >= Volatile.Read(ref flushTargetAddress))
+                                flushedToTargetEvent.Set();
                             return;
+                        }
                         flushFailure = info;
                         flushFailureEvent.Set();
                     };
@@ -245,6 +352,8 @@ namespace Tsavorite.test
         internal int RemoveSegmentCount => Volatile.Read(ref removeSegmentCount);
         internal ulong LastFailedReadAddress { get; private set; }
         internal uint LastFailedReadLength { get; private set; }
+        internal ulong LastReadAddress { get; private set; }
+        internal uint LastReadLength { get; private set; }
 
         internal ControlledReadFailureDevice(IDevice underlying)
             : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
@@ -299,10 +408,12 @@ namespace Tsavorite.test
             DeviceIOCompletionCallback callback, object context)
         {
             _ = Interlocked.Increment(ref readCount);
+            LastReadAddress = SegmentSize > 0 ? (ulong)(segmentId * SegmentSize) + sourceAddress : sourceAddress;
+            LastReadLength = readLength;
             if (Interlocked.Exchange(ref failNextRead, 0) == 1)
             {
                 _ = Interlocked.Increment(ref failedReadCount);
-                LastFailedReadAddress = SegmentSize > 0 ? (ulong)(segmentId * SegmentSize) + sourceAddress : sourceAddress;
+                LastFailedReadAddress = LastReadAddress;
                 LastFailedReadLength = readLength;
 
                 if (failureMode == InjectedReadFailure.DeviceError)
