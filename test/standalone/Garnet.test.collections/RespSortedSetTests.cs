@@ -3494,6 +3494,26 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase(2, Description = "RESP2 output")]
+        [TestCase(3, Description = "RESP3 output")]
+        public async Task ZMPopInfiniteScoresRespOutput(byte respVersion)
+        {
+            using var c = TestUtils.GetGarnetClientSession(raw: true);
+            c.Connect();
+
+            var response = await c.ExecuteAsync("HELLO", respVersion.ToString()).ConfigureAwait(false);
+
+            response = await c.ExecuteAsync("ZADD", "z", "-inf", "a", "1.5", "b", "+inf", "c").ConfigureAwait(false);
+            ClassicAssert.AreEqual(":3\r\n", response);
+
+            var expectedResponse = (respVersion >= 3) ?
+                        "*2\r\n$1\r\nz\r\n*3\r\n*2\r\n$1\r\na\r\n,-inf\r\n*2\r\n$1\r\nb\r\n,1.5\r\n*2\r\n$1\r\nc\r\n,inf\r\n" :
+                        "*2\r\n$1\r\nz\r\n*3\r\n*2\r\n$1\r\na\r\n$4\r\n-inf\r\n*2\r\n$1\r\nb\r\n$3\r\n1.5\r\n*2\r\n$1\r\nc\r\n$3\r\ninf\r\n";
+            response = await c.ExecuteAsync("ZMPOP", "2", "missing", "z", "MIN", "COUNT", "3").ConfigureAwait(false);
+            ClassicAssert.AreEqual(expectedResponse, response);
+        }
+
+        [Test]
         public async Task ZScanWithExpiredItems()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
