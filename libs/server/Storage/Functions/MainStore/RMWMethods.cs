@@ -1062,6 +1062,8 @@ namespace Garnet.server
 
             var oldValue = srcLogRecord.ValueSpan;  // reduce redundant length calcs
             // Do not pre-get newValue = dstLogRecord.ValueSpan here, because it may change, e.g. moving between inline and overflow
+            Span<byte> newValue;
+            byte* oldValuePtr;
 
             RespCommand cmd = input.header.cmd;
 
@@ -1143,85 +1145,16 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.SETBIT:
-                    var bOffset = input.arg1;
-                    var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
-
+                    // PostCopyUpdater sets the bit: the new record may share the source's value array, and a Snapshot checkpoint captures the
+                    // source's (v) value between the two calls.
                     if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                         return false;
-
-                    // Some duplicate code to avoid "fixed" when possible
-                    var newValue = dstLogRecord.ValueSpan;
-                    byte* oldValuePtr;
-                    byte oldValSet;
-                    if (srcLogRecord.IsPinnedValue)
-                    {
-                        oldValuePtr = srcLogRecord.PinnedValuePointer;
-                        if (dstLogRecord.IsPinnedValue)
-                        {
-                            var newValuePtr = dstLogRecord.PinnedValuePointer;
-                            Buffer.MemoryCopy(oldValuePtr, newValuePtr, newValue.Length, oldValue.Length);
-                            oldValSet = BitmapManager.UpdateBitmap(newValuePtr, bOffset, bSetVal);
-                        }
-                        else
-                        {
-                            fixed (byte* newValuePtr = dstLogRecord.ValueSpan)
-                            {
-                                Buffer.MemoryCopy(oldValuePtr, newValuePtr, newValue.Length, oldValue.Length);
-                                oldValSet = BitmapManager.UpdateBitmap(newValuePtr, bOffset, bSetVal);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        fixed (byte* oldPtr = srcLogRecord.ValueSpan)
-                        {
-                            oldValuePtr = oldPtr;
-                            if (dstLogRecord.IsPinnedValue)
-                            {
-                                var newValuePtr = dstLogRecord.PinnedValuePointer;
-                                Buffer.MemoryCopy(oldValuePtr, newValuePtr, newValue.Length, oldValue.Length);
-                                oldValSet = BitmapManager.UpdateBitmap(newValuePtr, bOffset, bSetVal);
-                            }
-                            else
-                            {
-                                fixed (byte* newValuePtr = dstLogRecord.ValueSpan)
-                                {
-                                    Buffer.MemoryCopy(oldValuePtr, newValuePtr, newValue.Length, oldValue.Length);
-                                    oldValSet = BitmapManager.UpdateBitmap(newValuePtr, bOffset, bSetVal);
-                                }
-                            }
-                        }
-                    }
-
-                    functionsState.CopyDefaultResp(
-                        oldValSet == 0 ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
                     break;
 
                 case RespCommand.BITFIELD:
-                    var bitFieldArgs = GetBitFieldArguments(ref input);
+                    // PostCopyUpdater applies the operations, as for SETBIT.
                     if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                         return false;
-
-                    newValue = dstLogRecord.ValueSpan;
-                    oldValue = srcLogRecord.ValueSpan;
-                    if (newValue.Length > oldValue.Length)
-                    {
-                        // Zero-init the rest of the new value before we do any bit operations (e.g. it may have been revivified, which for efficiency does not clear old data)
-                        newValue.Slice(oldValue.Length).Clear();
-                    }
-
-                    long bitfieldReturnValue;
-                    bool overflow;
-                    if (dstLogRecord.IsPinnedValue)
-                        (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, dstLogRecord.PinnedValuePointer, newValue.Length);
-                    else
-                        fixed (byte* newValuePtr = newValue)
-                            (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, newValuePtr, newValue.Length);
-
-                    if (!overflow)
-                        functionsState.CopyRespNumber(bitfieldReturnValue, ref output.SpanByteAndMemory);
-                    else
-                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
                     break;
 
                 case RespCommand.PFADD:
@@ -1363,21 +1296,9 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.SETRANGE:
-                    var offset = input.parseState.GetInt(0);
-
+                    // PostCopyUpdater writes the range, as for SETBIT.
                     if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                         return false;
-
-                    newValue = dstLogRecord.ValueSpan;
-                    if (oldValue.Length < offset)
-                    {
-                        // The offset is greater than the old value length so we need to zero-fill the gap (e.g. new record might have been revivified, which does not clear out all bytes).
-                        newValue.Slice(oldValue.Length, offset - oldValue.Length).Clear();
-                    }
-
-                    input.parseState.GetArgSliceByRef(1).ReadOnlySpan.CopyTo(newValue.Slice(offset));
-
-                    _ = TryCopyValueLengthToOutput(newValue, ref output);
                     break;
 
                 case RespCommand.GETDEL:
@@ -1527,12 +1448,76 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        /// <remarks>SETBIT, BITFIELD and SETRANGE write the new value here rather than in <see cref="CopyUpdater"/>. When the value's length is
+        /// unchanged, the new record shares the source's overflow array, and a Snapshot checkpoint captures the source's (v) value after the new
+        /// record is inserted and before this runs. Writing here also leaves the source untouched if the insertion fails and the operation
+        /// retries.</remarks>
         public readonly bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
 
             var cmd = input.header.cmd;
+            switch (cmd)
+            {
+                case RespCommand.SETBIT:
+                    {
+                        var bOffset = input.arg1;
+                        var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
+                        byte oldValSet;
+                        if (dstLogRecord.IsPinnedValue)
+                            oldValSet = BitmapManager.UpdateBitmap(dstLogRecord.PinnedValuePointer, bOffset, bSetVal);
+                        else
+                            fixed (byte* newValuePtr = dstLogRecord.ValueSpan)
+                                oldValSet = BitmapManager.UpdateBitmap(newValuePtr, bOffset, bSetVal);
+
+                        functionsState.CopyDefaultResp(
+                            oldValSet == 0 ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
+                        break;
+                    }
+
+                case RespCommand.BITFIELD:
+                    {
+                        var bitFieldArgs = GetBitFieldArguments(ref input);
+                        var newValue = dstLogRecord.ValueSpan;
+                        var oldLength = srcLogRecord.ValueSpan.Length;
+                        if (newValue.Length > oldLength)
+                        {
+                            // Zero-init the rest of the new value before we do any bit operations (e.g. it may have been revivified, which for efficiency does not clear old data)
+                            newValue.Slice(oldLength).Clear();
+                        }
+
+                        long bitfieldReturnValue;
+                        bool overflow;
+                        if (dstLogRecord.IsPinnedValue)
+                            (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, dstLogRecord.PinnedValuePointer, newValue.Length);
+                        else
+                            fixed (byte* newValuePtr = newValue)
+                                (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, newValuePtr, newValue.Length);
+
+                        if (!overflow)
+                            functionsState.CopyRespNumber(bitfieldReturnValue, ref output.SpanByteAndMemory);
+                        else
+                            functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
+                        break;
+                    }
+
+                case RespCommand.SETRANGE:
+                    {
+                        var offset = input.parseState.GetInt(0);
+                        var newValue = dstLogRecord.ValueSpan;
+                        var oldLength = srcLogRecord.ValueSpan.Length;
+                        if (oldLength < offset)
+                        {
+                            // The offset is greater than the old value length so we need to zero-fill the gap (e.g. new record might have been revivified, which does not clear out all bytes).
+                            newValue.Slice(oldLength, offset - oldLength).Clear();
+                        }
+
+                        input.parseState.GetArgSliceByRef(1).ReadOnlySpan.CopyTo(newValue.Slice(offset));
+                        _ = TryCopyValueLengthToOutput(newValue, ref output);
+                        break;
+                    }
+            }
 
             // RIPROMOTE/RIRESTORE are internal store-maintenance ops — skip AOF.
             if (cmd != RespCommand.RIPROMOTE && cmd != RespCommand.RIRESTORE)

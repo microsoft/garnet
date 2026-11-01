@@ -1588,6 +1588,16 @@ namespace Tsavorite.core
                 : objectIdMap.TryGetHeapObject(*(int*)valueAddress, out valueObject);
         }
 
+        /// <summary>Point this record's overflow value slot at <paramref name="replacement"/> without changing the record's bytes.</summary>
+        /// <remarks>Only the <see cref="ObjectIdMap"/> changes, so a device write of the record's page in flight is unaffected. A Snapshot
+        /// checkpoint's capture uses this to detach a superseded source from the array its CopyUpdate's new record now owns.</remarks>
+        internal readonly void ReplaceValueOverflowSlot(OverflowByteArray replacement)
+        {
+            Debug.Assert(DataHeader.ValueIsOverflow, "ReplaceValueOverflowSlot requires an overflow value");
+            var (_ /*valueLength*/, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
+            objectIdMap.Set(*(int*)valueAddress, replacement);
+        }
+
         /// <summary>Stamp the position word and initial-read hints that an object-log write produced for this record.</summary>
         /// <param name="result">The write's result: the position word with its flags, and the key and value slot hints.</param>
         /// <remarks>Non-destructive to in-memory readers: each objectId slot keeps its index bits, and an overflow key's raw RDH KeyLength

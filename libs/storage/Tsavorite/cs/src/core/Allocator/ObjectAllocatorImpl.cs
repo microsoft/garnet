@@ -921,6 +921,85 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        /// <remarks>
+        /// <para>The new record shares the source's array A, and its PostCopyUpdater changes A next. The capture claims A, which waits out a flush
+        /// that is writing it, and then acts on what was published for the source, as <see cref="TryCaptureCopyUpdateSource"/> does for an
+        /// object:</para>
+        /// <list type="bullet">
+        /// <item>The ReadOnly flush wrote the source: capture nothing. A stays shared, as it is outside a checkpoint.</item>
+        /// <item>This checkpoint's Snapshot flush wrote the source: only set the marker.</item>
+        /// <item>Otherwise: write the key and A to this checkpoint's object log, stamp the source, then set the marker.</item>
+        /// </list>
+        /// <para>A's phase describes only the record at its owner address: another record that shares A may have published it, and then the
+        /// source is unpublished. In the last two cases the capture keeps the claim through PostCopyUpdater, which may read the source's value;
+        /// <see cref="CompleteOverflowCapture"/> then detaches the source. A flush that read the source's slot before that waits for the claim
+        /// and finds the sentinel when it checks the slot again.</para>
+        /// </remarks>
+        internal override bool TryCaptureCopyUpdateOverflowSource(SnapshotObjectLogState captures, ref LogRecord sourceRecord, long logicalAddress)
+        {
+            if (!captures.TryBeginCapture())
+                return false;
+            OverflowByteArray valueOverflow = default;
+            var claimed = false;
+            var holdClaim = false;
+            int priorWord = 0;
+            long priorOwner = 0;
+            try
+            {
+                // The source is a (v) record held by this CopyUpdate, so its components cannot change until PostCopyUpdater runs.
+                if (!sourceRecord.TryGetOutOfLineComponents(out var keyOverflow, out valueOverflow, out _) || valueOverflow.IsEmpty)
+                    throw new TsavoriteException($"Could not capture the out-of-line components of the CopyUpdate source at {logicalAddress}");
+
+                valueOverflow.ClaimForPublication(out priorWord, out priorOwner);
+                claimed = true;
+                var publishedSource = priorOwner == logicalAddress;
+                if (publishedSource && HeapObjectBase.IsReadOnlyStamped(priorWord))
+                    return false;
+
+                if (publishedSource && HeapObjectBase.IsSnapshotStampedBy(priorWord, captures.Tag))
+                    sourceRecord.InfoRef.HasSnapshotObjectLogReference = true;
+                else
+                {
+                    using var writer = new ObjectLogWriter<TStoreFunctions>(captures.Log, storeFunctions, objectLogWriterSettings);
+                    var result = writer.WriteRecordObjects(in keyOverflow, in valueOverflow, valueIsObject: false, valueObject: null);
+
+                    // Stamp before marking: a flush that sees the marker keeps the stamp.
+                    sourceRecord.SetObjectLogPositionAndHints(in result);
+                    sourceRecord.InfoRef.HasSnapshotObjectLogReference = true;
+                }
+                holdClaim = true;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                // The checkpoint cannot recover this record's (v) value, so it fails; the operation that superseded the record proceeds.
+                captures.RecordFailure(ex);
+                return false;
+            }
+            finally
+            {
+                if (claimed && !holdClaim)
+                    valueOverflow.ReleasePublicationClaim(priorWord, priorOwner);
+                captures.EndCapture();
+            }
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>Points the source's value slot at the checkpoint's sentinel and credits the source's share of the array's heap, which the new
+        /// record also counts; eviction then subtracts the sentinel's share. The array is released at REST: it now belongs to the new record alone,
+        /// which no flush has published. The source's bytes are unchanged, so this is safe while a device write of its page is in flight.</remarks>
+        internal override void CompleteOverflowCapture(SnapshotObjectLogState captures, ref LogRecord sourceRecord)
+        {
+            // The capture holds the claim, so the slot still holds the array the new record shares.
+            var valueOverflow = sourceRecord.ValueOverflow;
+            sourceRecord.ReplaceValueOverflowSlot(captures.OverflowSentinel);
+            var credit = valueOverflow.HeapMemorySize - captures.OverflowSentinel.HeapMemorySize;
+            if (credit != 0)
+                logSizeTracker?.IncrementSize(-credit);
+            valueOverflow.ReleasePublicationClaim((int)SerializationPhase.REST, owner: 0);
+        }
+
+        /// <inheritdoc/>
         internal override void InspectRecoveryObjectLogReference(in LogRecord record)
         {
             if (!record.DataHeader.RecordHasObjects || record.Info.HasSnapshotObjectLogReference)
@@ -1590,6 +1669,9 @@ namespace Tsavorite.core
                                         if (valueObject is HeapObjectBase heapObject)
                                             wroteObjects |= PublishFlushedObject(heapObject, ref logRecord, logicalAddress, in keyOverflow, logWriter,
                                                 asyncResult.flushRequestState, snapshotFlushState);
+                                        else if (!valueOverflow.IsEmpty)
+                                            wroteObjects |= PublishFlushedOverflow(ref logRecord, logicalAddress, in keyOverflow, valueOverflow, logWriter,
+                                                asyncResult.flushRequestState, snapshotFlushState);
                                         else
                                         {
                                             var result = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, logRecord.DataHeader.ValueIsObject, valueObject);
@@ -1848,6 +1930,90 @@ namespace Tsavorite.core
                 valueObject.ReleaseClaim(finalWord);
             }
             return true;
+        }
+
+        /// <summary>
+        /// Publish a flushed record whose value is overflow: write its out-of-line components to the flush's object log and stamp it, or keep its
+        /// reference to the active Snapshot checkpoint's capture.
+        /// </summary>
+        /// <param name="logRecord">The record, on the live page</param>
+        /// <param name="logicalAddress">The record's address</param>
+        /// <param name="keyOverflow">The record's overflow key, or default</param>
+        /// <param name="valueOverflow">The record's value array as the walk found it</param>
+        /// <param name="logWriter">The writer for the flush's object log</param>
+        /// <param name="flushRequestState">Whether this is a Snapshot or a ReadOnly flush</param>
+        /// <param name="snapshotFlushState">For a Snapshot flush, its checkpoint; otherwise null</param>
+        /// <returns>True if this wrote to the flush's object log.</returns>
+        /// <remarks>
+        /// <para>A capture detaches its source by pointing the source's slot at the checkpoint's sentinel, because the CopyUpdate's new record
+        /// shares the value's array and changes it. A marked record whose slot holds the active checkpoint's sentinel keeps its reference, as a
+        /// captured object does in <see cref="PublishFlushedObject"/>; any other sentinel is stale and the record, which is superseded, is
+        /// written with an empty value.</para>
+        /// <para>Otherwise the flush claims the array, which waits out a capture. It then checks the slot again: a capture may have detached the
+        /// record after the walk read the slot, and the array may already hold the new record's changes. The array's phase describes only the
+        /// record at its owner address, so the flush replaces it unless a newer record that shares the array owns it: the records sharing an
+        /// array are versions of one key, and an older version is superseded.</para>
+        /// </remarks>
+        private bool PublishFlushedOverflow(ref LogRecord logRecord, long logicalAddress, in OverflowByteArray keyOverflow, OverflowByteArray valueOverflow,
+            ObjectLogWriter<TStoreFunctions> logWriter, FlushRequestState flushRequestState, SnapshotObjectLogState snapshotFlushState)
+        {
+            ObjectLogWriteResult result;
+            while (true)
+            {
+                if (valueOverflow.IsSentinel)
+                {
+                    if (logRecord.Info.HasSnapshotObjectLogReference)
+                    {
+                        // As for an object, a ReadOnly flush reads the active checkpoint only after finding the capture.
+                        var state = flushRequestState == FlushRequestState.Snapshot ? snapshotFlushState : ActiveSnapshotObjectLog;
+                        if (state is not null && ReferenceEquals(valueOverflow.Array, state.OverflowSentinel.Array))
+                        {
+                            if (flushRequestState == FlushRequestState.ReadOnly)
+                                state.NoteMainLogReference(logicalAddress);
+                            return false;
+                        }
+                    }
+                    result = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, valueIsObject: false, valueObject: null);
+                    StampFlushedRecord(ref logRecord, in result);
+                    return true;
+                }
+
+                valueOverflow.ClaimForPublication(out var priorWord, out var priorOwner);
+                if (!logRecord.TryGetOutOfLineComponents(out _, out var currentValue, out _) || !ReferenceEquals(currentValue.Array, valueOverflow.Array))
+                {
+                    valueOverflow.ReleasePublicationClaim(priorWord, priorOwner);
+
+                    // A slot that no longer resolves was freed by an elision, which invalidated the record first; the page carries that.
+                    if (currentValue.IsEmpty)
+                        return false;
+                    valueOverflow = currentValue;
+                    continue;
+                }
+
+                // On failure, restore the phase this flush found: it published nothing.
+                var finalWord = priorWord;
+                var finalOwner = priorOwner;
+                try
+                {
+                    result = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, valueIsObject: false, valueObject: null);
+
+                    // Test-only interleave point: a capture of this record must wait here for the claim.
+                    ObjectFlushInjection.At(ObjectFlushPhase.ClaimHeld, logicalAddress);
+                    StampFlushedRecord(ref logRecord, in result);
+                    if (priorOwner <= logicalAddress)
+                    {
+                        if (flushRequestState == FlushRequestState.ReadOnly)
+                            (finalWord, finalOwner) = (HeapObjectBase.ReadOnlyStampedWord, logicalAddress);
+                        else if (snapshotFlushState is not null)
+                            (finalWord, finalOwner) = (HeapObjectBase.SnapshotStampedWord(snapshotFlushState.Tag), logicalAddress);
+                    }
+                }
+                finally
+                {
+                    valueOverflow.ReleasePublicationClaim(finalWord, finalOwner);
+                }
+                return true;
+            }
         }
 
         /// <summary>

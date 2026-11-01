@@ -24,7 +24,7 @@ namespace Tsavorite.test.recovery
     /// ReadOnly flush of the source's page, and check that recovery returns the (v) value from whichever log it reads the source from.
     /// </summary>
     [TestFixture]
-    internal class SnapshotReferenceTests : TestBase
+    internal partial class SnapshotReferenceTests : TestBase
     {
         const int InitialCount = 8;
         const int RmwValue = 99;

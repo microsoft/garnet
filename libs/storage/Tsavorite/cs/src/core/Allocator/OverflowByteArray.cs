@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace Tsavorite.core
 {
@@ -16,11 +17,30 @@ namespace Tsavorite.core
         /// which makes it possible to read more information with a single IO and then copy it out to other destinations. Sector sizes may be up to 64k on NTFS systems,
         /// which is sizeof(ushort) bytes, so the use of full ints removes boundary concerns (e.g. reading a value followed by optional bytes may cross a sector boundary,
         /// in which case we need an end offset greater than a single sector).</summary>
+        /// <remarks>
+        /// <para>The publication fields serve a value array the way <see cref="HeapObjectBase"/>'s phase word serves an object: a flush or a Snapshot
+        /// checkpoint's capture holds the claim from its object-log write through its stamps, and the phase says which flush last published the
+        /// record. Unlike an object, an array can be shared: a CopyUpdate that keeps the value's length gives the new record the source's array. So
+        /// the header also records the owner, the address of the record that publication describes; see <see cref="ClaimForPublication"/>.</para>
+        /// <para>The size keeps the data 8-byte aligned.</para>
+        /// </remarks>
+        [StructLayout(LayoutKind.Sequential)]
         struct OverflowHeader
         {
-            internal const int Size = 2 * sizeof(int);
+            internal const int Size = 4 * sizeof(int) + sizeof(long);
             internal int startOffset, endOffset;
+
+            /// <summary>The publication phase, encoded as in <see cref="HeapObjectBase"/>: a <see cref="SerializationPhase"/> in the low bits and,
+            /// for <see cref="SerializationPhase.SNAPSHOT_STAMPED"/>, the Snapshot checkpoint's tag above them; or <see cref="SentinelWord"/>.</summary>
+            internal int phaseWord;
+            internal int reserved;
+
+            /// <summary>The logical address of the record that <see cref="phaseWord"/> describes, when it is stamped.</summary>
+            internal long owner;
         }
+
+        /// <summary>The phase word of a Snapshot checkpoint's sentinel: an array with no data that never takes a claim.</summary>
+        const int SentinelWord = -1;
 
         internal readonly byte[] Array { get; init; }
 
@@ -109,7 +129,68 @@ namespace Tsavorite.core
             ref var header = ref Unsafe.As<byte, OverflowHeader>(ref Array[0]);
             header.startOffset = startOffset;
             header.endOffset = endOffset;
+            header.phaseWord = (int)SerializationPhase.REST;
+            header.reserved = 0;
+            header.owner = 0;
         }
+
+        /// <summary>Create a Snapshot checkpoint's sentinel. A capture points the source record's value slot at it, after giving the value
+        /// itself to the CopyUpdate's new record; a flush identifies the capture by it.</summary>
+        internal static OverflowByteArray CreateSentinel()
+        {
+            var sentinel = new OverflowByteArray(0, startOffset: 0, endOffset: 0, zeroInit: true);
+            Unsafe.As<byte, OverflowHeader>(ref sentinel.Array[0]).phaseWord = SentinelWord;
+            return sentinel;
+        }
+
+        /// <summary>Whether this is a Snapshot checkpoint's sentinel; see <see cref="CreateSentinel"/>.</summary>
+        internal readonly bool IsSentinel => Volatile.Read(ref Unsafe.As<byte, OverflowHeader>(ref Array[0]).phaseWord) == SentinelWord;
+
+        /// <summary>Wait until no thread holds this array's publication claim, then take it.</summary>
+        /// <param name="priorWord">The phase word found; pass it, or the word for what the claim published, to <see cref="ReleasePublicationClaim"/>.</param>
+        /// <param name="priorOwner">The address of the record the phase word describes, when it is stamped.</param>
+        /// <remarks>
+        /// <para>The claim serializes publishers of the records that reference this array: a flush holds it from its object-log write through its
+        /// stamps, and a capture holds it until it has detached its source. A stamped phase describes only the record at
+        /// <paramref name="priorOwner"/>; for any other record the array is unpublished.</para>
+        /// <para>Waits by yielding: a claim is held across an object-log write, which can take as long as copying the array.</para>
+        /// </remarks>
+        internal readonly void ClaimForPublication(out int priorWord, out long priorOwner)
+        {
+            ref var header = ref Unsafe.As<byte, OverflowHeader>(ref Array[0]);
+            Debug.Assert(Volatile.Read(ref header.phaseWord) != SentinelWord, "A sentinel takes no claim");
+            while (true)
+            {
+                var word = Volatile.Read(ref header.phaseWord);
+                if ((word & PhaseMask) == (int)SerializationPhase.SERIALIZING)
+                {
+                    _ = Thread.Yield();
+                    continue;
+                }
+
+                // The owner is written before the phase word is released, so reading it after the word and then taking the word by CAS
+                // yields a consistent pair.
+                var owner = Volatile.Read(ref header.owner);
+                if (Interlocked.CompareExchange(ref header.phaseWord, (int)SerializationPhase.SERIALIZING, word) == word)
+                {
+                    priorWord = word;
+                    priorOwner = owner;
+                    return;
+                }
+            }
+        }
+
+        /// <summary>End a claim taken by <see cref="ClaimForPublication"/>, leaving the phase word <paramref name="word"/> describing the record at
+        /// <paramref name="owner"/>.</summary>
+        internal readonly void ReleasePublicationClaim(int word, long owner)
+        {
+            ref var header = ref Unsafe.As<byte, OverflowHeader>(ref Array[0]);
+            Debug.Assert((Volatile.Read(ref header.phaseWord) & PhaseMask) == (int)SerializationPhase.SERIALIZING, "ReleasePublicationClaim without a claim");
+            Volatile.Write(ref header.owner, owner);
+            Volatile.Write(ref header.phaseWord, word);
+        }
+
+        const int PhaseMask = (1 << HeapObjectBase.PhaseBits) - 1;
 
         /// <summary>Increase the offset from the start, e.g. after having extracted the key that was read in the same IO operation as the value.</summary>
         /// <remarks>This is 'readonly' because it does not alter the <see cref="Array"/> array field, only its contents.</remarks>

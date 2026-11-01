@@ -607,6 +607,9 @@ namespace Tsavorite.core
                         // do not need to serialize data as this is not involved in checkpointing, and the DiskLogRecord is Disposed after we return up the Pending chain.)
                         var isMemoryLogRecord = srcLogRecord.IsMemoryLogRecord;
                         var captured = false;
+
+                        // A Snapshot checkpoint that captures an overflow value holds the value array's claim through PostCopyUpdater.
+                        SnapshotObjectLogState overflowCaptures = null;
                         if (srcLogRecord.DataHeader.ValueIsObject)
                         {
                             var needsSourceImage = isMemoryLogRecord
@@ -624,7 +627,22 @@ namespace Tsavorite.core
                             if (!captured && srcLogRecord.ValueObject.CacheSerializedObjectData(ref newLogRecord, ref rmwInfo, isMemoryLogRecord, needsSourceImage))
                                 hlogBase.NoteSerializedObjectCache(stackCtx.recSrc.LogicalAddress);
                         }
-                        var pcuSuccess = sessionFunctions.PostCopyUpdater(in srcLogRecord, ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+                        else if (srcLogRecord.DataHeader.ValueIsOverflow && isMemoryLogRecord && stackCtx.recSrc.HasMainLogSrc && newLogRecord.Info.IsInNewVersion
+                                && hlogBase.ActiveSnapshotObjectLog is { } snapshotCaptures
+                                && CheckpointNeedsSourceImage(stackCtx.recSrc.LogicalAddress, srcLogRecord.Info)
+                                && TryCaptureCopyUpdateOverflowSource(snapshotCaptures, ref srcLogRecord.AsMemoryLogRecordRef(), stackCtx.recSrc.LogicalAddress, ref newLogRecord))
+                            overflowCaptures = snapshotCaptures;
+
+                        bool pcuSuccess;
+                        try
+                        {
+                            pcuSuccess = sessionFunctions.PostCopyUpdater(in srcLogRecord, ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+                        }
+                        finally
+                        {
+                            if (overflowCaptures is not null)
+                                hlogBase.CompleteOverflowCapture(overflowCaptures, ref srcLogRecord.AsMemoryLogRecordRef());
+                        }
                         if (pcuSuccess)
                         {
                             // Track new record's value heap — after PCU so the value is fully populated.

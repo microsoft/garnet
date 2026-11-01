@@ -171,6 +171,30 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// For a Snapshot checkpoint, capture this main-log source's <c>(v)</c> overflow value into the checkpoint's object log if the CopyUpdate's
+        /// new record shares the value's array, unless the source's main-log image is durable.
+        /// </summary>
+        /// <remarks>
+        /// <para><see cref="LogRecord.TryCopyFrom{TSourceLogRecord}"/> gives the new record the source's array when the value keeps its length,
+        /// and PostCopyUpdater then changes that array, which is the source's <c>(v)</c> value until a flush writes it. A value whose length
+        /// changed was copied into the new record's own array, so the source's value stays intact and needs no capture. A durable source needs
+        /// none either, as for an object; see <see cref="TryCaptureCopyUpdateSource"/>.</para>
+        /// </remarks>
+        /// <returns>True if the source was captured. The capture then holds the array's claim, and the caller must call the allocator's
+        /// <c>CompleteOverflowCapture</c> once PostCopyUpdater has run, even if it throws.</returns>
+        private bool TryCaptureCopyUpdateOverflowSource(SnapshotObjectLogState captures, ref LogRecord sourceRecord, long sourceAddress, ref LogRecord newLogRecord)
+        {
+            if (!hlogBase.IsNullDevice && sourceAddress < hlogBase.FlushedUntilAddress)
+                return false;
+            if (!newLogRecord.DataHeader.ValueIsOverflow
+                    || !sourceRecord.TryGetOutOfLineComponents(out _, out var sourceValue, out _)
+                    || !newLogRecord.TryGetOutOfLineComponents(out _, out var newValue, out _)
+                    || !ReferenceEquals(sourceValue.Array, newValue.Array))
+                return false;
+            return hlogBase.TryCaptureCopyUpdateOverflowSource(captures, ref sourceRecord, sourceAddress);
+        }
+
+        /// <summary>
         /// Dispose the resources of an in-memory source record that is being deleted. If an ongoing checkpoint or an
         /// in-flight flush has frozen it, mark it for deferred disposal instead.
         /// </summary>

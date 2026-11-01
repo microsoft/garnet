@@ -73,6 +73,17 @@ namespace Tsavorite.core
         /// log.</returns>
         internal virtual bool TryCaptureCopyUpdateSource(SnapshotObjectLogState captures, ref LogRecord sourceRecord, long logicalAddress) => false;
 
+        /// <summary>Capture the (v) overflow value of <paramref name="sourceRecord"/>, the source of a (v+1) CopyUpdate whose new record shares the
+        /// value's array, for the Snapshot checkpoint <paramref name="captures"/>. Only implemented by ObjectAllocator.</summary>
+        /// <returns>True if the record now references the checkpoint's capture. The capture then still holds the array's claim, and the caller
+        /// must call <see cref="CompleteOverflowCapture"/> once PostCopyUpdater has run, even if it throws. False if the source needs no capture,
+        /// or the capture failed and so did the checkpoint.</returns>
+        internal virtual bool TryCaptureCopyUpdateOverflowSource(SnapshotObjectLogState captures, ref LogRecord sourceRecord, long logicalAddress) => false;
+
+        /// <summary>Finish a capture by <see cref="TryCaptureCopyUpdateOverflowSource"/>: detach the source from the array its new record now owns,
+        /// and release the array's claim. Only implemented by ObjectAllocator.</summary>
+        internal virtual void CompleteOverflowCapture(SnapshotObjectLogState captures, ref LogRecord sourceRecord) { }
+
         /// <summary>Inspect a main-log reference before the recovery append tail is established.</summary>
         internal virtual void InspectRecoveryObjectLogReference(in LogRecord record) { }
 

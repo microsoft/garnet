@@ -15,6 +15,10 @@ namespace Tsavorite.core
         /// by this checkpoint from one left by an earlier checkpoint.</summary>
         internal readonly int Tag;
 
+        /// <summary>The sentinel a capture of an overflow value leaves in its source's value slot; see <see cref="OverflowByteArray.CreateSentinel"/>.
+        /// A flush keeps a marked record's reference only while its slot holds the active checkpoint's sentinel.</summary>
+        internal readonly OverflowByteArray OverflowSentinel = OverflowByteArray.CreateSentinel();
+
         readonly ManualResetEventSlim drained = new(false);
         int inFlight;
         int closed;
