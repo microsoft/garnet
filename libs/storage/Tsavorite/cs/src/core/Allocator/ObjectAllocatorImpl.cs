@@ -1912,7 +1912,8 @@ namespace Tsavorite.core
             {
                 result = logWriter.WriteRecordObjects(in keyOverflow, default, valueIsObject: true, valueObject);
 
-                // Test-only interleave point: a capture of this record must wait here for the claim.
+                // Test only, compiled out of Release builds: a test's hook can hold the flush here, with the claim held, to check that a
+                // capture of the record waits for the claim.
                 ObjectFlushInjection.At(ObjectFlushPhase.ClaimHeld, logicalAddress);
                 StampFlushedRecord(ref logRecord, in result);
                 if (flushRequestState == FlushRequestState.ReadOnly)
@@ -1998,7 +1999,8 @@ namespace Tsavorite.core
                 {
                     result = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, valueIsObject: false, valueObject: null);
 
-                    // Test-only interleave point: a capture of this record must wait here for the claim.
+                    // Test only, compiled out of Release builds: a test's hook can hold the flush here, with the claim held, to check that a
+                    // capture of the record waits for the claim.
                     ObjectFlushInjection.At(ObjectFlushPhase.ClaimHeld, logicalAddress);
                     StampFlushedRecord(ref logRecord, in result);
                     if (priorOwner <= logicalAddress)

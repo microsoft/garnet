@@ -168,7 +168,8 @@ namespace Tsavorite.core
                     continue;
                 }
 
-                // Test-only interleave point: another publisher can claim and release this same word here.
+                // Test only, compiled out of Release builds: a test's hook can run another publisher's claim and release here, between the
+                // read of the word and the CAS.
                 ObjectFlushInjection.At(ObjectFlushPhase.PublicationClaimSampled, 0);
                 if (Interlocked.CompareExchange(ref header.phaseWord, (int)SerializationPhase.SERIALIZING, word) == word)
                 {

@@ -6,7 +6,8 @@ using System.Diagnostics;
 
 namespace Tsavorite.core
 {
-    /// <summary>The point in the object-log flush at which <see cref="ObjectFlushInjection"/> calls back.</summary>
+    /// <summary>Test only: the points at which <see cref="ObjectFlushInjection"/> calls a test's hook. The calls are compiled out of Release
+    /// builds, and nothing in the store depends on them.</summary>
     internal enum ObjectFlushPhase
     {
         /// <summary>The record's out-of-line components have been captured but the live <c>RecordInfo</c> has not been re-read.
@@ -17,8 +18,8 @@ namespace Tsavorite.core
         /// flush window here, so <c>IsFrozenForFlush</c> holds for its address.</summary>
         AfterRecordWritten,
 
-        /// <summary>The flush holds the claim on the record's value object and has written the object to the object log, but has not
-        /// stamped the record. A capture of the record waits for the claim here.</summary>
+        /// <summary>Test only. A flush holds the claim on the record's value, an object or an overflow array, and has written the value
+        /// to the object log, but has not stamped the record. A capture of the record waits for the claim here.</summary>
         ClaimHeld,
 
         /// <summary>Snapshot coordination has entered <c>CapturingCutoff</c> but has not yet sampled the ReadOnly cutoff. This is
@@ -26,21 +27,25 @@ namespace Tsavorite.core
         /// correctly, either inside the cutoff cohort or as post-cutoff. The address passed is the cutoff candidate at entry.</summary>
         SnapshotCutoffCapturing,
 
-        /// <summary>A publication claim on an overflow array has read the array's phase word and is about to take it by CAS. Another
-        /// publisher can claim and release the same word with a different owner here. The address passed is 0.</summary>
+        /// <summary>Test only. A flush or a capture claiming an overflow array for publication has read the array's phase word and is
+        /// about to take it by CAS; another publisher can claim and release the same word with a different owner in between. The
+        /// hook runs on the claiming thread, which for a capture holds the store epoch and the key's bucket lock. The address passed
+        /// is 0.</summary>
         PublicationClaimSampled
     }
 
     /// <summary>
-    /// Test-only interleave points in the flush paths, letting a test run an operation at a precise moment inside a flush
-    /// rather than hoping a background race reproduces.
+    /// Test only: interleave points in the flush paths and in an overflow array's publication claim, letting a test run an operation at
+    /// a precise moment rather than hoping a background race reproduces.
     /// </summary>
     /// <remarks>
     /// Non-generic so a test can reach it without naming the store-functions type, and every entry point is
     /// <see cref="ConditionalAttribute"/> on DEBUG so a Release build compiles out the calls and their arguments entirely -- the flush
     /// carries no production cost, not even a null check.
-    /// <para>The callback runs ON THE FLUSH THREAD while it holds no epoch, so a handler may block, but it must not perform a store
-    /// operation that would re-enter this allocator's flush path. Handlers are expected to signal the test thread and optionally wait.</para>
+    /// <para>The flush points run ON THE FLUSH THREAD while it holds no epoch, so a handler may block, but it must not perform a store
+    /// operation that would re-enter this allocator's flush path. <see cref="ObjectFlushPhase.PublicationClaimSampled"/> also runs on the
+    /// thread of a CopyUpdate whose capture claims an overflow array; that thread holds the store epoch and the key's bucket lock while
+    /// the handler runs. Handlers are expected to signal the test thread and optionally wait.</para>
     /// </remarks>
     internal static class ObjectFlushInjection
     {
