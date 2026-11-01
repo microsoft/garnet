@@ -568,9 +568,10 @@ in-flight count. `OnPartialFlushComplete()` sector-pads and flushes the last obj
 main-log span in the same completion batch. Disposal returns buffers only after their writes complete.
 `PageAsyncFlushResult.RecordError()` retains the first error even when batched writes complete out of order.
 
-Recovery and all-inline flushes use the allocator's live page. Object-bearing Snapshot and ReadOnly flushes use a
-pooled IO-owned page image, copying each record under the publication guard described in section 13.4. Index-preserving
-stamping alone would not protect an asynchronous write from a concurrent capture's reference changes.
+The main-log write always uses the allocator's live page; objectId hint stamping is index-preserving, but metadata
+non-destructiveness alone is not sufficient. Recovery has exclusive access. Snapshot/ReadOnly coordination keeps the
+page resident and prevents those modes from stamping the same page concurrently. A Snapshot checkpoint's capture
+rewrites a record's reference fields only while no flush of that checkpoint has published the record (section 13.4).
 
 The no-copy path also requires `OnDispose` not to tear down flush-critical bytes before the asynchronous page write
 finishes. `OnDispose` implementations must copy off cleanup state and defer clearing those bytes until that write
@@ -584,7 +585,7 @@ first sector from a pooled sector buffer holding the durable prefix followed by 
 prefix comes from the `PartialSectorImage` the previous ReadOnly flush kept of the sector it ended in, or, when no image
 describes that sector (after recovery or a reset), from reading the sector back from the device. If the range below the
 flush was skipped rather than written, because it lies below `BeginAddress`, nothing reads the prefix and it comes from
-the live page. The rest of the span is written from the flush's page image.
+the live page. The rest of the span is written directly from the live page.
 
 Devices do not order overlapping writes, and the object allocator issues adjacent fragments without the `PendingFlush`
 chaining `AllocatorBase` uses for the same reason. So a flush that starts mid-sector issues its writes only once
@@ -886,8 +887,7 @@ special handling — its next checkpoint is simply stamped with the current vers
 | Framed overflow above 128 KB | no payload-sized staging allocation | header/padding/fragments into ring; aligned interior not copied | source array pinned; direct writes split by segment | avoid copying a large payload through the ring |
 | Exact object at most 511 bytes | serializer/ring reused | serializer bytes into reused ring | no | headerless object |
 | Framed object above 511 bytes | serializer/ring reused | serializer bytes into reused ring | no | headers must be reserved/backfilled as chunks close |
-| Main-log recovery path | none | no page copy; whole sectors written from the live page | live memory held through callbacks | exclusive recovery access, including front/back-partial ranges |
-| Object-bearing Snapshot/ReadOnly | none per record; one pooled image per in-flight page | record copied under the publication guard | image held through callbacks | a capture cannot change an async write's reference fields |
+| Main-log live-page path | none | no page copy; whole sectors written from the live page | live memory held through callbacks | Recovery, Snapshot, and ReadOnly, including front/back-partial ranges |
 | All-inline page (empty `objectIdMap`) | none | no object-log writer or ring rented; record walk skipped | live memory held through callbacks | ReadOnly and Snapshot pages with no out-of-line data |
 
 The object serializer and pinned stream are reused across objects within one page flush, and the circular write
@@ -924,7 +924,7 @@ Indentation is call depth. Component branches and lifetime changes are included 
 
 - `ObjectAllocatorImpl.AsyncFlushPagesForReadOnly()` / `WriteAsyncToDeviceForSnapshot()`
   - `ObjectAllocatorImpl.WriteAsync(...)`
-    - use the resident page for object lookup; copy object-bearing records into the IO-owned image under the publication guard
+    - use the resident live page
     - create `ObjectLogWriter` over the supplied pooled `CircularDiskWriteBuffer`
     - for each object-bearing `LogRecord`
       - resolve objectIds from the resident page map
@@ -1392,7 +1392,7 @@ page callback exactly once with the first error; the object log reports durabili
 thread blocks on it. The main log's `FlushedUntilAddress` therefore never covers a record whose object bytes are not
 durable.
 
-A Snapshot flush stamps no floor. It prepares its image from the same resident page before ReadOnly does, and its tail is an address
+A Snapshot flush stamps no floor. It writes the same live page before the ReadOnly flush does, and its tail is an address
 in the checkpoint's object log, which bounds nothing in the main one; the ReadOnly flush keeps an existing floor, so a
 Snapshot stamp would reach the main log. A page buffer cleared for reuse gets a fresh, unstamped header for the same
 reason: a zeroed floor reads as a floor of 0.
@@ -1425,16 +1425,21 @@ during the checkpoint, which records a begin address of zero.
 
 ## 13. Persisting superseded `(v)` values during a checkpoint
 
-A checkpoint recovers version `v`. When a `(v+1)` CopyUpdate (a read-copy-update) supersedes a `(v)` record whose value
-is an object, it gives the new record a shallow clone of the object, so `PostCopyUpdater` changes collections that the
-superseded record's object still references. A flush that serialized the superseded object afterwards would write
-`(v+1)` content as the `(v)` value. Inline and overflow values are copied rather than shared, so only object values are
-at risk.
+A checkpoint recovers version `v`. A `(v+1)` CopyUpdate (a read-copy-update) that supersedes a `(v)` record can leave
+the new record sharing the superseded record's value:
+- An object value: the new record gets a shallow clone, so `PostCopyUpdater` changes collections that the superseded
+  record's object still references.
+- An overflow value whose length is unchanged: `LogRecord.TryCopyFrom` gives the new record the superseded record's
+  array, and `PostCopyUpdater` changes it.
+
+A flush that wrote the superseded record afterwards would write `(v+1)` content as the `(v)` value. Inline values, and
+overflow values whose length changes, are copied rather than shared, so they are not at risk.
 
 This section describes how a Snapshot checkpoint keeps the `(v)` value of each superseded record it recovers. Section
-13.1 defines the terms, section 13.2 gives the flow in pseudocode, and the rest of the section fills in its details.
-FoldOver and streaming snapshot checkpoints instead cache the `(v)` value's serialized bytes on the superseded object
-(`CacheSerializedObjectData`).
+13.1 defines the terms, section 13.2 gives the flow in pseudocode, and sections 13.3 to 13.9 fill in its details for
+object values; section 13.10 gives the differences for overflow values. FoldOver and streaming snapshot checkpoints
+instead cache an object's `(v)` serialized bytes on the superseded object (`CacheSerializedObjectData`); they have no
+equivalent for a shared overflow value.
 
 ### 13.1 Terms and regions
 
@@ -1458,11 +1463,24 @@ During a checkpoint of version `v`, `R` is a `(v)` record and the new record is 
 - The **ReadOnly flush** writes pages to the main log as `ReadOnlyAddress` advances, and their records' components to
   the main object log.
 
-Each flush normally writes a record's components to its own object log and then **stamps** the record's position
-and size hints. A captured source instead retains its direct snapshot reference, including in its main-log image.
-For a page at or above `S`, the ReadOnly flush stamps no record until the Snapshot flush has written the page.
-Serialization, stamping, and copying the record into an IO-owned image share a publication guard with capture.
-The async device write uses that immutable image, not metadata a later capture can change in the live page.
+Each flush writes a record's components to its own object log and then **stamps** the record: it writes their position
+and size hints into the record's position word, in the page in memory. Then it writes the live page to its own file. For
+a page at or above `S`, the ReadOnly flush stamps no record until the Snapshot flush has written the page. So a record's
+image in the snapshot file holds a position in the checkpoint's object log, and its image in the main log holds a
+position in the main object log, except that both images of a captured record keep the capture's position (section
+13.4).
+
+**Publication.** `O`'s phase word (`HeapObjectBase.serializationPhaseInt`) records which writer last **published** `R`,
+that is, wrote `O` to an object log and stamped `R`, and it serializes those writers. It is the field `Serialize`
+already used, so it adds no memory to the object:
+- `SERIALIZING` is the **claim**. A flush or a capture holds it from its object-log write through its last stamp. A
+  superseded `O` is never claimed.
+- `SNAPSHOT_STAMPED(k)`: the Snapshot flush of checkpoint `k` published `R`. `k` is the checkpoint's **tag**, a
+  sequence number assigned at `PREPARE` and held in the word's high bits.
+- `READONLY_STAMPED`: a ReadOnly flush published `R`.
+- `CAPTURED(k)`: checkpoint `k` captured `O`, and `O` is superseded.
+- `SERIALIZED`: `O` is superseded without a capture.
+- `REST`: no writer has published `R`.
 
 **Addresses.**
 
@@ -1491,8 +1509,8 @@ write of its page completes before `PERSISTENCE_CALLBACK`.
 **Captures.**
 - A **capture** is `R`'s `(v)` components, its overflow key if it has one and `O`, written by the CopyUpdate to the
   checkpoint's object log before `PostCopyUpdater` runs.
-- The source record itself stores the capture's position and size hints, with
-  `RecordInfo.HasSnapshotObjectLogReference` identifying its address space.
+- The source record itself stores the capture's position and size hints, and its **marker**,
+  `RecordInfo.HasSnapshotObjectLogReference`, says the stamp is a position in the capturing checkpoint's object log.
 - Checkpoint-level state admits captures until `PERSISTENCE_CALLBACK`, tracks failure and in-flight work, and records
   `L`. It contains no per-record table or serialized index.
 
@@ -1503,35 +1521,45 @@ up holding depends on when it runs relative to the two flushes (section 13.5).
 
 ```text
 PREPARE
-    create the checkpoint's object log and open capture admission
+    create the checkpoint's object log, assign the checkpoint's tag k, and open capture admission
 
 CopyUpdate of R by a (v+1) operation, while the checkpoint is in progress
     give the new record a clone of O                          // shares O's collections
-    if capture admission is open and R is not durable:         // R >= FUA, or a NullDevice main log
-        pos = write R's overflow key, if any, and O to the checkpoint's object log      // O still holds (v)
-        publish pos, read hints, and snapshot-reference marker on R under its publication guard
-        mark O superseded
-        keep O in R                                           // section 13.3
+    if capture admission is open and R is not durable:        // R >= FUA, or a NullDevice main log
+        claim O                                               // waits out a flush that holds the claim
+        switch O's phase:
+            READONLY_STAMPED:                                 // the main-log image holds (v)
+                O = SERIALIZED
+                release O once the ReadOnly flush's write completes
+            SNAPSHOT_STAMPED(k):                              // R's stamp is already (v) in k's object log
+                set R's marker
+                O = CAPTURED(k)
+            otherwise:                                        // no flush of k has published R
+                pos = write R's overflow key, if any, and O to k's object log     // O still holds (v)
+                stamp R with pos, then set R's marker
+                O = CAPTURED(k)
+        keep a captured O in R until R's main-log image is durable                 // section 13.3
     else:
-        mark O superseded
-        release O after PostCopyUpdater
+        O = SERIALIZED
+        release O after PostCopyUpdater, or once a flush writing R completes
     PostCopyUpdater changes the new record's object, and so O's collections
+    // A shared overflow value is captured the same way, and R then gives up the array (section 13.10).
 
-Snapshot flush, in WAIT_FLUSH: each page from S to T
+Snapshot flush of k, in WAIT_FLUSH: each page from S to T
     for each (v) record R on the page that has out-of-line components:
-        under R's publication guard:
-            retain its captured reference, or serialize and stamp its components
-            copy R into the immutable page image
-    write the image to the snapshot file
+        if O is CAPTURED(k) and R is marked:  keep R's stamp
+        else if O is superseded:              write a null value, stamp R, clear R's marker
+        else:                                 claim O, write O, stamp R, clear R's marker; O = SNAPSHOT_STAMPED(k)
+    write the live page to the snapshot file
 
 ReadOnly flush of a page, whenever ReadOnlyAddress advances
     if the page is at or above S:                             // flushes issued before S is fixed are below it
         wait until the Snapshot flush has written the page
     for each record R on the page that has out-of-line components:
-        under R's publication guard:
-            retain a current checkpoint's captured reference and lower L, or serialize to the main object log
-            copy R into the immutable page image
-    write the image to the main log                          // FUA passes the page once it is durable
+        if O is CAPTURED(a) and R is marked, for the active checkpoint a:   keep R's stamp, and lower a's L to R
+        else if O is superseded:              write a null value, stamp R, clear R's marker
+        else:                                 claim O, write O, stamp R, clear R's marker; O = READONLY_STAMPED
+    write the live page to the main log                       // FUA passes the page once it is durable
 
 PERSISTENCE_CALLBACK
     M = min(FUA, T)                                           // S on a NullDevice main log
@@ -1549,8 +1577,9 @@ Recovery from the checkpoint
 
 ### 13.3 What a CopyUpdate does with the superseded object
 
-A CopyUpdate captures `O` whenever `R` is not durable yet: a flush may still write `R` after `PostCopyUpdater`, and the
-CopyUpdate cannot tell which image recovery will read, because `M` is sampled later.
+A CopyUpdate captures `O` whenever `R` is not durable yet and no ReadOnly flush has written it (section 13.4): a flush may
+still write `R` after `PostCopyUpdater`, and the CopyUpdate cannot tell which image recovery will read, because `M` is
+sampled later.
 
 **A durable `R` is not captured, and the CopyUpdate releases `O` right after `PostCopyUpdater`.** The ReadOnly flush
 serialized `O` before the CopyUpdate, and recovery reads that image: `R` stays below `M`, because FUA only advances and
@@ -1568,8 +1597,8 @@ so any later serialization of it writes a null value, and the Snapshot flush use
 `R` keeps `O` so that it stays a well-formed object record while the flushes may still write it:
 - Releasing `O` rewrites `R`'s value field as inline in the page in memory, and a flush writing that page at the same
   time could write a torn record.
-- The Snapshot flush, if it has not written `R` yet, stamps the capture's position into `R`. A released `R` has no
-  object value to stamp, so its snapshot image would come back with no value.
+- A flush that has not written `R` yet finds the capture through `O`'s phase and keeps `R`'s stamp. A released `R` has
+  no object value, so the flush would write its image with no value.
 - Recovery stamps the main-log image of a captured `R` with the position of the capture's copy (section 13.7), which
   needs `R` to still be an object record.
 - Freeing `O`'s `ObjectIdMap` slot would let another record take it while a flush may still look up `R`'s object there.
@@ -1593,21 +1622,39 @@ disk, is a copy of a durable main-log record.
 
 **A capture that fails** does not fail the CopyUpdate. The checkpoint fails at `PERSISTENCE_CALLBACK`.
 
-### 13.4 How the flushes write a superseded record
+### 13.4 How the flushes and a capture publish `R`
 
-**Both flushes retain a captured `R`'s position and hints.** The Snapshot flush writes them into its snapshot image.
-The ReadOnly flush writes them with the persistent marker into its main-log image and lowers the checkpoint's `L`.
-Neither serializes the shallow-shared object again.
+**Both flushes keep a captured `R`'s stamp.** The Snapshot flush writes it into its snapshot image. The ReadOnly flush
+writes it, with the marker, into its main-log image, and lowers the checkpoint's `L`. Neither serializes the shared
+object again.
 
-The publication guard covers serialization, stamping all reference fields, and copying the record into an IO-owned
-page image. The serializer's own claim is insufficient: it ends before allocator stamping. Without the wider guard,
-an already-running flush could overwrite a capture with its older result. Without an immutable IO image, a capture
-could change reference fields while the asynchronous device write reads them.
+**The claim serializes the publishers.** A flush and a capture each write `O` to an object log and stamp `R`. Each holds
+`O`'s claim from its object-log write through its last stamp, so one finishes before the other starts, and `R` never
+ends up with one writer's position and another's hints or marker. The store's value serializer calls back
+`IHeapObject.Serialize` inside the publisher's write; it runs under the publisher's claim, which a thread-static field
+identifies. Any other `Serialize` claims `O` for its own write and leaves the phase as it found it. A CopyUpdate never
+changes `O` while it is claimed: the capture, and the marking of `O` as superseded, wait for the claim.
 
-If a flush finishes copying `R` before the CopyUpdate, its image already contains the correct `(v)` data. A later
-capture is redundant for that image and does not lower `L`. A later flush can still use the captured reference.
-An earlier checkpoint's capture is not reused by a new checkpoint; the superseded source can serialize as null there
-because that checkpoint contains its replacement.
+**A capture never changes a record that a device write may be reading.** Both flushes write the live page, so a device
+can read `R`'s position word and hints until the write completes. A capture therefore rewrites them only while no flush
+of its checkpoint has published `R`, which `O`'s phase tells it:
+- After checkpoint `k`'s Snapshot flush published `R` (`SNAPSHOT_STAMPED(k)`), `R`'s stamp is already `(v)` in `k`'s
+  object log. The capture only sets the marker, which is one `RecordInfo` word that a device sees whole.
+- After a ReadOnly flush published `R` (`READONLY_STAMPED`), the main-log image holds `(v)`, and so does the snapshot
+  image if `R` is at or above `S`. The capture does nothing.
+- A ReadOnly flush writes a page at or above `S` only after the Snapshot flush's write of that page has completed, and
+  the Snapshot flush writes nothing below `S`. So neither flush writes a page while the other's write of it is in flight.
+
+**The tag tells one checkpoint's publication from another's.** A marker can outlive its checkpoint while `R` stays
+unflushed in the mutable region, and an object that checkpoint `k`'s Snapshot flush published can be updated in place
+after `k` and then captured by a later checkpoint. So a capture marks only after its own checkpoint's Snapshot flush, and
+a flush keeps `R`'s stamp only for the active checkpoint's capture. A stale capture's `R` is superseded, and the flush
+writes it with a null value. Tags wrap at `HeapObjectBase.MaxCheckpointTag`.
+
+**A ReadOnly flush reads the active checkpoint only after finding the capture.** A checkpoint can start while the flush
+walks the page, and capture `R` before the flush reaches it. If the capturing checkpoint has ended by the time the flush
+reaches `R`, it no longer needs this image: the flush had not completed when that checkpoint sampled `M`, so the
+checkpoint recovers `R` from its snapshot file.
 
 ### 13.5 Timing cases
 
@@ -1617,8 +1664,8 @@ Each row is one order of the CopyUpdate and the flushes; by section 13.4, every 
 
 | The CopyUpdate runs | Capture | Main-log image | Recovery reads |
 |---|---|---|---|
-| before the ReadOnly flush serializes `R` | yes | marked snapshot reference | the capture, copied |
-| after the ReadOnly flush copies its IO image, before its write completes | yes, redundant | `(v)` in the main object log | the main-log image |
+| before the ReadOnly flush writes `R` | yes | marked capture reference | the capture, copied |
+| after the ReadOnly flush writes `R`, before its write completes | no; `O` is released once it completes | `(v)` | the main-log image |
 | after the ReadOnly flush's write completes | no; `O` is released | `(v)` | the main-log image |
 
 **`R` at or above `S`.** The Snapshot flush writes `R` first, and the ReadOnly flush writes it after the Snapshot flush
@@ -1627,19 +1674,19 @@ snapshot file otherwise.
 
 | The CopyUpdate runs | Capture | Snapshot image | Main-log image | Recovery reads, `R` below `M` | Recovery reads, `R` at or above `M` |
 |---|---|---|---|---|---|
-| before the Snapshot flush serializes `R` | yes | the capture | marked snapshot reference | the capture, copied | the capture |
-| after the Snapshot flush copies its IO image, before the ReadOnly flush does | yes | `(v)` | marked snapshot reference | the capture, copied | the Snapshot flush's `(v)`; the capture is unused |
-| after the ReadOnly flush copies its IO image, before its write completes | yes, redundant | `(v)` | `(v)` | the main-log image | the Snapshot flush's `(v)`; the capture is unused |
+| before the Snapshot flush writes `R` | yes | the capture | marked capture reference | the capture, copied | the capture |
+| after the Snapshot flush writes `R`, before the ReadOnly flush does | the marker only | `(v)` | marked reference to the Snapshot flush's `(v)` | the Snapshot flush's `(v)`, copied | the Snapshot flush's `(v)` |
+| after the ReadOnly flush writes `R`, before its write completes | no; `O` is released once it completes | `(v)` | `(v)` | the main-log image | the Snapshot flush's `(v)` |
 | after the ReadOnly flush's write completes | no; `O` is released | `(v)` | `(v)` | the main-log image | not possible: `R` is below `M` |
 
 - **Neither the CopyUpdate nor the ReadOnly flush can tell whether `R` will land below `M`.** That is decided when `M`
-  is sampled, so every `R` that is not durable is captured. Only main-log images that actually retain a snapshot
-  reference lower `L`.
+  is sampled, so every `R` that no ReadOnly flush has written is captured, or marked. Only main-log images that keep a
+  marked reference lower `L`.
 - **In the first table, captures come only from CopyUpdates before `S` is fixed** (section 13.3).
-- **When the Snapshot flush has already serialized `R`,** its image holds `(v)`, so the capture matters only if `R`
-  lands below `M`, where recovery reads the ReadOnly image.
-- **When the ReadOnly flush has already serialized `R`,** its image holds `(v)` and the capture is redundant. The
-  CopyUpdate cannot tell, because `R` is not durable until that flush's write completes.
+- **When the Snapshot flush has already written `R`,** its image holds `(v)`, and the marker lets the ReadOnly flush keep
+  that stamp, so recovery copies the Snapshot flush's `(v)` if `R` lands below `M`.
+- **When the ReadOnly flush has already written `R`,** its image holds `(v)`, and the CopyUpdate leaves `R` alone; the
+  release of `O` waits for that flush's write, because the device may still be reading `R`.
 - **On a `NullDevice` main log,** `M` is `S` and the ReadOnly flush writes no object data. Every captured record that
   the checkpoint recovers is read from the snapshot file.
 
@@ -1650,8 +1697,8 @@ point takes no capture and releases `O`. The checkpoint waits for the captures a
 needs a capture:
 - If `R` is below `M`, the ReadOnly flush's write of `R`'s page completed before the sample, so the flush serialized `O`
   before any later CopyUpdate.
-- If `R` is at or above `M`, the Snapshot flush completed before `PERSISTENCE_CALLBACK`, so it serialized `O`, or
-  stamped `R`'s capture, before any later CopyUpdate.
+- If `R` is at or above `M`, the Snapshot flush completed before `PERSISTENCE_CALLBACK`, so it wrote `O`, or kept `R`'s
+  capture, before any later CopyUpdate.
 
 Closed checkpoint-level admission stays published until completion or abort, so CopyUpdates in that interval release
 their sources. There is no per-record table or index to persist.
@@ -1729,3 +1776,39 @@ checkpoint is independent of the earlier snapshot even if that immutable record 
 Successive overlap ranges do not imply recovering multiple snapshots. The selected checkpoint's `L` and `M` delimit
 its marked main-log images, while its snapshot suffix is selected directly by token. See the
 [two-snapshot example](checkpoint-recovery.md#consecutive-snapshots-and-the-shared-main-log).
+
+### 13.10 Overflow values
+
+An overflow value is an array `A` (`OverflowByteArray`) in the record's `ObjectIdMap` slot. When a CopyUpdate keeps the
+value's length, `LogRecord.TryCopyFrom` gives the new record `R'` the array `A` of the source `R`, and `PostCopyUpdater`
+changes it. A Snapshot checkpoint captures `R`'s `A` as it captures an object, after the new record is inserted and
+before `PostCopyUpdater`, with these differences.
+
+**The new record must not change `A` before `PostCopyUpdater`.** `CopyUpdater` runs before the new record is inserted,
+which is before the capture. So a `CopyUpdater` must not write a value it shares with the source; Garnet's SETBIT,
+BITFIELD and SETRANGE make their change in `PostCopyUpdater`. That also leaves the source untouched when the insertion
+fails and the operation retries.
+
+**`A`'s header holds the claim, the phase and the owner.** The header is 24 bytes: the data's start and end offsets, a
+phase word encoded as an object's, and the **owner**, the address of the record the phase describes. The owner is needed
+because records share `A` outside captures too: a CopyUpdate that needs no capture, for example with no checkpoint in
+progress, leaves `R` and `R'` sharing `A`, and either may publish it. Records sharing `A` are versions of one key, so:
+- A capture of `R` acts on `READONLY_STAMPED` or `SNAPSHOT_STAMPED(k)` only if `R` owns the phase. A phase another
+  record owns means no flush has published `R`.
+- A flush of a record replaces `A`'s phase unless a newer version owns it. The walkers' address order already keeps an
+  older version's flush ahead of a newer version's publication; the rule holds if that ever changes.
+
+**The capture detaches `R` from `A` after `PostCopyUpdater`.** `PostCopyUpdater` receives the source and may read its
+value, so the capture keeps `A`'s claim through `PostCopyUpdater`. It then points `R`'s slot at the checkpoint's
+**sentinel**, an array with no data that each Snapshot checkpoint creates, credits `R`'s share of `A`'s heap to the size
+tracker, and releases `A` at `REST`: `A` now belongs to `R'` alone, which no flush has published. Replacing the slot
+changes only the `ObjectIdMap`, not `R`'s page bytes, so a device write of `R`'s page can be in flight. `R` needs no
+deferred release: the sentinel holds no memory of its own.
+
+**A flush identifies the capture by the sentinel.** A marked record whose slot holds the active checkpoint's sentinel
+keeps its stamp, as a captured object does. Any other sentinel is stale, and the flush writes the record, which is
+superseded, with an empty value.
+
+**A flush checks the slot again after claiming `A`.** The walk reads `R`'s slot before claiming `A`, and a capture may
+detach `R` in between, after which `A` may hold the new version's change. A flush that finds a different array in the slot
+releases `A` and decides again from what the slot holds.

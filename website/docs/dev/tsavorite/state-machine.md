@@ -501,8 +501,9 @@ hook do release transition-in through the worker's `finally` block.
 ## What the state machine does *not* order: in-flight data capture
 
 This is the single easiest thing to get wrong when reasoning about record
-lifetime during a checkpoint: the object allocator resolves fields against the
-live object map before copying each serialized record into its IO-owned image.
+lifetime during a checkpoint, and it became materially more important with
+no-copy flushing, where the allocator writes the **live page** rather than a
+copy.
 
 The state machine gives two strong guarantees, and neither one is the guarantee
 people reach for:
@@ -541,10 +542,9 @@ Throughout that span, ordinary `(v+1)` traffic — `Delete`, and RMW that finds 
 expired source — supersedes `(v)` records and would, in the absence of a guard,
 immediately dispose them. Disposal is destructive: it runs
 `LogField.ClearObjectIdAndConvertToInline`, which calls `objectIdMap.Free` and
-flips the field to inline **in the live record**. Snapshot serialization resolves
-ids against the **live** map before copying the completed record image. Releasing
-and reusing a slot before that lookup can therefore serialize an unrelated object;
-an IO-owned image protects only records whose lookup and publication are complete.
+flips the field to inline **in the live record**. The Snapshot flush resolves the
+record's object id against the **live** map, so once another record reuses that
+slot, the checkpoint serializes an unrelated object.
 
 `IsFrozen` exists for exactly this window, and `OnDisposeDeletedSource` declines
 disposal while it holds:
@@ -565,9 +565,9 @@ through a shallow clone; it says nothing about the **slot**. Both are needed.
 
 ### The same shape, without a checkpoint
 
-ReadOnly flushing introduces a second, structurally identical window that has
+No-copy flushing introduces a second, structurally identical window that has
 nothing to do with the state machine at all. The object allocator's read-only
-flush serializes from the live object map before copying its IO image, so between the moment a record
+flush serializes directly from the live page, so between the moment a record
 becomes immutable and the moment its bytes are durable, it is just as
 unsafe to dispose:
 
