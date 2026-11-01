@@ -1,0 +1,54 @@
+{
+  "docusaurusVersion": "3.9.2",
+  "siteVersion": "0.0.0",
+  "pluginVersions": {
+    "docusaurus-plugin-content-docs": {
+      "type": "package",
+      "name": "@docusaurus/plugin-content-docs",
+      "version": "3.9.2"
+    },
+    "docusaurus-plugin-content-blog": {
+      "type": "package",
+      "name": "@docusaurus/plugin-content-blog",
+      "version": "3.9.2"
+    },
+    "docusaurus-plugin-content-pages": {
+      "type": "package",
+      "name": "@docusaurus/plugin-content-pages",
+      "version": "3.9.2"
+    },
+    "docusaurus-plugin-debug": {
+      "type": "package",
+      "name": "@docusaurus/plugin-debug",
+      "version": "3.9.2"
+    },
+    "docusaurus-plugin-svgr": {
+      "type": "package",
+      "name": "@docusaurus/plugin-svgr",
+      "version": "3.9.2"
+    },
+    "docusaurus-theme-classic": {
+      "type": "package",
+      "name": "@docusaurus/theme-classic",
+      "version": "3.9.2"
+    },
+    "docusaurus-plugin-clarity": {
+      "type": "package",
+      "name": "docusaurus-plugin-clarity",
+      "version": "2.1.0"
+    },
+    "docusaurus-theme-mermaid": {
+      "type": "package",
+      "name": "@docusaurus/theme-mermaid",
+      "version": "3.9.2"
+    },
+    "docusaurus-theme-github-codeblock": {
+      "type": "package"
+    },
+    "@easyops-cn/docusaurus-search-local": {
+      "type": "package",
+      "name": "@easyops-cn/docusaurus-search-local",
+      "version": "0.52.2"
+    }
+  }
+}

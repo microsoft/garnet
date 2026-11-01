@@ -1,0 +1,28 @@
+{
+  "id": "welcome/roadmap",
+  "title": "Garnet Roadmap",
+  "description": "We would love to get feedback on what features are most important to add to Garnet. Currently, the areas we would like to",
+  "source": "@site/docs/welcome/roadmap.md",
+  "sourceDirName": "welcome",
+  "slug": "/welcome/roadmap",
+  "permalink": "/garnet/docs/welcome/roadmap",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/welcome/roadmap.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "roadmap",
+    "sidebar_label": "Roadmap",
+    "title": "Garnet Roadmap"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Compatibility",
+    "permalink": "/garnet/docs/welcome/compatibility"
+  },
+  "next": {
+    "title": "FAQ",
+    "permalink": "/garnet/docs/welcome/faq"
+  }
+}
