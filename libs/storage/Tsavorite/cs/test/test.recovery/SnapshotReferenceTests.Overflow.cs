@@ -471,37 +471,137 @@ namespace Tsavorite.test.recovery
         }
 
         /// <summary>
-        /// A publication claim reports the owner of the phase word it takes. Between reading the word and taking it, another publisher can claim
-        /// the array and release the same word for a different record; a claim that kept the owner it saw first would act on a stale publication.
+        /// A capture acts on the publication its claim takes over. As in <see cref="CaptureIgnoresThePublicationOfAnotherRecordSharingTheValue"/>,
+        /// the shared array carries an older version's ReadOnly publication. Here the ReadOnly flush publishes the shared record after its capture
+        /// reads the array's phase word and before its CAS. The word has the same value both times, so the CAS succeeds, and the capture must see
+        /// that the ReadOnly flush published its source: it captures nothing and leaves the stamp the flush's page write carries, and recovery
+        /// reads the source's (v) value from the main log. Acting on the older version's publication instead, it would restamp and mark the
+        /// source, and recovery would invalidate the marked image and return the older version's value.
+        /// <para>The source must be below <c>S</c>, so the ReadOnly flush that publishes it is issued before <c>WAIT_FLUSH</c>. Above <c>S</c>,
+        /// the Snapshot flush publishes it first, which changes the word.</para>
         /// </summary>
         [Test]
-        [Category("TsavoriteKV")]
-        public void ClaimReportsTheOwnerOfThePhaseWordItTakes()
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task CaptureSkipsASourceTheReadOnlyFlushPublishesBeforeTheClaim([Values] bool overflowKeys)
         {
             if (!ObjectFlushInjection.IsAvailable)
-                Assert.Ignore("ObjectFlushInjection is compiled out in Release, so the claim cannot be interleaved.");
+                Assert.Ignore("ObjectFlushInjection is compiled out in Release, so the flush and the capture cannot be interleaved.");
 
-            const long firstOwner = 1L << 20;
-            const long secondOwner = 2L << 20;
-            var array = new OverflowByteArray(OverflowValueLength, startOffset: 0, endOffset: 0, zeroInit: true);
-            array.ClaimForPublication(out _, out _);
-            array.ReleasePublicationClaim(HeapObjectBase.ReadOnlyStampedWord, firstOwner);
+            using var flushAtSource = new ManualResetEventSlim(false);
+            using var releaseFlushAtSource = new ManualResetEventSlim(false);
+            using var captureSampledWord = new ManualResetEventSlim(false);
+            using var releaseCapture = new ManualResetEventSlim(false);
+            using var flushPublishedSource = new ManualResetEventSlim(false);
+            using var releaseFlushAfterSource = new ManualResetEventSlim(false);
+            var rmwThreadId = -1;
 
-            var interleaved = false;
-            ObjectFlushInjection.Hook = (phase, address) =>
+            Guid token;
+            long sharedAddress;
+            var store = CreateOverflowStore(overflowKeys);
+            var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
+            try
             {
-                if (phase != ObjectFlushPhase.PublicationClaimSampled || interleaved)
-                    return;
-                interleaved = true;
-                array.ClaimForPublication(out _, out _);
-                array.ReleasePublicationClaim(HeapObjectBase.ReadOnlyStampedWord, secondOwner);
-            };
+                // The ReadOnly flush publishes the first record, and the CopyUpdate of the now read-only record takes its array.
+                _ = UpsertOverflow(store, 1, InitialFill);
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                sharedAddress = store.Log.TailAddress;
+                FillRmw(store, 1, CapturedFill);
+                Assert.That(store.hlogBase._wrapper.CreateLogRecord(sharedAddress).DataHeader.ValueIsOverflow, Is.True,
+                    "The CopyUpdate did not create the record expected");
 
-            array.ClaimForPublication(out var priorWord, out var priorOwner);
-            array.ReleasePublicationClaim(priorWord, priorOwner);
-            Assert.That(interleaved, Is.True, "The other publisher's claim did not run between the word's read and the CAS");
-            Assert.That(priorWord, Is.EqualTo(HeapObjectBase.ReadOnlyStampedWord));
-            Assert.That(priorOwner, Is.EqualTo(secondOwner), "The claim reported the owner of a publication it did not take");
+                ObjectFlushInjection.Hook = (phase, logicalAddress) =>
+                {
+                    // The capture's claim runs on the RMW's thread; the flush's claim, on a flush thread, passes.
+                    if (phase == ObjectFlushPhase.PublicationClaimSampled)
+                    {
+                        if (Environment.CurrentManagedThreadId == Volatile.Read(ref rmwThreadId) && !captureSampledWord.IsSet)
+                        {
+                            captureSampledWord.Set();
+                            _ = releaseCapture.Wait(TimeSpan.FromSeconds(30));
+                        }
+                        return;
+                    }
+                    if (logicalAddress != sharedAddress)
+                        return;
+                    if (phase == ObjectFlushPhase.AfterCapture && !flushAtSource.IsSet)
+                    {
+                        flushAtSource.Set();
+                        _ = releaseFlushAtSource.Wait(TimeSpan.FromSeconds(30));
+                    }
+                    else if (phase == ObjectFlushPhase.AfterRecordWritten && !flushPublishedSource.IsSet)
+                    {
+                        flushPublishedSource.Set();
+                        _ = releaseFlushAfterSource.Wait(TimeSpan.FromSeconds(30));
+                    }
+                };
+
+                store.stateMachineDriver.UnsafeRegisterCallback(pause);
+                Assert.That(store.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot), Is.True);
+                Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True);
+
+                // Issued before WAIT_FLUSH, the ReadOnly flush of the shared record keeps it below S. Hold it before it claims the array.
+                var readOnlyShift = Task.Run(() => store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true));
+                Assert.That(flushAtSource.Wait(TimeSpan.FromSeconds(30)), Is.True, "The ReadOnly flush never reached the shared record");
+
+                // The (v+1) CopyUpdate's capture reads the array's phase word, the first record's ReadOnly publication, and is held before its CAS.
+                var newAddress = store.Log.TailAddress;
+                var rmw = Task.Run(() =>
+                {
+                    Volatile.Write(ref rmwThreadId, Environment.CurrentManagedThreadId);
+                    FillRmw(store, 1, LaterFill);
+                });
+                Assert.That(captureSampledWord.Wait(TimeSpan.FromSeconds(30)), Is.True, "The CopyUpdate did not try to capture the shared record");
+
+                // The ReadOnly flush publishes the shared record, which leaves the same phase word with the shared record as its owner.
+                releaseFlushAtSource.Set();
+                Assert.That(flushPublishedSource.Wait(TimeSpan.FromSeconds(30)), Is.True, "The ReadOnly flush did not publish the shared record");
+                var publishedStamp = store.hlogBase._wrapper.CreateLogRecord(sharedAddress).GetObjectLogRecordRef();
+
+                releaseCapture.Set();
+                Assert.That(rmw.Wait(TimeSpan.FromSeconds(30)), Is.True, "The CopyUpdate did not complete");
+                Assert.That(store.hlogBase._wrapper.CreateLogRecord(newAddress).Info.IsInNewVersion, Is.True, "The RMW was not a (v+1) CopyUpdate");
+                Assert.That(SourceIsMarked(store, sharedAddress), Is.False,
+                    "The capture marked a source that the ReadOnly flush published before the capture's claim");
+                Assert.That(store.hlogBase._wrapper.CreateLogRecord(sharedAddress).GetObjectLogRecordRef(), Is.EqualTo(publishedStamp),
+                    "The capture restamped a source that the ReadOnly flush had published");
+
+                releaseFlushAfterSource.Set();
+                Assert.That(readOnlyShift.Wait(TimeSpan.FromSeconds(30)), Is.True, "The ReadOnly shift did not complete");
+                pause.Release.Set();
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+
+                HybridLogCheckpointInfo checkpoint = default;
+                try
+                {
+                    checkpoint.Recover(token, store.checkpointManager);
+                    Assert.That(checkpoint.info.snapshotFileLogicalStartAddress, Is.GreaterThan(sharedAddress),
+                        "The shared record must be below S, where only the ReadOnly flush writes it");
+                }
+                finally
+                {
+                    checkpoint.Dispose();
+                }
+            }
+            finally
+            {
+                releaseFlushAtSource.Set();
+                releaseCapture.Set();
+                releaseFlushAfterSource.Set();
+                pause.Release.Set();
+                ObjectFlushInjection.Reset();
+                store.Dispose();
+            }
+
+            store = CreateOverflowStore(overflowKeys);
+            try
+            {
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+                ReadOverflowVersion(store, 1, sharedAddress, CapturedFill, "after the ReadOnly flush published the source during its capture's claim");
+            }
+            finally
+            {
+                store.Dispose();
+            }
         }
     }
 }
