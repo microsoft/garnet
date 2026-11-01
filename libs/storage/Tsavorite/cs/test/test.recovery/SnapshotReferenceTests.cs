@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -417,6 +418,93 @@ namespace Tsavorite.test.recovery
             finally
             {
                 store.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A runtime read that reaches a marked main-log image skips it, because only recovery reads the snapshot object log that holds its
+        /// components, and it frees no transient ObjectIdMap slot it did not allocate. A read whose overflow key does not match the record it
+        /// reads frees none either, and key-version iteration does not report the skipped image.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RuntimeReadsSkipAMarkedImageWithoutFreeingItsSlots([Values] bool overflowKeys)
+        {
+            var key = new TestObjectKey { key = 1 };
+            long sourceAddress, otherKeyAddress;
+            var store = CreateStore(overflowKeys);
+            try
+            {
+                using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions()))
+                {
+                    sourceAddress = store.Log.TailAddress;
+                    _ = session.BasicContext.Upsert(key, new SharedListHeapObject([1, 2, 3]), Empty.Default);
+                    otherKeyAddress = store.Log.TailAddress;
+                    var nextKey = 2;
+                    while (store.hlogBase.GetPage(store.Log.TailAddress) < 2)
+                        _ = session.BasicContext.Upsert(new TestObjectKey { key = nextKey++ }, new SharedListHeapObject([nextKey]), Empty.Default);
+                    _ = session.BasicContext.Upsert(new TestObjectKey { key = nextKey }, new SharedListHeapObject([nextKey]), Empty.Default);
+                }
+
+                // The capture marks the source, and the ReadOnly flush during the checkpoint writes the marked image.
+                var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
+                store.stateMachineDriver.UnsafeRegisterCallback(pause);
+                try
+                {
+                    Assert.That(store.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot), Is.True);
+                    Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True);
+                    Rmw(store, sourceAddress, expectCapture: true);
+                    store.Log.ShiftReadOnlyAddress(store.hlogBase.GetLogicalAddressOfStartOfPage(1), wait: true);
+                }
+                finally
+                {
+                    pause.Release.Set();
+                }
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+                store.Log.FlushAndEvict(wait: true);
+
+                using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions()))
+                {
+                    Assert.That(ReadAtAddress(session, sourceAddress).Found, Is.False, "A read returned the marked image");
+                    if (overflowKeys)
+                        Assert.That(ReadAtAddress(session, otherKeyAddress).Found, Is.False, "A read returned a record with another overflow key");
+                }
+
+                ImmutableRegionScanTests.ReportingScan scan = new();
+                _ = store.Log.IterateKeyVersions(ref scan, key);
+                Assert.That(scan.Failure, Is.Null, $"Key-version iteration failed: {scan.Failure}");
+
+                // The CopyUpdate's list holds the source's three items and the one the RMW added.
+                (int, string)[] expectedVersions = [(key.key, "list:4")];
+                Assert.That(scan.Records.Select(r => (r.Key, r.Value)), Is.EqualTo(expectedVersions),
+                    "Key-version iteration must report only the CopyUpdate's record");
+
+                // Every pending read has completed, so each slot the transient map has handed out is free again, exactly once.
+                var transientMap = store.hlogBase._wrapper.TransientObjectIdMap;
+                List<int> freeSlots = [];
+                while (transientMap.freeSlots.TryPop(out var slot))
+                    freeSlots.Add(slot);
+                Assert.That(freeSlots, Has.All.LessThan(transientMap.Count), "A read freed a slot the transient map never handed out");
+                Assert.That(freeSlots, Is.Unique, "A read freed a transient slot twice");
+            }
+            finally
+            {
+                store.Dispose();
+            }
+
+            static Status ReadAtAddress(ClientSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions, ClassStoreFunctions, ClassAllocator> session,
+                long address)
+            {
+                TestObjectInput input = default;
+                TestObjectOutput output = new();
+                ReadOptions readOptions = default;
+                var status = session.BasicContext.ReadAtAddress(address, new TestObjectKey { key = 1 }, ref input, ref output, ref readOptions, out _);
+                if (status.IsPending)
+                {
+                    Assert.That(session.BasicContext.CompletePendingWithOutputs(out var outputs, wait: true), Is.True);
+                    (status, _) = GetSinglePendingResult(outputs);
+                }
+                return status;
             }
         }
 

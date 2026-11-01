@@ -190,6 +190,11 @@ namespace Tsavorite.core
                     return false;
                 }
 
+                // The walk went below BeginAddress without finding the key, so it has no older version. The record left in the request, if
+                // any, is one the walk rejected.
+                if (request.logicalAddress < BeginAddress)
+                    return false;
+
                 request.diskLogRecord.InfoRef.ClearBitsForDiskImages();
                 if (storeFunctions.CallOnDiskRead)
                     storeFunctions.OnDiskRead(ref request.diskLogRecord.logRecord);

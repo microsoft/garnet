@@ -2285,6 +2285,10 @@ namespace Tsavorite.core
             ref var diskLogRecord = ref ctx.diskLogRecord;
             if (diskLogRecord.Info.HasSnapshotObjectLogReference)
             {
+                // A marked image's components are in a checkpoint's snapshot object log, which only recovery reads, so a runtime read skips
+                // the record. Its out-of-line fields still hold the flush's slot ids and size hints rather than transient slots; clear them
+                // without freeing, so the caller's dispose of the record frees nothing it does not own.
+                diskLogRecord.logRecord.OnDeserializationError(keyWasSet: false);
                 prevAddressToRead = diskLogRecord.Info.PreviousAddress;
                 return false;
             }
