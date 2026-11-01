@@ -168,13 +168,14 @@ namespace Tsavorite.core
                     continue;
                 }
 
-                // The owner is written before the phase word is released, so reading it after the word and then taking the word by CAS
-                // yields a consistent pair.
-                var owner = Volatile.Read(ref header.owner);
+                // Test-only interleave point: another publisher can claim and release this same word here.
+                ObjectFlushInjection.At(ObjectFlushPhase.PublicationClaimSampled, 0);
                 if (Interlocked.CompareExchange(ref header.phaseWord, (int)SerializationPhase.SERIALIZING, word) == word)
                 {
+                    // Read the owner only now that the claim is held. Only a claim holder writes it, so it matches the word this CAS took.
+                    // Read before the CAS, it could belong to a publisher that claimed and released this same word in between.
                     priorWord = word;
-                    priorOwner = owner;
+                    priorOwner = Volatile.Read(ref header.owner);
                     return;
                 }
             }

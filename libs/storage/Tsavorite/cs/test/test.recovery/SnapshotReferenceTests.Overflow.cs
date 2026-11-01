@@ -469,5 +469,39 @@ namespace Tsavorite.test.recovery
                 store.Dispose();
             }
         }
+
+        /// <summary>
+        /// A publication claim reports the owner of the phase word it takes. Between reading the word and taking it, another publisher can claim
+        /// the array and release the same word for a different record; a claim that kept the owner it saw first would act on a stale publication.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ClaimReportsTheOwnerOfThePhaseWordItTakes()
+        {
+            if (!ObjectFlushInjection.IsAvailable)
+                Assert.Ignore("ObjectFlushInjection is compiled out in Release, so the claim cannot be interleaved.");
+
+            const long firstOwner = 1L << 20;
+            const long secondOwner = 2L << 20;
+            var array = new OverflowByteArray(OverflowValueLength, startOffset: 0, endOffset: 0, zeroInit: true);
+            array.ClaimForPublication(out _, out _);
+            array.ReleasePublicationClaim(HeapObjectBase.ReadOnlyStampedWord, firstOwner);
+
+            var interleaved = false;
+            ObjectFlushInjection.Hook = (phase, address) =>
+            {
+                if (phase != ObjectFlushPhase.PublicationClaimSampled || interleaved)
+                    return;
+                interleaved = true;
+                array.ClaimForPublication(out _, out _);
+                array.ReleasePublicationClaim(HeapObjectBase.ReadOnlyStampedWord, secondOwner);
+            };
+
+            array.ClaimForPublication(out var priorWord, out var priorOwner);
+            array.ReleasePublicationClaim(priorWord, priorOwner);
+            Assert.That(interleaved, Is.True, "The other publisher's claim did not run between the word's read and the CAS");
+            Assert.That(priorWord, Is.EqualTo(HeapObjectBase.ReadOnlyStampedWord));
+            Assert.That(priorOwner, Is.EqualTo(secondOwner), "The claim reported the owner of a publication it did not take");
+        }
     }
 }

@@ -24,7 +24,11 @@ namespace Tsavorite.core
         /// <summary>Snapshot coordination has entered <c>CapturingCutoff</c> but has not yet sampled the ReadOnly cutoff. This is
         /// the window in which a ReadOnly worker can publish <c>LastIssuedFlushedUntilAddress</c> and must still be classified
         /// correctly, either inside the cutoff cohort or as post-cutoff. The address passed is the cutoff candidate at entry.</summary>
-        SnapshotCutoffCapturing
+        SnapshotCutoffCapturing,
+
+        /// <summary>A publication claim on an overflow array has read the array's phase word and is about to take it by CAS. Another
+        /// publisher can claim and release the same word with a different owner here. The address passed is 0.</summary>
+        PublicationClaimSampled
     }
 
     /// <summary>
