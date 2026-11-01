@@ -118,42 +118,62 @@ namespace Tsavorite.core
         /// in Key and Value data. This is used for iteration. Note that the objects are not removed from the allocator-page map, so for iteration they may temporarily be in both.
         /// </summary> 
         /// <remarks>This is ONLY to be done for transient log records, not records on the main log.</remarks>
+        /// <returns>False if the record's overflow key had been released when it was copied; see <see cref="TryRemapOverPinnedTransientMemory"/>.
+        /// <paramref name="logRecord"/> must not be used then.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static LogRecord CreateRemappedOverPinnedTransientMemory(long physicalAddress, ObjectIdMap allocatorMap, ObjectIdMap transientMap)
+        public static bool TryCreateRemappedOverPinnedTransientMemory(long physicalAddress, ObjectIdMap allocatorMap, ObjectIdMap transientMap, out LogRecord logRecord)
         {
-            var logRecord = new LogRecord(physicalAddress, transientMap);
-            logRecord.RemapOverPinnedTransientMemory(allocatorMap, transientMap);
-            return logRecord;
+            logRecord = new LogRecord(physicalAddress, transientMap);
+            return logRecord.TryRemapOverPinnedTransientMemory(allocatorMap, transientMap);
         }
 
         /// <summary>Remaps the object Ids to the transient map.</summary>
-        /// <remarks>This is ONLY to be done for transient log records, not records on the main log.</remarks>
-        public readonly void RemapOverPinnedTransientMemory(ObjectIdMap allocatorMap, ObjectIdMap transientMap)
+        /// <remarks>
+        /// <para>This is ONLY to be done for transient log records, not records on the main log.</para>
+        /// <para>A scan copies a record on a page entirely below SafeReadOnlyAddress without a lock, so the copy can be taken while the operation that
+        /// superseded the record, or the deferred-disposal drain, releases its out-of-line fields. Each release frees the field's slot, then writes
+        /// <see cref="ObjectIdMap.InvalidObjectId"/> into the field, then publishes an inline header. So a field whose slot id is
+        /// <see cref="ObjectIdMap.InvalidObjectId"/>, or whose slot no longer holds a component of the field's kind, has been released:</para>
+        /// <list type="bullet">
+        /// <item>A released value resolves to nothing: a null value object, or an empty overflow value.</item>
+        /// <item>A released overflow key cannot be reported, so the remap fails. A key is released only when a sealed and invalidated record is
+        /// disposed: an elision, a free-listing, or an abandoned insert.</item>
+        /// </list>
+        /// <para>A slot that still holds a component holds this record's when the record's page lies entirely below SafeReadOnlyAddress: nothing
+        /// allocates on that page's map, so a released slot is not reused while the page is resident. On any other page, a scan that has the store
+        /// locks the record's key for the copy, so no release made under that lock (by a CopyUpdate, a Delete or an elision) is in progress; a scan
+        /// without the store (the pull iterator of <c>LogAccessor.Scan</c>) does not lock anywhere.</para>
+        /// </remarks>
+        /// <returns>False if the overflow key had been released; no transient slot is allocated then.</returns>
+        public readonly bool TryRemapOverPinnedTransientMemory(ObjectIdMap allocatorMap, ObjectIdMap transientMap)
         {
             if (ReferenceEquals(allocatorMap, transientMap))
-                return;
+                return true;
 
             var dataHeader = DataHeader;
 
-            if (DataHeader.KeyIsOverflow)
+            if (dataHeader.KeyIsOverflow)
             {
-                var (length, dataAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
-                var overflow = allocatorMap.GetOverflowByteArray(*(int*)dataAddress);
-                *(int*)dataAddress = transientMap.AllocateAndSet(overflow);
+                var (_ /*keyLength*/, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
+                if (!allocatorMap.TryGetOverflowByteArray(*(int*)keyAddress, out var keyOverflow))
+                    return false;
+                *(int*)keyAddress = transientMap.AllocateAndSet(keyOverflow);
             }
 
-            if (DataHeader.ValueIsOverflow)
+            if (dataHeader.ValueIsOverflow)
             {
-                var (length, dataAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
-                var overflow = allocatorMap.GetOverflowByteArray(*(int*)dataAddress);
-                *(int*)dataAddress = transientMap.AllocateAndSet(overflow);
+                var (_ /*valueLength*/, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
+                if (!allocatorMap.TryGetOverflowByteArray(*(int*)valueAddress, out var valueOverflow))
+                    valueOverflow = new OverflowByteArray(0, startOffset: 0, endOffset: 0, zeroInit: false);
+                *(int*)valueAddress = transientMap.AllocateAndSet(valueOverflow);
             }
-            else if (DataHeader.ValueIsObject)
+            else if (dataHeader.ValueIsObject)
             {
-                var (length, dataAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
-                var heapObj = allocatorMap.GetHeapObject(*(int*)dataAddress);
-                *(int*)dataAddress = transientMap.AllocateAndSet(heapObj);
+                var (_ /*valueLength*/, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
+                _ = allocatorMap.TryGetHeapObject(*(int*)valueAddress, out var valueObject);
+                *(int*)valueAddress = transientMap.AllocateAndSet(valueObject);
             }
+            return true;
         }
 
         #region ISourceLogRecord

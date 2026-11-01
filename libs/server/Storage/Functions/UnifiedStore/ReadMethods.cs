@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -231,7 +232,11 @@ namespace Garnet.server
                 fixed (byte* recordPtr = output.SpanByteAndMemory.Span)
                 {
                     var logRecord = new LogRecord(recordPtr, srcLogRecord.ObjectIdMap);
-                    logRecord.RemapOverPinnedTransientMemory(srcLogRecord.ObjectIdMap, functionsState.transientObjectIdMap);
+
+                    // The remap fails only for a record whose overflow key was released, which only an elision or other disposal of a sealed
+                    // and invalidated record does; the read holds this record's bucket lock and found it valid.
+                    if (!logRecord.TryRemapOverPinnedTransientMemory(srcLogRecord.ObjectIdMap, functionsState.transientObjectIdMap))
+                        Debug.Fail("RENAME's source record lost its overflow key while it was read");
                 }
             }
             return true;

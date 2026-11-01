@@ -250,8 +250,9 @@ namespace Tsavorite.core
             long numPending = 0;
             while (iter.GetNext())
             {
-                // A record that is Invalid but not Sealed was never live, or recovery discarded it, so no lookup reports it. Among invalid records,
-                // only an elided one, which is also Sealed, can be a key's version at a bounded maxAddress. Traceback skips the same records.
+                // A record that is Invalid but not Sealed came from recovery, which clears the Sealed bit of every image it reads: an image that was already
+                // invalid, or one recovery discarded. Neither is a version of its key, so no lookup reports it. At runtime a record is sealed before or as it
+                // is invalidated, and an elided record (Sealed and Invalid) can still be a key's version at a bounded maxAddress. Traceback skips the same records.
                 if ((!iter.Info.Tombstone || includeTombstones) && (!iter.Info.Invalid || iter.Info.IsSealed))
                 {
                     var status = bContext.ConditionalScanPush(scanCursorState, in iter, iter.CurrentAddress, iter.NextAddress, maxAddress);

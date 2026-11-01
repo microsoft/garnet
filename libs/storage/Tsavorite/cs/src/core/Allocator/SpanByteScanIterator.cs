@@ -237,9 +237,15 @@ namespace Tsavorite.core
                         OperationStackContext<TStoreFunctions, TAllocator> stackCtx = default;
                         try
                         {
-                            // Lock to ensure no value tearing while copying to temp storage. Only a valid record is updated in place, so an invalid one
-                            // needs no lock.
-                            if (store is not null && !recordInfo.Invalid)
+                            // Lock the key's bucket to ensure no value tearing while copying to temp storage, but only where a record can be updated in place.
+                            // - Below SafeReadOnlyAddress nothing updates a record in place. The only changes are releases of a superseded record's optionals, so
+                            //   no lock is taken, and the copy is checked instead (see ChangedWhileCopied). These records have no ObjectIdMap slots, so unlike
+                            //   ObjectScanIterator this does not need the whole page to be below SafeReadOnlyAddress.
+                            // - A Sealed and Invalid record is locked: it may be a new record whose operation has not yet CAS'd it, or one an elision is disposing.
+                            // - An Invalid record that is not Sealed came from recovery, which clears the Sealed bit of every image it reads. Nothing writes it,
+                            //   so it is not locked.
+                            var immutable = currentAddress < hlogBase.SafeReadOnlyAddress;
+                            if (store is not null && !immutable && (recordInfo.Valid || recordInfo.IsSealed))
                             {
                                 var logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress, physicalAddress);
                                 store.LockForScan(ref stackCtx, logRecord);
@@ -266,7 +272,21 @@ namespace Tsavorite.core
                             // Don't pass the recordBuffer to diskLogRecord; we reuse that here.
                             var remapPtr = recordBuffer.GetValidPointer();
                             Buffer.MemoryCopy((byte*)physicalAddress, remapPtr, allocatedSize, allocatedSize);
-                            var memoryLogRecord = hlogBase._wrapper.CreateRemappedLogRecordOverPinnedTransientMemory(currentAddress, (long)remapPtr);
+
+                            if (immutable)
+                            {
+                                if (ChangedWhileCopied(physicalAddress, (long)remapPtr))
+                                {
+                                    nextAddress = currentAddress;
+                                    continue;
+                                }
+
+                                // The record was closed after it was sampled, so skip it as if it had been closed then.
+                                if (!includeClosedRecords && LogRecord.GetInfo((long)remapPtr).SkipOnScan)
+                                    continue;
+                            }
+
+                            _ = hlogBase._wrapper.TryCreateRemappedLogRecordOverPinnedTransientMemory(currentAddress, (long)remapPtr, out var memoryLogRecord);
                             diskLogRecord = new DiskLogRecord(in memoryLogRecord);
                         }
                         finally

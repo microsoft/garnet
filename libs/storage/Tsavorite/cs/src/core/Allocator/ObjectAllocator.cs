@@ -128,7 +128,8 @@ namespace Tsavorite.core
         public readonly LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => _this.CreateLogRecord(logicalAddress, physicalAddress);
 
         /// <inheritdoc/>
-        public readonly LogRecord CreateRemappedLogRecordOverPinnedTransientMemory(long logicalAddress, long physicalAddress) => _this.CreateRemappedLogRecordOverPinnedTransientMemory(logicalAddress, physicalAddress);
+        public readonly bool TryCreateRemappedLogRecordOverPinnedTransientMemory(long logicalAddress, long physicalAddress, out LogRecord logRecord)
+            => _this.TryCreateRemappedLogRecordOverPinnedTransientMemory(logicalAddress, physicalAddress, out logRecord);
 
         /// <inheritdoc/>
         public readonly ObjectIdMap TransientObjectIdMap => _this.transientObjectIdMap;

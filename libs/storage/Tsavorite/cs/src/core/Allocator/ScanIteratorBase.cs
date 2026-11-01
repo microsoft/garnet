@@ -67,6 +67,32 @@ namespace Tsavorite.core
         protected readonly bool includeClosedRecords;
 
         /// <summary>
+        /// Whether a record the iterator copied without a lock changed while it was copied.
+        /// </summary>
+        /// <remarks>
+        /// <para>The iterators copy without a lock where nothing updates a record in place: below SafeReadOnlyAddress, and for records with
+        /// ObjectIdMap slots only on a page entirely below it (see <see cref="LogRecord.TryRemapOverPinnedTransientMemory"/>). An operation that
+        /// supersedes such a record, or the deferred-disposal drain, may still release its out-of-line fields and optionals, and each release publishes
+        /// a new header after it frees the fields' slots. An elision first seals and invalidates the record, so it is closed before its key and value
+        /// are released.</para>
+        /// <para>So a copy whose header or closed state differs from the record's afterward straddled one of these changes, and it is taken again.
+        /// A record changes only a few times, so the retries end. A release whose header is not yet published when the copy is checked has only
+        /// freed slots, which the remap resolves as nothing; see <see cref="LogRecord.TryRemapOverPinnedTransientMemory"/>.</para>
+        /// </remarks>
+        /// <param name="physicalAddress">The record in the log</param>
+        /// <param name="copyAddress">The copy of the record</param>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        internal static unsafe bool ChangedWhileCopied(long physicalAddress, long copyAddress)
+        {
+            // Order the copy's reads before these; a weakly ordered processor could otherwise satisfy some of them later.
+            Interlocked.MemoryBarrier();
+            var liveInfo = LogRecord.GetInfo(physicalAddress);
+            var copyInfo = LogRecord.GetInfo(copyAddress);
+            return liveInfo.Valid != copyInfo.Valid || liveInfo.IsSealed != copyInfo.IsSealed
+                || new LogRecord(physicalAddress).DataHeader.word != new LogRecord(copyAddress).DataHeader.word;
+        }
+
+        /// <summary>
         /// Current address
         /// </summary>
         public long CurrentAddress => currentAddress;

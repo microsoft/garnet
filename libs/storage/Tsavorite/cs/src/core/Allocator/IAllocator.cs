@@ -108,8 +108,11 @@ namespace Tsavorite.core
         /// <summary>Return the <see cref="LogRecord"/> for the allocator page at <paramref name="physicalAddress"/></summary>
         LogRecord CreateLogRecord(long logicalAddress, long physicalAddress);
 
-        /// <summary>Return the <see cref="LogRecord"/> for a transient (e.g. iterator or pending IO) page at <paramref name="physicalAddress"/></summary>
-        LogRecord CreateRemappedLogRecordOverPinnedTransientMemory(long logicalAddress, long physicalAddress);
+        /// <summary>Create the <see cref="LogRecord"/> for a transient copy (e.g. by an iterator) at <paramref name="physicalAddress"/> of the record at
+        /// <paramref name="logicalAddress"/>, moving its out-of-line components to <see cref="TransientObjectIdMap"/>.</summary>
+        /// <returns>False if the record's overflow key had been released when it was copied, so the record cannot be reported; see
+        /// <see cref="LogRecord.TryRemapOverPinnedTransientMemory"/>.</returns>
+        bool TryCreateRemappedLogRecordOverPinnedTransientMemory(long logicalAddress, long physicalAddress, out LogRecord logRecord);
 
         /// <summary>Return the <see cref="ObjectIdMap"/> for transient log records (e.g. iterator)</summary>
         ObjectIdMap TransientObjectIdMap { get; }

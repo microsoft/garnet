@@ -237,9 +237,17 @@ namespace Tsavorite.core
                         OperationStackContext<TStoreFunctions, TAllocator> stackCtx = default;
                         try
                         {
-                            // Lock to ensure no value tearing while copying to temp storage. Only a valid record is updated in place, so an invalid one
-                            // needs no lock; locking would also hash its key, which recovery may have left empty (see DeserializeObjectsOnPage).
-                            if (store is not null && !recordInfo.Invalid)
+                            // Lock the key's bucket to ensure no value tearing while copying to temp storage, but only where a record can be updated in place.
+                            // - On a page entirely below SafeReadOnlyAddress nothing updates a record in place. The only changes are releases of a superseded
+                            //   record's fields, so no lock is taken, and the copy is checked instead (see ChangedWhileCopied).
+                            // - A record below SafeReadOnlyAddress on the page that holds it is locked. The page's ObjectIdMap also serves the page's mutable
+                            //   records, so a slot an unlocked release frees there can be reallocated to one of them before this copy's slots are resolved.
+                            //   Nothing allocates on a page entirely below SafeReadOnlyAddress, so a slot freed there resolves as nothing.
+                            // - A Sealed and Invalid record is locked: it may be a new record whose operation has not yet CAS'd it, or one an elision is disposing.
+                            // - An Invalid record that is not Sealed came from recovery, which clears the Sealed bit of every image it reads. Nothing writes it,
+                            //   and its key may be empty, so it is not locked.
+                            var immutable = hlogBase.GetLogicalAddressOfStartOfPage(hlogBase.GetPage(currentAddress) + 1) <= hlogBase.SafeReadOnlyAddress;
+                            if (store is not null && !immutable && (recordInfo.Valid || recordInfo.IsSealed))
                             {
                                 var logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress, physicalAddress);
                                 store.LockForScan(ref stackCtx, logRecord);
@@ -266,7 +274,23 @@ namespace Tsavorite.core
                             // Don't pass the recordBuffer to diskLogRecord; we reuse that here.
                             var remapPtr = recordBuffer.GetValidPointer();
                             Buffer.MemoryCopy((byte*)physicalAddress, remapPtr, allocatedSize, allocatedSize);
-                            var memoryLogRecord = hlogBase._wrapper.CreateRemappedLogRecordOverPinnedTransientMemory(currentAddress, (long)remapPtr);
+
+                            if (immutable)
+                            {
+                                if (ChangedWhileCopied(physicalAddress, (long)remapPtr))
+                                {
+                                    nextAddress = currentAddress;
+                                    continue;
+                                }
+
+                                // The record was closed after it was sampled, so skip it as if it had been closed then.
+                                if (!includeClosedRecords && LogRecord.GetInfo((long)remapPtr).SkipOnScan)
+                                    continue;
+                            }
+
+                            // A disposal released the record's overflow key while it was copied, so the record cannot be reported.
+                            if (!hlogBase._wrapper.TryCreateRemappedLogRecordOverPinnedTransientMemory(currentAddress, (long)remapPtr, out var memoryLogRecord))
+                                continue;
                             diskLogRecord = new DiskLogRecord(in memoryLogRecord);
                         }
                         finally

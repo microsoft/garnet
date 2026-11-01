@@ -59,7 +59,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Constructs the <see cref="DiskLogRecord"/> from an already-constructed LogRecord (e.g. from <see cref="IAllocator{TStoreFunctions}.CreateRemappedLogRecordOverPinnedTransientMemory"/> which
+        /// Constructs the <see cref="DiskLogRecord"/> from an already-constructed LogRecord (e.g. from <see cref="IAllocator{TStoreFunctions}.TryCreateRemappedLogRecordOverPinnedTransientMemory"/> which
         /// has transient ObjectIds if it has objects).
         /// </summary>
         internal DiskLogRecord(in LogRecord memoryLogRecord)
@@ -80,7 +80,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Creates a <see cref="DiskLogRecord"/> from an already-constructed LogRecord (e.g. from <see cref="IAllocator{TStoreFunctions}.CreateRemappedLogRecordOverPinnedTransientMemory"/> which
+        /// Creates a <see cref="DiskLogRecord"/> from an already-constructed LogRecord (e.g. from <see cref="IAllocator{TStoreFunctions}.TryCreateRemappedLogRecordOverPinnedTransientMemory"/> which
         /// has transient ObjectIds if it has objects).
         /// </summary>
         internal static DiskLogRecord CreateFromTransientLogRecord(in LogRecord memoryLogRecord) => new(memoryLogRecord);
