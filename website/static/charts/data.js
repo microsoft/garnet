@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793566117900,
+  "lastUpdate": 1793566131430,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -817439,120 +817439,6 @@ window.BENCHMARK_DATA = {
       {
         "commit": {
           "author": {
-            "email": "49699333+dependabot[bot]@users.noreply.github.com",
-            "name": "dependabot[bot]",
-            "username": "dependabot[bot]"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "7374afed2771c1d056b24ddc40feb601ac9b1f7d",
-          "message": "Build(deps): Bump source-map-js from 1.2.1 to 1.2.2 in /website (#2213)\n\nBumps [source-map-js](https://github.com/7rulnik/source-map-js) from 1.2.1 to 1.2.2.\n- [Release notes](https://github.com/7rulnik/source-map-js/releases)\n- [Changelog](https://github.com/7rulnik/source-map-js/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/7rulnik/source-map-js/compare/v1.2.1...v1.2.2)\n\n---\nupdated-dependencies:\n- dependency-name: source-map-js\n  dependency-version: 1.2.2\n  dependency-type: indirect\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Vasileios Zois <96085550+vazois@users.noreply.github.com>",
-          "timestamp": "2026-10-08T11:56:32-07:00",
-          "tree_id": "340185ec0f4e8466b3d27a933fb5e6b30411ef09",
-          "url": "https://github.com/microsoft/garnet/commit/7374afed2771c1d056b24ddc40feb601ac9b1f7d"
-        },
-        "date": 1791486787512,
-        "tool": "benchmarkdotnet",
-        "benches": [
-          {
-            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: AOF)",
-            "value": 9034.168419471154,
-            "unit": "ns",
-            "range": "± 134.89900494042257"
-          },
-          {
-            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: AOF)",
-            "value": 13301.502118791852,
-            "unit": "ns",
-            "range": "± 141.05467065466755"
-          },
-          {
-            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: AOF)",
-            "value": 7000.20375932966,
-            "unit": "ns",
-            "range": "± 87.3756226404621"
-          },
-          {
-            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: AOF)",
-            "value": 11052.190602620443,
-            "unit": "ns",
-            "range": "± 329.96743859451493"
-          },
-          {
-            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: AOF)",
-            "value": 65839.42260742188,
-            "unit": "ns",
-            "range": "± 1256.502092397784"
-          },
-          {
-            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: DSV)",
-            "value": 6089.552089146206,
-            "unit": "ns",
-            "range": "± 64.09998311480712"
-          },
-          {
-            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: DSV)",
-            "value": 6201.364370492788,
-            "unit": "ns",
-            "range": "± 51.75396050994263"
-          },
-          {
-            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: DSV)",
-            "value": 5950.140053885324,
-            "unit": "ns",
-            "range": "± 25.313680124068807"
-          },
-          {
-            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: DSV)",
-            "value": 5629.361900916467,
-            "unit": "ns",
-            "range": "± 65.10071794630697"
-          },
-          {
-            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: DSV)",
-            "value": 43610.524204799105,
-            "unit": "ns",
-            "range": "± 505.53084266047966"
-          },
-          {
-            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: None)",
-            "value": 8947.761739095053,
-            "unit": "ns",
-            "range": "± 137.13288833692127"
-          },
-          {
-            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: None)",
-            "value": 10062.246922084263,
-            "unit": "ns",
-            "range": "± 141.15907038320316"
-          },
-          {
-            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: None)",
-            "value": 6955.565777946921,
-            "unit": "ns",
-            "range": "± 114.9022011183785"
-          },
-          {
-            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: None)",
-            "value": 6986.062545776367,
-            "unit": "ns",
-            "range": "± 240.560396206524"
-          },
-          {
-            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: None)",
-            "value": 55164.892578125,
-            "unit": "ns",
-            "range": "± 882.4783813069923"
-          }
-        ]
-      },
-      {
-        "commit": {
-          "author": {
             "email": "15467143+TedHartMS@users.noreply.github.com",
             "name": "Ted Hart",
             "username": "TedHartMS"
@@ -823133,6 +823019,120 @@ window.BENCHMARK_DATA = {
             "value": 98248.65478515625,
             "unit": "ns",
             "range": "± 832.4752699478676"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e42eaee558bae245aac50e7fab7c32bdc6802657",
+          "message": "Build(deps): Bump dotnet-sdk (#2338)\n\nBumps the dotnet-deps group with 1 update: [dotnet-sdk](https://github.com/dotnet/sdk).\n\n\nUpdates `dotnet-sdk` from 10.0.400 to 10.0.403\n- [Release notes](https://github.com/dotnet/sdk/releases)\n- [Commits](https://github.com/dotnet/sdk/compare/v10.0.400...v10.0.403)\n\n---\nupdated-dependencies:\n- dependency-name: dotnet-sdk\n  dependency-version: 10.0.403\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: dotnet-deps\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-01T12:30:51-08:00",
+          "tree_id": "0a37579748de51fa9be1952deb519a66a4486e59",
+          "url": "https://github.com/microsoft/garnet/commit/e42eaee558bae245aac50e7fab7c32bdc6802657"
+        },
+        "date": 1793566110404,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: AOF)",
+            "value": 12979.770379317435,
+            "unit": "ns",
+            "range": "± 279.2382816530123"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: AOF)",
+            "value": 20351.639709472656,
+            "unit": "ns",
+            "range": "± 376.1503012157608"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: AOF)",
+            "value": 8957.147420247396,
+            "unit": "ns",
+            "range": "± 91.03153109553456"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: AOF)",
+            "value": 16546.84382847377,
+            "unit": "ns",
+            "range": "± 120.29840162259242"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: AOF)",
+            "value": 85110.34545898438,
+            "unit": "ns",
+            "range": "± 403.66250623167093"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: DSV)",
+            "value": 8711.305781773159,
+            "unit": "ns",
+            "range": "± 95.5625847737546"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: DSV)",
+            "value": 9463.903198242188,
+            "unit": "ns",
+            "range": "± 49.298560789167226"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: DSV)",
+            "value": 8071.747698102678,
+            "unit": "ns",
+            "range": "± 48.8045252024567"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: DSV)",
+            "value": 8955.53700764974,
+            "unit": "ns",
+            "range": "± 77.19322282690004"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: DSV)",
+            "value": 61985.47712053572,
+            "unit": "ns",
+            "range": "± 569.6709340002205"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: None)",
+            "value": 11886.077059232271,
+            "unit": "ns",
+            "range": "± 53.111550056456295"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: None)",
+            "value": 12989.728800455729,
+            "unit": "ns",
+            "range": "± 114.98274706279074"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: None)",
+            "value": 8749.748840332031,
+            "unit": "ns",
+            "range": "± 101.30393149719096"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: None)",
+            "value": 9458.656921386719,
+            "unit": "ns",
+            "range": "± 65.06169396920743"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: None)",
+            "value": 71486.6796875,
+            "unit": "ns",
+            "range": "± 1015.2723562780544"
           }
         ]
       }
