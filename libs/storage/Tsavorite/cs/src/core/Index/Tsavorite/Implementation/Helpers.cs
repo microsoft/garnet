@@ -210,14 +210,18 @@ namespace Tsavorite.core
         /// <param name="deleted">True if the key is gone: a Delete, an expiration, or a PostCopyUpdater that returned
         /// <see cref="RMWAction.ExpireAndStop"/>. The source is then disposed as deleted, which runs the application's delete trigger.
         /// Otherwise a CopyUpdate's new record holds the key's value, and only the source's value is released.</param>
-        /// <param name="captured">A Snapshot checkpoint captured the source's object into its object log. The checkpoint's flushes keep the
-        /// source's reference to that capture, and find the capture through the object, so the source keeps it until no flush reads the source.</param>
+        /// <param name="capturedForSnapshot">A Snapshot checkpoint captured the source's object into its object log. The checkpoint's flushes keep
+        /// the source's reference to that capture, and find the capture through the object, so the source keeps it until no flush reads the
+        /// source. Only a Snapshot checkpoint captures. Outside one, a source that a ReadOnly flush is writing is frozen for flush instead: that
+        /// flush writes the value it serialized before the CopyUpdate, which waits for a serialization in progress, or else a null value,
+        /// because the CopyUpdate marked the object superseded. A FoldOver checkpoint's source keeps its object, whose cached
+        /// <c>(v)</c> bytes the FoldOver flush writes, and is not released here.</param>
         /// <remarks>
         /// <para>Every operation that supersedes an in-memory record ends here, after its last callback, so a callback that throws cannot leave
         /// a released source that the exception has made live again:</para>
         /// <list type="bullet">
         /// <item>A CopyUpdate, after PostCopyUpdater, when it asked to release the source's value (<see cref="RMWInfo.ClearSourceValueObject"/>)
-        /// or captured it. Otherwise its source keeps its value until eviction.</item>
+        /// or a Snapshot checkpoint captured it. Otherwise its source keeps its value until eviction.</item>
         /// <item>A Delete, and the expirations, once the new record is in the chain. An expiration whose source is elided ends here just before
         /// the elision.</item>
         /// </list>
@@ -225,9 +229,9 @@ namespace Tsavorite.core
         /// <list type="bullet">
         /// <item><b>By a flush:</b> a ReadOnly flush is writing the record from the live page. The release waits until FlushedUntilAddress
         /// passes the record.</item>
-        /// <item><b>By a checkpoint:</b> the checkpoint captured the record, or, for a Delete or an expiration, still needs the record's
-        /// <c>(v)</c> image, which includes its value and, for an application such as Garnet's RangeIndex, external state that the delete
-        /// trigger would remove. On a real main-log device the release also waits only until FlushedUntilAddress passes the record: the
+        /// <item><b>By a checkpoint:</b> a Snapshot checkpoint captured the record, or, for a Delete or an expiration, the checkpoint still needs
+        /// the record's <c>(v)</c> image, which includes its value and, for an application such as Garnet's RangeIndex, external state that the
+        /// delete trigger would remove. On a real main-log device the release also waits only until FlushedUntilAddress passes the record: the
         /// Snapshot flush completes a page before that page's ReadOnly flush can, and below the Snapshot's range it reads nothing. So a
         /// record already below FlushedUntilAddress, whose <c>(v)</c> image is on disk, is released at once. On a NullDevice main log,
         /// FlushedUntilAddress advances without anything being written, so the release waits for eviction.</item>
@@ -239,7 +243,7 @@ namespace Tsavorite.core
         /// position a flush just stamped, or changing the record's layout.</para>
         /// </remarks>
         private void ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord source, bool deleted, bool captured = false)
+                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord source, bool deleted, bool capturedForSnapshot = false)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // A read-cache copy is never frozen, because no flush or checkpoint reads the read cache, and its main-log record keeps the key's
@@ -251,7 +255,7 @@ namespace Tsavorite.core
             }
 
             var address = stackCtx.recSrc.LogicalAddress;
-            var forCheckpoint = (captured || (deleted && IsFrozenForCheckpoint<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, address, source.Info)))
+            var forCheckpoint = (capturedForSnapshot || (deleted && IsFrozenForCheckpoint<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, address, source.Info)))
                 && (hlogBase.IsNullDevice || address >= hlogBase.FlushedUntilAddress);
             if (!forCheckpoint && !hlog.IsFrozenForFlush(address))
             {

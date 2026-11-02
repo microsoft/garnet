@@ -602,7 +602,7 @@ namespace Tsavorite.core
                         // the object (and track sizes) before it is cleared. (If we are called from Pending IO then srcLogRecord will be a DiskLogRecord and we
                         // do not need to serialize data as this is not involved in checkpointing, and the DiskLogRecord is Disposed after we return up the Pending chain.)
                         var isMemoryLogRecord = srcLogRecord.IsMemoryLogRecord;
-                        var captured = false;
+                        var capturedForSnapshot = false;
 
                         // A Snapshot checkpoint that captures an overflow value holds the value array's claim through PostCopyUpdater.
                         SnapshotObjectLogState overflowCaptures = null;
@@ -616,11 +616,11 @@ namespace Tsavorite.core
                             if (needsSourceImage && newLogRecord.Info.IsInNewVersion && srcLogRecord.ValueObject is HeapObjectBase sourceObject
                                 && hlogBase.ActiveSnapshotObjectLog is { } snapshotCaptures)
                             {
-                                captured = stackCtx.recSrc.HasMainLogSrc && TryCaptureCopyUpdateSource(snapshotCaptures, sourceObject,
+                                capturedForSnapshot = stackCtx.recSrc.HasMainLogSrc && TryCaptureCopyUpdateSource(snapshotCaptures, sourceObject,
                                     ref srcLogRecord.AsMemoryLogRecordRef(), stackCtx.recSrc.LogicalAddress, ref newLogRecord);
                                 needsSourceImage = false;
                             }
-                            if (!captured && srcLogRecord.ValueObject.CacheSerializedObjectData(ref newLogRecord, ref rmwInfo, isMemoryLogRecord, needsSourceImage))
+                            if (!capturedForSnapshot && srcLogRecord.ValueObject.CacheSerializedObjectData(ref newLogRecord, ref rmwInfo, isMemoryLogRecord, needsSourceImage))
                                 hlogBase.NoteSerializedObjectCache(stackCtx.recSrc.LogicalAddress);
                         }
                         else if (srcLogRecord.DataHeader.ValueIsOverflow && isMemoryLogRecord && stackCtx.recSrc.HasMainLogSrc && newLogRecord.Info.IsInNewVersion
@@ -648,9 +648,9 @@ namespace Tsavorite.core
                                     hlogBase.logSizeTracker?.IncrementSize(newValueHeap);
                             }
 
-                            // A captured source keeps its value until no flush reads it; any other source is released only on request.
-                            if ((rmwInfo.ClearSourceValueObject || captured) && isMemoryLogRecord)
-                                ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: false, captured);
+                            // A source a Snapshot checkpoint captured keeps its value until no flush reads it; any other source is released only on request.
+                            if ((rmwInfo.ClearSourceValueObject || capturedForSnapshot) && isMemoryLogRecord)
+                                ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: false, capturedForSnapshot);
                         }
                         else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {
@@ -660,7 +660,7 @@ namespace Tsavorite.core
                             newLogRecord.ClearValueIfHeap();
                             status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
                             if (isMemoryLogRecord)
-                                ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true, captured);
+                                ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true, capturedForSnapshot);
                         }
                         else if (rmwInfo.Action == RMWAction.WrongType)
                         {
