@@ -6,10 +6,10 @@ using System.Runtime.ExceptionServices;
 
 namespace Tsavorite.core
 {
-    /// <summary>Owns the objects deserialized into one scan frame, including records the iterator never visits.</summary>
-    internal sealed class ObjectScanFrame
+    /// <summary>Tracks the objects deserialized into one scan frame, including records the iterator never visits.</summary>
+    internal sealed class ObjectScanFrame(ObjectIdMap objectIdMap)
     {
-        internal readonly ObjectIdMap objectIdMap = new();
+        internal readonly ObjectIdMap objectIdMap = objectIdMap;
         private long startAddress;
         internal long initializedUntilAddress;
 
@@ -21,7 +21,8 @@ namespace Tsavorite.core
         /// <summary>
         /// Release a completed frame before reuse or after all reads have drained. Each frame has only one
         /// load in flight; its initialized extent excludes unread records whose fields still contain disk lengths.
-        /// Visited records have already been converted to inline by DiskLogRecord.Dispose.
+        /// Visited records have already been converted to inline by DiskLogRecord.Dispose. Free only this
+        /// frame's slots: other frames may concurrently deserialize into the iterator's shared object map.
         /// </summary>
         internal void Clear<TStoreFunctions>(TStoreFunctions storeFunctions)
             where TStoreFunctions : IStoreFunctions
@@ -57,7 +58,6 @@ namespace Tsavorite.core
             }
             finally
             {
-                objectIdMap.Clear();
                 startAddress = initializedUntilAddress = 0;
             }
             disposalError?.Throw();

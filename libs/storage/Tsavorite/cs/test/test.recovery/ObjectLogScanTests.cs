@@ -991,6 +991,72 @@ namespace Tsavorite.test
             AssertDeserializedObjectsReleased(objects);
         }
 
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjectScanFramesShareIteratorMap(
+            [Values(DiskScanBufferingMode.SinglePageBuffering, DiskScanBufferingMode.DoublePageBuffering)] DiskScanBufferingMode buffering)
+        {
+            _ = CreateRecordingScanStore();
+            using var iter = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress, buffering);
+            ObjectIdMap map = null;
+            var count = 0;
+            while (iter.GetNext())
+            {
+                map ??= iter.ObjectIdMap;
+                Assert.That(iter.ObjectIdMap, Is.SameAs(map), "Every disk frame must use the iterator's map");
+                Assert.That(((TestObjectValue)iter.ValueObject).value, Is.EqualTo(count++));
+            }
+            Assert.That(count, Is.EqualTo(2200), "The scan must cross and reuse multiple frames");
+            var frameCount = buffering == DiskScanBufferingMode.DoublePageBuffering ? 2 : 1;
+            Assert.That(map.Count, Is.LessThanOrEqualTo(frameCount * store.Log.PageSizeBytes / 32),
+                "Released slots must be reused rather than accumulated across pages");
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void TransferredScanRecordOutlivesIterator([Values(false, true)] bool fromDisk)
+        {
+            _ = CreateRecordingScanStore();
+            var fromAddress = store.Log.BeginAddress;
+            if (!fromDisk)
+            {
+                fromAddress = store.Log.TailAddress;
+                using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, ScanFunctions>(new ScanFunctions());
+                _ = session.BasicContext.Upsert(new TestObjectKey { key = 2200 }, new TestObjectValue { value = 2200 });
+            }
+            using var iter = store.Log.Scan(fromAddress, store.Log.TailAddress, DiskScanBufferingMode.SinglePageBuffering);
+            Assert.That(iter.GetNext(), Is.True);
+            var value = iter.ValueObject;
+            var transferred = DiskLogRecord.TransferFrom(ref iter.AsDiskLogRecordRef(), store.hlogBase.bufferPool, store.Log.TransientObjectIdMap);
+            try
+            {
+                Assert.That(iter.IsSet, Is.False, "Transfer must relinquish the iterator's current record");
+                iter.Dispose();
+                Assert.That(transferred.ValueObject, Is.SameAs(value), "Transferred slots must survive iterator map cleanup");
+
+                // Transferring an owned buffer must move it intact, without clearing its slots.
+                var physicalAddress = transferred.logRecord.physicalAddress;
+                var moved = DiskLogRecord.TransferFrom(ref transferred, store.hlogBase.bufferPool, store.Log.TransientObjectIdMap);
+                try
+                {
+                    Assert.That(transferred.IsSet, Is.False);
+                    Assert.That(moved.logRecord.physicalAddress, Is.EqualTo(physicalAddress));
+                    Assert.That(moved.ValueObject, Is.SameAs(value));
+                }
+                finally
+                {
+                    moved.Dispose();
+                }
+                if (!fromDisk)
+                    Assert.That(store.hlogBase._wrapper.CreateLogRecord(fromAddress).ValueObject, Is.SameAs(value),
+                        "Releasing remapped slots must not change the resident record");
+            }
+            finally
+            {
+                transferred.Dispose();
+            }
+        }
+
         [MethodImpl(MethodImplOptions.NoInlining)]
         void ReadOverlappingScanFrames()
         {

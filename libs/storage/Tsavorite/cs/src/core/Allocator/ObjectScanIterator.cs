@@ -21,6 +21,7 @@ namespace Tsavorite.core
         private readonly AllocatorBase<TStoreFunctions, TAllocator> hlogBase;
         private readonly BlittableFrame frame;
         private readonly ObjectScanFrame[] objectFrames;
+        private ObjectIdMap scanObjectIdMap;
 
         private SectorAlignedMemory recordBuffer;
         private readonly bool assumeInMemory;
@@ -149,7 +150,11 @@ namespace Tsavorite.core
 
             currentPage = hlogBase.GetPage(currentAddress);
             if (currentAddress < headAddress && !assumeInMemory)
+            {
+                // Iterator operations are serialized. Publish the shared map before scheduling loads on other threads.
+                scanObjectIdMap ??= new();
                 _ = BufferAndLoad(currentAddress, currentPage, currentPage % frameSize, headAddress, stopAddress);
+            }
 
             // Success; keep the epoch held for GetNext (SnapCursorToLogicalAddress will Suspend()).
             return true;
@@ -484,6 +489,8 @@ namespace Tsavorite.core
             }
             finally
             {
+                // All reads and frame cleanup have finished; no frame can still allocate or reference slots.
+                scanObjectIdMap?.Clear();
                 recordBuffer?.Return();
                 recordBuffer = null;
                 frame?.Dispose();
@@ -511,7 +518,7 @@ namespace Tsavorite.core
         internal override void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress, TContext context, ref CountdownEvent completed,
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
         {
-            var objectFrame = objectFrames[readPage % frameSize] ??= new();
+            var objectFrame = objectFrames[readPage % frameSize] ??= new(scanObjectIdMap);
             // ScanIteratorBase has drained the prior load before claiming this frame for another page.
             objectFrame.Clear(hlogBase.storeFunctions);
             hlogBase.AsyncReadPageFromDeviceToFrame(readBuffers, readPage, untilAddress, AsyncReadPageFromDeviceToFrameCallback, context, frame,
