@@ -14,9 +14,11 @@ namespace Tsavorite.core
 
     // RecordInfo layout (64 bits total, high to low):
     //   Unused/Reserved bits:
-    //      [Unused1]..[Unused11]
+    //      [Unused0]..[Unused6]
+    //   Deferred-release bits (in memory only; cleared from every image read from disk):
+    //      [DeferredForCheckpoint][DeferredCopyUpdate][DeferredDispose]
     //   RecordInfo bits:
-    //      [Sealed][Modified][InNewVersion][Valid][Tombstone]
+    //      [SnapshotObjectLog][Sealed][Modified][InNewVersion][Valid][Tombstone]
     //   LogAddress bits (where A = address):
     //      [R][AAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
     [StructLayout(LayoutKind.Explicit, Size = 8)]
@@ -35,10 +37,9 @@ namespace Tsavorite.core
         const int kInNewVersionBitOffset = kValidBitOffset + 1;
         const int kModifiedBitOffset = kInNewVersionBitOffset + 1;
         const int kSealedBitOffset = kModifiedBitOffset + 1;
-        const int kDeferredDisposeBitOffset = kSealedBitOffset + 1;
-        const int kSnapshotObjectLogBitOffset = kDeferredDisposeBitOffset + 1;
-        const long kSnapshotObjectLogBitMask = 1L << kSnapshotObjectLogBitOffset;
-        const int kDeferredCopyUpdateBitOffset = kSnapshotObjectLogBitOffset + 1;
+        const int kSnapshotObjectLogBitOffset = kSealedBitOffset + 1;
+        const int kDeferredDisposeBitOffset = kSnapshotObjectLogBitOffset + 1;
+        const int kDeferredCopyUpdateBitOffset = kDeferredDisposeBitOffset + 1;
         const int kDeferredForCheckpointBitOffset = kDeferredCopyUpdateBitOffset + 1;
         const int kUnused6BitOffset = kDeferredForCheckpointBitOffset + 1;
         const int kUnused5BitOffset = kUnused6BitOffset + 1;
@@ -54,6 +55,7 @@ namespace Tsavorite.core
         const long kInNewVersionBitMask = 1L << kInNewVersionBitOffset;
         const long kModifiedBitMask = 1L << kModifiedBitOffset;
         const long kSealedBitMask = 1L << kSealedBitOffset;
+        const long kSnapshotObjectLogBitMask = 1L << kSnapshotObjectLogBitOffset;
         const long kDeferredDisposeBitMask = 1L << kDeferredDisposeBitOffset;
         const long kDeferredCopyUpdateBitMask = 1L << kDeferredCopyUpdateBitOffset;
         const long kDeferredForCheckpointBitMask = 1L << kDeferredForCheckpointBitOffset;
