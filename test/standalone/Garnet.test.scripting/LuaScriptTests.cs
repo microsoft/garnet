@@ -3673,6 +3673,35 @@ return count";
         }
 
         [Test]
+        public async Task SelectDatabasesAsync()
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db0 = redis.GetDatabase(0);
+            var db1 = redis.GetDatabase(1);
+
+            ClassicAssert.IsTrue(await db0.StringSetAsync("hello", "world").ConfigureAwait(false));
+            ClassicAssert.IsTrue(await db1.StringSetAsync("foo", "bar").ConfigureAwait(false));
+
+            // Scripts inherit selected database from outer context
+            {
+                ClassicAssert.IsNull((string)await db0.ScriptEvaluateAsync("return redis.call('GET', KEYS[1])", ["foo"]).ConfigureAwait(false));
+                ClassicAssert.AreEqual("world", (string)await db0.ScriptEvaluateAsync("return redis.call('GET', KEYS[1])", ["hello"]).ConfigureAwait(false));
+
+                ClassicAssert.IsNull((string)await db1.ScriptEvaluateAsync("return redis.call('GET', KEYS[1])", ["hello"]).ConfigureAwait(false));
+                ClassicAssert.AreEqual("bar", (string)await db1.ScriptEvaluateAsync("return redis.call('GET', KEYS[1])", ["foo"]).ConfigureAwait(false));
+            }
+
+            // Change DB in script works, but doesn't persist
+            {
+                ClassicAssert.AreEqual("bar", (string)await db0.ScriptEvaluateAsync("redis.call('SELECT', '1'); return redis.call('GET', KEYS[1])", ["foo"]).ConfigureAwait(false));
+                ClassicAssert.IsNull((string)await db0.ScriptEvaluateAsync("return redis.call('GET', KEYS[1])", ["foo"]).ConfigureAwait(false));
+
+                ClassicAssert.AreEqual("world", (string)await db1.ScriptEvaluateAsync("redis.call('SELECT', '0'); return redis.call('GET', KEYS[1])", ["hello"]).ConfigureAwait(false));
+                ClassicAssert.IsNull((string)await db1.ScriptEvaluateAsync("return redis.call('GET', KEYS[1])", ["hello"]).ConfigureAwait(false));
+            }
+        }
+
+        [Test]
         public async Task EvalCmsgUnpackLargeAsync()
         {
             const string EvalScript = $"return cmsgpack.unpack(ARGV[1])";
