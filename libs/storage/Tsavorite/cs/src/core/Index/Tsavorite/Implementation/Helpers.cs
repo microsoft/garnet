@@ -92,19 +92,25 @@ namespace Tsavorite.core
         // If the record is in a checkpoint range, it must not be modified. If it is in the fuzzy region, it can only be modified
         // if it is a new record. A record an allocator is still flushing from the live page is frozen for the same reason:
         // releasing its heap, rewriting its layout, or invalidating it would persist a torn record, or alter the image a
-        // checkpoint recovers. Such a record is released by the deferred-disposal drain or at eviction instead.
+        // checkpoint recovers. Such a record's release is marked for later; see ReleaseSupersededSource.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, RecordInfo srcRecordInfo)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(!stackCtx.recSrc.HasReadCacheSrc, "Should not call IsFrozen() for readcache records");
-            if (sessionFunctions.Ctx.IsInV1
-                        && (stackCtx.recSrc.LogicalAddress <= _hybridLogCheckpoint.info.fuzzyRegionStartAddress // In checkpoint range
-                            || !srcRecordInfo.IsInNewVersion))                                                  // In fuzzy region and an old version
-                return true;
-            return hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress);
+            return IsFrozenForCheckpoint<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, stackCtx.recSrc.LogicalAddress, srcRecordInfo)
+                || hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress);
         }
+
+        // An ongoing checkpoint still needs the record's (v) image: it is in the checkpoint range, or in the fuzzy region and an old version.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsFrozenForCheckpoint<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+                long logicalAddress, RecordInfo srcRecordInfo)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            => sessionFunctions.Ctx.IsInV1
+                && (logicalAddress <= _hybridLogCheckpoint.info.fuzzyRegionStartAddress     // In checkpoint range
+                    || !srcRecordInfo.IsInNewVersion);                                      // In fuzzy region and an old version
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long GetMinRevivifiableAddress()
@@ -119,8 +125,8 @@ namespace Tsavorite.core
         /// version before consulting it, so behaviour outside a checkpoint is unchanged.
         /// <para>
         /// Being frozen for flush does not make the image needed. The release a false answer authorizes
-        /// (<see cref="RMWInfo.ClearSourceValueObject"/>) honors the freeze itself: InternalRMW marks a frozen source for the
-        /// deferred-disposal drain instead of clearing it. With no checkpoint image at stake, a flush still walking the source
+        /// (<see cref="RMWInfo.ClearSourceValueObject"/>) honors the freeze itself: <c>ReleaseSupersededSource</c> marks a frozen
+        /// source for later release instead of clearing it. With no checkpoint image at stake, a flush still walking the source
         /// writes a null value for it (the object's type byte marked null, with no data), exactly as it does outside a checkpoint.
         /// </para>
         /// <para>
@@ -195,59 +201,76 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Dispose the resources of an in-memory source record that is being deleted. If an ongoing checkpoint or an
-        /// in-flight flush has frozen it, mark it for deferred disposal instead.
+        /// Release the in-memory source record that an operation has just superseded, or mark the release to run later while a flush or a
+        /// checkpoint still reads the record.
         /// </summary>
+        /// <param name="sessionFunctions">The session, whose phase says whether a checkpoint is in progress</param>
+        /// <param name="stackCtx">The operation's context, whose record source is the superseded record</param>
+        /// <param name="source">The superseded record</param>
+        /// <param name="deleted">True if the key is gone: a Delete, an expiration, or a PostCopyUpdater that returned
+        /// <see cref="RMWAction.ExpireAndStop"/>. The source is then disposed as deleted, which runs the application's delete trigger.
+        /// Otherwise a CopyUpdate's new record holds the key's value, and only the source's value is released.</param>
+        /// <param name="captured">A Snapshot checkpoint captured the source's object into its object log. The checkpoint's flushes keep the
+        /// source's reference to that capture, and find the capture through the object, so the source keeps it until no flush reads the source.</param>
         /// <remarks>
-        /// This is the *deletion* path, not the general supersede path: callers are <c>InternalDelete</c>'s non-elide
-        /// branch and the four <c>InternalRMW</c> expiration paths (<see cref="RMWAction.ExpireAndStop"/> and
-        /// <see cref="RMWAction.ExpireAndResume"/>, both before and after the new record is allocated), whose net effect
-        /// is a Delete. Two of those run before any CAS, so there need not be a new record at all. An ordinary
-        /// CopyUpdate does *not* come here: <c>InternalRMW</c> preserves its source's <c>(v)</c> value or releases the source,
-        /// after <c>PostCopyUpdater</c> has read it.
-        /// <para>
-        /// Disposal clears the record's heap fields, which returns the value's <see cref="ObjectIdMap"/> slot to that page's
-        /// free list for reuse by another record. A frozen record must keep its value until the flush that is reading it has
-        /// captured it. Two flushes read a record the caller has already deleted: the snapshot flush reads object ids from
-        /// its page copy but resolves them against the live map, and the object allocator's read-only flush serializes and
-        /// writes the live page directly.
-        /// </para>
-        /// <para>
-        /// Only a flush freeze is marked. A checkpoint freeze is deliberately left to eviction, because the drain's release
-        /// condition would be wrong for it: the drain fires when the main log's FlushedUntilAddress passes the record, which
-        /// says nothing about whether the snapshot has captured it, so disposing on that signal could free a value the
-        /// snapshot flush has yet to write and persist a dangling object id.
-        /// </para>
+        /// <para>Every operation that supersedes an in-memory record ends here, after its last callback, so a callback that throws cannot leave
+        /// a released source that the exception has made live again:</para>
+        /// <list type="bullet">
+        /// <item>A CopyUpdate, after PostCopyUpdater, when it asked to release the source's value (<see cref="RMWInfo.ClearSourceValueObject"/>)
+        /// or captured it. Otherwise its source keeps its value until eviction.</item>
+        /// <item>A Delete, and the expirations, once the new record is in the chain. An expiration whose source is elided ends here just before
+        /// the elision.</item>
+        /// </list>
+        /// <para>The release waits while the record is frozen, and is marked on the record to run later:</para>
+        /// <list type="bullet">
+        /// <item><b>By a flush:</b> a ReadOnly flush is writing the record from the live page. The release waits until FlushedUntilAddress
+        /// passes the record.</item>
+        /// <item><b>By a checkpoint:</b> the checkpoint captured the record, or, for a Delete or an expiration, still needs the record's
+        /// <c>(v)</c> image, which includes its value and, for an application such as Garnet's RangeIndex, external state that the delete
+        /// trigger would remove. On a real main-log device the release also waits only until FlushedUntilAddress passes the record: the
+        /// Snapshot flush completes a page before that page's ReadOnly flush can, and below the Snapshot's range it reads nothing. So a
+        /// record already below FlushedUntilAddress, whose <c>(v)</c> image is on disk, is released at once. On a NullDevice main log,
+        /// FlushedUntilAddress advances without anything being written, so the release waits for eviction.</item>
+        /// </list>
+        /// <para>The drain on flush completion runs a marked release once FlushedUntilAddress passes the record, and eviction runs any it
+        /// reaches first. Marking a frozen record is safe although the flush writes the live page, <see cref="RecordInfo"/> included: the
+        /// flush never changes <see cref="RecordInfo"/> in memory, it is one aligned word, so a device sees it with or without the mark, and
+        /// every read from disk strips the mark. The freeze exists to prevent destructive changes: freeing heap, zeroing the object-log
+        /// position a flush just stamped, or changing the record's layout.</para>
         /// </remarks>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void OnDisposeDeletedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord logRecord)
+        private void ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord source, bool deleted, bool captured = false)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            if (IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, logRecord.Info))
+            // A read-cache copy is never frozen, because no flush or checkpoint reads the read cache, and its main-log record keeps the key's
+            // delete trigger. Release only its value, through the read cache, which charged that value's heap at promotion.
+            if (stackCtx.recSrc.HasReadCacheSrc)
             {
-                // Mark for the flush-completion drain to dispose once the flush window closes. Setting a bit on a record that is
-                // frozen for flush is safe, which is not obvious because the object allocator writes the LIVE PAGE and that of
-                // course includes RecordInfo:
-                //  - The flush writes RecordInfo to the device but never modifies it in memory, so it is not a competing writer.
-                //    Whether the DMA captures this bit is therefore nondeterministic, and harmless: RecordInfo is a single
-                //    8-byte aligned word so the device sees the old or the new value and never a tear, and
-                //    RecordInfo.ClearBitsForDiskImages strips the bit on every read-from-disk path.
-                //  - No CAS is needed. This runs on the operation path holding the record lock, so the set is exactly as safe
-                //    as the Seal() that immediately follows it at the call sites.
-                //  - The drain needs no record lock for a related reason: this call is always followed by Seal(), and
-                //    SkipOnScan is IsClosedWord(word), i.e. (word & (Valid|Sealed)) != Valid, so a Sealed record is closed to
-                //    operations (they take RETRY_LATER rather than touch it) and skipped by scans.
-                // What is NOT safe, and is what the freeze exists to prevent, is destructive mutation: freeing heap, zeroing
-                // the ObjectLogPosition the flush just stamped, or changing record layout.
-                if (hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress))
-                {
-                    logRecord.InfoRef.DeferredDispose = true;
-                    hlogBase.NoteDeferredDispose(stackCtx.recSrc.LogicalAddress);
-                }
+                stackCtx.recSrc.AllocatorBase.ReleaseCopyUpdatedSourceValue(ref source);
                 return;
             }
-            OnDispose(ref logRecord, DisposeReason.Deleted);
+
+            var address = stackCtx.recSrc.LogicalAddress;
+            var forCheckpoint = (captured || (deleted && IsFrozenForCheckpoint<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, address, source.Info)))
+                && (hlogBase.IsNullDevice || address >= hlogBase.FlushedUntilAddress);
+            if (!forCheckpoint && !hlog.IsFrozenForFlush(address))
+            {
+                if (deleted)
+                    OnDispose(ref source, DisposeReason.Deleted);
+                else
+                    hlogBase.ReleaseCopyUpdatedSourceValue(ref source);
+                return;
+            }
+
+            source.InfoRef.SetDeferredRelease(copyUpdate: !deleted, forCheckpoint);
+            if (forCheckpoint && hlogBase.IsNullDevice)
+                return;
+
+            // Let the drain find the mark. The drain advances FlushedUntilAddress before it reads the marks, and this marks before it reads
+            // FlushedUntilAddress, so if the drain has already passed the record, this sees that and releases the record itself.
+            hlogBase.NoteDeferredDispose(address);
+            if (address < hlogBase.FlushedUntilAddress)
+                hlogBase.DrainDeferredDisposes(address, address + source.AllocatedSize);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]

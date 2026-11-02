@@ -130,8 +130,8 @@ namespace Tsavorite.core
         /// <remarks>
         /// Declared here rather than as an <c>AllocatorBase</c> virtual because callers reach it through the
         /// <c>TAllocator</c> struct type constraint, which the JIT devirtualizes and inlines; a virtual call would not be.
-        /// This is on the operation hot path -- <c>IsFrozen</c> reaches it from <c>CanElide</c>, <c>TryRevivifyInChain</c>
-        /// and <c>OnDisposeDeletedSource</c>, so it runs per RMW/Upsert/Delete that finds an in-memory source, not
+        /// This is on the operation hot path -- <c>IsFrozen</c> reaches it from <c>CanElide</c> and <c>TryRevivifyInChain</c>, and
+        /// <c>ReleaseSupersededSource</c> calls it directly, so it runs per RMW/Upsert/Delete that finds an in-memory source, not
         /// once per flushed page.
         /// </remarks>
         bool IsFrozenForFlush(long logicalAddress);

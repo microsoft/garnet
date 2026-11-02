@@ -214,18 +214,22 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "RecordLifecycleTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "RecordLifecycleTests.obj.log"), deleteOnClose: true);
             tracker = new LifecycleTracker();
-            store = new(new()
+            store = CreateStore(log, objlog);
+        }
+
+        private TsavoriteKV<LifecycleStoreFunctions, LifecycleAllocator> CreateStore(IDevice logDevice, IDevice objectLogDevice)
+            => new(new()
             {
                 IndexSize = 1L << 13,
-                LogDevice = log,
-                ObjectLogDevice = objlog,
+                LogDevice = logDevice,
+                ObjectLogDevice = objectLogDevice,
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 15,
-                PageSize = MinKvLogPageSize
+                PageSize = MinKvLogPageSize,
+                CheckpointDir = MethodTestDir
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TrackedObjectValue.Serializer(),
                     new LifecycleRecordTriggers(tracker))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
-        }
 
         [TearDown]
         public void TearDown()
@@ -384,6 +388,129 @@ namespace Tsavorite.test
             {
                 ObjectFlushInjection.Reset();
             }
+        }
+
+        /// <summary>Pauses the checkpoint state machine on entry to a chosen phase so the test can act in that window.</summary>
+        private sealed class PauseAtPhase(Phase pauseAt) : IStateMachineCallback
+        {
+            internal readonly ManualResetEventSlim Reached = new(false);
+            internal readonly ManualResetEventSlim Release = new(false);
+
+            public void BeforeEnteringState(SystemState next)
+            {
+                if (next.Phase != pauseAt)
+                    return;
+                Reached.Set();
+                _ = Release.Wait(TimeSpan.FromSeconds(30));
+            }
+        }
+
+        /// <summary>
+        /// A Delete of a record that a checkpoint still needs runs the delete trigger exactly once, when no flush reads the record any more.
+        /// On a real main-log device that is when FlushedUntilAddress passes the record. On a NullDevice main log FlushedUntilAddress advances
+        /// without writing anything, so it is at eviction. Eviction runs only OnEvict, so a deletion left to eviction without a mark would
+        /// never run the trigger, and Garnet would leave a deleted RangeIndex key's files, and a deleted vector set's data, behind.
+        /// </summary>
+        [Test, Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task CheckpointFrozenDeleteRunsTheDeleteTriggerOnceNoFlushReadsIt([Values] bool nullDevice)
+        {
+            if (nullDevice)
+            {
+                store.Dispose();
+                log.Dispose();
+                objlog.Dispose();
+                log = new NullDevice();
+                objlog = new NullDevice();
+                store = CreateStore(log, objlog);
+            }
+
+            var sourceAddress = store.Log.TailAddress;
+            Upsert(1, 100);
+            var firstValidAddress = store.hlogBase.GetFirstValidLogicalAddressOnPage(0);
+            if (sourceAddress < firstValidAddress)
+                sourceAddress = firstValidAddress;
+
+            // Create the session before the checkpoint, so that it takes part from PREPARE onward and sees the checkpoint in progress.
+            using var deleteSession = NewSession();
+            var pause = new PauseAtPhase(Phase.WAIT_FLUSH);
+            store.stateMachineDriver.UnsafeRegisterCallback(pause);
+            tracker.Reset();
+            try
+            {
+                Assert.That(store.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot), Is.True);
+                Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True, "The checkpoint did not reach WAIT_FLUSH");
+                _ = deleteSession.BasicContext.Delete(new TestObjectKey { key = 1 }, 0);
+
+                Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.Zero, "The delete trigger ran while the checkpoint still needed the record");
+                Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).Info.DeferredForCheckpoint, Is.True,
+                    "The deletion should be marked as held back by the checkpoint");
+            }
+            finally
+            {
+                pause.Release.Set();
+            }
+            await store.CompleteCheckpointAsync().ConfigureAwait(false);
+
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            Assert.That(store.Log.FlushedUntilAddress, Is.GreaterThan(sourceAddress));
+            if (!nullDevice)
+            {
+                // The drain runs on the flush completion, after the wait is released, so poll for it.
+                Assert.That(SpinWait.SpinUntil(() => tracker.DisposeCount(DisposeReason.Deleted) > 0, TimeSpan.FromSeconds(30)), Is.True,
+                    "The drain did not run the deletion once FlushedUntilAddress passed the record");
+                Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "The deletion must run exactly once");
+                Assert.That(tracker.TotalEvict(), Is.Zero, "The drain, not eviction, should have run the deletion");
+                return;
+            }
+
+            // A NullDevice's flush completes within the shift, so its drain has already run, and must have left the deletion alone. That drain
+            // walks a range only when a mark it can run raised its high-water address, so also walk the record directly, as it would then.
+            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.Zero, "On a NullDevice a deletion held back by a checkpoint must wait for eviction");
+            var epoch = store.hlogBase.epoch;
+            var resumed = epoch.ResumeIfNotProtected();
+            try
+            {
+                store.hlogBase.DrainDeferredDisposes(sourceAddress, store.Log.TailAddress);
+            }
+            finally
+            {
+                if (resumed)
+                    epoch.Suspend();
+            }
+            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.Zero, "A drain that walks the record on a NullDevice must leave the deletion to eviction");
+
+            store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
+            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "Eviction must run the deletion exactly once");
+        }
+
+        /// <summary>
+        /// A Delete during a checkpoint of a record whose image is already on a real main-log device runs the delete trigger at once: the
+        /// checkpoint recovers the record from that image, and below FlushedUntilAddress no flush reads the live record.
+        /// </summary>
+        [Test, Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task CheckpointDeleteOfADurableRecordRunsTheDeleteTriggerAtOnce()
+        {
+            var sourceAddress = store.Log.TailAddress;
+            Upsert(1, 100);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            Assert.That(store.Log.FlushedUntilAddress, Is.GreaterThan(sourceAddress), "Precondition: the record's image is durable");
+
+            using var deleteSession = NewSession();
+            var pause = new PauseAtPhase(Phase.WAIT_FLUSH);
+            store.stateMachineDriver.UnsafeRegisterCallback(pause);
+            tracker.Reset();
+            try
+            {
+                Assert.That(store.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot), Is.True);
+                Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True, "The checkpoint did not reach WAIT_FLUSH");
+                _ = deleteSession.BasicContext.Delete(new TestObjectKey { key = 1 }, 0);
+                Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "The deletion of a durable record must run at once");
+            }
+            finally
+            {
+                pause.Release.Set();
+            }
+            await store.CompleteCheckpointAsync().ConfigureAwait(false);
         }
 
         /// <summary>

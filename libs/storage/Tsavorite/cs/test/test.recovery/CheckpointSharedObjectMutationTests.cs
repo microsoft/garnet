@@ -737,27 +737,33 @@ namespace Tsavorite.test.recovery
         }
 
         /// <summary>
-        /// A Delete that supersedes a (v) record while the checkpoint is still capturing it must NOT dispose the source.
+        /// A Delete that supersedes a (v) record while the checkpoint is still capturing it must not dispose the source until no flush
+        /// reads it; it then disposes it exactly once.
         /// <para>
         /// CPR and the epoch bumps in <c>RunStateMachine</c> make the *version* decision correct — the Delete below
         /// correctly RCUs a (v+1) tombstone over a (v) source — but neither waits for the snapshot's data capture, and
         /// the session's <c>IsInV1</c> stays true through <see cref="Phase.WAIT_FLUSH"/> for exactly that reason.
         /// Disposing here would run
         /// <c>LogField.ClearObjectIdAndConvertToInline</c> on the live record: it calls <c>objectIdMap.Free</c> and flips
-        /// the field to inline, while the snapshot holds a page *copy* that still carries the old object id and resolves
-        /// ids against the *live* map — so a later record reusing that slot gets serialized in its place.
+        /// the field to inline, while the snapshot flush, which writes the live page, resolves the record's object id against
+        /// the live map — so a later record reusing that slot gets serialized in its place.
+        /// </para>
+        /// <para>
+        /// The Delete marks the source instead, and the drain disposes it once FlushedUntilAddress passes it. On this real
+        /// main-log device that is safe: the Snapshot flush completes a page before the page's ReadOnly flush can. Leaving the
+        /// source to eviction without a mark would never run the delete trigger, because eviction calls only OnEvict.
         /// </para>
         /// <para>
         /// This is a different hazard from the one #2101 fixed: <c>CacheSerializedObjectData</c> preserves the (v)
         /// *content* inside the object, and says nothing about the *slot*. It is also a path that test does not reach,
-        /// because the RMW CopyUpdate path caches rather than calling <c>OnDisposeDeletedSource</c>; Delete and the
+        /// because the RMW CopyUpdate path caches rather than disposing as deleted; Delete and the
         /// expired-source RMW paths are the callers that do.
         /// </para>
         /// </summary>
         [Test]
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
-        public async Task DeleteDuringCheckpointDoesNotDisposeTheFrozenSource()
+        public async Task DeleteDuringCheckpointDisposesTheFrozenSourceOnlyOnceItsFlushCompletes()
         {
             var key = new TestObjectKey { key = 1 };
             var sourceAddress = store.Log.TailAddress;
@@ -804,13 +810,21 @@ namespace Tsavorite.test.recovery
                 Assert.That(source.DataHeader.ValueIsInline, Is.False,
                     "the checkpoint-frozen source was disposed: its ObjectIdMap slot was freed and the field converted to inline, "
                     + "which lets the in-flight snapshot resolve that id to whatever record reuses the slot");
-                Assert.That(source.Info.DeferredDispose, Is.False,
-                    "a checkpoint freeze must not be marked for the deferred-dispose drain; the drain releases on the main log's "
-                    + "FlushedUntilAddress, which says nothing about whether the snapshot has captured the record");
+                Assert.That(source.Info.DeferredDispose && source.Info.DeferredForCheckpoint && !source.Info.DeferredCopyUpdate, Is.True,
+                    "a checkpoint freeze must be marked as a deletion held back by the checkpoint, so that the drain or eviction disposes it "
+                    + $"once no flush reads it; the record's info is {source.Info}");
             });
 
             pause.Release.Set();
             await store.CompleteCheckpointAsync().ConfigureAwait(false);
+
+            // The ReadOnly flush of the source's page lets the drain dispose it while the page is still resident. The drain runs after the
+            // flush completion releases this wait, so poll for it.
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            Assert.That(SpinWait.SpinUntil(() => store.hlogBase._wrapper.CreateLogRecord(sourceAddress).DataHeader.ValueIsInline, TimeSpan.FromSeconds(30)),
+                Is.True, "the drain did not dispose the deleted source once its flush completed");
+            Assert.That(store.Log.HeadAddress, Is.LessThanOrEqualTo(sourceAddress), "the source was evicted, so eviction rather than the drain may have disposed it");
+            Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).Info.DeferredDispose, Is.False, "the drain claims the mark when it disposes the source");
         }
 
         internal class SharedListFunctions : SessionFunctionsBase<TestObjectInput, TestObjectOutput, Empty>

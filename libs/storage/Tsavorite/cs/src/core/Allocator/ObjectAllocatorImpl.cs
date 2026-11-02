@@ -571,21 +571,11 @@ namespace Tsavorite.core
                         if (offset == 0 || offset + allocatedSize > PageSize)
                             break;
 
+                        // On a NullDevice main log, FlushedUntilAddress passing a record says nothing about whether the Snapshot flush has
+                        // written it, so a release a checkpoint holds back is left to eviction.
                         ref var recordInfo = ref logRecord.InfoRef;
-                        if (recordInfo.TryTakeDeferredDispose(out var copyUpdate))
-                        {
-
-                            // Valid matters as much as Sealed. SealAndInvalidate yields Sealed and not Valid, which is an elided or
-                            // free-listed record whose disposal already ran, and a marked record can be elided once the freeze lifts
-                            // but before this drain fires. Requiring Valid is what keeps it from being disposed a second time.
-                            // Captured CopyUpdate sources may also be sealed, so their explicit transient classification takes priority.
-                            if (recordInfo.Valid && copyUpdate)
-                                ReleaseCopyUpdatedSourceValue(ref logRecord);
-                            else if (recordInfo.IsValidAndSealed)
-                                OnDispose(ref logRecord, DisposeReason.Deleted);
-                            else if (recordInfo.Valid)
-                                ReleaseCopyUpdatedSourceValue(ref logRecord);
-                        }
+                        if (recordInfo.TryTakeDeferredDispose(leaveCheckpointRelease: IsNullDevice, out var copyUpdate))
+                            RunDeferredRelease(ref logRecord, copyUpdate);
 
                         address += allocatedSize;
                     }
@@ -593,6 +583,20 @@ namespace Tsavorite.core
 
                 address = stopAddress;
             }
+        }
+
+        /// <summary>Run a deferred release of a superseded source that the caller has claimed with <see cref="RecordInfo.TryTakeDeferredDispose(out bool)"/>.</summary>
+        /// <remarks>A CopyUpdate's source has only its value released. Any other source was deleted, by a Delete or an expiration, and is
+        /// disposed as deleted, which runs the application's delete trigger, whether or not the record was sealed. An invalid record was
+        /// elided after it was marked, once its freeze lifted, and the elision already disposed it.</remarks>
+        private void RunDeferredRelease(ref LogRecord logRecord, bool copyUpdate)
+        {
+            if (!logRecord.Info.Valid)
+                return;
+            if (copyUpdate)
+                ReleaseCopyUpdatedSourceValue(ref logRecord);
+            else
+                OnDispose(ref logRecord, DisposeReason.Deleted);
         }
 
         /// <summary>
@@ -645,14 +649,7 @@ namespace Tsavorite.core
                 // does not double-count. Invalid records were skipped above, which is what keeps an elided record, whose
                 // disposal already ran, from being disposed twice.
                 if (logRecord.InfoRef.TryTakeDeferredDispose(out var copyUpdate))
-                {
-                    if (copyUpdate)
-                        ReleaseCopyUpdatedSourceValue(ref logRecord);
-                    else if (logRecord.Info.IsValidAndSealed)
-                        OnDispose(ref logRecord, DisposeReason.Deleted);
-                    else
-                        ReleaseCopyUpdatedSourceValue(ref logRecord);   // A frozen CopyUpdate source; Valid, as Invalid was skipped above
-                }
+                    RunDeferredRelease(ref logRecord, copyUpdate);
 
                 // Decrement the record's heap contribution in a single call.
                 // For non-tombstoned records, CalculateHeapMemorySize returns key + value heap.

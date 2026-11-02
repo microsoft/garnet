@@ -413,20 +413,16 @@ namespace Tsavorite.core
                         return OperationStatus.CANCELED;
                     else if (rmwInfo.Action == RMWAction.ExpireAndResume)
                     {
-                        // The old value is logically deleted (expired). Dispose resources immediately unless frozen by a checkpoint or an in-flight flush.
-                        if (stackCtx.recSrc.HasMainLogSrc)
-                            OnDisposeDeletedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
+                        // The old value is logically deleted (expired). It is released as deleted once the new record is in the chain.
                         doingCU = false;
                         forExpiration = true;
                     }
                     else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                     {
-                        // Immediately dispose all resources on the expired source record, unless frozen by a checkpoint or an in-flight flush.
-                        if (stackCtx.recSrc.HasMainLogSrc)
-                            OnDisposeDeletedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
-
                         if (allocOptions.elideSourceRecord)
                         {
+                            // Nothing replaces the expired source, so release it as deleted now, before the elision releases its key.
+                            ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true);
                             srcLogRecord.InfoRef.SetTombstone();
                             srcLogRecord.InfoRef.SetModified();
 
@@ -436,7 +432,7 @@ namespace Tsavorite.core
                             // no new record created and hash entry is empty now
                             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Expired);
                         }
-                        // Non-elidable: create tombstone record
+                        // Non-elidable: create a tombstone record. The expired source is released as deleted once the tombstone is in the chain.
                         addTombstone = true;
                     }
                     else if (rmwInfo.Action == RMWAction.WrongType)
@@ -522,9 +518,7 @@ namespace Tsavorite.core
                 {
                     Debug.Assert(!addTombstone, "Should not have gone down RCU if NCU had already requested tombstoning." +
                         "This block should only handle expiration/tombstoning via RCU.");
-                    // Dispose the source record's resources immediately, unless frozen by a checkpoint or an in-flight flush.
-                    if (stackCtx.recSrc.HasMainLogSrc)
-                        OnDisposeDeletedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
+                    // The expired source is released as deleted once the tombstone is in the chain.
                     addTombstone = true;
                     newLogRecord.InfoRef.SetTombstone();
                     newLogRecord.InfoRef.SetModified();
@@ -533,9 +527,7 @@ namespace Tsavorite.core
                 }
                 else if (rmwInfo.Action == RMWAction.ExpireAndResume)
                 {
-                    // Dispose the source record's resources immediately, unless frozen by a checkpoint or an in-flight flush.
-                    if (stackCtx.recSrc.HasMainLogSrc)
-                        OnDisposeDeletedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
+                    // The expired source is released as deleted once the new record is in the chain.
                     doingCU = false;
                     forExpiration = true;
 
@@ -595,6 +587,10 @@ namespace Tsavorite.core
                         if (valueHeap != 0)
                             hlogBase.logSizeTracker?.IncrementSize(valueHeap);
                     }
+
+                    // The new record replaces an expired source, which is released as deleted.
+                    if (forExpiration && stackCtx.recSrc.HasMainLogSrc)
+                        ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true);
                 }
                 else
                 {
@@ -652,40 +648,33 @@ namespace Tsavorite.core
                                     hlogBase.logSizeTracker?.IncrementSize(newValueHeap);
                             }
 
-                            if ((rmwInfo.ClearSourceValueObject || (captured && !hlogBase.IsNullDevice)) && isMemoryLogRecord)
-                            {
-                                ref var srcMemLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
-
-                                // A main-log source that is frozen for flush keeps its value until its flush completes, because the flush
-                                // may still be walking it or writing its page. Mark it for the drain (or eviction) to release, as Delete does;
-                                // the bit is safe to set on a frozen record and is stripped from disk images.
-                                if (stackCtx.recSrc.HasMainLogSrc && (captured || hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress)))
-                                {
-                                    srcMemLogRecord.InfoRef.DeferredCopyUpdate = true;
-                                    srcMemLogRecord.InfoRef.DeferredDispose = true;
-                                    hlogBase.NoteDeferredDispose(stackCtx.recSrc.LogicalAddress);
-                                    if (!hlogBase.IsNullDevice && stackCtx.recSrc.LogicalAddress < hlogBase.FlushedUntilAddress)
-                                        hlogBase.DrainDeferredDisposes(stackCtx.recSrc.LogicalAddress,
-                                            stackCtx.recSrc.LogicalAddress + srcMemLogRecord.AllocatedSize);
-                                }
-                                else
-                                {
-                                    // Release through the allocator that OWNS the source record (recSrc.AllocatorBase): hlog for a main-log source,
-                                    // but the read cache for a read-cache source, whose value heap was charged there at promotion.
-                                    stackCtx.recSrc.AllocatorBase.ReleaseCopyUpdatedSourceValue(ref srcMemLogRecord);
-                                }
-                            }
+                            // A captured source keeps its value until no flush reads it; any other source is released only on request.
+                            if ((rmwInfo.ClearSourceValueObject || captured) && isMemoryLogRecord)
+                                ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: false, captured);
                         }
                         else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {
+                            // PostCopyUpdater expired the key, so the new record becomes a tombstone. Its value was never counted, so drop it without
+                            // a release, and release the source as deleted.
                             newLogRecord.InfoRef.SetTombstone();
+                            newLogRecord.ClearValueIfHeap();
                             status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
+                            if (isMemoryLogRecord)
+                                ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true, captured);
                         }
                         else if (rmwInfo.Action == RMWAction.WrongType)
                         {
                             status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
                             goto Done;
                         }
+                    }
+                    else
+                    {
+                        // NeedCopyUpdate or CopyUpdater expired the source, and the new record is a tombstone. A CopyUpdater may have given the
+                        // tombstone a value, which was never counted, so drop it without a release, and release the expired source as deleted.
+                        newLogRecord.ClearValueIfHeap();
+                        if (stackCtx.recSrc.HasMainLogSrc)
+                            ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true);
                     }
 
                     // ElideSourceRecord means we have verified that the old source record is elidable and now that CAS has replaced it in the HashBucketEntry with

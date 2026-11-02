@@ -146,8 +146,8 @@ namespace Tsavorite.core
         /// drain disjoint ranges, and a range passed over while nothing was marked is carried into the next one.</remarks>
         private protected long deferredDisposeDrainedUntilAddress;
 
-        /// <summary>Record that the superseded source at <paramref name="logicalAddress"/> was marked for deferred release because it was
-        /// frozen for flush.</summary>
+        /// <summary>Record that the superseded source at <paramref name="logicalAddress"/> was marked for deferred release because a flush, or
+        /// on a real main-log device a checkpoint, still reads it, so the drain on flush completion releases it.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void NoteDeferredDispose(long logicalAddress) => _ = MonotonicUpdate(ref deferredDisposeMaxAddress, logicalAddress, out _);
 
@@ -2406,7 +2406,9 @@ namespace Tsavorite.core
                         _ = notifyFlushedUntilAddressTcs?.TrySetResult(true);
 
                     // A superseded source whose release was declined while frozen - a deleted record's disposal, or a CopyUpdate
-                    // source's value release - becomes releasable once no flush can read it from the live page. This delta is that range,
+                    // source's value release - becomes releasable once no flush can read it from the live page. On a real main-log device
+                    // that also ends a checkpoint's hold on it, because the Snapshot flush completes a page before the page's ReadOnly flush
+                    // can. This delta is that range,
                     // and it is contiguous by construction because FlushedUntilAddress advances only over completed writes -- unlike
                     // anything page-scoped, which cannot be sound when a page is flushed in fragments that are neither tracked nor
                     // coalesced, so a callback cannot tell whether it holds the last one. A later flush that rewrites the sector holding

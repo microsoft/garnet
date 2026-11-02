@@ -318,6 +318,8 @@ namespace Tsavorite.test
             internal RMWAction expireAction = RMWAction.Default;
             internal bool failIPU;
             internal bool expireOnlyInCU; // If true, only CopyUpdater returns the expire action (not IPU/NCU)
+            internal bool expireInPostCopyUpdater; // If true, PostCopyUpdater returns ExpireAndStop
+            internal bool declineInitialUpdate; // If true, NeedInitialUpdate declines to create a record
 
             public override bool InPlaceUpdater(ref LogRecord logRecord, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
             {
@@ -332,10 +334,19 @@ namespace Tsavorite.test
                 return true;
             }
 
+            public override bool NeedInitialUpdate<TKey>(TKey key, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
+                => !declineInitialUpdate && base.NeedInitialUpdate(key, ref input, ref output, ref rmwInfo);
+
             public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
             {
                 if (expireAction != RMWAction.Default) { rmwInfo.Action = expireAction; return false; }
                 return base.CopyUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+            }
+
+            public override bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
+            {
+                if (expireInPostCopyUpdater) { rmwInfo.Action = RMWAction.ExpireAndStop; return false; }
+                return base.PostCopyUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
             }
         }
 
@@ -640,6 +651,100 @@ namespace Tsavorite.test
             using var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, ObjExpirableFunctions>(fn);
             var input = new TestObjectInput { value = 0 };
             _ = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, 0);
+            ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) should be called exactly once");
+        }
+
+        #endregion
+
+        #region Expirations that complete after the new record is in the chain
+
+        /// <summary>
+        /// A PostCopyUpdater that expires the key turns the CopyUpdate's new record into a tombstone. The source is disposed as deleted,
+        /// which runs the delete trigger, and the tombstone keeps no value. Otherwise both would be held until eviction, and the
+        /// tombstone's object would be serialized when its page flushes.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjDisposeOnImmutablePostCopyUpdaterExpireAndStopTest()
+        {
+            UpsertObj(1, 100);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            tracker.Reset();
+            var tombstoneAddress = store.Log.TailAddress;
+            var fn = new ObjExpirableFunctions { expireInPostCopyUpdater = true };
+            using (var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, ObjExpirableFunctions>(fn))
+            {
+                var input = new TestObjectInput { value = 0 };
+                _ = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, 0);
+            }
+
+            ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "The expired source must be disposed as deleted exactly once");
+            var tombstone = store.hlogBase._wrapper.CreateLogRecord(tombstoneAddress);
+            Assert.That(tombstone.Info.Tombstone, Is.True, "The CopyUpdate's new record should be the tombstone");
+            Assert.That(tombstone.DataHeader.ValueIsInline, Is.True, "The tombstone must not keep the value the CopyUpdater gave it");
+        }
+
+        /// <summary>
+        /// An expiration releases its source only once a new record is in the chain. If NeedInitialUpdate then declines to create one, the
+        /// expired source stays as it was. Releasing the source at the expiration decision, before NeedInitialUpdate, would leave the key's
+        /// live record with its value and its expiration cleared, so the expired key would come back with no expiration.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjExpireAndResumeWithoutInitialUpdateLeavesTheSourceIntactTest()
+        {
+            var sourceAddress = store.Log.TailAddress;
+            UpsertObj(1, 100);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            tracker.Reset();
+            var tailBefore = store.Log.TailAddress;
+            var fn = new ObjExpirableFunctions { expireAction = RMWAction.ExpireAndResume, declineInitialUpdate = true };
+            using (var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, ObjExpirableFunctions>(fn))
+            {
+                var input = new TestObjectInput { value = 0 };
+                _ = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, 0);
+            }
+
+            Assert.That(store.Log.TailAddress, Is.EqualTo(tailBefore), "NeedInitialUpdate declined, so no record should have been created");
+            ClassicAssert.AreEqual(0, tracker.DisposeRecordDeletedCount, "Nothing replaced the expired source, so it must not be released");
+            Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).DataHeader.ValueIsObject, Is.True, "The expired source must keep its value");
+        }
+
+        /// <summary>
+        /// An expiration of a record whose flush is in flight defers the source's release, as a Delete does. Once the flush completes, the
+        /// drain disposes the source as deleted, which runs the delete trigger. Such a source lies below SafeReadOnlyAddress, so it is not
+        /// sealed: the drain decides the kind of release by the mark, not by whether the record is sealed.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjExpireAndStopDeferredWhileFrozenForFlushRunsTheDeleteTriggerTest()
+        {
+            var recordAddress = store.Log.TailAddress;
+            UpsertObj(1, 100);
+
+            // Hold the flush's device write so SafeReadOnlyAddress passes the record while FlushedUntilAddress stays behind it.
+            gatedLog.Gate = true;
+            store.hlogBase.ShiftReadOnlyAddressWithWait(store.Log.TailAddress, wait: false);
+            gatedLog.WaitForPending(1, TimeSpan.FromSeconds(30));
+            tracker.Reset();
+            Assert.That(store.hlog.IsFrozenForFlush(recordAddress), Is.True);
+
+            var fn = new ObjExpirableFunctions { expireAction = RMWAction.ExpireAndStop };
+            using (var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, ObjExpirableFunctions>(fn))
+            {
+                var input = new TestObjectInput { value = 0 };
+                _ = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, 0);
+            }
+
+            ClassicAssert.AreEqual(0, tracker.DisposeRecordDeletedCount, "The expired source's release must wait for its flush");
+            Assert.That(store.hlogBase._wrapper.CreateLogRecord(recordAddress).Info.IsSealed, Is.False,
+                "Precondition: an expired source below SafeReadOnlyAddress is not sealed");
+
+            // The drain runs on the flush completion, after the wait is released, so poll for it.
+            gatedLog.Release(0);
+            gatedLog.WaitForCompletion(0, TimeSpan.FromSeconds(30));
+            Assert.That(SpinWait.SpinUntil(() => tracker.DisposeRecordDeletedCount > 0, TimeSpan.FromSeconds(30)), Is.True,
+                "The drain must dispose the expired source as deleted once its flush completes");
             ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) should be called exactly once");
         }
 

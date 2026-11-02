@@ -121,6 +121,18 @@ namespace Tsavorite.test.recovery
             Assert.That(info.HasSnapshotObjectLogReference, Is.True);
             Assert.That(info.DeferredCopyUpdate, Is.False);
             Assert.That(info.DeferredDispose, Is.False);
+
+            // A release a checkpoint holds back is left for eviction by a caller that asks, and claimed whole by one that does not.
+            info.SetDeferredRelease(copyUpdate: false, forCheckpoint: true);
+            Assert.That(info.TryTakeDeferredDispose(leaveCheckpointRelease: true, out _), Is.False, "A release a checkpoint holds back must be left");
+            Assert.That(info.TryTakeDeferredDispose(out copyUpdate), Is.True);
+            Assert.That(copyUpdate, Is.False);
+            Assert.That(info.DeferredForCheckpoint || info.DeferredDispose, Is.False, "Claiming a release must clear its whole mark");
+
+            info.SetDeferredRelease(copyUpdate: true, forCheckpoint: true);
+            info.ClearBitsForDiskImages();
+            Assert.That(info.DeferredForCheckpoint || info.DeferredCopyUpdate || info.DeferredDispose, Is.False, "A disk image carries no release mark");
+            Assert.That(info.HasSnapshotObjectLogReference, Is.True);
         }
 
         [Test]

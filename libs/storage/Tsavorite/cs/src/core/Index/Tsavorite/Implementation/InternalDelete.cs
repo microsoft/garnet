@@ -278,8 +278,8 @@ namespace Tsavorite.core
                 }
                 else if (stackCtx.recSrc.HasMainLogSrc)
                 {
-                    // Dispose the deleted source record's resources, unless a checkpoint or an in-flight flush has frozen it.
-                    OnDisposeDeletedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord);
+                    // Dispose the deleted source record's resources, or mark that for later if a checkpoint or an in-flight flush has frozen it.
+                    ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord, deleted: true);
                     srcLogRecord.InfoRef.Seal();    // Not elided so Seal without invalidate
                 }
 

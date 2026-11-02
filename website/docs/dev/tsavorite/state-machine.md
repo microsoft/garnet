@@ -546,15 +546,16 @@ flips the field to inline **in the live record**. The Snapshot flush resolves th
 record's object id against the **live** map, so once another record reuses that
 slot, the checkpoint serializes an unrelated object.
 
-`IsFrozen` exists for exactly this window, and `OnDisposeDeletedSource` declines
-disposal while it holds:
+`IsFrozen` exists for exactly this window. `ReleaseSupersededSource`, which every operation that supersedes an in-memory
+record calls after its last callback, defers the release while the record is frozen:
 
 ```csharp
-if (sessionFunctions.Ctx.IsInV1
-            && (stackCtx.recSrc.LogicalAddress <= _hybridLogCheckpoint.info.fuzzyRegionStartAddress
-                || !srcRecordInfo.IsInNewVersion))
-    return true;
-return hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress);
+// IsFrozenForCheckpoint: the checkpoint still needs the record's (v) image
+sessionFunctions.Ctx.IsInV1
+    && (logicalAddress <= _hybridLogCheckpoint.info.fuzzyRegionStartAddress
+        || !srcRecordInfo.IsInNewVersion)
+// IsFrozen adds the flush freeze
+|| hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress)
 ```
 
 Note that this is a *different* hazard from the one that preserving the superseded
@@ -582,8 +583,9 @@ the image the previous flush kept, or from the device, never from the live page.
 A FoldOver checkpoint recovers those records from the main log, so they can be
 elided or released in memory without changing the checkpoint's image.
 
-Every release of a superseded source honors it: elision is declined, a Delete
-defers its disposal, and a CopyUpdate defers releasing its source's value.
+Every release of a superseded source honors it: elision is declined, and
+`ReleaseSupersededSource` defers a Delete's or an expiration's disposal, and a
+CopyUpdate's release of its source's value.
 
 The freeze protects a superseded source's record *image*. Outside a checkpoint,
 nothing needs the source's pre-update *content*. The CopyUpdate's new record is
@@ -603,16 +605,25 @@ of its `(v)` image needs the pre-update content.
 
 The two freezes are released by different signals, and that difference matters:
 
-| Freeze | Released by | Deferred disposal |
+| Freeze | Released by | Deferred release |
 |---|---|---|
-| Flush | `FlushedUntilAddress` passing the record | **Marked** (`RecordInfo.DeferredDispose`) and drained on flush completion, or released at eviction |
-| Checkpoint | the checkpoint completing | **Not marked** — left to eviction |
+| Flush | `FlushedUntilAddress` passing the record | **Marked** (`RecordInfo.DeferredDispose`), and run by the drain on flush completion, or at eviction |
+| Checkpoint | the checkpoint no longer reading the record | **Marked**, with `DeferredForCheckpoint` as well. On a real main-log device the drain runs it when `FlushedUntilAddress` passes the record; on a NullDevice main log, eviction runs it |
 
-A checkpoint freeze deliberately is *not* marked for the drain. The drain fires
-when the main log's `FlushedUntilAddress` passes the record, which says nothing
-about whether the *snapshot* has captured it — so draining on that signal could
-free a value the snapshot flush has yet to write and persist a dangling object
-id.
+On a real main-log device, `FlushedUntilAddress` passing a record also ends the
+checkpoint's hold on it. A ReadOnly flush of a page at or above the Snapshot
+flush's start waits until the Snapshot flush has completed that page, and below
+that start the Snapshot flush reads nothing. So a record already below
+`FlushedUntilAddress`, whose `(v)` image is on disk, is released at once. A
+NullDevice main log advances `FlushedUntilAddress` without writing anything, and
+without that ordering for the pages its ReadOnly flushes passed before the
+Snapshot flush began, so the drain leaves a release marked `DeferredForCheckpoint`
+to eviction.
+
+The release of a Delete or an expiration disposes the record as deleted, which
+runs the application's delete trigger; a CopyUpdate's source has only its value
+released. A freeze left unmarked, to eviction alone, would skip the trigger,
+because eviction calls only `OnEvict`.
 
 ### Practical rule
 
@@ -622,8 +633,12 @@ id.
 > `IsFrozen` / `IsFrozenForFlush` pair does.
 
 Regression coverage for both arms:
-`CheckpointSharedObjectMutationTests.DeleteDuringCheckpointDoesNotDisposeTheFrozenSource`
-pauses at `WAIT_FLUSH` and deletes, asserting the slot survives;
+`CheckpointSharedObjectMutationTests.DeleteDuringCheckpointDisposesTheFrozenSourceOnlyOnceItsFlushCompletes`
+pauses at `WAIT_FLUSH` and deletes, asserting the slot survives and is marked, and
+that the drain disposes the record once its flush completes;
+`RecordLifecycleTests.CheckpointFrozenDeleteRunsTheDeleteTriggerOnceNoFlushReadsIt`
+asserts the delete trigger runs once, after the flush on a real device and at
+eviction on a NullDevice;
 `RecordLifecycleTests.FrozenSupersededSourceIsDisposedWhenTheFlushCompletes`
 parks a flush mid-write and asserts disposal is declined and then drained;
 `RecordLifecycleTests.CopyUpdateDuringTheReadOnlyFlushWalkKeepsTheSource` does the
