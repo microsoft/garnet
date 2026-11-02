@@ -180,7 +180,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("OK", (string)db.Execute("xvimport", "target", term.Name.ToLowerInvariant(), term.Id, term.Value));
                 CollectionAssert.AreEqual(term.Value, ReadRawVectorTerm("target", term.Tag, term.Id));
                 var info = ((string[])db.Execute("VINFO", "target")).Chunk(2).ToDictionary(static pair => pair[0], static pair => pair[1]);
-                ClassicAssert.AreEqual("1", info["import-pending"]);
+                ClassicAssert.AreEqual("pending", info["import-state"]);
                 ClassicAssert.AreEqual("q8", info["quant-type"]);
                 ClassicAssert.AreEqual("3", info["input-vector-dimensions"]);
                 ClassicAssert.IsFalse(info.ContainsKey("size"));
@@ -196,7 +196,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "target", "FINISH"));
 
             var finishedInfo = ((string[])db.Execute("VINFO", "target")).Chunk(2).ToDictionary(static pair => pair[0], static pair => pair[1]);
-            ClassicAssert.AreEqual("0", finishedInfo["import-pending"]);
+            ClassicAssert.AreEqual("not-importing", finishedInfo["import-state"]);
             ClassicAssert.AreEqual("1", finishedInfo["size"]);
             CollectionAssert.AreEqual(startNeighbors, ReadRawVectorTerm("target", DiskANNService.NeighborList, startPointKey));
             ClassicAssert.AreEqual(1, (int)db.Execute("VCARD", "target"));
@@ -251,7 +251,7 @@ namespace Garnet.test
             {
                 var db = recovered.GetDatabase(databaseId);
                 var info = ((string[])db.Execute("VINFO", "imported")).Chunk(2).ToDictionary(static pair => pair[0], static pair => pair[1]);
-                ClassicAssert.AreEqual(finish ? "0" : "1", info["import-pending"]);
+                ClassicAssert.AreEqual(finish ? "not-importing" : "pending", info["import-state"]);
 
                 if (!finish)
                 {
@@ -337,7 +337,7 @@ namespace Garnet.test
 
             ClassicAssert.AreEqual(0, (int)db.Execute("VCARD", "empty"));
             var info = ((string[])db.Execute("VINFO", "imported")).Chunk(2).ToDictionary(static pair => pair[0], static pair => pair[1]);
-            ClassicAssert.AreEqual(finish ? "0" : "1", info["import-pending"]);
+            ClassicAssert.AreEqual(finish ? "not-importing" : "pending", info["import-state"]);
             ClassicAssert.AreEqual("37", info["build-exploration-factor"]);
             CollectionAssert.AreEqual(vector, ReadRawVectorTerm("imported", DiskANNService.FullVector, id));
             CollectionAssert.AreEqual(vector, ReadRawVectorTerm("imported", DiskANNService.FullVector, startPointKey));
@@ -3553,7 +3553,7 @@ namespace Garnet.test
                                 ClassicAssert.AreEqual(values["build-exploration-factor"], expectedEf);
                                 ClassicAssert.AreEqual(values["num-links"], expectedNumLinks);
                                 ClassicAssert.AreEqual(values["size"], "1");
-                                ClassicAssert.AreEqual(values["import-pending"], "0");
+                                ClassicAssert.AreEqual(values["import-state"], "not-importing");
 
                                 // Add another element and try again
                                 res = db.Execute("VADD", GenerateVADDOptions(fooKey, quantizer, reduceValueToUse, ef, numLinks, vectorData2, [0, 0, 0, 1]));
@@ -3569,7 +3569,7 @@ namespace Garnet.test
                                 ClassicAssert.AreEqual(values["build-exploration-factor"], expectedEf);
                                 ClassicAssert.AreEqual(values["num-links"], expectedNumLinks);
                                 ClassicAssert.AreEqual(values["size"], "2");
-                                ClassicAssert.AreEqual(values["import-pending"], "0");
+                                ClassicAssert.AreEqual(values["import-state"], "not-importing");
 
                                 // Delete vector set
                                 db.KeyDelete(fooKey);

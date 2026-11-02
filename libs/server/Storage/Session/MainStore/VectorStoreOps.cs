@@ -210,6 +210,29 @@ namespace Garnet.server
     }
 
     /// <summary>
+    /// State for VINFO about importing.
+    /// </summary>
+    public enum VectorSetImportState
+    {
+        /// <summary>
+        /// Default, Vector Set is not importing.
+        /// 
+        /// Either it never was importing, or importing has finished.
+        /// </summary>
+        None = 0,
+
+        /// <summary>
+        /// Vector Set is being imported into.
+        /// </summary>
+        ImportInProgress = 1,
+
+        /// <summary>
+        /// Vector Set has importing has failed.
+        /// </summary>
+        ImportFailed = 2,
+    }
+
+    /// <summary>
     /// Implementation of Vector Set operations.
     /// </summary>
     sealed partial class StorageSession : IDisposable
@@ -604,13 +627,13 @@ namespace Garnet.server
             out uint buildExplorationFactor,
             out uint numberOfLinks,
             out long size,
-            out bool importPending)
+            out VectorSetImportState importPending)
         {
             parseState.InitializeWithArgument(key);
 
             var input = new StringInput(RespCommand.VINFO, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out importPending))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out var importPendingBool))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -621,21 +644,27 @@ namespace Garnet.server
                     buildExplorationFactor = 0;
                     numberOfLinks = 0;
                     size = 0;
+                    importPending = VectorSetImportState.None;
+
                     return status;
                 }
 
                 // After a successful read we extract metadata
                 VectorManager.ReadIndex(indexSpan, out var context, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out distanceMetricType, out var flags, out var indexPtr);
-                if (importPending)
+                if (importPendingBool)
                 {
                     // Can't check cardinality if Vector Set is being imported
                     size = 0;
+
+                    importPending = flags.HasFlag(VectorSetFlags.ImportFailed) ? VectorSetImportState.ImportFailed : VectorSetImportState.ImportInProgress;
+
                     return GarnetStatus.OK;
                 }
 
                 var cardinality = NativeDiskANNMethods.card(context, indexPtr);
                 size = cardinality == ulong.MaxValue ? -1 : (long)cardinality;
 
+                importPending = VectorSetImportState.None;
                 return GarnetStatus.OK;
             }
         }

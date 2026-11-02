@@ -320,7 +320,7 @@ RESP2 returns an array of 14 elements (7 alternating field-name / value pairs); 
 | `build-exploration-factor` | integer               | `EF` used at build time                                                                             |
 | `num-links`                | integer               | `M` (max out-degree)                                                                                |
 | `size`                     | integer               | Number of elements currently in the index                                                           |
-| `import-pending`           | integer (bulk string) | `1` while import awaits successful `FINISH`; otherwise `0`                                          |
+| `import-state`             | simple string         | One of `not-importing`, `pending`, `failed`                                                         |
 
 `VINFO` remains available during import and finalization, including after a failed `FINISH`. While pending,
 it reads stored metadata without calling DiskANN or disabling further term imports.

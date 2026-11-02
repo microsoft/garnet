@@ -3069,74 +3069,174 @@ namespace Garnet.test.cluster
                     ClassicAssert.AreEqual(expectedAttr, replicaAttr);
                 }
             }
+        }
 
-            unsafe byte[] ReadRawVectorTerm(GarnetServer server, string key, byte termType, ReadOnlySpan<byte> termKey, int bufferSize = 8192)
+        [Test]
+        public async Task FailedImportMarkedFailedAsync()
+        {
+            const string ExportKey = nameof(FailedImportMarkedFailedAsync) + "_Export";
+            const string ImportKey = nameof(FailedImportMarkedFailedAsync) + "_Import";
+            const int NumElements = 10;
+            const uint StartPointId = uint.MaxValue; // Garnet always uses this start point id, so we'll export using it
+            const int SEED = 2026_11_02_00;
+
+            var rand = new Random(SEED);
+
+            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: DefaultShards / 2, replicaCount: 1, useTLS: false).ConfigureAwait(false);
+
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
+            var db = connection.GetDatabase();
+
+            // Build a Vector Set to import
+            for (var i = 0; i < NumElements; i++)
             {
-                var stub = ReadRawVectorStub(server, key);
-                VectorManager.ReadIndex(stub, out var indexContext, out _, out _, out _, out _, out _, out _, out _, out _);
-                Span<byte> namespaceBytes = stackalloc byte[sizeof(uint)];
-                VectorManager.StoreContextInNamespace(indexContext | termType, ref namespaceBytes);
+                ClassicAssert.IsTrue(await db.VectorSetAddAsync(ExportKey, VectorSetAddRequest.Member(i.ToString(), new float[] { i, i + 1, i + 2 }, $"{{\"id\": \"{i}\"}}")).ConfigureAwait(false));
+            }
 
+            // Export the Vector Set
+            var primaryServer = context.nodes[0];
+
+            Span<byte> stateKey = stackalloc byte[sizeof(uint)];
+            BinaryPrimitives.WriteUInt32LittleEndian(stateKey, BinaryPrimitives.ReadUInt32BigEndian("_qnt"u8));
+            var state = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.Metadata, stateKey);
+
+            var startPointKey = BitConverter.GetBytes(0U);
+
+            var importArgsList = new List<RedisValue[]>();
+
+            for (var i = 0; i < NumElements; i++)
+            {
+                var internalId = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.InternalIdMap, Encoding.UTF8.GetBytes(i.ToString()));
+
+                var fullVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.FullVector, internalId);
+                var attributes = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.Attributes, internalId);
+                var quantVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.QuantizedVector, internalId);
+                var neighbors = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.NeighborList, internalId);
+                var externalId = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.ExternalIdMap, internalId);
+
+                // Imports are actually stored under internal id
+                importArgsList.Add(["ATTRS", internalId, attributes]);
+                importArgsList.Add(["EXTMAP", internalId, externalId]);
+                importArgsList.Add(["NEIGHBORS", internalId, neighbors]);
+                importArgsList.Add(["VECTOR", internalId, fullVector]);
+                importArgsList.Add(["QUANT", internalId, quantVector]);
+
+                // INTMAP goes in the opposite direction
+                importArgsList.Add(["INTMAP", externalId, internalId]);
+            }
+
+            // Deal with the start point
+            {
+                var internalId = new byte[4];
+                BinaryPrimitives.WriteUInt32LittleEndian(internalId, StartPointId);
+
+                var fullVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.FullVector, internalId);
+                var quantVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.QuantizedVector, internalId);
+                var neighbors = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.NeighborList, internalId);
+
+                // Imports are actually stored under internal id
+                importArgsList.Add(["VECTOR", internalId, fullVector]);
+                importArgsList.Add(["NEIGHBORS", internalId, neighbors]);
+                importArgsList.Add(["QUANT", internalId, quantVector]);
+            }
+
+            // Toss half the (repeatably) random import terms on the ground
+            var importArgs = importArgsList.ToArray();
+            rand.Shuffle(importArgs);
+            importArgs = importArgs[..(importArgs.Length / 2)];
+
+            // Run the import
+            ClassicAssert.AreEqual("OK", (string)await db.ExecuteAsync("XVCREATE", [ImportKey, "DIM", 3, "M", 16, "Q8", "QUANT_STATE", state]).ConfigureAwait(false));
+
+            foreach (var argSet in importArgs)
+            {
+                ICollection<object> args = [ImportKey, .. argSet];
+                ClassicAssert.AreEqual("OK", (string)await db.ExecuteAsync("XVIMPORT", args).ConfigureAwait(false));
+            }
+
+            // Verification should fail
+            var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", [ImportKey, "VERIFY", "0", "1"]));
+            ClassicAssert.AreEqual("ERR Vector set import validation failed", exc.Message);
+
+            // Should leave vector set marked failed in both primary and replica
+
+            var primary = connection.GetServer(context.endpoints[0]);
+            var primaryInfo = (await primary.ExecuteAsync(database: 0, "VINFO", [ImportKey]).ConfigureAwait(false)).ToDictionary();
+
+            var replica = connection.GetServer(context.endpoints[1]);
+            ClassicAssert.AreEqual("OK", (string)await replica.ExecuteAsync("READONLY").ConfigureAwait(false));
+            var replicaInfo = (await replica.ExecuteAsync(database: 0, "VINFO", [ImportKey]).ConfigureAwait(false)).ToDictionary();
+
+            ClassicAssert.AreEqual("failed", (string)primaryInfo["import-state"]);
+            ClassicAssert.AreEqual("failed", (string)replicaInfo["import-state"]);
+        }
+
+        private static unsafe byte[] ReadRawVectorTerm(GarnetServer server, string key, byte termType, ReadOnlySpan<byte> termKey, int bufferSize = 8192)
+        {
+            var stub = ReadRawVectorStub(server, key);
+            VectorManager.ReadIndex(stub, out var indexContext, out _, out _, out _, out _, out _, out _, out _, out _);
+            Span<byte> namespaceBytes = stackalloc byte[sizeof(uint)];
+            VectorManager.StoreContextInNamespace(indexContext | termType, ref namespaceBytes);
+
+            var storeWrapper = server.Provider.StoreWrapper;
+            using var session = storeWrapper.DefaultDatabase.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(new VectorSessionFunctions(storeWrapper.CreateFunctionsState()));
+            var context = session.BasicContext;
+            Span<byte> buffer = bufferSize <= 8192 ? stackalloc byte[8192] : new byte[bufferSize];
+            fixed (byte* bufferPtr = buffer)
+            fixed (byte* termKeyPtr = termKey)
+            {
+                var elementKey = new VectorElementKey(namespaceBytes, new ReadOnlySpan<byte>(termKeyPtr, termKey.Length));
+                var input = new VectorInput { ReadDesiredSize = -1 };
+                var output = new VectorOutput(bufferPtr, buffer.Length);
+                var status = context.Read(elementKey, ref input, ref output);
+                if (status.IsPending)
+                {
+                    _ = context.CompletePendingWithOutputs(out var completed, wait: true);
+                    using (completed)
+                    {
+                        ClassicAssert.IsTrue(completed.Next());
+                        status = completed.Current.Status;
+                        output = completed.Current.Output;
+                    }
+                }
+
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.LessOrEqual(input.ReadDesiredSize, buffer.Length);
+                return output.SpanByteAndMemory.ReadOnlySpan.ToArray();
+            }
+
+            byte[] ReadRawVectorStub(GarnetServer server, string key)
+            {
                 var storeWrapper = server.Provider.StoreWrapper;
-                using var session = storeWrapper.DefaultDatabase.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(new VectorSessionFunctions(storeWrapper.CreateFunctionsState()));
+                var functionsState = storeWrapper.CreateFunctionsState();
+                var functions = new MainSessionFunctions(functionsState);
+                ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
+
+                using var session = database.Store.NewSession<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions>(functions, false);
                 var context = session.BasicContext;
-                Span<byte> buffer = bufferSize <= 8192 ? stackalloc byte[8192] : new byte[bufferSize];
-                fixed (byte* bufferPtr = buffer)
-                fixed (byte* termKeyPtr = termKey)
-                {
-                    var elementKey = new VectorElementKey(namespaceBytes, new ReadOnlySpan<byte>(termKeyPtr, termKey.Length));
-                    var input = new VectorInput { ReadDesiredSize = -1 };
-                    var output = new VectorOutput(bufferPtr, buffer.Length);
-                    var status = context.Read(elementKey, ref input, ref output);
-                    if (status.IsPending)
-                    {
-                        _ = context.CompletePendingWithOutputs(out var completed, wait: true);
-                        using (completed)
-                        {
-                            ClassicAssert.IsTrue(completed.Next());
-                            status = completed.Current.Status;
-                            output = completed.Current.Output;
-                        }
-                    }
 
-                    ClassicAssert.IsTrue(status.Found);
-                    ClassicAssert.LessOrEqual(input.ReadDesiredSize, buffer.Length);
-                    return output.SpanByteAndMemory.ReadOnlySpan.ToArray();
+                Span<byte> stub = stackalloc byte[VectorManager.IndexSizeBytes];
+                var input = new StringInput(RespCommand.VADD, arg1: 0);
+                var output = StringOutput.FromPinnedSpan(stub);
+                Span<byte> keySpan = stackalloc byte[Encoding.ASCII.GetByteCount(key)];
+                _ = Encoding.ASCII.GetBytes(key, keySpan);
+                var status = context.Read((FixedSpanByteKey)keySpan, ref input, ref output);
+                if (status.IsPending)
+                {
+                    _ = context.CompletePendingWithOutputs(out var completed, wait: true);
+                    using (completed)
+                    {
+                        ClassicAssert.IsTrue(completed.Next());
+                        status = completed.Current.Status;
+                        output = completed.Current.Output;
+                    }
                 }
 
-                byte[] ReadRawVectorStub(GarnetServer server, string key)
-                {
-                    var storeWrapper = server.Provider.StoreWrapper;
-                    var functionsState = storeWrapper.CreateFunctionsState();
-                    var functions = new MainSessionFunctions(functionsState);
-                    ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
+                ClassicAssert.IsTrue(status.Found, $"reading the raw stub for {key} must find the index record");
+                ClassicAssert.IsTrue(output.SpanByteAndMemory.IsSpanByte, "the stub read must stay on the pinned span");
+                ClassicAssert.AreEqual(VectorManager.IndexSizeBytes, output.SpanByteAndMemory.Length, "the stub read returned an unexpected length");
 
-                    using var session = database.Store.NewSession<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions>(functions, false);
-                    var context = session.BasicContext;
-
-                    Span<byte> stub = stackalloc byte[VectorManager.IndexSizeBytes];
-                    var input = new StringInput(RespCommand.VADD, arg1: 0);
-                    var output = StringOutput.FromPinnedSpan(stub);
-                    Span<byte> keySpan = stackalloc byte[Encoding.ASCII.GetByteCount(key)];
-                    _ = Encoding.ASCII.GetBytes(key, keySpan);
-                    var status = context.Read((FixedSpanByteKey)keySpan, ref input, ref output);
-                    if (status.IsPending)
-                    {
-                        _ = context.CompletePendingWithOutputs(out var completed, wait: true);
-                        using (completed)
-                        {
-                            ClassicAssert.IsTrue(completed.Next());
-                            status = completed.Current.Status;
-                            output = completed.Current.Output;
-                        }
-                    }
-
-                    ClassicAssert.IsTrue(status.Found, $"reading the raw stub for {key} must find the index record");
-                    ClassicAssert.IsTrue(output.SpanByteAndMemory.IsSpanByte, "the stub read must stay on the pinned span");
-                    ClassicAssert.AreEqual(VectorManager.IndexSizeBytes, output.SpanByteAndMemory.Length, "the stub read returned an unexpected length");
-
-                    return output.SpanByteAndMemory.ReadOnlySpan.ToArray();
-                }
+                return output.SpanByteAndMemory.ReadOnlySpan.ToArray();
             }
         }
 

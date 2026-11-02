@@ -2253,7 +2253,7 @@ namespace Garnet.server
         /// Fetch debugging information about the Vector Set.
         /// </summary>
         /// <remarks>When the status is OK, a negative <paramref name="size"/> indicates an internal index failure.</remarks>
-        GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size, out bool importPending);
+        GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size, out VectorSetImportState importPending);
 
         /// <summary>
         /// Get the attributes associated with an element in the Vector Set.
