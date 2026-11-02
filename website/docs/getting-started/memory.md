@@ -67,12 +67,15 @@ Several consequences matter when sizing a machine:
   cannot exceed the 128 GiB the page table can address. `INFO STORE` reports the threshold as `IndexOverflowThreshold`
   and the resolved ceiling as `IndexOverflowMaxMemorySizeBytes`, alongside current use as `IndexOverflowMemorySizeBytes`.
 * An index resize is the peak of index memory use, not a step change: the superseded hash table and its overflow
-  generation stay allocated until the split completes, so a resize transiently needs both generations at once.
+  generation stay allocated until the split completes, so a resize transiently needs both generations at once. The
+  superseded generation is not charged against the log budget described below: it is freed when the split completes, and
+  evicting log pages to make room for it would cost disk I/O or, without a storage tier, lose their records.
 
 To make this visible, index memory **beyond** the configured index budget (the larger of `IndexMemorySize` and
-`IndexMaxMemorySize`) is charged against `LogMemorySize`. The log sheds pages to make room for it, so the two no longer sum
-past the memory the machine has, and a store with more keys than the index was sized for degrades into disk I/O instead of
-growing without bound. A warning is logged when this charge grows.
+`IndexMaxMemorySize`, plus the roughly 8 MiB the overflow bucket allocator commits as soon as it exists) is charged against
+`LogMemorySize`. The log sheds pages to make room for it, so the two no longer sum past the memory the machine has, and a
+store with more keys than the index was sized for degrades into disk I/O instead of growing without bound. A warning is
+logged when this charge grows.
 
 This compensation is best-effort, not a hard bound. The log can only shed down to a floor of a few pages; once it reaches
 that floor there is nothing left to give back, and further index growth is again unbudgeted. Charging it buys headroom and
@@ -84,7 +87,7 @@ it was provisioned for still needs to be resharded or given more memory. The rel
 * `IndexTotalMemorySizeBytes` — the sum of the two, i.e. actual index memory.
 * `IndexMemoryBudgetBytes` — the configured index budget.
 * `IndexMemoryChargedToLogBudgetBytes` — index memory charged against the log budget. The log's effective budget is reduced
-  by this much, or down to its floor, whichever is less.
+  by this much, or down to its floor, whichever is less. During an index resize it excludes the superseded generation.
 
 If `IndexMemoryChargedToLogBudgetBytes` is large and growing, the machine is storing more keys than it was provisioned for:
 add nodes, or reduce `LogMemorySize` so the remaining budget is honest.
@@ -129,6 +132,11 @@ the logical address of the previous entry in a record chain, followed by the key
 
 Because `LogMemorySize` accounts for both inline bytes and referenced heap memory, it bounds the total main-log memory regardless
 of the mix of raw strings and data-structure objects in the store.
+
+The startup `Total configured memory limit` diagnostic counts the index budget, main-log target, read-cache target (if
+enabled), and AOF buffers once each. A log without a memory target contributes its page-count cap instead. Log page
+capacity is not added to a target that already covers pages and heap objects. This total is not a process-wide hard
+limit: trimming allows temporary overshoot, and other allocations such as network buffers and runtime overhead are separate.
 
 ## Read Cache
 

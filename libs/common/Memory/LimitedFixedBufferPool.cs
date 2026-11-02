@@ -300,11 +300,12 @@ namespace Garnet.common
         {
             for (var i = 0; i < numLevels; i++)
             {
-                if (pool[i] == null) continue;
+                var level = Volatile.Read(ref pool[i]);
+                if (level == null) continue;
                 // Keep trying Dequeuing until no items left to free
-                while (pool[i].items.TryDequeue(out var entry))
+                while (level.items.TryDequeue(out var entry))
                 {
-                    Interlocked.Decrement(ref pool[i].size);
+                    Interlocked.Decrement(ref level.size);
                     _ = Interlocked.Add(ref pooledBytes, -entry.entry.Length);
                 }
             }
@@ -317,48 +318,56 @@ namespace Garnet.common
         ///     As a consequence it spin waits until totalReferences goes back down to 0 and blocks any future allocations.
         ///     In DEBUG builds, logs outstanding unreturned entries after a timeout for leak diagnosis.
         /// </summary>
+        /// <remarks>Concurrent calls wait for the same teardown to complete. Purge and statistics may run during teardown.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Dispose()
         {
-#if DEBUG
-            var sw = Stopwatch.StartNew();
-            var diagnosed = false;
-#endif
-            while (totalReferences > int.MinValue &&
-                Interlocked.CompareExchange(ref totalReferences, int.MinValue, 0) != 0)
+            // The reference-count sentinel closes allocation; the lock gives teardown a single owner.
+            lock (pool)
             {
+                if (Volatile.Read(ref totalReferences) < 0)
+                    return;
 #if DEBUG
-                if (!diagnosed && sw.ElapsedMilliseconds > DisposeWaitDiagnosticMs)
-                {
-                    diagnosed = true;
-                    var remaining = totalReferences;
-                    var ownerType = (PoolOwnerType)(ownerByte >> 8);
-                    logger?.LogError("LimitedFixedBufferPool.Dispose blocked with {remaining} unreturned references (poolOwner={ownerType}). Outstanding entries:", remaining, ownerType);
-                    foreach (var kvp in outstandingEntries)
-                    {
-                        var entryBufferType = (PoolEntryBufferType)(kvp.Key.source & 0xFF);
-                        var entryOwnerType = (PoolOwnerType)((kvp.Key.source >> 8) & 0xFF);
-                        logger?.LogCritical("  Unreturned buffer: ownerType={ownerType}, bufferType={bufferType}, size={size}",
-                            entryOwnerType, entryBufferType, kvp.Key.entry.Length);
-                    }
-                }
+                var sw = Stopwatch.StartNew();
+                var diagnosed = false;
 #endif
-                Thread.Yield();
-            }
-
-            for (var i = 0; i < numLevels; i++)
-            {
-                if (pool[i] == null) continue;
-                while (pool[i].size > 0)
+                while (totalReferences > int.MinValue &&
+                    Interlocked.CompareExchange(ref totalReferences, int.MinValue, 0) != 0)
                 {
-                    while (pool[i].items.TryDequeue(out var result))
+#if DEBUG
+                    if (!diagnosed && sw.ElapsedMilliseconds > DisposeWaitDiagnosticMs)
                     {
-                        Interlocked.Decrement(ref pool[i].size);
-                        _ = Interlocked.Add(ref pooledBytes, -result.entry.Length);
+                        diagnosed = true;
+                        var remaining = totalReferences;
+                        var ownerType = (PoolOwnerType)(ownerByte >> 8);
+                        logger?.LogError("LimitedFixedBufferPool.Dispose blocked with {remaining} unreturned references (poolOwner={ownerType}). Outstanding entries:", remaining, ownerType);
+                        foreach (var kvp in outstandingEntries)
+                        {
+                            var entryBufferType = (PoolEntryBufferType)(kvp.Key.source & 0xFF);
+                            var entryOwnerType = (PoolOwnerType)((kvp.Key.source >> 8) & 0xFF);
+                            logger?.LogCritical("  Unreturned buffer: ownerType={ownerType}, bufferType={bufferType}, size={size}",
+                                entryOwnerType, entryBufferType, kvp.Key.entry.Length);
+                        }
                     }
+#endif
                     Thread.Yield();
                 }
-                pool[i] = null;
+
+                for (var i = 0; i < numLevels; i++)
+                {
+                    var level = Volatile.Read(ref pool[i]);
+                    if (level == null) continue;
+                    while (level.size > 0)
+                    {
+                        while (level.items.TryDequeue(out var result))
+                        {
+                            Interlocked.Decrement(ref level.size);
+                            _ = Interlocked.Add(ref pooledBytes, -result.entry.Length);
+                        }
+                        Thread.Yield();
+                    }
+                    Volatile.Write(ref pool[i], null);
+                }
             }
         }
 
@@ -383,7 +392,8 @@ namespace Garnet.common
             var totalBufferCount = 0;
             for (var i = 0; i < numLevels; i++)
             {
-                var items = pool[i] == null || pool[i].items.IsEmpty ? 0 : pool[i].items.Count;
+                var level = Volatile.Read(ref pool[i]);
+                var items = level == null || level.items.IsEmpty ? 0 : level.items.Count;
                 totalBufferCount += items;
                 bufferStats += $",{items}={Format.MemoryBytes(minAllocationSize << i)}";
             }

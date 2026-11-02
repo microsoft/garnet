@@ -770,10 +770,30 @@ namespace Tsavorite.core
                     PendingFlush[i] = new PendingFlushList();
             }
             device = logSettings.LogDevice;
-            sectorSize = (int)device.SectorSize;
+            sectorSize = (int)Math.Max(device.SectorSize, logSettings.ObjectLogDevice?.SectorSize ?? 0u);
 
             if (PageSize < sectorSize)
                 throw new TsavoriteException($"Page size must be at least of device sector size ({sectorSize} bytes). Set PageSizeBits accordingly.");
+
+            // Pages are snapshotted to, and recovered from, the checkpoint devices directly, so they must also be aligned
+            // and rounded for those devices. A checkpoint sector larger than a page cannot be served; leave startup working
+            // and let a checkpoint fail with the explicit sector-size error instead.
+            var checkpointSectorSize = logSettings.CheckpointSectorSize;
+            if (checkpointSectorSize > sectorSize)
+            {
+                if (!Utility.IsPowerOfTwo(checkpointSectorSize))
+                    throw new TsavoriteException($"Checkpoint sector size {checkpointSectorSize} must be a power of two");
+                if (checkpointSectorSize <= PageSize)
+                {
+                    sectorSize = checkpointSectorSize;
+                    logger?.LogInformation("Using sector size {sectorSize} for log pages and IO to match the checkpoint devices", sectorSize);
+                }
+                else
+                {
+                    logger?.LogWarning("Checkpoint devices require sector size {checkpointSectorSize}, which exceeds the page size {pageSize}; checkpoints will fail until the page size is at least the checkpoint sector size",
+                        checkpointSectorSize, PageSize);
+                }
+            }
 
             AlignedPageSizeBytes = RoundUp(PageSize, sectorSize);
 
@@ -1823,15 +1843,25 @@ namespace Tsavorite.core
         {
             if (MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out var oldSafeReadOnlyAddress))
             {
-                // Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
-                if (onReadOnlyObserver != null)
+                try
                 {
-                    // This scan does not need a store because it does not lock; it is epoch-protected so by the time it runs no current thread
-                    // will have seen a record below the new ReadOnlyAddress as "in mutable region".
-                    using var iter = Scan(store: null, oldSafeReadOnlyAddress, newSafeReadOnlyAddress, DiskScanBufferingMode.NoBuffering);
-                    onReadOnlyObserver?.OnNext(iter);
+                    // Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
+                    if (onReadOnlyObserver != null)
+                    {
+                        // This scan does not need a store because it does not lock; it is epoch-protected so by the time it runs no current thread
+                        // will have seen a record below the new ReadOnlyAddress as "in mutable region".
+                        using var iter = Scan(store: null, oldSafeReadOnlyAddress, newSafeReadOnlyAddress, DiskScanBufferingMode.NoBuffering);
+                        onReadOnlyObserver?.OnNext(iter);
+                    }
+                    AsyncFlushPagesForReadOnly(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, noFlush);
                 }
-                AsyncFlushPagesForReadOnly(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, noFlush);
+                catch (Exception ex)
+                {
+                    // SafeReadOnlyAddress has passed a range that may not be flushed, and FlushedUntilAddress cannot pass an unflushed
+                    // range, so the log would stall silently. Crash instead: a dump is the only practical way to diagnose this.
+                    FailFastOnWorkerException($"OnPagesMarkedReadOnly failed; allocator state is unrecoverable. Range [{oldSafeReadOnlyAddress}, {newSafeReadOnlyAddress}) "
+                        + $"may not be flushed. FlushedUntilAddress={FlushedUntilAddress}", ex);
+                }
             }
         }
 
@@ -1875,20 +1905,36 @@ namespace Tsavorite.core
             {
                 // Page closing cannot resume after a failure here, so the log would stall silently. Crash instead: a dump is the
                 // only practical way to diagnose this.
-                var exceptionDetails = ex.GetType().FullName ?? ex.GetType().Name;
-                try
-                {
-                    exceptionDetails = ex.ToString() ?? exceptionDetails;
-                }
-                finally
-                {
-                    // Exception.ToString() is virtual; always fail fast even if an application exception throws while formatting itself.
-                    Environment.FailFast(
-                        $"OnPagesClosedWorker failed; allocator state is unrecoverable. ClosedUntilAddress={ClosedUntilAddress}, OngoingCloseUntilAddress={OngoingCloseUntilAddress}"
-                        + $"{Environment.NewLine}Caught exception:{Environment.NewLine}{exceptionDetails}",
-                        ex);
-                }
+                FailFastOnWorkerException(
+                    $"OnPagesClosedWorker failed; allocator state is unrecoverable. ClosedUntilAddress={ClosedUntilAddress}, OngoingCloseUntilAddress={OngoingCloseUntilAddress}", ex);
             }
+        }
+
+        /// <summary>
+        /// Terminates the process for an exception that escapes a page flush or close. These run in epoch drains on whichever thread
+        /// drains them, and the log cannot advance past the range they failed on.
+        /// </summary>
+        /// <param name="state">The failed operation and the allocator state it leaves.</param>
+        /// <param name="ex">The exception.</param>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private protected static void FailFastOnWorkerException(string state, Exception ex)
+        {
+            // Exception.ToString() is virtual, so an application exception can throw while formatting itself. FailFast formats the
+            // exception it is given and throws instead of terminating if that throws, so such an exception is reported by type only.
+            var exceptionType = ex.GetType().FullName ?? ex.GetType().Name;
+            string exceptionDetails;
+            var reportedException = ex;
+            try
+            {
+                exceptionDetails = ex.ToString() ?? exceptionType;
+            }
+            catch (Exception formatException)
+            {
+                exceptionDetails = $"{exceptionType}; its ToString() threw {formatException.GetType().FullName}";
+                reportedException = null;
+            }
+
+            Environment.FailFast($"{state}{Environment.NewLine}Caught exception:{Environment.NewLine}{exceptionDetails}", reportedException);
         }
 
         private void OnPagesClosedWorkerCore()
