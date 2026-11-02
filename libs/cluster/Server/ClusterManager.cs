@@ -366,7 +366,7 @@ namespace Garnet.cluster
                 var current = currentConfig;
                 var slotMap = current.GetSlotList(1);
                 var workerId = current.GetWorkerIdFromNodeId(replicaId);
-                var newConfig = current.MakeReplicaOf(replicaId).AssignSlots(slotMap, workerId, SlotState.STABLE);
+                var newConfig = current.MakeReplicaOf(replicaId).AssignSlots(slotMap, workerId, SlotState.STABLE).BumpLocalNodeConfigEpoch();
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }

@@ -58,6 +58,11 @@ namespace Garnet.server
         /// Replays <see cref="RespCommand.VADD"/>s on replicas in parallel.
         /// </summary>
         VectorReplicationReplayTask,
+
+        /// <summary>
+        /// Coordinates a primary- or replica-initiated failover across role changes.
+        /// </summary>
+        FailoverTask,
     }
 
     /// <summary>
@@ -83,10 +88,12 @@ namespace Garnet.server
             TaskPlacementMapping[(int)TaskType.ObjectCollectTask] = TaskPlacementCategory.Primary;
             TaskPlacementMapping[(int)TaskType.ExpiredKeyDeletionTask] = TaskPlacementCategory.Primary;
             TaskPlacementMapping[(int)TaskType.IndexAutoGrowTask] = TaskPlacementCategory.All;
+            TaskPlacementMapping[(int)TaskType.FailoverTask] = TaskPlacementCategory.ControlPlane;
         }
 
         /// <summary>
-        /// Retrieves task types for a placement category.
+        /// Retrieves role-specific task types, or all task types for <see cref="TaskPlacementCategory.All"/>.
+        /// Role-independent tasks are excluded from role-specific selections.
         /// </summary>
         /// <param name="lookupPlacementCategory">The placement category to filter by.</param>
         /// <returns>An enumerable of task types that match the placement category.</returns>
@@ -107,15 +114,15 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Determines if a task placement matches the lookup placement category.
+        /// Determines if a task is included in the requested cancellation category.
         /// </summary>
         /// <param name="taskPlacementCategory">The task's assigned placement.</param>
         /// <param name="lookupPlacementCategory">The lookup placement category.</param>
-        /// <returns>True if the task can run on the lookup placement.</returns>
+        /// <returns>True if the task is selected for cancellation.</returns>
         private static bool MatchPlacementCategory(TaskPlacementCategory taskPlacementCategory, TaskPlacementCategory lookupPlacementCategory)
         {
-            // Tasks marked as "All" can run anywhere
-            if (taskPlacementCategory == TaskPlacementCategory.All || lookupPlacementCategory == TaskPlacementCategory.All)
+            // Role-independent tasks survive role-specific cancellation; shutdown selects everything.
+            if (lookupPlacementCategory == TaskPlacementCategory.All)
                 return true;
 
             // Check if the lookup placement includes this task's placement

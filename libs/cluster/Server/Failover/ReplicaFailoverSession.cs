@@ -94,6 +94,7 @@ namespace Garnet.cluster
                 status = FailoverStatus.WAITING_FOR_SYNC;
                 while (primaryReplicationOffset.AnyGreater(clusterProvider.replicationManager.ReplicationOffset))
                 {
+                    cts.Token.ThrowIfCancellationRequested();
                     // Fail if upper bound time for failover has been reached
                     if (FailoverTimeout)
                     {
@@ -134,7 +135,8 @@ namespace Garnet.cluster
                     return false;
                 }
                 acquiredLock = true;
-                _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
+                _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync(cts.Token).ConfigureAwait(false);
+                cts.Token.ThrowIfCancellationRequested();
 
                 // Take over slots from old primary
                 if (!clusterProvider.clusterManager.TryTakeOverForPrimary())
@@ -191,7 +193,9 @@ namespace Garnet.cluster
 
             var oldPrimaryId = oldConfig.LocalNodePrimaryId;
             var newConfig = clusterProvider.clusterManager.CurrentConfig;
-            var client = oldPrimaryId.Equals(replicaId) ? primaryClient : await GetConnectionAsync(replicaId).ConfigureAwait(false);
+            var client = oldPrimaryId.Equals(replicaId) && primaryClient != null
+                ? primaryClient
+                : await GetConnectionAsync(replicaId).ConfigureAwait(false);
 
             try
             {
@@ -252,8 +256,9 @@ namespace Garnet.cluster
             var replicaIds = newConfig.GetReplicaIds(oldPrimaryId);
             var attachReplicaTasks = new List<Task>();
 
-            // If DEFAULT failover try to make old primary replica of this new primary
-            if (option is FailoverOption.DEFAULT)
+            // A coordinated primary-initiated handoff demotes the old primary before requesting takeover.
+            if (option is FailoverOption.DEFAULT ||
+                newConfig.GetReplicaIds(newConfig.LocalNodeId).Contains(oldPrimaryId))
             {
                 replicaIds.Add(oldPrimaryId);
             }
@@ -299,9 +304,8 @@ namespace Garnet.cluster
         /// <returns></returns>
         public async Task<bool> BeginAsyncReplicaFailoverAsync()
         {
-            // CLUSTER FAILOVER OPTIONS
-            // FORCE: Do not await for the primary since it might be unreachable
-            // TAKEOVER: Same as force but also do not await for voting from other primaries
+            // FORCE and TAKEOVER skip primary coordination and replication catch-up.
+            // An external coordinator authorizes and serializes promotions; Garnet does not perform voting.
             var failoverSucceeded = false;
             try
             {
@@ -309,12 +313,6 @@ namespace Garnet.cluster
                 if (option is FailoverOption.DEFAULT && !await PauseWritesAndWaitForSyncAsync().ConfigureAwait(false))
                 {
                     return false;
-                }
-
-                // If TAKEOVER option is set skip voting
-                if (option is FailoverOption.DEFAULT or FailoverOption.FORCE)
-                {
-                    //TODO: implement voting
                 }
 
                 // Transition to primary role

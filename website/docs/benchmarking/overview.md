@@ -15,6 +15,8 @@ We have incorporated BDN ([BenchmarkDotNet](https://benchmarkdotnet.org/)) to tr
 
 The BDN CI first looks at the "Allocated" bytes from that specific run and compares it to what is expected. If that found "Allocated" value is 10% more than the expected "Allocated" value, the BDN CI will fail. If that part of the CI passes, then the "Mean" value is compared to the "Mean" value of the previous run. At this point, the CI also logs the "Mean" value so it can be charted [here](https://microsoft.github.io/garnet/charts/).
 
+The charts page is `website/static/charts/index.html`. The CI appends its results to `website/static/charts/data.js` on the `continuousbenchmark` branch, and the website deployment publishes that file next to the page. The page charts only the frameworks in its `SUPPORTED_FRAMEWORKS` list, so update that list and the page's Framework filter whenever the `framework` matrix in `ci-bdnbenchmark.yml` changes.
+
 **To add your BDN to Garnet BDN CI**
 1) The GitHub action yml: \.github\workflows\ci-bdnbenchmark.yml
 

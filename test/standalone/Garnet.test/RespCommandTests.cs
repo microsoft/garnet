@@ -292,6 +292,34 @@ namespace Garnet.test
             }
         }
 
+        [TestCase(RespCommand.GETWITHETAG, RespCommandFlags.ReadOnly)]
+        [TestCase(RespCommand.SETIFMATCH, RespCommandFlags.Write)]
+        [TestCase(RespCommand.SETWITHETAG, RespCommandFlags.DenyOom | RespCommandFlags.Write)]
+        public void EtagCommandInfoTest(RespCommand command, RespCommandFlags expectedFlags)
+        {
+            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+            string commandName = command.ToString();
+            RedisResult[] results = (RedisResult[])db.Execute("COMMAND", "INFO", commandName);
+
+            Assert.That(results, Has.Length.EqualTo(1));
+            RedisResult[] info = (RedisResult[])results[0];
+            Assert.That(info, Has.Length.EqualTo(10));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That((string)info[0], Is.EqualTo(commandName));
+                Assert.That(((RedisResult[])info[2]).Select(flag => flag.ToString()),
+                    Is.EquivalentTo(EnumUtils.GetEnumDescriptions(expectedFlags)));
+                Assert.That((int)info[3], Is.EqualTo(1));
+                Assert.That((int)info[4], Is.EqualTo(1));
+                Assert.That((int)info[5], Is.EqualTo(1));
+                Assert.That(respCommandsInfo[commandName].Flags, Is.EqualTo(expectedFlags));
+                Assert.That(command.IsReadOnly(), Is.EqualTo(expectedFlags.HasFlag(RespCommandFlags.ReadOnly)));
+                Assert.That(command.IsWriteOnly(), Is.EqualTo(expectedFlags.HasFlag(RespCommandFlags.Write)));
+            });
+        }
+
         /// <summary>
         /// Test COMMAND DOCS command
         /// </summary>
@@ -729,6 +757,9 @@ namespace Garnet.test
         /// </summary>
         [Test]
         [TestCase("SET", new[] { "mykey", "value" }, false, new[] { "mykey" })]
+        [TestCase("GETWITHETAG", new[] { "mykey" }, false, new[] { "mykey" })]
+        [TestCase("SETIFMATCH", new[] { "mykey", "value", "1", "EX", "60" }, false, new[] { "mykey" })]
+        [TestCase("SETWITHETAG", new[] { "mykey", "value", "EX", "60" }, false, new[] { "mykey" })]
         [TestCase("MSET", new[] { "key1", "value1", "key2", "value2" }, false, new[] { "key1", "key2" })]
         [TestCase("MGET", new[] { "key1", "key2", "key3" }, false, new[] { "key1", "key2", "key3" })]
         [TestCase("ZUNIONSTORE", new[] { "destination", "2", "key1", "key2" }, false, new[] { "destination", "key1", "key2" })]
@@ -765,6 +796,9 @@ namespace Garnet.test
         /// </summary>
         [Test]
         [TestCase("SET", new[] { "mykey", "value" }, false, new[] { "mykey" }, new[] { KeySpecificationFlags.RW | KeySpecificationFlags.Access | KeySpecificationFlags.Update | KeySpecificationFlags.VariableFlags })]
+        [TestCase("GETWITHETAG", new[] { "mykey" }, false, new[] { "mykey" }, new[] { KeySpecificationFlags.RO | KeySpecificationFlags.Access })]
+        [TestCase("SETIFMATCH", new[] { "mykey", "value", "1", "EX", "60" }, false, new[] { "mykey" }, new[] { KeySpecificationFlags.RW | KeySpecificationFlags.Access | KeySpecificationFlags.Update | KeySpecificationFlags.VariableFlags })]
+        [TestCase("SETWITHETAG", new[] { "mykey", "value", "EX", "60" }, false, new[] { "mykey" }, new[] { KeySpecificationFlags.RW | KeySpecificationFlags.Insert | KeySpecificationFlags.Update })]
         [TestCase("MSET", new[] { "key1", "value1", "key2", "value2" }, false, new[] { "key1", "key2" }, new[] { KeySpecificationFlags.OW | KeySpecificationFlags.Update })]
         [TestCase("MGET", new[] { "key1", "key2", "key3" }, false, new[] { "key1", "key2", "key3" }, new[] { KeySpecificationFlags.RO | KeySpecificationFlags.Access })]
         [TestCase("ZUNIONSTORE", new[] { "destination", "2", "key1", "key2" }, false, new[] { "destination", "key1", "key2" }, new[] { KeySpecificationFlags.OW | KeySpecificationFlags.Update, KeySpecificationFlags.RO | KeySpecificationFlags.Access, KeySpecificationFlags.RO | KeySpecificationFlags.Access })]

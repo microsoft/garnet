@@ -225,7 +225,8 @@ namespace Garnet.server
 
             if (parseState.Count >= 2)
             {
-                if (!parseState.TryGetInt(1, out paramCount))
+                // Unlike a positive count, a negative one is not capped by the hash size; reject one the packed count field cannot hold
+                if (!parseState.TryGetInt(1, out paramCount) || paramCount < (int.MinValue >> 2))
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
@@ -621,14 +622,20 @@ namespace Garnet.server
                 return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrMustMatchNoOfArgs, "numFields")));
             }
 
-            // Convert to expiration time in ticks
-            var expirationTimeInTicks = command switch
+            // Convert to expiration time in ticks, rejecting values that would overflow the representable date range
+            long expirationTimeInTicks;
+            var isValidExpiration = command switch
             {
-                RespCommand.HEXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).UtcTicks,
-                RespCommand.HPEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).UtcTicks,
-                RespCommand.HEXPIREAT => ConvertUtils.UnixTimestampInSecondsToTicks(expiration),
-                _ => ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration)
+                RespCommand.HEXPIRE => ConvertUtils.TryRelativeSecondsToTicks(expiration, out expirationTimeInTicks),
+                RespCommand.HPEXPIRE => ConvertUtils.TryRelativeMillisecondsToTicks(expiration, out expirationTimeInTicks),
+                RespCommand.HEXPIREAT => ConvertUtils.TryUnixTimestampInSecondsToTicks(expiration, out expirationTimeInTicks),
+                _ => ConvertUtils.TryUnixTimestampInMillisecondsToTicks(expiration, out expirationTimeInTicks)
             };
+
+            if (!isValidExpiration)
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrInvalidExpireTime, command.ToString().ToLowerInvariant());
+            }
 
             // Encode expiration time and expiration option and pass them into the input object
             var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);

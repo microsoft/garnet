@@ -25,6 +25,7 @@
     <Project Path="libs/client/Garnet.client.csproj" />
     <Project Path="libs/cluster/Garnet.cluster.csproj" />
     <Project Path="libs/common/Garnet.common.csproj" />
+    <Project Path="libs/diagnostics/Garnet.Diagnostics.csproj" />
     <Project Path="libs/host/Garnet.host.csproj" />
     <Project Path="libs/native/bftree-garnet/BfTreeInterop.csproj" />
     <Project Path="libs/resources/Garnet.resources.csproj" />

@@ -355,5 +355,31 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes,
                 "Heap tracker must return to zero after removing the last element (PCU path)");
         }
+
+        /// <summary>
+        /// Replacing an expired mutable collection with a string that does not fit in the expired record forces the
+        /// reinitialize-in-place attempt to fail and fall back to allocating a new record; the expired collection's
+        /// heap size must still be released from the tracker.
+        /// </summary>
+        [Test]
+        public void ReplaceExpiredCollectionWithLargerStringReleasesHeap([Values] bool largeValue)
+        {
+            ClassicAssert.AreEqual(0, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SetAdd("myset", "value1");
+            ClassicAssert.Greater(cacheSizeTracker.mainLogTracker.LogHeapSizeBytes, 0, "Heap should be positive after SADD");
+            ClassicAssert.IsTrue(db.KeyExpire("myset", TimeSpan.FromMilliseconds(100)));
+            Thread.Sleep(300);
+
+            var value = new string('x', largeValue ? 300 : 4);
+            ClassicAssert.IsTrue(db.StringSet("myset", value, when: When.NotExists));
+            ClassicAssert.AreEqual(value, (string)db.StringGet("myset"));
+
+            ClassicAssert.AreEqual(0, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes,
+                "Heap tracker must release the expired collection's size");
+        }
     }
 }

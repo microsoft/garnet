@@ -44,7 +44,7 @@ namespace Garnet.server
         public CustomProcedure GetCustomProcedure(int id, RespServerSession respServerSession)
         {
             // Check if we already have a cached entry of the per-session custom procedure instance
-            if (!sessionCustomProcMap.TryGetValue(id, out var customProc))
+            if (!sessionCustomProcMap.TryGetValue(id, out var customProc) || customProc is null)
             {
                 // If not, get the custom procedure from the CustomCommandManager
                 if (!customCommandManager.TryGetCustomProcedure(id, out var entry))

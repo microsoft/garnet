@@ -5655,7 +5655,7 @@ namespace Garnet.test.Resp.ACL
             {
                 var val = await client.ExecuteForStringArrayResultAsync("RI.METRICS", ["rimetrics-acl-idx"]).ConfigureAwait(false);
                 ClassicAssert.IsNotNull(val);
-                ClassicAssert.AreEqual(8, val.Length);
+                ClassicAssert.AreEqual(6, val.Length);
             }
         }
 

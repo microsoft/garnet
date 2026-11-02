@@ -7,7 +7,9 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.networking;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.common
 {
@@ -46,6 +48,23 @@ namespace Garnet.common
         /// </summary>
         protected readonly int ThrottleMax = 8;
 
+        /// <summary>
+        /// Longest a send waits for an earlier send to complete, in milliseconds, before the connection is
+        /// closed as stalled; <see cref="Timeout.Infinite"/> waits indefinitely.
+        /// </summary>
+        readonly int sendTimeoutMs;
+
+        /// <summary>
+        /// Progressive spins a draining close performs before it blocks.
+        /// </summary>
+        const int DrainSpinIterations = 32;
+
+        /// <summary>
+        /// Progressive spins a send performs while waiting for a send slot before it blocks; this matches the spin
+        /// <see cref="SemaphoreSlim.Wait()"/> performs before it blocks.
+        /// </summary>
+        const int CapacitySpinIterations = 140;
+
         readonly string remoteEndpoint;
         readonly string localEndpoint;
 
@@ -64,12 +83,18 @@ namespace Garnet.common
         /// </summary>
         /// <param name="socket"></param>
         /// <param name="networkBufferSettings"></param>
+        /// <param name="networkPool"></param>
         /// <param name="throttleMax"></param>
+        /// <param name="sendTimeout">
+        /// Longest a send waits for an earlier send to complete before the connection is closed as stalled.
+        /// Zero or negative waits indefinitely.
+        /// </param>
         public GarnetTcpNetworkSender(
             Socket socket,
             NetworkBufferSettings networkBufferSettings,
             LimitedFixedBufferPool networkPool,
-            int throttleMax = 8)
+            int throttleMax = 8,
+            TimeSpan sendTimeout = default)
             : base(networkBufferSettings.sendBufferSize)
         {
             this.networkBufferSettings = networkBufferSettings;
@@ -78,6 +103,7 @@ namespace Garnet.common
             this.saeaStack = new(2 * ThrottleMax);
             this.responseObject = null;
             this.ThrottleMax = throttleMax;
+            this.sendTimeoutMs = sendTimeout > TimeSpan.Zero ? (int)Math.Min(sendTimeout.TotalMilliseconds, int.MaxValue) : Timeout.Infinite;
             this.spinLock = new();
             this.closeRequested = 0;
 
@@ -258,11 +284,19 @@ namespace Garnet.common
         /// <inheritdoc />
         public override void DisposeNetworkSender(bool waitForSendCompletion)
         {
-            if (!waitForSendCompletion)
+            // Invariant: every in-flight send completes before the buffer stack and throttle are disposed, since a
+            // send's completion returns its buffer to the stack and may release the throttle. Draining also closes
+            // the sender, so any later send completes immediately without reaching the socket.
+            //
+            // A graceful close first lets in-flight sends reach the peer, giving up once no send has completed for the
+            // send timeout (never, when the timeout is infinite). An abortive close, or a graceful one that gives up,
+            // disposes the socket instead. That aborts the in-flight sends, so the unbounded drain after it is prompt
+            // and still upholds the invariant.
+            if (!waitForSendCompletion || !TryDrainSends(sendTimeoutMs))
+            {
                 socket.Dispose();
-
-            // Wait for ongoing sends to complete
-            while (throttleCount >= 0 && Interlocked.CompareExchange(ref throttleCount, int.MinValue, 0) != 0) Thread.Yield();
+                _ = TryDrainSends(Timeout.Infinite);
+            }
 
             // Empty and dispose the stack
             saeaStack.Dispose();
@@ -271,6 +305,56 @@ namespace Garnet.common
             if (waitForSendCompletion)
                 socket.Dispose();
         }
+
+        /// <summary>
+        /// Waits for in-flight sends to complete, then closes the sender to further sends.
+        /// </summary>
+        /// <param name="timeoutMs">Longest to wait without any send completing, or <see cref="Timeout.Infinite"/>.</param>
+        /// <returns>False if no send completed within <paramref name="timeoutMs"/>; the sender is then still open.</returns>
+        bool TryDrainSends(int timeoutMs)
+        {
+            // Sends complete within microseconds while the peer reads, so spin progressively first
+            var spinner = ConfiguredSpinWait.BoundedProgressive(DrainSpinIterations);
+            do
+            {
+                if (TryCloseIfDrained())
+                    return true;
+            }
+            while (spinner.TryWait());
+
+            // A peer that reads slowly, or not at all, can take far longer. Blocking on a task, rather than sleeping,
+            // lets the thread pool inject a replacement for this thread while it waits.
+            return AsyncUtils.BlockingWait(DrainSendsAsync(timeoutMs));
+        }
+
+        async Task<bool> DrainSendsAsync(int timeoutMs)
+        {
+            using var poll = new PeriodicTimer(TimeSpan.FromMilliseconds(1));
+            var pending = Volatile.Read(ref throttleCount);
+            var progressAt = Environment.TickCount64;
+            while (!TryCloseIfDrained())
+            {
+                var count = Volatile.Read(ref throttleCount);
+                if (count != pending)
+                {
+                    pending = count;
+                    progressAt = Environment.TickCount64;
+                }
+                else if (timeoutMs != Timeout.Infinite && Environment.TickCount64 - progressAt >= timeoutMs)
+                {
+                    return false;
+                }
+
+                _ = await poll.WaitForNextTickAsync().ConfigureAwait(false);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Closes the sender to further sends if no send is in flight, or reports that it is already closed.
+        /// </summary>
+        bool TryCloseIfDrained()
+            => Volatile.Read(ref throttleCount) < 0 || Interlocked.CompareExchange(ref throttleCount, int.MinValue, 0) == 0;
 
         /// <inheritdoc />
         public override void Throttle()
@@ -329,7 +413,7 @@ namespace Garnet.common
                 return;
             }
             if (cnt > ThrottleMax)
-                throttle.Wait();
+                WaitForSendCapacity();
 
             // Debug.WriteLine($"SEND: [{size}][{System.Text.Encoding.UTF8.GetString(new Span<byte>(sendObject.socketEventAsyncArgs.Buffer, offset, size)).Replace("\n", "|").Replace("\r", "")}]");
 
@@ -341,12 +425,62 @@ namespace Garnet.common
                 SeaaBuffer_Completed(null, sendObject.socketEventAsyncArgs);
         }
 
+        /// <summary>
+        /// Waits for an in-flight send to complete, which frees a send slot for the caller.
+        /// </summary>
+        /// <remarks>
+        /// The caller is usually a thread-pool thread that also serves other connections. Blocking on a task lets
+        /// the thread pool inject a replacement thread, whereas blocking on the semaphore does not, so other
+        /// connections continue to be served while this one waits. A peer that accepts no data for
+        /// the send timeout has its connection closed, which also completes its in-flight sends.
+        /// <para>
+        /// A completion that frees a slot for a waiter decrements the send count before it releases the semaphore,
+        /// so the count can reach zero, letting the sender be disposed, while that release is still to come. A waiter
+        /// therefore leaves only once it has taken its release, even after a timeout; otherwise the release could
+        /// land on a disposed semaphore.
+        /// </para>
+        /// <para>
+        /// The timeout is applied to the wait on the untimed semaphore task rather than passed to the semaphore,
+        /// because a timed semaphore wait allocates a timer and async state on every call. The untimed task also
+        /// stays queued after a timeout, so it is the one that takes the owed release.
+        /// </para>
+        /// </remarks>
+        /// <exception cref="GarnetException">No send completed within the send timeout.</exception>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void WaitForSendCapacity()
+        {
+            // A send usually completes shortly while the peer reads, so spin progressively, as the semaphore's own
+            // blocking wait does, before paying for a task and a blocking wait.
+            var spinner = ConfiguredSpinWait.BoundedProgressive(CapacitySpinIterations, sleep1Threshold: -1);
+            do
+            {
+                if (throttle.Wait(0))
+                    return;
+            }
+            while (spinner.TryWait());
+
+            var slot = throttle.WaitAsync();
+            if (AsyncUtils.BlockingWait(slot, sendTimeoutMs))
+                return;
+
+            // Closing the socket completes every in-flight send, so the release this waiter is owed arrives promptly
+            _ = TryClose();
+            AsyncUtils.BlockingWait(slot);
+            throw new GarnetException($"Closed connection to {remoteEndpoint}: no send completed within {sendTimeoutMs} ms",
+                LogLevel.Warning, clientResponse: false, disposeSession: true);
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SeaaBuffer_Completed(object sender, SocketAsyncEventArgs e)
         {
             ReturnBuffer((GarnetSaeaBuffer)e.UserToken);
             if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
+            {
+#if DEBUG
+                ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Sender_Pause_Before_Slot_Release);
+#endif
                 throttle.Release();
+            }
         }
     }
 }

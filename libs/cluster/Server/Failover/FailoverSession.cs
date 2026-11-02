@@ -16,6 +16,7 @@ namespace Garnet.cluster
         readonly TimeSpan clusterTimeout;
         readonly TimeSpan failoverTimeout;
         readonly CancellationTokenSource cts;
+        bool disposed;
         readonly FailoverOption option;
         readonly ILogger logger;
 
@@ -87,10 +88,25 @@ namespace Garnet.cluster
             status = FailoverStatus.BEGIN_FAILOVER;
         }
 
+        public void Cancel()
+        {
+            lock (cts)
+            {
+                if (!disposed)
+                    cts.Cancel();
+            }
+        }
+
         public void Dispose()
         {
-            cts.Cancel();
-            cts.Dispose();
+            lock (cts)
+            {
+                if (disposed)
+                    return;
+                cts.Cancel();
+                cts.Dispose();
+                disposed = true;
+            }
             DisposeConnections();
         }
 

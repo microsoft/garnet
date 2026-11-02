@@ -113,6 +113,13 @@ chunked path ([§4](#4-chunked-record-chunkedlogrecord-tag-5)).
 `FixedHeaderSize + ExtendedNamespaceLength + KeyLength + ValueLength + OptionalSize`, rounded up to
 `kRecordAlignment`.
 
+Receivers require the complete fixed header, reject null `RecordInfo` and conflicting inline/object value flags, and
+validate that the aligned inline component size fits within the received record before exposing its key, value, or
+optional fields. This size includes extended namespace bytes and object-id slots, but excludes explicit filler.
+All non-chunked overflow length prefixes and their data must also fit in the record before any overflow buffers are
+allocated or transient object-id slots are populated. Chunked receivers validate the header before deriving the inline size and validate the completed inline
+portion before assigning reassembled components.
+
 ### 3.2 `RecordDataHeader` (indicator word) — 8 B
 
 A single 8-byte word (atomically published) that fully defines the record's layout (`RecordDataHeader.cs`):

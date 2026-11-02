@@ -78,7 +78,7 @@ namespace Garnet.server
                 // Request Vector Set cleanup when the index key is deleted.
                 if (reason is DisposeReason.Deleted or DisposeReason.Expired && logRecord.DataHeader.RecordType == VectorManager.RecordType)
                 {
-                    vectorManager?.RequestDeletion(logRecord.ValueSpan);
+                    vectorManager?.RequestDeletion(logRecord.KeyBytes, logRecord.ValueSpan);
                 }
             }
         }

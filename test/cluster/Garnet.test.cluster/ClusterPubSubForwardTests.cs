@@ -5,6 +5,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
+using System.Net.Sockets;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -164,6 +167,105 @@ namespace Garnet.test.cluster
 
             // Final sanity: the surviving node still serves commands.
             ClassicAssert.IsTrue(NodeResponds(publisherIndex), "Surviving node was unresponsive at end of test");
+        }
+
+        /// <summary>
+        /// A session subscribed to the channel it publishes to, and that stops reading, fails the delivery of its
+        /// own message once the send times out. The message must still be forwarded to subscribers on other nodes.
+        /// </summary>
+        [Test, Order(2), CancelAfter(120_000)]
+        public void APublishWhoseDeliveryToItsPublisherFailsIsForwardedToOtherNodes()
+        {
+            const int publisherIndex = 0;
+            const int peerIndex = 1;
+            const string channelName = "test-forward-channel";
+            const string ready = "ready";
+
+            // The message fits the page a node forwards it in, while the publisher's subscriptions receive it often
+            // enough to exceed what the socket buffers can absorb, so delivering it to the publisher times out
+            var message = new byte[64 * 1024];
+            const int patternCount = 511;
+
+            context.CreateInstances(2, disablePubSub: false, networkSendTimeout: TimeSpan.FromSeconds(2));
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 2, replica_count: 0, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(publisherIndex, peerIndex, context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(peerIndex, publisherIndex, context.logger);
+
+            var publisherEndpoint = context.clusterTestUtils.GetEndPoint(publisherIndex);
+            using var pubRedis = ConnectionMultiplexer.Connect(SingleNodeConfig(publisherEndpoint));
+
+            // Without the CLUSTER command the client cannot discover the cluster and move the subscription to another node
+            var subConfig = SingleNodeConfig(context.clusterTestUtils.GetEndPoint(peerIndex));
+            subConfig.CommandMap = CommandMap.Create(["CLUSTER"], available: false);
+            using var subRedis = ConnectionMultiplexer.Connect(subConfig);
+
+            using var subscribed = new ManualResetEventSlim(false);
+            using var delivered = new ManualResetEventSlim(false);
+            subRedis.GetSubscriber().Subscribe(RedisChannel.Literal(channelName), (_, value) =>
+            {
+                if (value == ready)
+                    subscribed.Set();
+                else if (((byte[])value).Length == message.Length)
+                    delivered.Set();
+            });
+
+            // The subscription can become active after SUBSCRIBE returns, so publish until a message arrives
+            var sw = Stopwatch.StartNew();
+            while (!subscribed.Wait(TimeSpan.FromMilliseconds(500)) && sw.Elapsed < TimeSpan.FromSeconds(15))
+                _ = pubRedis.GetServer(publisherEndpoint).Execute(0, "PUBLISH", [channelName, ready]);
+            ClassicAssert.IsTrue(subscribed.IsSet, "a publish was not forwarded while both nodes were up");
+
+            // Distinct patterns that all match the channel, each replacing a different set of its characters with '?'
+            var patterns = new List<byte[]>(patternCount + 1) { "PSUBSCRIBE"u8.ToArray() };
+            for (var i = 1; i <= patternCount; i++)
+            {
+                var pattern = Encoding.ASCII.GetBytes(channelName);
+                for (var bit = 0; bit < 9; bit++)
+                {
+                    if ((i & (1 << bit)) != 0)
+                        pattern[bit] = (byte)'?';
+                }
+                patterns.Add(pattern);
+            }
+
+            // A small receive buffer, set before connecting so the advertised window is small too
+            using var stalled = new Socket(SocketType.Stream, ProtocolType.Tcp) { ReceiveBufferSize = 4096, ReceiveTimeout = 15_000 };
+            stalled.Connect(publisherEndpoint);
+            stalled.Send([
+                .. Command("HELLO"u8.ToArray(), "3"u8.ToArray()),
+                .. Command("SUBSCRIBE"u8.ToArray(), Encoding.ASCII.GetBytes(channelName)),
+                .. Command([.. patterns])]);
+            ReadUntil(stalled, $":{patternCount + 1}\r\n");
+
+            stalled.Send(Command("PUBLISH"u8.ToArray(), Encoding.ASCII.GetBytes(channelName), message));
+
+            ClassicAssert.IsTrue(delivered.Wait(TimeSpan.FromSeconds(30)),
+                "a message whose delivery to its publisher failed was not forwarded to the other node");
+        }
+
+        static void ReadUntil(Socket socket, string terminator)
+        {
+            var expected = Encoding.ASCII.GetBytes(terminator);
+            var received = new List<byte>();
+            var buffer = new byte[1];
+            while (received.Count < expected.Length || !CollectionsMarshal.AsSpan(received)[^expected.Length..].SequenceEqual(expected))
+            {
+                ClassicAssert.AreEqual(1, socket.Receive(buffer), "connection closed before the reply");
+                received.Add(buffer[0]);
+            }
+        }
+
+        static byte[] Command(params byte[][] args)
+        {
+            var command = new List<byte>(Encoding.ASCII.GetBytes($"*{args.Length}\r\n"));
+            foreach (var arg in args)
+            {
+                command.AddRange(Encoding.ASCII.GetBytes($"${arg.Length}\r\n"));
+                command.AddRange(arg);
+                command.AddRange("\r\n"u8);
+            }
+            return [.. command];
         }
 
         private static ConfigurationOptions SingleNodeConfig(EndPoint endpoint)

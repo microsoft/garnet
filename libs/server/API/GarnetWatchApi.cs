@@ -316,10 +316,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SetIsMember(PinnedSpanByte key, PinnedSpanByte[] members, out int[] result)
+        public GarnetStatus SetIsMember(PinnedSpanByte key, ReadOnlySpan<PinnedSpanByte> members, ref Span<int> result)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SetIsMember(key, members, out result);
+            return garnetApi.SetIsMember(key, members, ref result);
         }
 
         /// <inheritdoc />

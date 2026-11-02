@@ -494,6 +494,7 @@ namespace Garnet.test
             TimeSpan? luaTimeout = null,
             LuaLoggingMode luaLoggingMode = LuaLoggingMode.Enable,
             IEnumerable<string> luaAllowedFunctions = null,
+            bool luaTransactionMode = false,
             string unixSocketPath = null,
             UnixFileMode unixSocketPermission = default,
             int slowLogThreshold = 0,
@@ -525,7 +526,10 @@ namespace Garnet.test
             string networkReceiveBufferMinSize = null,
             string networkSendBufferMinSize = null,
             string sessionScratchBufferMaxRetainedSize = null,
-            int? sessionParseStateMaxRetainedArgs = null
+            int? sessionParseStateMaxRetainedArgs = null,
+            int? networkSendThrottleMax = null,
+            TimeSpan? networkSendTimeout = null,
+            TimeSpan? tlsHandshakeTimeout = null
         )
         {
             if (useAzureStorage)
@@ -582,6 +586,7 @@ namespace Garnet.test
                 UseNativeAllocator = nativeAllocator ?? false,
                 EnableAOF = enableAOF,
                 EnableLua = enableLua,
+                LuaTransactionMode = luaTransactionMode,
                 AofMemorySize = aofMemorySize,
                 CommitFrequencyMs = commitFrequencyMs,
                 WaitForCommit = commitWait,
@@ -648,6 +653,15 @@ namespace Garnet.test
                 if (string.IsNullOrEmpty(memorySize))
                     opts.LogMemorySize = string.Empty;
             }
+
+            if (networkSendThrottleMax.HasValue)
+                opts.NetworkSendThrottleMax = networkSendThrottleMax.Value;
+
+            if (networkSendTimeout.HasValue)
+                opts.NetworkSendTimeout = networkSendTimeout.Value;
+
+            if (tlsHandshakeTimeout.HasValue)
+                opts.TlsHandshakeTimeout = tlsHandshakeTimeout.Value;
 
             if (!string.IsNullOrEmpty(pubSubPageSize))
                 opts.PubSubPageSize = pubSubPageSize;
@@ -811,7 +825,8 @@ namespace Garnet.test
             string clusterAnnounceHostname = null,
             int vectorSetReplayTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
-            bool enableRangeIndexPreview = false)
+            bool enableRangeIndexPreview = false,
+            TimeSpan? networkSendTimeout = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -880,7 +895,8 @@ namespace Garnet.test
                     clusterAnnounceHostname: clusterAnnounceHostname,
                     vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                     threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
-                    enableRangeIndexPreview: enableRangeIndexPreview);
+                    enableRangeIndexPreview: enableRangeIndexPreview,
+                    networkSendTimeout: networkSendTimeout);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -966,7 +982,8 @@ namespace Garnet.test
             int vectorSetReplayTaskCount = 0,
             bool enableRangeIndexPreview = false,
             int vectorSetQuantizationTaskCount = 0,
-            int threadPoolMinIOCompletionThreads = 0)
+            int threadPoolMinIOCompletionThreads = 0,
+            TimeSpan? networkSendTimeout = null)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -1096,6 +1113,9 @@ namespace Garnet.test
                 ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
                 ThreadPoolMinIOCompletionThreads = threadPoolMinIOCompletionThreads,
             };
+
+            if (networkSendTimeout.HasValue)
+                opts.NetworkSendTimeout = networkSendTimeout.Value;
 
             if (lowMemory)
             {

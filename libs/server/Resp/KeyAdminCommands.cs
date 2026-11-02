@@ -32,9 +32,20 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            if (!parseState.TryGetInt(parseState.Count - 2, out var expiry))
+            if (!parseState.TryGetLong(parseState.Count - 2, out var ttlMs))
             {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+            }
+
+            if (ttlMs < 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
+            }
+
+            var expirationTicks = 0L;
+            if (ttlMs > 0 && !ConvertUtils.TryRelativeMillisecondsToTicks(ttlMs, out expirationTicks))
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrInvalidExpireTime, "restore");
             }
 
             var value = parseState.GetArgSliceByRef(2);
@@ -99,10 +110,9 @@ namespace Garnet.server
             parseState.InitializeWithArgument(valArgSlice);
 
             StringInput input;
-            if (expiry > 0)
+            if (ttlMs > 0)
             {
-                var inputArg = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expiry).Ticks;
-                input = new StringInput(RespCommand.SETEXNX, ref parseState, arg1: inputArg);
+                input = new StringInput(RespCommand.SETEXNX, ref parseState, arg1: expirationTicks);
             }
             else
             {
@@ -417,14 +427,20 @@ namespace Garnet.server
                 }
             }
 
-            // Convert to expiration time in ticks
-            var expirationTimeInTicks = command switch
+            // Convert to expiration time in ticks, rejecting values that would overflow the representable date range
+            long expirationTimeInTicks;
+            var isValidExpiration = command switch
             {
-                RespCommand.EXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).UtcTicks,
-                RespCommand.PEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).UtcTicks,
-                RespCommand.EXPIREAT => ConvertUtils.UnixTimestampInSecondsToTicks(expiration),
-                _ => ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration)
+                RespCommand.EXPIRE => ConvertUtils.TryRelativeSecondsToTicks(expiration, out expirationTimeInTicks),
+                RespCommand.PEXPIRE => ConvertUtils.TryRelativeMillisecondsToTicks(expiration, out expirationTimeInTicks),
+                RespCommand.EXPIREAT => ConvertUtils.TryUnixTimestampInSecondsToTicks(expiration, out expirationTimeInTicks),
+                _ => ConvertUtils.TryUnixTimestampInMillisecondsToTicks(expiration, out expirationTimeInTicks)
             };
+
+            if (!isValidExpiration)
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrInvalidExpireTime, command.ToString().ToLowerInvariant());
+            }
 
             // Encode expiration time and expiration option and pass them into the input object
             var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);

@@ -1394,6 +1394,40 @@ namespace Garnet.test
         }
 
         [Test]
+        public void HashExpireOutOfRangeIsRejectedWithoutKillingSession()
+        {
+            var faulted = false;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            redis.ConnectionFailed += delegate { faulted = true; };
+
+            var db = redis.GetDatabase(0);
+            db.HashSet("myhash", [new HashEntry("field1", "value1")]);
+
+            // milliseconds too far in the future
+            var exc0 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("HPEXPIRE", "myhash", "300000000000000", "FIELDS", "1", "field1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'hpexpire' command", exc0.Message);
+
+            // seconds too far in the future
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("HEXPIRE", "myhash", "300000000000", "FIELDS", "1", "field1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'hexpire' command", exc1.Message);
+
+            // unix time (seconds) too far in the future
+            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("HEXPIREAT", "myhash", long.MaxValue.ToString(), "FIELDS", "1", "field1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'hexpireat' command", exc2.Message);
+
+            // unix time (ms) too far in the future
+            var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("HPEXPIREAT", "myhash", long.MaxValue.ToString(), "FIELDS", "1", "field1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'hpexpireat' command", exc3.Message);
+
+            // Field TTL unchanged and field undeleted
+            ClassicAssert.AreEqual("value1", (string)db.HashGet("myhash", "field1"));
+
+            // Connection never faulted during operation - previously these all closed the connection with no reply
+            ClassicAssert.IsFalse(faulted);
+        }
+
+        [Test]
         public async Task CanDoHashCollect()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
@@ -1816,6 +1850,26 @@ namespace Garnet.test
         }
 
         [Test]
+        public void HashIncrementByFloatRejectsNaNAndNonFiniteResults()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "floathash";
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("HINCRBYFLOAT", key, "new", "nan"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT), ex.Message);
+            ClassicAssert.IsFalse(db.HashExists(key, "new"));
+
+            _ = db.HashSet(key, "big", "1.7e308");
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("HINCRBYFLOAT", key, "big", "nan"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT), ex.Message);
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("HINCRBYFLOAT", key, "big", "1.7e308"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR), ex.Message);
+            ClassicAssert.AreEqual("1.7e308", (string)db.HashGet(key, "big"));
+        }
+
+        [Test]
         public void CanDoHRANDFIELDCommandLC()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
@@ -1920,6 +1974,26 @@ namespace Garnet.test
             response = lightClientRequest.SendCommands("HRANDFIELD randhash 2 WITHVALUES", "PING", 5, 1);
             expectedResponse = "*4\r\n"; // 2 field/value pairs
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void CanDoHRANDFIELDWithUnrepresentableNegativeCountLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("HSET randhash f1 v1 f2 v2 f3 v3");
+            TestUtils.AssertEqualUpToExpectedLength(":3\r\n", response);
+
+            // A negative count asks for that many fields with repeats, so unlike a positive count it cannot be reduced
+            // to the size of the hash; a count below what the packed count field represents is rejected
+            const string expectedResponse = "-ERR value is not an integer or out of range.\r\n+PONG\r\n";
+            foreach (var count in new[] { "-536870913", "-2147483648" })
+            {
+                response = lightClientRequest.SendCommands($"HRANDFIELD randhash {count}", "PING", 1, 1);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+                response = lightClientRequest.SendCommands($"HRANDFIELD randhash {count} WITHVALUES", "PING", 1, 1);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
         }
 
         [Test]
@@ -2099,6 +2173,27 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("HINCRBY myhash int64 1");
             expectedResponse = $":{2L + int.MaxValue}\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void HashIncrementByOverflow()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "myhash";
+
+            // Positive overflow: long.MaxValue + 1
+            db.HashSet(key, "maxField", long.MaxValue.ToString());
+            var ex = ClassicAssert.Throws<RedisServerException>(() => db.HashIncrement(key, "maxField", 1));
+            ClassicAssert.AreEqual("ERR increment or decrement would overflow", ex.Message);
+            ClassicAssert.AreEqual(long.MaxValue.ToString(), (string)db.HashGet(key, "maxField"));
+
+            // Negative overflow: long.MinValue - 1
+            db.HashSet(key, "minField", long.MinValue.ToString());
+            ex = ClassicAssert.Throws<RedisServerException>(() => db.HashIncrement(key, "minField", -1));
+            ClassicAssert.AreEqual("ERR increment or decrement would overflow", ex.Message);
+            ClassicAssert.AreEqual(long.MinValue.ToString(), (string)db.HashGet(key, "minField"));
         }
         #endregion
 

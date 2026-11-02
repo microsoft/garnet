@@ -138,6 +138,12 @@ namespace Garnet.cluster
 
                                 VectorManager.DeserializeMigratedIndexKey(payload, out var keyBytes, out var valueBytes, out var expiration);
 
+                                var slot = HashSlotUtils.HashSlot(keyBytes);
+                                if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
+                                {
+                                    migrateState = 1;
+                                }
+
                                 // An error has occurred
                                 if (migrateState > 0)
                                 {
@@ -189,7 +195,7 @@ namespace Garnet.cluster
                                             diskLogRecord = CompleteChunkedRecordReassembly(headerPtr, storeWrapper, transientObjectIdMap);
 
                                             var slot = HashSlotUtils.HashSlot(diskLogRecord.Key);
-                                            if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
+                                            if (!currentConfig.IsImportingSlot(slot) || diskLogRecord.RecordType != 0) // Slot is not in importing state, or not a basic log record
                                             {
                                                 migrateState = 1;
                                             }
@@ -282,7 +288,7 @@ namespace Garnet.cluster
                                         transientObjectIdMap, storeWrapper.storeFunctions);
 
                                     var slot = HashSlotUtils.HashSlot(diskLogRecord.Key);
-                                    if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
+                                    if (!currentConfig.IsImportingSlot(slot) || diskLogRecord.RecordType != 0) // Slot is not in importing state, or not a basic log record
                                     {
                                         migrateState = 1;
                                         i++;

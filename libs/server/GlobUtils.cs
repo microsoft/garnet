@@ -11,153 +11,161 @@ namespace Garnet.server
     public static class GlobUtils
     {
         /// <summary>
-        /// Glob-style ASCII pattern matching
+        /// Glob-style ASCII pattern matching using constant stack space.
         /// </summary>
+        /// <remarks>
+        /// Only the most recent wildcard needs a retry position: every other token consumes one byte.
+        /// Matching takes at most O(patternLen * stringLen) work, without recursive backtracking.
+        /// </remarks>
         /// <returns>Whether match was found</returns>
         public static unsafe bool Match(byte* pattern, int patternLen, byte* key, int stringLen, bool ignoreCase = false)
         {
+            byte* retryPattern = null;
+            var retryPatternLen = 0;
+            byte* retryKey = null;
+            var retryStringLen = 0;
+
             while (patternLen > 0 && stringLen > 0)
             {
                 switch (pattern[0])
                 {
                     case (byte)'*':
-                        while (patternLen > 0 && pattern[1] == '*')
+                        // Adjacent stars are equivalent to a single wildcard.
+                        do
                         {
                             pattern++;
                             patternLen--;
                         }
-                        if (patternLen == 1)
-                            return true; /* match */
-                        while (stringLen > 0)
-                        {
-                            if (Match(pattern + 1, patternLen - 1, key, stringLen, ignoreCase))
-                                return true; /* match */
-                            key++;
-                            stringLen--;
-                        }
-                        return false; /* no match */
+                        while (patternLen > 0 && pattern[0] == '*');
 
-                    case (byte)'?':
-                        key++;
-                        stringLen--;
-                        break;
+                        if (patternLen == 0)
+                            return true;
 
-                    case (byte)'[':
-                        {
-                            pattern++;
-                            patternLen--;
-                            var not = pattern[0] == '^';
-                            if (not)
-                            {
-                                pattern++;
-                                patternLen--;
-                            }
-                            var match = false;
-                            while (true)
-                            {
-                                if (pattern[0] == '\\' && patternLen >= 2)
-                                {
-                                    pattern++;
-                                    patternLen--;
-                                    if (pattern[0] == key[0])
-                                        match = true;
-                                }
-                                else if (pattern[0] == ']')
-                                {
-                                    break;
-                                }
-                                else if (patternLen == 0)
-                                {
-                                    pattern--;
-                                    patternLen++;
-                                    break;
-                                }
-                                else if (patternLen >= 3 && pattern[1] == '-')
-                                {
-                                    byte start = pattern[0];
-                                    byte end = pattern[2];
-                                    byte c = key[0];
-                                    if (start > end)
-                                    {
-                                        (end, start) = (start, end);
-                                    }
+                        // Try an empty match first; only the latest wildcard needs retry state.
+                        retryPattern = pattern;
+                        retryPatternLen = patternLen;
+                        retryKey = key;
+                        retryStringLen = stringLen;
+                        continue;
 
-                                    if (ignoreCase)
-                                    {
-                                        start = AsciiUtils.ToLower(start);
-                                        end = AsciiUtils.ToLower(end);
-                                        c = AsciiUtils.ToLower(c);
-                                    }
-                                    pattern += 2;
-                                    patternLen -= 2;
-                                    if (c >= start && c <= end)
-                                        match = true;
-                                }
-                                else
-                                {
-                                    if (!ignoreCase)
-                                    {
-                                        if (pattern[0] == key[0])
-                                            match = true;
-                                    }
-                                    else
-                                    {
-                                        if (AsciiUtils.ToLower(pattern[0]) == AsciiUtils.ToLower(key[0]))
-                                            match = true;
-                                    }
-                                }
-                                pattern++;
-                                patternLen--;
-                            }
-
-                            if (not)
-                                match = !match;
-                            if (!match)
-                                return false; /* no match */
-                            key++;
-                            stringLen--;
-                            break;
-                        }
-
-                    case (byte)'\\':
-                        if (patternLen >= 2)
-                        {
-                            pattern++;
-                            patternLen--;
-                        }
-                        goto default;
-
-                    /* fall through */
                     default:
-                        if (!ignoreCase)
+                        if (MatchByte(pattern, patternLen, key[0], ignoreCase, out var consumed))
                         {
-                            if (pattern[0] != key[0])
-                                return false; /* no match */
+                            pattern += consumed;
+                            patternLen -= consumed;
+                            key++;
+                            stringLen--;
+                            // An exhausted pattern with remaining key bytes must retry the wildcard.
+                            if (patternLen > 0 || stringLen == 0)
+                                continue;
                         }
-                        else
-                        {
-                            if (AsciiUtils.ToLower(pattern[0]) != AsciiUtils.ToLower(key[0]))
-                                return false; /* no match */
-                        }
-                        key++;
-                        stringLen--;
                         break;
                 }
+
+                if (retryPattern == null)
+                    return false;
+
+                // Extend the most recent wildcard by one byte, then retry its suffix.
+                key = ++retryKey;
+                stringLen = --retryStringLen;
+                pattern = retryPattern;
+                patternLen = retryPatternLen;
+            }
+
+            // Only stars can match the empty remainder of the key.
+            while (patternLen > 0 && pattern[0] == '*')
+            {
                 pattern++;
                 patternLen--;
-                if (stringLen == 0)
-                {
-                    while (*pattern == '*')
+            }
+            return patternLen == 0 && stringLen == 0;
+        }
+
+        /// <summary>
+        /// Matches one non-star glob token against a single byte.
+        /// </summary>
+        /// <param name="pattern">Pointer to the first byte of the token.</param>
+        /// <param name="patternLen">Number of available pattern bytes; must be positive.</param>
+        /// <param name="value">Input byte to match.</param>
+        /// <param name="ignoreCase">Whether to use ASCII case-insensitive comparisons.</param>
+        /// <param name="consumed">Number of pattern bytes occupied by the token.</param>
+        /// <returns>Whether the token matches the input byte.</returns>
+        private static unsafe bool MatchByte(byte* pattern, int patternLen, byte value, bool ignoreCase, out int consumed)
+        {
+            consumed = 1;
+            switch (pattern[0])
+            {
+                case (byte)'?':
+                    return true;
+
+                case (byte)'[':
+                    {
+                        var remaining = patternLen - 1;
+                        var current = pattern + 1;
+                        var not = remaining > 0 && current[0] == '^';
+                        if (not)
+                        {
+                            current++;
+                            remaining--;
+                        }
+
+                        var match = false;
+                        while (remaining > 0 && current[0] != ']')
+                        {
+                            if (current[0] == '\\' && remaining >= 2)
+                            {
+                                current++;
+                                remaining--;
+                                if (current[0] == value)
+                                    match = true;
+                            }
+                            else if (remaining >= 3 && current[1] == '-')
+                            {
+                                var start = current[0];
+                                var end = current[2];
+                                var c = value;
+                                if (start > end)
+                                    (end, start) = (start, end);
+
+                                if (ignoreCase)
+                                {
+                                    start = AsciiUtils.ToLower(start);
+                                    end = AsciiUtils.ToLower(end);
+                                    c = AsciiUtils.ToLower(c);
+                                }
+                                current += 2;
+                                remaining -= 2;
+                                if (c >= start && c <= end)
+                                    match = true;
+                            }
+                            else if (ignoreCase
+                                ? AsciiUtils.ToLower(current[0]) == AsciiUtils.ToLower(value)
+                                : current[0] == value)
+                            {
+                                match = true;
+                            }
+                            current++;
+                            remaining--;
+                        }
+
+                        // Include the closing bracket when present; otherwise consume the remaining pattern.
+                        consumed = patternLen - remaining + (remaining > 0 ? 1 : 0);
+                        return not ? !match : match;
+                    }
+
+                case (byte)'\\':
+                    // A trailing backslash matches itself.
+                    if (patternLen >= 2)
                     {
                         pattern++;
-                        patternLen--;
+                        consumed++;
                     }
                     break;
-                }
             }
-            if (patternLen == 0 && stringLen == 0)
-                return true;
-            return false;
+
+            return ignoreCase
+                ? AsciiUtils.ToLower(pattern[0]) == AsciiUtils.ToLower(value)
+                : pattern[0] == value;
         }
     }
 }

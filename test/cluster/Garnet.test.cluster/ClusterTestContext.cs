@@ -309,6 +309,7 @@ namespace Garnet.test.cluster
         /// <param name="useClusterAnnounceHostname"></param>
         /// <param name="vectorSetReplayTaskCount"></param>
         /// <param name="threadPoolMinIOCompletionThreads"></param>
+        /// <param name="networkSendTimeout">Overrides how long a send may wait for a client to accept data.</param>
         public void CreateInstances(
             int shards,
             bool enableCluster = true,
@@ -361,7 +362,8 @@ namespace Garnet.test.cluster
             bool useClusterAnnounceHostname = false,
             int vectorSetReplayTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
-            bool enableRangeIndexPreview = false)
+            bool enableRangeIndexPreview = false,
+            TimeSpan? networkSendTimeout = null)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, Port);
@@ -422,7 +424,8 @@ namespace Garnet.test.cluster
                 clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null,
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                 threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
-                enableRangeIndexPreview: enableRangeIndexPreview);
+                enableRangeIndexPreview: enableRangeIndexPreview,
+                networkSendTimeout: networkSendTimeout);
 
             foreach (var node in nodes)
                 node.Start();

@@ -30,6 +30,7 @@ namespace Garnet.cluster
 
             try
             {
+                session?.ReleaseCurrentEpoch();
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", options.NodeId);
                 if (options.TryAddReplica)
                 {
@@ -46,7 +47,7 @@ namespace Garnet.cluster
                 // Wait for threads to agree configuration change of this node
                 if (session != null)
                 {
-                    await session.UnsafeBumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
+                    await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
                 }
 
                 if (options.Background)
@@ -66,6 +67,10 @@ namespace Garnet.cluster
                 logger?.LogError(ex, $"{nameof(TryReplicateDisklessSyncAsync)}");
                 return (false, errorMessage);
             }
+            finally
+            {
+                session?.AcquireCurrentEpoch();
+            }
 
             return (true, errorMessage);
 
@@ -78,6 +83,7 @@ namespace Garnet.cluster
 
                 var disklessSync = clusterProvider.serverOptions.ReplicaDisklessSync;
                 GarnetClientSession gcs = null;
+                var restoredPrimary = false;
                 resetHandler ??= new CancellationTokenSource();
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token, resetHandler.Token);
                 try
@@ -122,6 +128,7 @@ namespace Garnet.cluster
 
                     // Suspend background tasks that may interfere with AOF
                     await storeWrapper.SuspendPrimaryOnlyTasksAsync().ConfigureAwait(false);
+                    ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Replication_Fail_After_Primary_Task_Drain);
 
                     // Send request to primary
                     //      Primary will initiate background task and start sending checkpoint data
@@ -178,7 +185,10 @@ namespace Garnet.cluster
                     logger?.LogError(ex, $"{nameof(TryBeginReplicaSyncAsync)}");
 
                     if (options.AllowReplicaResetOnFailure)
+                    {
                         clusterProvider.clusterManager.TryResetReplica();
+                        restoredPrimary = true;
+                    }
 
                     return ex.Message;
                 }
@@ -198,6 +208,11 @@ namespace Garnet.cluster
                     {
                         resetHandler.Dispose();
                         resetHandler = new CancellationTokenSource();
+                    }
+                    if (restoredPrimary)
+                    {
+                        await storeWrapper.SuspendReplicaOnlyTasksAsync().ConfigureAwait(false);
+                        storeWrapper.StartPrimaryTasks();
                     }
                 }
                 return null;

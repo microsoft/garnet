@@ -566,5 +566,20 @@ namespace Garnet.test
             GC.KeepAlive(readDel);
             GC.KeepAlive(rmwDel);
         }
+
+        [Test]
+        public void FlagsExhaustive()
+        {
+            // Migrations will get goofy if these are out of sync
+            foreach (var flag in Enum.GetValues<VectorSetFlags>())
+            {
+                if (flag == VectorSetFlags.None)
+                {
+                    continue;
+                }
+
+                ClassicAssert.AreEqual(flag, flag & VectorSetFlags.All, $"Missing {flag} from VectorSetFlags.All");
+            }
+        }
     }
 }

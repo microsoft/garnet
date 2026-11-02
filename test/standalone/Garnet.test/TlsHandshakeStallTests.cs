@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Net.Sockets;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -133,6 +134,118 @@ namespace Garnet.test
             ClassicAssert.AreEqual("PONG", pong);
 
             Assert.That(elapsed.Elapsed, Is.LessThan(AdmissionDeadline), because);
+        }
+    }
+
+    /// <summary>
+    /// Covers the TLS handshake deadline: a connection holds a slot under the connection limit from the moment it
+    /// is accepted, and one that does not complete its handshake by the deadline is closed, freeing that slot.
+    /// </summary>
+    [TestFixture]
+    public class TlsHandshakeDeadlineTests : TestBase
+    {
+        const int Limit = 2;
+        static readonly TimeSpan HandshakeTimeout = TimeSpan.FromSeconds(1);
+        static readonly TimeSpan Deadline = TimeSpan.FromSeconds(15);
+
+        GarnetServer server;
+        StringWriter log;
+
+        [SetUp]
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            log = new StringWriter();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: true,
+                networkConnectionLimit: Limit, tlsHandshakeTimeout: HandshakeTimeout, logTo: TextWriter.Synchronized(log));
+            server.Start();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
+        }
+
+        /// <summary>
+        /// Fills every slot with a peer that never completes its handshake - one silent, one that stops partway -
+        /// and requires the server to close both at the deadline and then admit a real TLS client.
+        /// </summary>
+        [Test]
+        public async Task PeersThatNeverCompleteAHandshakeReleaseTheirSlots()
+        {
+            using var silent = Connect();
+            using var partial = Connect();
+
+            // A TLS record header announcing a ClientHello whose body never arrives
+            partial.Send([0x16, 0x03, 0x01, 0x02, 0x00]);
+
+            AssertClosedByServer(silent);
+            AssertClosedByServer(partial);
+
+            using var client = TestUtils.GetGarnetClient(useTLS: true);
+            var exchange = Task.Run(async () =>
+            {
+                await client.ConnectAsync();
+                return await client.PingAsync();
+            });
+            if (await Task.WhenAny(exchange, Task.Delay(Deadline)) != exchange)
+                Assert.Fail($"no TLS client was admitted within {Deadline.TotalSeconds:0} seconds of the stalled handshakes closing");
+            ClassicAssert.AreEqual("PONG", await exchange);
+
+            Assert.That(log.ToString(), Does.Not.Contain(".(warn)").And.Not.Contain(".(errr)").And.Not.Contain(".(crit)"),
+                "a handshake that does not complete by its deadline is an expected condition, not a warning or error");
+        }
+
+        /// <summary>
+        /// A timeout of <see cref="int.MaxValue"/> seconds, the longest the option accepts, exceeds the longest delay a
+        /// cancellation timer supports; the server must still admit TLS clients.
+        /// </summary>
+        [Test]
+        public async Task TheLongestConfigurableHandshakeTimeoutAdmitsTlsClients()
+        {
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: true,
+                tlsHandshakeTimeout: TimeSpan.FromSeconds(int.MaxValue), logTo: TextWriter.Synchronized(log));
+            server.Start();
+
+            using var client = TestUtils.GetGarnetClient(useTLS: true);
+            var exchange = Task.Run(async () =>
+            {
+                await client.ConnectAsync();
+                return await client.PingAsync();
+            });
+            if (await Task.WhenAny(exchange, Task.Delay(Deadline)) != exchange)
+                Assert.Fail($"no TLS client was admitted within {Deadline.TotalSeconds:0} seconds");
+            ClassicAssert.AreEqual("PONG", await exchange);
+        }
+
+        static Socket Connect()
+        {
+            var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { ReceiveTimeout = (int)Deadline.TotalMilliseconds };
+            socket.Connect(TestUtils.EndPoint);
+            return socket;
+        }
+
+        static void AssertClosedByServer(Socket socket)
+        {
+            var buffer = new byte[1024];
+            try
+            {
+                // Anything the server writes before closing, such as a TLS alert, is skipped
+                while (socket.Receive(buffer) > 0)
+                {
+                }
+            }
+            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.ConnectionReset)
+            {
+            }
+            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.TimedOut)
+            {
+                Assert.Fail($"a peer that never completed its TLS handshake was still connected after {Deadline.TotalSeconds:0} seconds");
+            }
         }
     }
 }

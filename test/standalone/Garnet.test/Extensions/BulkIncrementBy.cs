@@ -49,7 +49,7 @@ namespace Garnet
                     WriteSimpleString(ref output, "FAILED parsing incrBy parameter");
                     return;
                 }
-                _ = api.Increment(key, out _, incrBy);
+                _ = api.Increment(key, out _, out _, incrBy);
             }
 
             WriteSimpleString(ref output, "OK");

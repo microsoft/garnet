@@ -248,7 +248,7 @@ namespace Garnet.server
         /// <param name="key">Key param</param>
         /// <param name="input">Args to the command</param>
         /// <param name="output">Output from the command</param>
-        /// <returns>True if successful</returns>
+        /// <returns>True if the command ran; otherwise false, with the error in <paramref name="output"/></returns>
         protected bool ExecuteCustomRawStringCommand<TGarnetApi>(TGarnetApi garnetApi, CustomRawStringCommand rawStringCommand, PinnedSpanByte key, PinnedSpanByte[] input, out PinnedSpanByte output)
             where TGarnetApi : IGarnetApi
         {
@@ -262,7 +262,7 @@ namespace Garnet.server
         /// <param name="key">Key parameter</param>
         /// <param name="input">Args to the command</param>
         /// <param name="output">Output from the command</param>
-        /// <returns>True if successful</returns>
+        /// <returns>True if the command ran; otherwise false, with the error in <paramref name="output"/></returns>
         protected bool ExecuteCustomObjectCommand<TGarnetApi>(TGarnetApi garnetApi, CustomObjectCommand objectCommand, PinnedSpanByte key, PinnedSpanByte[] input, out PinnedSpanByte output)
             where TGarnetApi : IGarnetApi
         {
