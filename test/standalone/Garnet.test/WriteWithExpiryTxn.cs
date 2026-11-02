@@ -30,7 +30,7 @@ namespace Garnet
             var value = GetNextArg(ref procInput, ref offset);
             var expiryMs = GetNextArg(ref procInput, ref offset);
 
-            api.SETEX(key, value, expiryMs);
+            api.SETEX(key, value, expiryMs, out _);
             WriteSimpleString(ref output, "SUCCESS");
         }
     }

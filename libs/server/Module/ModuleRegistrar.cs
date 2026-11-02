@@ -91,11 +91,11 @@ namespace Garnet.server
         /// <param name="customFunctions">Custom raw string function implementation</param>
         /// <param name="commandInfo">Command info</param>
         /// <param name="commandDocs">RESP command docs</param>
-        /// <param name="expirationTicks">Expiration ticks for the key</param>
+        /// <param name="expirationTicks">Expiration ticks for the key: -1 removes the expiration, 0 keeps it, and a positive value sets it</param>
         /// <returns>Registration status</returns>
         public ModuleActionStatus RegisterCommand(string name, CustomRawStringFunctions customFunctions, CommandType type = CommandType.ReadModifyWrite, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null, long expirationTicks = 0)
         {
-            if (string.IsNullOrEmpty(name) || customFunctions == null)
+            if (string.IsNullOrEmpty(name) || customFunctions == null || expirationTicks < -1)
                 return ModuleActionStatus.InvalidRegistrationInfo;
 
             customCommandManager.Register(name, type, customFunctions, commandInfo, commandDocs, expirationTicks);

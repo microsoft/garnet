@@ -880,6 +880,12 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
+            // DECRBY negates its argument, and -long.MinValue does not fit in a long
+            if (cmd == RespCommand.DECRBY && incrByValue == long.MinValue)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_DECR_OVERFLOW);
+            }
+
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
             var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
             StringOutput stringOutput = new(new SpanByteAndMemory(output));
@@ -947,11 +953,12 @@ namespace Garnet.server
                 }
                 else
                 {
-                    if ((stringOutput.OutputFlags & StringOutputFlags.NaNOrInfinityError) != 0)
+                    // Every error flag includes the Error bit, so each flag is tested as a whole
+                    if ((stringOutput.OutputFlags & StringOutputFlags.NaNOrInfinityError) == StringOutputFlags.NaNOrInfinityError)
                     {
                         WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
                     }
-                    else if ((stringOutput.OutputFlags & StringOutputFlags.InvalidTypeError) != 0)
+                    else if ((stringOutput.OutputFlags & StringOutputFlags.InvalidTypeError) == StringOutputFlags.InvalidTypeError)
                     {
                         WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
                     }
@@ -985,6 +992,10 @@ namespace Garnet.server
             if (res == GarnetStatus.WRONGTYPE)
             {
                 WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+            }
+            else if (output.HasError)
+            {
+                WriteError(CmdStrings.RESP_ERR_STRING_EXCEEDS_MAX_SIZE);
             }
             else
             {

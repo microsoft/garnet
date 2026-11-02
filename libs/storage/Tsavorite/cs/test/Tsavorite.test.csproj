@@ -10,6 +10,11 @@
     <NoWarn>1701;1702;1591;IDE0130;IDE0065;IDE0007;IDE0048</NoWarn>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <!-- ChildProcessProgram supplies Main, so that tests can run this assembly as a child process -->
+    <GenerateProgramFile>false</GenerateProgramFile>
+  </PropertyGroup>
+
   <ItemGroup>
     <Compile Remove="test.*/**" />
     <Compile Remove="stress/**" />

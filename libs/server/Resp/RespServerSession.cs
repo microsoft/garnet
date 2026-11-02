@@ -700,6 +700,14 @@ namespace Garnet.server
         internal void SetTransactionMode(bool enable)
             => txnManager.state = enable ? TxnState.Running : TxnState.None;
 
+        /// <summary>
+        /// Whether a blocking command on this session may wait for an item. It may not while a transaction is running
+        /// (EXEC, or a script in transaction mode): the transaction holds its keys' locks until commit, so no other
+        /// client can add an item. Nor may it in a session that runs scripts, since a script must not wait on other
+        /// clients. A blocking command that may not wait takes an available item or replies as on timeout.
+        /// </summary>
+        internal bool CanBlock => txnManager.state != TxnState.Running && noScriptBitmap == null;
+
         private void ProcessMessages<TBasicApi, TTxnApi>(ref TBasicApi basicApi, ref TTxnApi transactionalApi)
             where TBasicApi : IGarnetApi
             where TTxnApi : IGarnetApi
@@ -734,7 +742,8 @@ namespace Garnet.server
                     {
                         // In RESP2, only a small set of commands are allowed while in subscription mode.
                         // RESP3 uses distinct push types for subscription messages, so all commands are valid.
-                        if (isSubscriptionSession && respProtocolVersion == 2 && !cmd.IsAllowedInSubscriptionMode())
+                        // Commands replayed by EXEC were queued before subscription mode began; rejecting them would skip the commit.
+                        if (isSubscriptionSession && respProtocolVersion == 2 && txnManager.state != TxnState.Running && !cmd.IsAllowedInSubscriptionMode())
                         {
                             while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericPubSubCommandNotAllowed, cmd.ToString()), ref dcurr, dend))
                                 SendAndReset();

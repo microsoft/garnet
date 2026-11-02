@@ -36,8 +36,12 @@ namespace Garnet.server
         /// >0 => set expiration to given value.
         /// </param>
         /// <returns>ID of the registered command</returns>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="expirationTicks"/> is less than -1</exception>
         public int NewCommand(string name, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null, long expirationTicks = 0)
-            => provider.StoreWrapper.customCommandManager.Register(name, type, customFunctions, commandInfo, commandDocs, expirationTicks);
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(expirationTicks, -1);
+            return provider.StoreWrapper.customCommandManager.Register(name, type, customFunctions, commandInfo, commandDocs, expirationTicks);
+        }
 
         /// <summary>
         /// Register transaction procedure with Garnet

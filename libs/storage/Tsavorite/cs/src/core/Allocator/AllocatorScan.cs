@@ -178,6 +178,10 @@ namespace Tsavorite.core
                     return false;
                 }
 
+                // The chain walk went below the resolvable range without finding another version of the key.
+                if (!request.diskLogRecord.IsSet)
+                    return false;
+
                 request.diskLogRecord.InfoRef.ClearBitsForDiskImages();
                 if (storeFunctions.CallOnDiskRead)
                     storeFunctions.OnDiskRead(ref request.diskLogRecord.logRecord);

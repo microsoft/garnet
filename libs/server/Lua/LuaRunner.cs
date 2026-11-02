@@ -165,7 +165,7 @@ namespace Garnet.server
         readonly RespServerSession respServerSession;
 
         readonly ScratchBufferBuilder scratchBufferBuilder;
-        readonly TxnKeyEntries txnKeyEntries;
+        TxnKeyEntries txnKeyEntries;
         readonly bool txnMode;
 
         // The Lua registry index under which the user supplied function is stored post-compilation
@@ -1133,6 +1133,20 @@ namespace Garnet.server
             const int NeededStackSize = 1;
 
             Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSize), "LUA_MINSTACK should be large enough that this never fails");
+
+            if (outerSession.activeDbId != respServerSession.activeDbId)
+            {
+                if (!respServerSession.TrySwitchActiveDatabaseSession(outerSession.activeDbId))
+                {
+                    throw new GarnetException($"Could not switch script session to database: {outerSession.activeDbId}");
+                }
+
+                // Recreate txnKeyEntries because the captures storageSession has changed
+                if (txnMode)
+                {
+                    txnKeyEntries = new TxnKeyEntries(16, respServerSession.storageSession.unifiedTransactionalContext);
+                }
+            }
 
             preambleOuterSession = outerSession;
             preambleKeyAndArgvCount = count;

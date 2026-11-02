@@ -82,7 +82,19 @@ namespace Tsavorite.core
         #region io constants and flags
         internal const int ERROR_IO_PENDING = 997;
         internal const int ERROR_PATH_NOT_FOUND = 3;
+
+        /// <summary>
+        /// Windows reports a read that starts at or past the end of a file as this error, where other platforms complete
+        /// it successfully with zero bytes. Elsewhere 38 is an unrelated errno (ENOSYS on Linux).
+        /// </summary>
+        internal const uint ERROR_HANDLE_EOF = 38;
+
         internal const int WIN32_MAX_PATH = 260;
+
+        /// <summary>
+        /// Linux's PATH_MAX: the size, in bytes including the terminating null, of the longest path its file system calls accept.
+        /// </summary>
+        internal const int LINUX_PATH_MAX = 4096;
         internal const uint GENERIC_READ = 0x80000000;
         internal const uint GENERIC_WRITE = 0x40000000;
         internal const uint FILE_FLAG_DELETE_ON_CLOSE = 0x04000000;

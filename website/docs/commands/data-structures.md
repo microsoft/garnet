@@ -463,7 +463,7 @@ Error reply: ERR HCOLLECT scan already in progress
     BLMOVE source destination <LEFT | RIGHT> <LEFT | RIGHT> timeout
 ```
 
-BLMOVE is the blocking variant of [LMOVE](#lmove). When source contains elements, this command behaves exactly like LMOVE. When used inside a MULTI/EXEC block, this command behaves exactly like LMOVE. When source is empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
+BLMOVE is the blocking variant of [LMOVE](#lmove). When source contains elements, this command behaves exactly like LMOVE. When used inside a MULTI/EXEC block or a script, this command behaves exactly like LMOVE. When source is empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
 
 ---
 
@@ -475,7 +475,7 @@ BLMOVE is the blocking variant of [LMOVE](#lmove). When source contains elements
 BRPOPLPUSH source destination timeout
 ```
 
-The BRPOPLPUSH command removes the last element from the list stored at source, and pushes the element to the list stored at destination. It then returns the element to the caller.
+The BRPOPLPUSH command removes the last element from the list stored at source, and pushes the element to the list stored at destination. It then returns the element to the caller. When used inside a MULTI/EXEC block or a script, this command does not block: if source is empty, it replies as if the timeout had been reached.
 
 #### Resp Reply
 
@@ -491,7 +491,7 @@ Bulk string reply: the element being popped and pushed.
     BLMPOP timeout numkeys key [key ...] <LEFT | RIGHT> [COUNT count]
 ```
 
-BLMPOP is the blocking variant of [LMPOP](#lmpop). When any of the lists contains elements, this command behaves exactly like LMPOP. When used inside a MULTI/EXEC block, this command behaves exactly like LMPOP. When all lists are empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
+BLMPOP is the blocking variant of [LMPOP](#lmpop). When any of the lists contains elements, this command behaves exactly like LMPOP. When used inside a MULTI/EXEC block or a script, this command behaves exactly like LMPOP. When all lists are empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
 
 ---
 
@@ -503,7 +503,7 @@ BLMPOP is the blocking variant of [LMPOP](#lmpop). When any of the lists contain
     BLPOP key [key ...] timeout
 ```
 
-BLPOP is a blocking list pop primitive. It is the blocking version of [LPOP](#lpop) because it blocks the connection when there are no elements to pop from any of the given lists. An element is popped from the head of the first list that is non-empty, with the given keys being checked in the order that they are given.
+BLPOP is a blocking list pop primitive. It is the blocking version of [LPOP](#lpop) because it blocks the connection when there are no elements to pop from any of the given lists. An element is popped from the head of the first list that is non-empty, with the given keys being checked in the order that they are given. When used inside a MULTI/EXEC block or a script, this command does not block: if all lists are empty, it replies as if the timeout had been reached.
 
 ---
 
@@ -515,7 +515,7 @@ BLPOP is a blocking list pop primitive. It is the blocking version of [LPOP](#lp
     BRPOP key [key ...] timeout
 ```
 
-BRPOP is a blocking list pop primitive. It is the blocking version of [RPOP](#rpop) because it blocks the connection when there are no elements to pop from any of the given lists. An element is popped from the tail of the first list that is non-empty, with the given keys being checked in the order that they are given.
+BRPOP is a blocking list pop primitive. It is the blocking version of [RPOP](#rpop) because it blocks the connection when there are no elements to pop from any of the given lists. An element is popped from the tail of the first list that is non-empty, with the given keys being checked in the order that they are given. When used inside a MULTI/EXEC block or a script, this command does not block: if all lists are empty, it replies as if the timeout had been reached.
 
 ---
 
@@ -1151,7 +1151,7 @@ _Array reply:_ a list of string **member** scores as double-precision floating p
     BZMPOP timeout numkeys key [key ...] <MIN | MAX> [COUNT count]
 ```
 
-BZMPOP is the blocking variant of [ZMPOP](#zmpop). When any of the sorted sets contains elements, this command behaves exactly like ZMPOP. When used inside a MULTI/EXEC block, this command behaves exactly like ZMPOP. When all sorted sets are empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
+BZMPOP is the blocking variant of [ZMPOP](#zmpop). When any of the sorted sets contains elements, this command behaves exactly like ZMPOP. When used inside a MULTI/EXEC block or a script, this command behaves exactly like ZMPOP. When all sorted sets are empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
 
 - **MIN**: Remove elements starting with the lowest scores
 - **MAX**: Remove elements starting with the highest scores
@@ -1173,7 +1173,7 @@ One of the following:
     BZPOPMAX key [key ...] timeout
 ```
 
-BZPOPMAX is the blocking variant of [ZPOPMAX](#zpopmax). When any of the sorted sets contains elements, this command behaves exactly like ZPOPMAX. When used inside a MULTI/EXEC block, this command behaves exactly like ZPOPMAX. When all sorted sets are empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
+BZPOPMAX is the blocking variant of [ZPOPMAX](#zpopmax). When any of the sorted sets contains elements, this command behaves exactly like ZPOPMAX. When used inside a MULTI/EXEC block or a script, this command behaves exactly like ZPOPMAX. When all sorted sets are empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
 
 #### Resp Reply
 
@@ -1192,7 +1192,7 @@ One of the following:
     BZPOPMIN key [key ...] timeout
 ```
 
-BZPOPMIN is the blocking variant of [ZPOPMIN](#zpopmin). When any of the sorted sets contains elements, this command behaves exactly like ZPOPMIN. When used inside a MULTI/EXEC block, this command behaves exactly like ZPOPMIN. When all sorted sets are empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
+BZPOPMIN is the blocking variant of [ZPOPMIN](#zpopmin). When any of the sorted sets contains elements, this command behaves exactly like ZPOPMIN. When used inside a MULTI/EXEC block or a script, this command behaves exactly like ZPOPMIN. When all sorted sets are empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
 
 #### Resp Reply
 
