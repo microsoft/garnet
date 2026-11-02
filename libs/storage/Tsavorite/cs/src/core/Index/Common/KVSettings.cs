@@ -52,9 +52,11 @@ namespace Tsavorite.core
         public static int HashBucketSizeBytes => MallocFixedPageSize<HashBucket>.RecordSize;
 
         /// <summary>
-        /// Memory an overflow-bucket generation commits as soon as it exists, whatever the threshold resolves to. The
-        /// allocator commits whole pages and pre-allocates each page's successor, so a generation that has handed out
-        /// nothing still holds this much.
+        /// Memory an overflow-bucket generation commits as soon as it exists, whatever the threshold resolves to, when the
+        /// index is aligned to the minimum sector size. The allocator commits whole pages and pre-allocates each page's
+        /// successor, so a generation that has handed out nothing still holds this much. Each page also carries a sector
+        /// of alignment slack, so a store whose devices need larger sectors commits slightly more; its
+        /// <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.IndexOverflowFloorSizeBytes"/> is the exact amount.
         /// </summary>
         public static long OverflowBucketFloorMemorySize => MallocFixedPageSize<HashBucket>.MinCommittedMemorySize;
 
@@ -149,7 +151,7 @@ namespace Tsavorite.core
         public long ReadCachePageSize = 1 << 25;
 
         /// <summary>
-        /// Main-log circular-buffer size if nonzero; rounds down to a power of 2 and errors if that does not allow ReadCachePageSize.
+        /// Read-cache circular-buffer size if nonzero; rounds down to a power of 2 and errors if that does not allow ReadCachePageSize.
         /// </summary>
         /// <remarks>
         /// If zero, calculate it from <see cref="ReadCacheMemorySize"/> and <see cref="ReadCachePageSize"/>, which is also the max if both this and <see cref="ReadCacheMemorySize"/> are nonzero.

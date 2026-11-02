@@ -770,10 +770,30 @@ namespace Tsavorite.core
                     PendingFlush[i] = new PendingFlushList();
             }
             device = logSettings.LogDevice;
-            sectorSize = (int)device.SectorSize;
+            sectorSize = (int)Math.Max(device.SectorSize, logSettings.ObjectLogDevice?.SectorSize ?? 0u);
 
             if (PageSize < sectorSize)
                 throw new TsavoriteException($"Page size must be at least of device sector size ({sectorSize} bytes). Set PageSizeBits accordingly.");
+
+            // Pages are snapshotted to, and recovered from, the checkpoint devices directly, so they must also be aligned
+            // and rounded for those devices. A checkpoint sector larger than a page cannot be served; leave startup working
+            // and let a checkpoint fail with the explicit sector-size error instead.
+            var checkpointSectorSize = logSettings.CheckpointSectorSize;
+            if (checkpointSectorSize > sectorSize)
+            {
+                if (!Utility.IsPowerOfTwo(checkpointSectorSize))
+                    throw new TsavoriteException($"Checkpoint sector size {checkpointSectorSize} must be a power of two");
+                if (checkpointSectorSize <= PageSize)
+                {
+                    sectorSize = checkpointSectorSize;
+                    logger?.LogInformation("Using sector size {sectorSize} for log pages and IO to match the checkpoint devices", sectorSize);
+                }
+                else
+                {
+                    logger?.LogWarning("Checkpoint devices require sector size {checkpointSectorSize}, which exceeds the page size {pageSize}; checkpoints will fail until the page size is at least the checkpoint sector size",
+                        checkpointSectorSize, PageSize);
+                }
+            }
 
             AlignedPageSizeBytes = RoundUp(PageSize, sectorSize);
 
