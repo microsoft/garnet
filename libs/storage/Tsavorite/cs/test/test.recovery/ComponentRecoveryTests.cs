@@ -21,7 +21,7 @@ namespace Tsavorite.test.recovery
             seed = 123;
             var rand1 = new Random(seed);
             device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "MallocFixedPageSizeRecoveryTest.dat"), deleteOnClose: true);
-            var allocator = new MallocFixedPageSize<HashBucket>();
+            var allocator = new MallocFixedPageSize<HashBucket>(MallocFixedPageSize<HashBucket>.DefaultMaxMemorySize, (int)device.SectorSize);
 
             //do something
             numBucketsToAdd = 2 * allocator.GetPageSize();
@@ -72,7 +72,7 @@ namespace Tsavorite.test.recovery
         {
             Setup_MallocFixedPageSizeRecoveryTest(out int seed, out IDevice device, out int numBucketsToAdd, out long[] logicalAddresses, out ulong numBytesWritten);
 
-            var recoveredAllocator = new MallocFixedPageSize<HashBucket>();
+            var recoveredAllocator = new MallocFixedPageSize<HashBucket>(MallocFixedPageSize<HashBucket>.DefaultMaxMemorySize, (int)device.SectorSize);
             var numBytesRead = await recoveredAllocator.RecoverAsync(device, 0, numBucketsToAdd, numBytesWritten, CancellationToken.None).ConfigureAwait(false);
 
             Finish_MallocFixedPageSizeRecoveryTest(seed, device, numBucketsToAdd, logicalAddresses, numBytesWritten, recoveredAllocator, numBytesRead);
@@ -85,7 +85,7 @@ namespace Tsavorite.test.recovery
         {
             Setup_MallocFixedPageSizeRecoveryTest(out int seed, out IDevice device, out int numBucketsToAdd, out long[] logicalAddresses, out ulong numBytesWritten);
 
-            var recoveredAllocator = new MallocFixedPageSize<HashBucket>();
+            var recoveredAllocator = new MallocFixedPageSize<HashBucket>(MallocFixedPageSize<HashBucket>.DefaultMaxMemorySize, (int)device.SectorSize);
             ulong numBytesRead = await recoveredAllocator.RecoverAsync(device, 0, numBucketsToAdd, numBytesWritten, cancellationToken: default).ConfigureAwait(false);
 
             Finish_MallocFixedPageSizeRecoveryTest(seed, device, numBucketsToAdd, logicalAddresses, numBytesWritten, recoveredAllocator, numBytesRead);
@@ -101,7 +101,7 @@ namespace Tsavorite.test.recovery
             ht_device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "TestFuzzyIndexRecoveryht.dat"), deleteOnClose: true);
             ofb_device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "TestFuzzyIndexRecoveryofb.dat"), deleteOnClose: true);
             hash_table1 = new TsavoriteBase();
-            hash_table1.Initialize(size, 512);
+            hash_table1.Initialize(size, (int)ht_device.SectorSize);
 
             //do something
             var keyGenerator1 = new Random(seed);
@@ -161,7 +161,7 @@ namespace Tsavorite.test.recovery
                                          out ulong ht_num_bytes_written, out ulong ofb_num_bytes_written, out int num_ofb_buckets);
 
             var hash_table2 = new TsavoriteBase();
-            hash_table2.Initialize(size, 512);
+            hash_table2.Initialize(size, (int)ht_device.SectorSize);
 
             await hash_table2.RecoverFuzzyIndexAsync(0, ht_device, ht_num_bytes_written, ofb_device, num_ofb_buckets, ofb_num_bytes_written, CancellationToken.None).ConfigureAwait(false);
 
@@ -177,7 +177,7 @@ namespace Tsavorite.test.recovery
                                          out ulong ht_num_bytes_written, out ulong ofb_num_bytes_written, out int num_ofb_buckets);
 
             var hash_table2 = new TsavoriteBase();
-            hash_table2.Initialize(size, 512);
+            hash_table2.Initialize(size, (int)ht_device.SectorSize);
 
             await hash_table2.RecoverFuzzyIndexAsync(0, ht_device, ht_num_bytes_written, ofb_device, num_ofb_buckets, ofb_num_bytes_written, cancellationToken: default).ConfigureAwait(false);
 

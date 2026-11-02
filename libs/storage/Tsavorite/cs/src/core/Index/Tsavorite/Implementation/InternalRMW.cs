@@ -443,7 +443,23 @@ namespace Tsavorite.core
             if (!doingCU)
             {
                 if (!sessionFunctions.NeedInitialUpdate(key, ref input, ref output, ref rmwInfo))
-                    return rmwInfo.Action == RMWAction.CancelOperation ? OperationStatus.CANCELED : OperationStatus.NOTFOUND;
+                {
+                    if (rmwInfo.Action == RMWAction.CancelOperation)
+                        return OperationStatus.CANCELED;
+                    if (!forExpiration)
+                        return OperationStatus.NOTFOUND;
+
+                    // The expired source was disposed and nothing replaces it, so delete it as for ExpireAndStop
+                    if (allocOptions.elideSourceRecord)
+                    {
+                        srcLogRecord.InfoRef.SetTombstone();
+                        srcLogRecord.InfoRef.SetModified();
+                        ref var inMemoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
+                        HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref inMemoryLogRecord);
+                        return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired);
+                    }
+                    addTombstone = true;
+                }
             }
 
             // Allocate and initialize the new record
@@ -457,7 +473,7 @@ namespace Tsavorite.core
             else
             {
                 Debug.Assert(!allocOptions.elideSourceRecord, "Elidable records going down the deletion via RMW path from NCU should have already been handled." +
-                    "This block only handles NCU requested deletion for unelidable src records.");
+                    "This block only handles NCU requested deletion, or expiration without an initial update, for unelidable src records.");
                 sizeInfo = hlog.GetDeleteRecordSize(key);
             }
 
@@ -471,7 +487,7 @@ namespace Tsavorite.core
 
             rmwInfo.Address = newLogicalAddress;
 
-            if (!doingCU)
+            if (!doingCU && !addTombstone)
             {
                 if (sessionFunctions.InitialUpdater(ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
                 {
@@ -483,7 +499,14 @@ namespace Tsavorite.core
                 {
                     if (rmwInfo.Action == RMWAction.CancelOperation)
                         return OperationStatus.CANCELED;
-                    return OperationStatus.NOTFOUND | (forExpiration ? OperationStatus.EXPIRED : OperationStatus.NOTFOUND);
+                    if (!forExpiration)
+                        return OperationStatus.NOTFOUND;
+
+                    // The expired source was disposed and nothing replaces it, so the new record becomes its tombstone, as in ReinitializeExpiredRecord
+                    newLogRecord.InfoRef.SetModified();
+                    newLogRecord.InfoRef.SetTombstone();
+                    addTombstone = true;
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord | StatusCode.Expired);
                 }
             }
             else if (!addTombstone)
@@ -558,10 +581,12 @@ namespace Tsavorite.core
             }
             else
             {
-                Debug.Assert(addTombstone, "This block should only be handling tombstoning requests by NCU where the previous record was not elidable.");
+                Debug.Assert(addTombstone, "This block should only be handling tombstoning requests by NCU, or expiration without an initial update, where the previous record was not elidable.");
                 newLogRecord.InfoRef.SetModified();
                 newLogRecord.InfoRef.SetTombstone();
-                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
+
+                // An expired record that nothing replaces was logically absent, so the key is reported as not found
+                status = OperationStatusUtils.AdvancedOpCode(forExpiration ? OperationStatus.NOTFOUND : OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
             }
 
         DoCAS:

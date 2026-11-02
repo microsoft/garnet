@@ -84,7 +84,21 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase("BRPOP", "LPUSH", 0)]
+        [TestCase("BLPOP")]
+        [TestCase("BRPOP")]
+        [TestCase("BZPOPMIN")]
+        [TestCase("BZPOPMAX")]
+        public void BlockingPopRejectsNaNTimeout(string blockingCmd)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute(blockingCmd, "mykey", "nan"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT), ex.Message);
+
+            // The session survives the rejected command
+            ClassicAssert.AreEqual("PONG", (string)db.Execute("PING"));
+        }
         [TestCase("BRPOP", "LPUSH", 10)]
         [TestCase("BLPOP", "RPUSH", 0)]
         [TestCase("BLPOP", "RPUSH", 10)]

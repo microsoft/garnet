@@ -73,7 +73,7 @@ namespace Tsavorite.test
         {
             IDevice localDevice1 = Devices.CreateLogDevice(Path.Join(MethodTestDir, "BasicDiskTests1.log"), deleteOnClose: true, capacity: 1L << 30);
             IDevice localDevice2 = Devices.CreateLogDevice(Path.Join(MethodTestDir, "BasicDiskTests2.log"), deleteOnClose: true, capacity: 1L << 30);
-            var device = new ShardedStorageDevice(new UniformPartitionScheme(IDevice.MinDeviceSectorSize, localDevice1, localDevice2));
+            var device = new ShardedStorageDevice(new UniformPartitionScheme(Math.Max(localDevice1.SectorSize, localDevice2.SectorSize), localDevice1, localDevice2));
             TestDeviceWriteRead(device);
         }
 
@@ -86,21 +86,22 @@ namespace Tsavorite.test
         [Category("TsavoriteKV")]
         public unsafe void ShardedReadCompletesWhenLaterShardThrows()
         {
-            const int SectorSize = IDevice.MinDeviceSectorSize;
-
             var localDevice1 = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ShardedThrow1.log"), deleteOnClose: true, capacity: 1L << 30);
             var throwingDevice = new SyncThrowOnReadDevice(Devices.CreateLogDevice(Path.Join(MethodTestDir, "ShardedThrow2.log"), deleteOnClose: true, capacity: 1L << 30));
-            using var device = new ShardedStorageDevice(new UniformPartitionScheme(SectorSize, localDevice1, throwingDevice));
+
+            // Shard in chunks of one sector, so that a two-sector request spans both shards.
+            var sectorSize = Math.Max(localDevice1.SectorSize, throwingDevice.SectorSize);
+            using var device = new ShardedStorageDevice(new UniformPartitionScheme(sectorSize, localDevice1, throwingDevice));
             device.Initialize(segmentSize: 1L << 30, epoch: null);
 
             // The read spans both shards, so the first shard is issued before the second one throws.
-            var buffer = (byte*)NativeMemory.AlignedAlloc(2 * SectorSize, SectorSize);
+            var buffer = (byte*)NativeMemory.AlignedAlloc(2 * sectorSize, sectorSize);
             try
             {
-                NativeMemory.Clear(buffer, 2 * SectorSize);
+                NativeMemory.Clear(buffer, 2 * sectorSize);
 
                 using var writeDone = new ManualResetEventSlim(false);
-                device.WriteAsync((IntPtr)buffer, 0, 0, 2 * SectorSize, (_, _, _, _) => writeDone.Set(), null);
+                device.WriteAsync((IntPtr)buffer, 0, 0, 2 * sectorSize, (_, _, _, _) => writeDone.Set(), null);
                 ClassicAssert.IsTrue(writeDone.Wait(TimeSpan.FromSeconds(30)), "Write did not complete");
 
                 throwingDevice.ArmReadFailure = true;
@@ -108,7 +109,7 @@ namespace Tsavorite.test
                 var callbackCount = 0;
                 uint observedErrorCode = 0;
                 using var readDone = new ManualResetEventSlim(false);
-                Assert.DoesNotThrow(() => device.ReadAsync(0, 0, (IntPtr)buffer, 2 * SectorSize,
+                Assert.DoesNotThrow(() => device.ReadAsync(0, 0, (IntPtr)buffer, 2 * sectorSize,
                     (errorCode, _, _, _) =>
                     {
                         _ = Interlocked.Increment(ref callbackCount);
@@ -140,24 +141,25 @@ namespace Tsavorite.test
         [Category("TsavoriteKV")]
         public unsafe void ShardedWriteCompletesWhenLaterShardThrows()
         {
-            const int SectorSize = IDevice.MinDeviceSectorSize;
-
             var localDevice1 = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ShardedWriteThrow1.log"), deleteOnClose: true, capacity: 1L << 30);
             var throwingDevice = new SyncThrowOnWriteDevice(Devices.CreateLogDevice(Path.Join(MethodTestDir, "ShardedWriteThrow2.log"), deleteOnClose: true, capacity: 1L << 30));
-            using var device = new ShardedStorageDevice(new UniformPartitionScheme(SectorSize, localDevice1, throwingDevice));
+
+            // Shard in chunks of one sector, so that a two-sector request spans both shards.
+            var sectorSize = Math.Max(localDevice1.SectorSize, throwingDevice.SectorSize);
+            using var device = new ShardedStorageDevice(new UniformPartitionScheme(sectorSize, localDevice1, throwingDevice));
             device.Initialize(segmentSize: 1L << 30, epoch: null);
 
             // The write spans both shards, so the first shard is issued before the second one throws.
-            var buffer = (byte*)NativeMemory.AlignedAlloc(2 * SectorSize, SectorSize);
+            var buffer = (byte*)NativeMemory.AlignedAlloc(2 * sectorSize, sectorSize);
             try
             {
-                NativeMemory.Clear(buffer, 2 * SectorSize);
+                NativeMemory.Clear(buffer, 2 * sectorSize);
                 throwingDevice.ArmWriteFailure = true;
 
                 var callbackCount = 0;
                 uint observedErrorCode = 0;
                 using var writeDone = new ManualResetEventSlim(false);
-                Assert.DoesNotThrow(() => device.WriteAsync((IntPtr)buffer, 0, 0, 2 * SectorSize,
+                Assert.DoesNotThrow(() => device.WriteAsync((IntPtr)buffer, 0, 0, 2 * sectorSize,
                     (errorCode, _, _, _) =>
                     {
                         _ = Interlocked.Increment(ref callbackCount);

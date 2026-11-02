@@ -91,6 +91,17 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
+        public uint GetSectorSize(FileDescriptor fileInfo)
+        {
+            // Mirrors the device types created by Devices.CreateLogDevice: every local-disk device takes its sector size
+            // from the same probe, and the in-memory devices use the minimum.
+            var resolvedType = deviceType == DeviceType.Default ? Devices.GetDefaultDeviceType() : deviceType;
+            if (resolvedType is DeviceType.Null or DeviceType.LocalMemory)
+                return IDevice.MinDeviceSectorSize;
+            return NativeStorageDevice.ProbeSectorSizeWithoutCreating(Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName));
+        }
+
+        /// <inheritdoc />
         public IEnumerable<FileDescriptor> ListContents(string path)
         {
             var pathInfo = new DirectoryInfo(Path.Combine(baseName, path));

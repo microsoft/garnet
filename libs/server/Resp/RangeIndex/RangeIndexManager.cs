@@ -29,7 +29,7 @@ namespace Garnet.server
     /// <para>File layout (flat under two roots):</para>
     /// <list type="bullet">
     /// <item><b>Log root</b> (<c>{LogDir ?? CheckpointDir ?? cwd}/Store/rangeindex/</c>) — working
-    /// files (<c>&lt;hash&gt;.data.bftree</c>) and immutable per-flush snapshots
+    /// files (<c>&lt;hash&gt;.data.bftree</c>) and per-flush snapshots
     /// (<c>&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</c>).</item>
     /// <item><b>Checkpoint root</b> (<c>{CheckpointDir}/Store/checkpoints[_dbId]/cpr-checkpoints/&lt;token&gt;/rangeindex/</c>) —
     /// per-checkpoint snapshots (<c>&lt;hash&gt;.bftree</c>); deleted automatically when
@@ -90,7 +90,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Log-tied root directory (without trailing separator). Holds the working file
-        /// (<c>&lt;hash&gt;.data.bftree</c>) and immutable per-flush snapshots
+        /// (<c>&lt;hash&gt;.data.bftree</c>) and per-flush snapshots
         /// (<c>&lt;hash&gt;.&lt;addr:x16&gt;.flush.bftree</c>).
         /// </summary>
         private readonly string riLogRoot;
@@ -674,6 +674,10 @@ namespace Garnet.server
         /// <para>Sets <see cref="RangeIndexStub.IsFlushed"/> on the in-memory stub on success so
         /// the next data operation routes through <see cref="GarnetRecordTriggers.PostCopyToTail"/>
         /// or RIPROMOTE PostCopyUpdater to re-anchor the tree at the tail.</para>
+        ///
+        /// <para>Both cases replace a file already at the flush path. After recovery from a checkpoint,
+        /// the addresses at and above its flushed address are flushed again, so such a file is from the
+        /// run before the restart, and its tree can hold writes that recovery rolled back.</para>
         /// </summary>
         /// <param name="key">The raw key bytes (used for hash prefix + lock acquisition).</param>
         /// <param name="valueSpan">The store value span containing the stub.</param>
@@ -761,7 +765,8 @@ namespace Garnet.server
                     LogOnFlushInvariantViolation(hashPrefix, logicalAddress);
                     return; // do NOT set IsFlushed
                 }
-                File.Copy(dataPath, flushPath, overwrite: false);
+                // Overwrite: a file already here is from the run before a restart (see SnapshotTreeForFlush).
+                File.Copy(dataPath, flushPath, overwrite: true);
                 SetFlushedFlag(valueSpan);
             }
             finally
