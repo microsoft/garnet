@@ -262,7 +262,12 @@ namespace Garnet.server
                     return AbortWithErrorMessage("ERR XVIMPORT VERIFY must have integer taskIndex and taskCount parameters");
                 }
 
-                _ = storageApi.VectorSetVerifyImport(key, taskIndex, taskCount, out var res, out var verifyErrorMsg);
+                var verifyStatus = storageApi.VectorSetVerifyImport(key, taskIndex, taskCount, out var res, out var verifyErrorMsg);
+                if (verifyStatus == GarnetStatus.WRONGTYPE)
+                {
+                    return AbortVectorSetWrongType();
+                }
+
                 if (res != VectorManagerResult.OK)
                 {
                     return AbortWithErrorMessage(verifyErrorMsg);
