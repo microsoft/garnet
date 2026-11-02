@@ -465,6 +465,9 @@ namespace Garnet.common
 
             // Closing the socket completes every in-flight send, so the release this waiter is owed arrives promptly
             _ = TryClose();
+#if DEBUG
+            ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Sender_Pause_Before_Timed_Out_Slot_Wait);
+#endif
             AsyncUtils.BlockingWait(slot);
             throw new GarnetException($"Closed connection to {remoteEndpoint}: no send completed within {sendTimeoutMs} ms",
                 LogLevel.Warning, clientResponse: false, disposeSession: true);

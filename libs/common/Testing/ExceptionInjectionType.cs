@@ -189,5 +189,9 @@ namespace Garnet.common
         /// decremented the send count and before it releases the waiter.
         /// </summary>
         Sender_Pause_Before_Slot_Release,
+        /// <summary>
+        /// Server network sender: pause after a send timeout closes the socket, before waiting for its send slot.
+        /// </summary>
+        Sender_Pause_Before_Timed_Out_Slot_Wait,
     }
 }
