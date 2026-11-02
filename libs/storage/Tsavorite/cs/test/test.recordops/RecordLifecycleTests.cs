@@ -116,6 +116,9 @@ namespace Tsavorite.test
             public int FlushCount;
             public int DiskReadCount;
 
+            /// <summary>Called with each record's address from <see cref="IRecordTriggers.OnFlush"/>, so a test can hold the trigger.</summary>
+            public Action<long> OnFlushHook;
+
             public int DisposeCount(DisposeReason r) => Volatile.Read(ref DisposeCounts[(int)r]);
             public int DisposeDiskCount(DisposeReason r) => Volatile.Read(ref DisposeDiskCounts[(int)r]);
             public int EvictCount(EvictionSource s) => Volatile.Read(ref EvictCounts[(int)s]);
@@ -146,6 +149,7 @@ namespace Tsavorite.test
             {
                 if (tracker is null) return;
                 _ = Interlocked.Increment(ref tracker.FlushCount);
+                tracker.OnFlushHook?.Invoke(logicalAddress);
             }
 
             public readonly void OnDiskRead(ref LogRecord logRecord)
@@ -259,6 +263,25 @@ namespace Tsavorite.test
         }
 
         private bool SourceHoldsObject(long logicalAddress) => store.hlogBase._wrapper.CreateLogRecord(logicalAddress).DataHeader.ValueIsObject;
+
+        /// <summary>Replace the store with one whose main log and object log are NullDevices.</summary>
+        private void UseNullDevice()
+        {
+            store.Dispose();
+            log.Dispose();
+            objlog.Dispose();
+            log = new NullDevice();
+            objlog = new NullDevice();
+            store = CreateStore(log, objlog);
+        }
+
+        /// <summary>The address of the record the next upsert on an empty log writes: the tail, or the first page's first valid address.</summary>
+        private long NextRecordAddress()
+        {
+            var address = store.Log.TailAddress;
+            var firstValidAddress = store.hlogBase.GetFirstValidLogicalAddressOnPage(store.hlogBase.GetPage(address));
+            return address < firstValidAddress ? firstValidAddress : address;
+        }
 
         /// <summary>Writes no bytes, so a record's value component is zero length on the object log.</summary>
         sealed class ZeroByteValueSerializer : BinaryObjectSerializer<IHeapObject>
@@ -415,14 +438,7 @@ namespace Tsavorite.test
         public async Task CheckpointFrozenDeleteRunsTheDeleteTriggerOnceNoFlushReadsIt([Values] bool nullDevice)
         {
             if (nullDevice)
-            {
-                store.Dispose();
-                log.Dispose();
-                objlog.Dispose();
-                log = new NullDevice();
-                objlog = new NullDevice();
-                store = CreateStore(log, objlog);
-            }
+                UseNullDevice();
 
             var sourceAddress = store.Log.TailAddress;
             Upsert(1, 100);
@@ -442,8 +458,8 @@ namespace Tsavorite.test
                 _ = deleteSession.BasicContext.Delete(new TestObjectKey { key = 1 }, 0);
 
                 Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.Zero, "The delete trigger ran while the checkpoint still needed the record");
-                Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).Info.DeferredForCheckpoint, Is.True,
-                    "The deletion should be marked as held back by the checkpoint");
+                Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).Info.DeferredDispose, Is.True,
+                    "The deletion should be marked for later release");
             }
             finally
             {
@@ -463,8 +479,8 @@ namespace Tsavorite.test
                 return;
             }
 
-            // A NullDevice's flush completes within the shift, so its drain has already run, and must have left the deletion alone. That drain
-            // walks a range only when a mark it can run raised its high-water address, so also walk the record directly, as it would then.
+            // On a NullDevice the drain releases nothing, whatever range it walks, because FlushedUntilAddress passing a record does not mean a
+            // Snapshot checkpoint's flush has read it. So walk the record directly, as a drain would: the deletion must still wait for eviction.
             Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.Zero, "On a NullDevice a deletion held back by a checkpoint must wait for eviction");
             var epoch = store.hlogBase.epoch;
             var resumed = epoch.ResumeIfNotProtected();
@@ -505,6 +521,178 @@ namespace Tsavorite.test
                 Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True, "The checkpoint did not reach WAIT_FLUSH");
                 _ = deleteSession.BasicContext.Delete(new TestObjectKey { key = 1 }, 0);
                 Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "The deletion of a durable record must run at once");
+            }
+            finally
+            {
+                pause.Release.Set();
+            }
+            await store.CompleteCheckpointAsync().ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// On a NullDevice main log, whose flush writes nothing, a record is still frozen while the OnFlush trigger may read it, so a Delete
+        /// then defers the delete trigger. Eviction runs it exactly once, although neither a size tracker nor OnEvict needs eviction to walk
+        /// the records.
+        /// </summary>
+        [Test, Category("TsavoriteKV")]
+        public void NullDeviceDeleteDuringOnFlushDefersTheDeleteTrigger()
+        {
+            UseNullDevice();
+            tracker.CallOnFlushFlag = true;
+            tracker.CallOnEvictFlag = false;
+            var sourceAddress = NextRecordAddress();
+            Upsert(1, 100);
+
+            using var inOnFlush = new ManualResetEventSlim(false);
+            using var releaseOnFlush = new ManualResetEventSlim(false);
+            tracker.OnFlushHook = logicalAddress =>
+            {
+                if (logicalAddress != sourceAddress || inOnFlush.IsSet)
+                    return;
+                inOnFlush.Set();
+                _ = releaseOnFlush.Wait(TimeSpan.FromSeconds(30));
+            };
+
+            using var deleteSession = NewSession();
+            tracker.Reset();
+            var shift = Task.Run(() => store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true));
+            try
+            {
+                Assert.That(inOnFlush.Wait(TimeSpan.FromSeconds(30)), Is.True, "OnFlush never ran for the record");
+                _ = deleteSession.BasicContext.Delete(new TestObjectKey { key = 1 }, 0);
+                Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.Zero, "The delete trigger ran while OnFlush could still read the record");
+            }
+            finally
+            {
+                releaseOnFlush.Set();
+            }
+            Assert.That(shift.Wait(TimeSpan.FromSeconds(30)), Is.True, "The read-only shift did not complete");
+
+            store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
+            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "Eviction must run the deferred deletion exactly once");
+        }
+
+        /// <summary>
+        /// On a NullDevice main log a Snapshot checkpoint's flush holds FlushedUntilAddress back on the pages it has not completed, but the
+        /// ReadOnly flush, which reads no record there, has run the OnFlush trigger and passed them. A CopyUpdate in that window of a source
+        /// that no checkpoint needs therefore releases the source's value at once.
+        /// </summary>
+        [Test, Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task NullDeviceCopyUpdateWhileTheSnapshotFlushHoldsBackFlushedUntilAddressReleasesTheSource()
+        {
+            if (!ObjectFlushInjection.IsAvailable)
+                Assert.Ignore("ObjectFlushInjection is compiled out in Release, so the Snapshot flush cannot be held mid-page.");
+
+            UseNullDevice();
+            var heldAddress = NextRecordAddress();
+            Upsert(0, 100);
+
+            // Create the session before the checkpoint, so that it takes part from PREPARE onward and sees the checkpoint in progress.
+            using var session = NewSession();
+            using var snapshotHeld = new ManualResetEventSlim(false);
+            using var releaseSnapshot = new ManualResetEventSlim(false);
+            var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
+            store.stateMachineDriver.UnsafeRegisterCallback(pause);
+            Task shift = null;
+            try
+            {
+                Assert.That(store.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot), Is.True);
+                Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True, "The checkpoint did not reach IN_PROGRESS");
+
+                // A (v+1) source, which no checkpoint needs. It lies below the tail WAIT_FLUSH samples, so the Snapshot flush covers its page.
+                // A filler takes the fuzzy region's start address, which CheckpointNeedsSourceImage counts as inside the checkpoint's range.
+                _ = session.BasicContext.Upsert(new TestObjectKey { key = 2 }, new TrackedObjectValue { value = 300 }, 0);
+                var sourceAddress = NextRecordAddress();
+                _ = session.BasicContext.Upsert(new TestObjectKey { key = 1 }, new TrackedObjectValue { value = 200 }, 0);
+                Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).Info.IsInNewVersion, Is.True, "Precondition: the source is (v+1)");
+
+                // Hold the Snapshot flush at the first record, before it completes the page.
+                ObjectFlushInjection.Hook = (phase, logicalAddress) =>
+                {
+                    if (phase != ObjectFlushPhase.AfterCapture || logicalAddress != heldAddress || snapshotHeld.IsSet)
+                        return;
+                    snapshotHeld.Set();
+                    _ = releaseSnapshot.Wait(TimeSpan.FromSeconds(30));
+                };
+                pause.Release.Set();
+                Assert.That(snapshotHeld.Wait(TimeSpan.FromSeconds(30)), Is.True, "The Snapshot flush never reached the first record");
+
+                // The ReadOnly flush of the page waits for the Snapshot flush, after it has run the OnFlush trigger on the page.
+                shift = Task.Run(() => store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true));
+                Assert.That(SpinWait.SpinUntil(() => store.Log.SafeReadOnlyAddress > sourceAddress && !store.hlog.IsFrozenForFlush(sourceAddress),
+                    TimeSpan.FromSeconds(10)), Is.True, "The source is still frozen for the ReadOnly flush, which reads no record on a NullDevice");
+                Assert.That(store.Log.FlushedUntilAddress, Is.LessThanOrEqualTo(sourceAddress),
+                    "Precondition: the Snapshot flush holds FlushedUntilAddress below the source");
+
+                TestObjectInput input = new() { value = 7 };
+                TestObjectOutput output = new();
+                var status = session.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, ref output, 0);
+                Assert.That(status.Record.CopyUpdated, Is.True, "The RMW did not copy-update the immutable source");
+                Assert.That(SourceHoldsObject(sourceAddress), Is.False, "The CopyUpdate did not release the source's value at once");
+            }
+            finally
+            {
+                releaseSnapshot.Set();
+                pause.Release.Set();
+                ObjectFlushInjection.Reset();
+            }
+            Assert.That(shift.Wait(TimeSpan.FromSeconds(30)), Is.True, "The read-only shift did not complete");
+            await store.CompleteCheckpointAsync().ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// A CopyUpdate from a read-cache source during a checkpoint releases the source's value at once. The read cache holds a copy of a
+        /// durable main-log record, which no checkpoint reads from the read cache, so preserving the source's image would only keep its object
+        /// and serialized bytes until the read cache evicts it.
+        /// </summary>
+        [Test, Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task CheckpointCopyUpdateOfAReadCacheSourceReleasesItsValueAtOnce()
+        {
+            store.Dispose();
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                LogMemorySize = 1L << (MinKvLogPageSizeBits + 4),
+                PageSize = MinKvLogPageSize,
+                ReadCacheMemorySize = 1L << (MinKvLogPageSizeBits + 5),
+                ReadCachePageSize = MinKvLogPageSize,
+                ReadCacheEnabled = true,
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TrackedObjectValue.Serializer(),
+                    new LifecycleRecordTriggers(tracker))
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+            // The read below checks that a key's value is the key.
+            Upsert(1, 1);
+            store.Log.FlushAndEvict(wait: true);
+
+            // Create the session before the checkpoint, so that it takes part from PREPARE onward and sees the checkpoint in progress. Its
+            // pending read copies the record into the read cache.
+            using var session = NewSession();
+            {
+                TestObjectInput input = new();
+                TestObjectOutput output = new();
+                if (session.BasicContext.Read(new TestObjectKey { key = 1 }, ref input, ref output, 0).IsPending)
+                    _ = session.BasicContext.CompletePending(wait: true);
+            }
+
+            var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
+            store.stateMachineDriver.UnsafeRegisterCallback(pause);
+            try
+            {
+                Assert.That(store.TryInitiateFullCheckpoint(out _, CheckpointType.FoldOver), Is.True);
+                Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True, "The checkpoint did not reach IN_PROGRESS");
+
+                var disposedBefore = TrackedObjectValue.Snapshot().total;
+                TestObjectInput input = new() { value = 7 };
+                TestObjectOutput output = new();
+                var status = session.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, ref output, 0);
+                Assert.That(status.IsPending, Is.False, "Precondition: the RMW found the key in the read cache");
+                Assert.That(status.Record.CopyUpdated, Is.True, "The RMW did not copy-update the read-cache source");
+                Assert.That(TrackedObjectValue.Snapshot().total - disposedBefore, Is.EqualTo(1), "The read-cache source's value was not released at once");
             }
             finally
             {

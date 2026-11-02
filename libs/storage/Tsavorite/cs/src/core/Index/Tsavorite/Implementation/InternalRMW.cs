@@ -501,8 +501,7 @@ namespace Tsavorite.core
                         newLogRecord.InfoRef.PreviousAddress = stackCtx.recSrc.LatestLogicalAddress;
                     }
 
-                    // Note: ClearSourceValueObject disposal is deferred to after CAS success (in the post-CAS block)
-                    // to avoid disposing the source if CAS fails and the operation retries.
+                    // The source's value is released only after the CAS succeeds (in the post-CAS block), so a failed CAS that retries leaves it intact.
                     goto DoCAS;
                 }
                 if (rmwInfo.Action == RMWAction.CancelOperation)
@@ -597,31 +596,38 @@ namespace Tsavorite.core
                     // Else it was a CopyUpdater so call PCU if tombstoning has not been requested by NCU or CU
                     if (!addTombstone)
                     {
-                        // If we are not currently taking a checkpoint, we can just clear the old Object (or Overflow) because the new version of the object is
-                        // already created in the new record, which has just been successfully CAS'd. Delay actually doing the clearing so PostCopyUpdater can modify
-                        // the object (and track sizes) before it is cleared. (If we are called from Pending IO then srcLogRecord will be a DiskLogRecord and we
-                        // do not need to serialize data as this is not involved in checkpointing, and the DiskLogRecord is Disposed after we return up the Pending chain.)
+                        // The new record already holds the key's value, so a source's value object is released once PostCopyUpdater, which may
+                        // still change the object the two records share, has run. The exception is a source whose (v) image a FoldOver or
+                        // streaming checkpoint still needs: it keeps its object, whose (v) bytes CacheSerializedObjectData caches. A Snapshot
+                        // checkpoint captures that image into its own object log instead, and the source is released. An overflow value's source
+                        // keeps its value until eviction, and a pending-IO source is a DiskLogRecord, which no checkpoint reads and which is
+                        // disposed up the pending chain.
                         var isMemoryLogRecord = srcLogRecord.IsMemoryLogRecord;
                         var capturedForSnapshot = false;
+                        var releaseSourceValue = false;
 
                         // A Snapshot checkpoint that captures an overflow value holds the value array's claim through PostCopyUpdater.
                         SnapshotObjectLogState overflowCaptures = null;
                         if (srcLogRecord.DataHeader.ValueIsObject)
                         {
-                            var needsSourceImage = isMemoryLogRecord
+                            // A read-cache source is a copy of a durable main-log record, so no checkpoint needs its image.
+                            var needsSourceImage = isMemoryLogRecord && stackCtx.recSrc.HasMainLogSrc
                                 && CheckpointNeedsSourceImage(stackCtx.recSrc.LogicalAddress, srcLogRecord.Info);
 
                             // A Snapshot checkpoint captures the (v) value it needs into its object log.
-                            // A read-cache source is a copy of a durable main-log record, so no checkpoint needs its image.
                             if (needsSourceImage && newLogRecord.Info.IsInNewVersion && srcLogRecord.ValueObject is HeapObjectBase sourceObject
                                 && hlogBase.ActiveSnapshotObjectLog is { } snapshotCaptures)
                             {
-                                capturedForSnapshot = stackCtx.recSrc.HasMainLogSrc && TryCaptureCopyUpdateSource(snapshotCaptures, sourceObject,
-                                    ref srcLogRecord.AsMemoryLogRecordRef(), stackCtx.recSrc.LogicalAddress, ref newLogRecord);
+                                capturedForSnapshot = TryCaptureCopyUpdateSource(snapshotCaptures, sourceObject, ref srcLogRecord.AsMemoryLogRecordRef(),
+                                    stackCtx.recSrc.LogicalAddress, ref newLogRecord);
                                 needsSourceImage = false;
                             }
-                            if (!capturedForSnapshot && srcLogRecord.ValueObject.CacheSerializedObjectData(ref newLogRecord, ref rmwInfo, isMemoryLogRecord, needsSourceImage))
+                            if (!capturedForSnapshot && srcLogRecord.ValueObject.CacheSerializedObjectData(ref newLogRecord, isMemoryLogRecord, needsSourceImage))
                                 hlogBase.NoteSerializedObjectCache(stackCtx.recSrc.LogicalAddress);
+
+                            // After a Snapshot checkpoint's capture attempt the source no longer needs its image: the capture holds it, or the
+                            // checkpoint recovers the value from elsewhere; see TryCaptureCopyUpdateSource.
+                            releaseSourceValue = isMemoryLogRecord && (!newLogRecord.Info.IsInNewVersion || !needsSourceImage);
                         }
                         else if (srcLogRecord.DataHeader.ValueIsOverflow && isMemoryLogRecord && stackCtx.recSrc.HasMainLogSrc && newLogRecord.Info.IsInNewVersion
                                 && hlogBase.ActiveSnapshotObjectLog is { } snapshotCaptures
@@ -648,8 +654,9 @@ namespace Tsavorite.core
                                     hlogBase.logSizeTracker?.IncrementSize(newValueHeap);
                             }
 
-                            // A source a Snapshot checkpoint captured keeps its value until no flush reads it; any other source is released only on request.
-                            if ((rmwInfo.ClearSourceValueObject || capturedForSnapshot) && isMemoryLogRecord)
+                            // A captured source keeps its value until no flush reads it, and so does a source that a flush is still writing; see
+                            // ReleaseSupersededSource.
+                            if (releaseSourceValue)
                                 ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: false, capturedForSnapshot);
                         }
                         else if (rmwInfo.Action == RMWAction.ExpireAndStop)

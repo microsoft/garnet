@@ -111,10 +111,17 @@ namespace Tsavorite.core
         /// <see cref="PartialSectorImage"/> or the device, never from the live page, so a later change to such a record cannot reach
         /// the image a completed checkpoint recovers.
         /// </para>
+        /// <para>
+        /// A NullDevice main log's flush writes nothing and reads no record, so there the freeze covers only the OnFlush trigger and the
+        /// read-only observer, which <see cref="OnPagesMarkedReadOnlyWorker"/> runs on the live records before it advances
+        /// <see cref="LastIssuedFlushedUntilAddress"/> past them. That window is short: unlike FlushedUntilAddress, LastIssued does not wait
+        /// for a Snapshot checkpoint's flush of the page.
+        /// </para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool IsFrozenForFlush(long logicalAddress)
-            => logicalAddress < SafeReadOnlyAddress && logicalAddress >= FlushedUntilAddress;
+            => logicalAddress < SafeReadOnlyAddress
+                && logicalAddress >= (IsNullDevice ? Volatile.Read(ref LastIssuedFlushedUntilAddress) : FlushedUntilAddress);
 
         /// <summary>
         /// Dynamically extended Flush end address, used by <see cref="OnPagesMarkedReadOnlyWorker"/>
@@ -541,6 +548,11 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         internal override void DrainDeferredDisposes(long fromAddress, long untilAddress)
         {
+            // A NullDevice main log notes no mark for the drain, and the drain leaves every mark there to eviction: FlushedUntilAddress
+            // advances without anything being written, so passing a record does not mean a Snapshot checkpoint's flush has read it.
+            if (IsNullDevice)
+                return;
+
             // Anything below HeadAddress has been evicted, and EvictRecordsInRange honors the mark, so clamping drops no obligation --
             // eviction is the fallback for every record this drain does not reach. Reading HeadAddress inside the epoch-protected
             // region is what makes the pages at or above it safe to walk: their eviction cannot run until the caller suspends.
@@ -571,10 +583,7 @@ namespace Tsavorite.core
                         if (offset == 0 || offset + allocatedSize > PageSize)
                             break;
 
-                        // On a NullDevice main log, FlushedUntilAddress passing a record says nothing about whether the Snapshot flush has
-                        // written it, so a release a checkpoint holds back is left to eviction.
-                        ref var recordInfo = ref logRecord.InfoRef;
-                        if (recordInfo.TryTakeDeferredDispose(leaveCheckpointRelease: IsNullDevice, out var copyUpdate))
+                        if (logRecord.InfoRef.TryTakeDeferredDispose(out var copyUpdate))
                             RunDeferredRelease(ref logRecord, copyUpdate);
 
                         address += allocatedSize;

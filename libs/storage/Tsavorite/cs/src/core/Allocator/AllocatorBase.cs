@@ -133,7 +133,8 @@ namespace Tsavorite.core
         internal virtual void ResetRecoveredResidentPageHeader(int page) { }
 
         /// <summary>Highest logical address ever marked <see cref="RecordInfo.DeferredDispose"/>. Used only to skip the drain
-        /// entirely once FlushedUntilAddress has passed every mark, which is the overwhelmingly common case.</summary>
+        /// entirely once FlushedUntilAddress has passed every mark, which is the overwhelmingly common case, and to make eviction walk a
+        /// range that may hold a mark even when nothing else needs the walk.</summary>
         /// <remarks>Deliberately a monotonic high-water mark rather than a count of outstanding marks. A marked record can be
         /// elided and revivified once its freeze lifts, and reuse reinitializes <see cref="RecordInfo"/>, so a count would lose
         /// a decrement and drift upward forever -- making every later flush completion walk a range that holds nothing. A
@@ -146,8 +147,8 @@ namespace Tsavorite.core
         /// drain disjoint ranges, and a range passed over while nothing was marked is carried into the next one.</remarks>
         private protected long deferredDisposeDrainedUntilAddress;
 
-        /// <summary>Record that the superseded source at <paramref name="logicalAddress"/> was marked for deferred release because a flush, or
-        /// on a real main-log device a checkpoint, still reads it, so the drain on flush completion releases it.</summary>
+        /// <summary>Record that the superseded source at <paramref name="logicalAddress"/> was marked for deferred release because a flush or a
+        /// checkpoint still reads it, so the drain on flush completion, or eviction, releases it.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void NoteDeferredDispose(long logicalAddress) => _ = MonotonicUpdate(ref deferredDisposeMaxAddress, logicalAddress, out _);
 
@@ -2244,9 +2245,10 @@ namespace Tsavorite.core
 
                     // Per-record eviction walk: handles internal heap-size accounting (key overflow
                     // and value heap via logSizeTracker) and optionally notifies the application
-                    // via OnEvict for app-level cleanup.
+                    // via OnEvict for app-level cleanup. It also runs any deferred release still marked
+                    // in the range, so it walks whenever a mark may lie there.
                     var evictSource = IsReadCache ? EvictionSource.ReadCache : EvictionSource.MainLog;
-                    if (logSizeTracker is not null || storeFunctions.CallOnEvict)
+                    if (logSizeTracker is not null || storeFunctions.CallOnEvict || start <= Volatile.Read(ref deferredDisposeMaxAddress))
                         _wrapper.EvictRecordsInRange(start, end, evictSource, isRecovery: false);
 
                     // If we are using a null storage device, we must also shift BeginAddress (leave it in-memory)

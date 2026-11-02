@@ -46,8 +46,10 @@ namespace Tsavorite.core
         /// source record is on the in-memory log, run the checkpoint-serialization state machine on <c>this</c> so
         /// the (v) snapshot is preserved for an in-flight checkpoint.
         /// </summary>
+        /// <remarks>Tsavorite releases the source's value once the CopyUpdate completes, unless the destination is in the new version and
+        /// <paramref name="checkpointNeedsSourceImage"/> is true. The source then keeps this object for the checkpoint's flush, so the
+        /// implementation must preserve its (v) image, because the clone may share internals that the new record goes on to change.</remarks>
         /// <param name="dstLogRecord">Destination record; its ValueObject is set to a clone of <c>this</c> if not already set by the caller.</param>
-        /// <param name="rmwInfo">RMW info; <see cref="RMWInfo.ClearSourceValueObject"/> is set when the caller may safely null the source's value slot.</param>
         /// <param name="srcIsOnMemoryLog">
         /// True when the source record resides on the in-memory log (state machine runs). False for pending-IO
         /// <see cref="DiskLogRecord"/> sources, where the (v) data is already persisted on disk, the source
@@ -58,13 +60,13 @@ namespace Tsavorite.core
         /// checkpoint: the (v) image is captured when the destination is in the new version and this is also true.
         /// False means there is nothing to preserve - the source was itself written after this checkpoint's
         /// transaction start, or a Snapshot checkpoint recovers its (v) value from elsewhere - so the source value
-        /// may be released immediately instead of serialized.
+        /// is released instead of serialized.
         /// </param>
         /// <returns>True if the (v) bytes were cached, so the caller can note that a later sweep has work to do.</returns>
-        bool CacheSerializedObjectData(ref LogRecord dstLogRecord, ref RMWInfo rmwInfo, bool srcIsOnMemoryLog, bool checkpointNeedsSourceImage);
+        bool CacheSerializedObjectData(ref LogRecord dstLogRecord, bool srcIsOnMemoryLog, bool checkpointNeedsSourceImage);
 
         /// <summary>
-        /// Clear any serialized data from <see cref="CacheSerializedObjectData(ref LogRecord, ref RMWInfo, bool, bool)"/>.
+        /// Clear any serialized data from <see cref="CacheSerializedObjectData(ref LogRecord, bool, bool)"/>.
         /// This must be idempotent and must not change object state when no cached data is present.
         /// </summary>
         void ClearSerializedObjectData();

@@ -576,6 +576,13 @@ unsafe to dispose:
 FlushedUntilAddress <= A < SafeReadOnlyAddress   → IsFrozenForFlush(A)
 ```
 
+A NullDevice main log's flush writes nothing and reads no record, so there the
+freeze covers only the OnFlush trigger and the read-only observer, which read the
+live records before `LastIssuedFlushedUntilAddress` passes them:
+`LastIssuedFlushedUntilAddress <= A < SafeReadOnlyAddress`. Unlike
+`FlushedUntilAddress`, that bound does not wait for a Snapshot checkpoint's flush
+of the page, so the window stays short.
+
 The window ends at `FlushedUntilAddress` even inside the sector the last flush
 ended in. The next flush starts in that sector and, because device writes are
 sector-aligned, writes it again — but it takes the bytes below its start from
@@ -607,8 +614,8 @@ The two freezes are released by different signals, and that difference matters:
 
 | Freeze | Released by | Deferred release |
 |---|---|---|
-| Flush | `FlushedUntilAddress` passing the record | **Marked** (`RecordInfo.DeferredDispose`), and run by the drain on flush completion, or at eviction |
-| Checkpoint | the checkpoint no longer reading the record | **Marked**, with `DeferredForCheckpoint` as well. On a real main-log device the drain runs it when `FlushedUntilAddress` passes the record; on a NullDevice main log, eviction runs it |
+| Flush | `FlushedUntilAddress` passing the record; on a NullDevice main log, `LastIssuedFlushedUntilAddress` | **Marked** (`RecordInfo.DeferredDispose`), and run by the drain on flush completion, or at eviction |
+| Checkpoint | the checkpoint no longer reading the record | **Marked**. On a real main-log device the drain runs it when `FlushedUntilAddress` passes the record |
 
 On a real main-log device, `FlushedUntilAddress` passing a record also ends the
 checkpoint's hold on it. A ReadOnly flush of a page at or above the Snapshot
@@ -617,8 +624,9 @@ that start the Snapshot flush reads nothing. So a record already below
 `FlushedUntilAddress`, whose `(v)` image is on disk, is released at once. A
 NullDevice main log advances `FlushedUntilAddress` without writing anything, and
 without that ordering for the pages its ReadOnly flushes passed before the
-Snapshot flush began, so the drain leaves a release marked `DeferredForCheckpoint`
-to eviction.
+Snapshot flush began, so there the drain releases nothing, and eviction runs
+every marked release. Eviction walks a range that may hold a mark even when no
+size tracker or `OnEvict` trigger needs the walk.
 
 The release of a Delete or an expiration disposes the record as deleted, which
 runs the application's delete trigger; a CopyUpdate's source has only its value

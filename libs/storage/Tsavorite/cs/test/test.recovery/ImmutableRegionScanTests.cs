@@ -347,7 +347,7 @@ namespace Tsavorite.test.recovery
                 }
             });
 
-            using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, ReleasingListFunctions>(new ReleasingListFunctions()))
+            using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions()))
             {
                 var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(1);
                 for (var round = 0; round < maxRounds && DateTime.UtcNow < deadline && Volatile.Read(ref scanFailure) is null; ++round)
@@ -380,17 +380,6 @@ namespace Tsavorite.test.recovery
                 throw new AssertionException($"A scan reported key {record.Key} at {record.Address}");
             if (!record.Value.StartsWith("list:", StringComparison.Ordinal) && record.Value != "null" && record.Value != $"inline:{ObjectIdMap.ObjectIdSize}")
                 throw new AssertionException($"A scan reported value {record.Value} for key {record.Key} at {record.Address}");
-        }
-
-        /// <summary>CopyUpdate asks for the source's value to be released, as Garnet's object commands do.</summary>
-        internal sealed class ReleasingListFunctions : SharedListFunctions
-        {
-            public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo,
-                ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
-            {
-                rmwInfo.ClearSourceValueObject = true;
-                return true;
-            }
         }
 
         long UpsertList(int key)

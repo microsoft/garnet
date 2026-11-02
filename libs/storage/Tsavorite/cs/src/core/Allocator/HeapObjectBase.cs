@@ -191,7 +191,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public bool CacheSerializedObjectData(ref LogRecord dstLogRecord, ref RMWInfo rmwInfo, bool srcIsOnMemoryLog, bool checkpointNeedsSourceImage)
+        public bool CacheSerializedObjectData(ref LogRecord dstLogRecord, bool srcIsOnMemoryLog, bool checkpointNeedsSourceImage)
         {
             // We'll want to clone the source object to the destination log record so PostCopyUpdater can modify it.
             // Note that this does a shallow copy of the object's internal structures (e.g. List<>), which means subsequent modifications of newValue
@@ -208,8 +208,7 @@ namespace Tsavorite.core
             // For pending-IO (DiskLogRecord) sources, skip the checkpoint-serialization state machine:
             //   - the (v) data is already persisted on disk from a prior flush, so there's nothing to capture;
             //   - 'this' is an ephemeral deserialized object that will be disposed up the pending chain, so
-            //     driving its SerializationPhase and allocating serializedBytes would be pure waste;
-            //   - ClearSourceValueObject is ignored by InternalRMW for non-memory sources anyway.
+            //     driving its SerializationPhase and allocating serializedBytes would be pure waste.
             if (!srcIsOnMemoryLog)
                 return false;
 
@@ -217,12 +216,11 @@ namespace Tsavorite.core
             // every later checkpoint, and no completed checkpoint recovers a source that a flush is still writing: a flush that has not
             // serialized the source writes a null value for it. Within a checkpoint, either the checkpoint does not capture this source (it
             // was written after the transaction start), or a Snapshot checkpoint finds its (v) value elsewhere: its main-log image is durable,
-            // the source is a read-cache copy of a durable main-log record, or the checkpoint has sampled the end of its main-log range. Release
-            // the old version rather than serializing it; the new version already exists.
+            // the source is a read-cache copy of a durable main-log record, or the checkpoint has sampled the end of its main-log range. The
+            // CopyUpdate releases the old version rather than serializing it; the new version already exists.
             if (!dstLogRecord.Info.IsInNewVersion || !checkpointNeedsSourceImage)
             {
                 MarkSuperseded();
-                rmwInfo.ClearSourceValueObject = true;
                 return false;
             }
 

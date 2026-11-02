@@ -102,13 +102,10 @@ namespace Tsavorite.test
                 DoSerialize(writer);
             }
             public void WriteType(BinaryWriter writer, bool isNull) => writer.Write(isNull);
-            public bool CacheSerializedObjectData(ref LogRecord dstLogRecord, ref RMWInfo rmwInfo, bool srcIsOnMemoryLog, bool checkpointNeedsSourceImage)
+            public bool CacheSerializedObjectData(ref LogRecord dstLogRecord, bool srcIsOnMemoryLog, bool checkpointNeedsSourceImage)
             {
                 if (!checkpointNeedsSourceImage)
-                {
-                    rmwInfo.ClearSourceValueObject = true;
                     return false;
-                }
                 Volatile.Write(ref cachedDataPresent, 1);
                 return true;
             }
@@ -476,23 +473,25 @@ namespace Tsavorite.test
             _ = CreateStoreWithCachedSerializationSource("NoSourceImageNeeded", value, out var recordAddress);
 
             var logRecord = store.hlogBase._wrapper.CreateLogRecord(recordAddress);
-            RMWInfo rmwInfo = default;
 
-            // The checkpoint has no (v) image at stake for this source, so the bytes must not be serialized and the
-            // caller must be told it may release the source value immediately.
-            var cached = value.CacheSerializedObjectData(ref logRecord, ref rmwInfo, srcIsOnMemoryLog: true, checkpointNeedsSourceImage: false);
+            // The checkpoint has no (v) image at stake for this source, so the bytes must not be serialized, and the object must be
+            // superseded: the CopyUpdate releases the source's value, and a flush still walking the source writes a null value for it.
+            var cached = value.CacheSerializedObjectData(ref logRecord, srcIsOnMemoryLog: true, checkpointNeedsSourceImage: false);
 
             Assert.That(cached, Is.False, "the object reported caching bytes it was told were not needed");
             Assert.That(value.doSerializeCount, Is.Zero, "the (v) image was serialized despite not being needed");
-            Assert.That(rmwInfo.ClearSourceValueObject, Is.True, "the source value was not released for immediate clearing");
+            using (var stream = new MemoryStream())
+            using (var writer = new BinaryWriter(stream))
+                value.Serialize(writer);
+            Assert.That(value.doSerializeCount, Is.Zero, "a superseded object was serialized from its live state");
+            Assert.That(value.lastWriteTypeIsNull, Is.True, "a superseded object with no cached bytes must write the null indicator");
 
             // Negative control: an object in the same starting state, told the image IS needed, does serialize. This
             // proves the path is reached and the assertions above are not passing for an unrelated reason. It must be
             // a fresh object: the skip path above deliberately leaves the phase terminal, so re-running on `value`
             // would short-circuit for that reason instead.
             var control = new CountingSerializationHeapObject();
-            RMWInfo neededInfo = default;
-            var cachedWhenNeeded = control.CacheSerializedObjectData(ref logRecord, ref neededInfo, srcIsOnMemoryLog: true, checkpointNeedsSourceImage: true);
+            var cachedWhenNeeded = control.CacheSerializedObjectData(ref logRecord, srcIsOnMemoryLog: true, checkpointNeedsSourceImage: true);
             Assert.That(cachedWhenNeeded, Is.True);
             Assert.That(control.doSerializeCount, Is.EqualTo(1));
         }
@@ -581,8 +580,7 @@ namespace Tsavorite.test
 
             // Drive the CopyUpdate-during-checkpoint path that caches the (v) bytes.
             var logRecord = store.hlogBase._wrapper.CreateLogRecord(recordAddress);
-            RMWInfo rmwInfo = default;
-            value.CacheSerializedObjectData(ref logRecord, ref rmwInfo, srcIsOnMemoryLog: true, checkpointNeedsSourceImage: true);
+            value.CacheSerializedObjectData(ref logRecord, srcIsOnMemoryLog: true, checkpointNeedsSourceImage: true);
 
             // The sweep is gated on a cache having been noted, and bounded by the address noted with it; InternalRMW does
             // that in production, so a test that drives the object directly must do it too or the sweep below skips.
@@ -647,8 +645,7 @@ namespace Tsavorite.test
             {
                 // The ref local must be created inside the lambda; ref locals cannot be captured.
                 var record = store.hlogBase._wrapper.CreateLogRecord(recordAddress);
-                RMWInfo info = default;
-                value.CacheSerializedObjectData(ref record, ref info, srcIsOnMemoryLog: true, checkpointNeedsSourceImage: true);
+                value.CacheSerializedObjectData(ref record, srcIsOnMemoryLog: true, checkpointNeedsSourceImage: true);
             });
             Assert.That(failure.Message, Is.EqualTo(CountingSerializationHeapObject.SerializeFailureMessage));
             Assert.That(value.doSerializeCount, Is.EqualTo(1));

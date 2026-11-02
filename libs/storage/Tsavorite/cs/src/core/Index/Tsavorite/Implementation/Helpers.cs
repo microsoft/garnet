@@ -124,10 +124,10 @@ namespace Tsavorite.core
         /// This only ever *narrows* caching within a checkpoint; the caller still requires the destination to be in the new
         /// version before consulting it, so behaviour outside a checkpoint is unchanged.
         /// <para>
-        /// Being frozen for flush does not make the image needed. The release a false answer authorizes
-        /// (<see cref="RMWInfo.ClearSourceValueObject"/>) honors the freeze itself: <c>ReleaseSupersededSource</c> marks a frozen
-        /// source for later release instead of clearing it. With no checkpoint image at stake, a flush still walking the source
-        /// writes a null value for it (the object's type byte marked null, with no data), exactly as it does outside a checkpoint.
+        /// Being frozen for flush does not make the image needed. The CopyUpdate releases a source whose image is not needed, and
+        /// <c>ReleaseSupersededSource</c> honors the freeze itself: it marks a frozen source for later release instead of clearing it. With no
+        /// checkpoint image at stake, a flush still walking the source writes a null value for it (the object's type byte marked null, with no
+        /// data), exactly as it does outside a checkpoint.
         /// </para>
         /// <para>
         /// The fuzzy-region test mirrors <see cref="IsFrozen{TInput, TOutput, TContext, TSessionFunctionsWrapper}"/>:
@@ -220,15 +220,17 @@ namespace Tsavorite.core
         /// <para>Every operation that supersedes an in-memory record ends here, after its last callback, so a callback that throws cannot leave
         /// a released source that the exception has made live again:</para>
         /// <list type="bullet">
-        /// <item>A CopyUpdate, after PostCopyUpdater, when it asked to release the source's value (<see cref="RMWInfo.ClearSourceValueObject"/>)
-        /// or a Snapshot checkpoint captured it. Otherwise its source keeps its value until eviction.</item>
+        /// <item>A CopyUpdate of an object value, after PostCopyUpdater, when a Snapshot checkpoint captured the source's value or no checkpoint
+        /// needs its <c>(v)</c> image. A source whose <c>(v)</c> bytes CacheSerializedObjectData cached keeps its value until eviction, as does
+        /// an overflow value's source.</item>
         /// <item>A Delete, and the expirations, once the new record is in the chain. An expiration whose source is elided ends here just before
         /// the elision.</item>
         /// </list>
         /// <para>The release waits while the record is frozen, and is marked on the record to run later:</para>
         /// <list type="bullet">
         /// <item><b>By a flush:</b> a ReadOnly flush is writing the record from the live page. The release waits until FlushedUntilAddress
-        /// passes the record.</item>
+        /// passes the record. On a NullDevice main log, whose flush writes nothing, the record is frozen only while the OnFlush trigger and the
+        /// read-only observer may still read it, and eviction runs the release.</item>
         /// <item><b>By a checkpoint:</b> a Snapshot checkpoint captured the record, or, for a Delete or an expiration, the checkpoint still needs
         /// the record's <c>(v)</c> image, which includes its value and, for an application such as Garnet's RangeIndex, external state that the
         /// delete trigger would remove. On a real main-log device the release also waits only until FlushedUntilAddress passes the record: the
@@ -236,11 +238,11 @@ namespace Tsavorite.core
         /// record already below FlushedUntilAddress, whose <c>(v)</c> image is on disk, is released at once. On a NullDevice main log,
         /// FlushedUntilAddress advances without anything being written, so the release waits for eviction.</item>
         /// </list>
-        /// <para>The drain on flush completion runs a marked release once FlushedUntilAddress passes the record, and eviction runs any it
-        /// reaches first. Marking a frozen record is safe although the flush writes the live page, <see cref="RecordInfo"/> included: the
-        /// flush never changes <see cref="RecordInfo"/> in memory, it is one aligned word, so a device sees it with or without the mark, and
-        /// every read from disk strips the mark. The freeze exists to prevent destructive changes: freeing heap, zeroing the object-log
-        /// position a flush just stamped, or changing the record's layout.</para>
+        /// <para>The drain on flush completion runs a marked release once FlushedUntilAddress passes the record, except on a NullDevice main log,
+        /// and eviction runs any it reaches first. Marking a frozen record is safe although the flush writes the live page, <see cref="RecordInfo"/>
+        /// included: the flush never changes <see cref="RecordInfo"/> in memory, it is one aligned word, so a device sees it with or without the
+        /// mark, and every read from disk strips the mark. The freeze exists to prevent destructive changes: freeing heap, zeroing the
+        /// object-log position a flush just stamped, or changing the record's layout.</para>
         /// </remarks>
         private void ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord source, bool deleted, bool capturedForSnapshot = false)
@@ -255,9 +257,9 @@ namespace Tsavorite.core
             }
 
             var address = stackCtx.recSrc.LogicalAddress;
-            var forCheckpoint = (capturedForSnapshot || (deleted && IsFrozenForCheckpoint<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, address, source.Info)))
+            var heldByCheckpoint = (capturedForSnapshot || (deleted && IsFrozenForCheckpoint<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, address, source.Info)))
                 && (hlogBase.IsNullDevice || address >= hlogBase.FlushedUntilAddress);
-            if (!forCheckpoint && !hlog.IsFrozenForFlush(address))
+            if (!heldByCheckpoint && !hlog.IsFrozenForFlush(address))
             {
                 if (deleted)
                     OnDispose(ref source, DisposeReason.Deleted);
@@ -266,12 +268,11 @@ namespace Tsavorite.core
                 return;
             }
 
-            source.InfoRef.SetDeferredRelease(copyUpdate: !deleted, forCheckpoint);
-            if (forCheckpoint && hlogBase.IsNullDevice)
-                return;
+            source.InfoRef.SetDeferredRelease(copyUpdate: !deleted);
 
-            // Let the drain find the mark. The drain advances FlushedUntilAddress before it reads the marks, and this marks before it reads
-            // FlushedUntilAddress, so if the drain has already passed the record, this sees that and releases the record itself.
+            // Let the drain and eviction find the mark. The drain advances FlushedUntilAddress before it reads the marks, and this marks before it
+            // reads FlushedUntilAddress, so if the drain has already passed the record, this sees that and releases the record itself. On a
+            // NullDevice main log the drain releases nothing, so only eviction runs the release.
             hlogBase.NoteDeferredDispose(address);
             if (address < hlogBase.FlushedUntilAddress)
                 hlogBase.DrainDeferredDisposes(address, address + source.AllocatedSize);
