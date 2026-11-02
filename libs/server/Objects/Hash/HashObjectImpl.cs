@@ -395,6 +395,13 @@ namespace Garnet.server
 
                 result += incr;
 
+                // Two finite values can sum to an infinity, which is not stored
+                if (!double.IsFinite(result))
+                {
+                    writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
+                    return;
+                }
+
                 var formattedValue = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatDoubleLength];
                 var success = result.TryFormat(formattedValue, out var bytesWritten, provider: CultureInfo.InvariantCulture);
                 Debug.Assert(success);

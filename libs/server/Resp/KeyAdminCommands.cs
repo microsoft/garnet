@@ -32,9 +32,20 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            if (!parseState.TryGetInt(parseState.Count - 2, out var expiry))
+            if (!parseState.TryGetLong(parseState.Count - 2, out var ttlMs))
             {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+            }
+
+            if (ttlMs < 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
+            }
+
+            var expirationTicks = 0L;
+            if (ttlMs > 0 && !ConvertUtils.TryRelativeMillisecondsToTicks(ttlMs, out expirationTicks))
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrInvalidExpireTime, "restore");
             }
 
             var value = parseState.GetArgSliceByRef(2);
@@ -99,10 +110,9 @@ namespace Garnet.server
             parseState.InitializeWithArgument(valArgSlice);
 
             StringInput input;
-            if (expiry > 0)
+            if (ttlMs > 0)
             {
-                var inputArg = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expiry).Ticks;
-                input = new StringInput(RespCommand.SETEXNX, ref parseState, arg1: inputArg);
+                input = new StringInput(RespCommand.SETEXNX, ref parseState, arg1: expirationTicks);
             }
             else
             {
