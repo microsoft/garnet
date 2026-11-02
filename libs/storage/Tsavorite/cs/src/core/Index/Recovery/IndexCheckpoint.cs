@@ -21,13 +21,17 @@ namespace Tsavorite.core
         internal unsafe void TakeIndexFuzzyCheckpoint()
         {
             var ht_version = resizeInfo.version;
+            VerifyIndexSectorSize(_indexCheckpoint.main_ht_device);
 
             BeginMainIndexCheckpoint(ht_version, _indexCheckpoint.main_ht_device, out ulong ht_num_bytes_written, UseReadCache, SkipReadCacheBucket, ThrottleCheckpointFlushDelayMs);
 
-            var sectorSize = _indexCheckpoint.main_ht_device.SectorSize;
-            var alignedIndexSize = (ht_num_bytes_written + (sectorSize - 1)) & ~((ulong)sectorSize - 1);
+            var deviceSectorSize = _indexCheckpoint.main_ht_device.SectorSize;
+            var alignedIndexSize = (ht_num_bytes_written + (deviceSectorSize - 1)) & ~((ulong)deviceSectorSize - 1);
             overflowBucketsAllocator.BeginCheckpoint(_indexCheckpoint.main_ht_device, alignedIndexSize, out ulong ofb_num_bytes_written, UseReadCache, SkipReadCacheBucket, epoch);
-            _indexCheckpoint.info.num_ht_bytes = ht_num_bytes_written;
+
+            // Record the main index's size in the file including its sector padding, where the overflow buckets start, so recovery
+            // locates them through any device whose sector size divides it rather than recomputing the padding from its own.
+            _indexCheckpoint.info.num_ht_bytes = alignedIndexSize;
             _indexCheckpoint.info.num_ofb_bytes = ofb_num_bytes_written;
         }
     }
@@ -38,11 +42,24 @@ namespace Tsavorite.core
                                             out ulong numBytesWritten, IDevice ofbdevice,
                                            out ulong ofbnumBytesWritten, out int num_ofb_buckets)
         {
-            BeginMainIndexCheckpoint(ht_version, device, out numBytesWritten);
-            var sectorSize = device.SectorSize;
-            var alignedIndexSize = (numBytesWritten + (sectorSize - 1)) & ~((ulong)sectorSize - 1);
-            overflowBucketsAllocator.BeginCheckpoint(ofbdevice, alignedIndexSize, out ofbnumBytesWritten);
+            VerifyIndexSectorSize(device);
+            VerifyIndexSectorSize(ofbdevice);
+            BeginMainIndexCheckpoint(ht_version, device, out var htBytesWritten);
+            var deviceSectorSize = device.SectorSize;
+            numBytesWritten = (htBytesWritten + (deviceSectorSize - 1)) & ~((ulong)deviceSectorSize - 1);
+            overflowBucketsAllocator.BeginCheckpoint(ofbdevice, numBytesWritten, out ofbnumBytesWritten);
             num_ofb_buckets = overflowBucketsAllocator.GetMaxValidAddress();
+        }
+
+        /// <summary>
+        /// Throw unless <paramref name="device"/>'s sector size divides <see cref="sectorSize"/>. The hash index and
+        /// overflow buckets are checkpointed from and recovered into their own memory, so a device that needs more
+        /// alignment than they have would reject that IO; failing up front names the actual problem.
+        /// </summary>
+        internal void VerifyIndexSectorSize(IDevice device)
+        {
+            if (device.SectorSize != 0 && sectorSize % device.SectorSize != 0)
+                throw new TsavoriteException($"Hash index with sector size {sectorSize} cannot be checkpointed to or recovered from a device with sector size {device.SectorSize}");
         }
 
         internal void AddIndexCheckpointWaitingList(StateMachineDriver stateMachineDriver)
@@ -176,6 +193,11 @@ namespace Tsavorite.core
 
                     uint chunkSize = (uint)(totalSize / numChunks);
                     Debug.Assert(chunkSize <= maxChunkSize, "Index checkpoint chunk exceeds the maximum device request size");
+
+                    // A table smaller than a device sector is written as one whole sector. Its allocation is rounded up
+                    // to the table's sector size, which is a multiple of the device's (see VerifyIndexSectorSize).
+                    var writeSize = Math.Max(chunkSize, device.SectorSize);
+
                     // Count an issuance sentinel alongside the chunks, retired in the finally below once issuance has
                     // ended and the catch has recorded any exception. A device may invoke a completion callback
                     // synchronously and then throw out of the same submit; without the sentinel that completion can
@@ -194,14 +216,14 @@ namespace Tsavorite.core
                         IntPtr chunkStartBucket = (IntPtr)((byte*)start + (index * chunkSize));
                         HashIndexPageAsyncFlushResult result = default;
                         result.chunkIndex = index;
-                        result.numBytesToWrite = chunkSize;
+                        result.numBytesToWrite = writeSize;
                         result.ioUnitReleaseGuard = new(0);
                         if (!useReadCache)
                         {
                             BeginNativeIndexCheckpointIo();
                             try
                             {
-                                device.WriteAsync(chunkStartBucket, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
+                                device.WriteAsync(chunkStartBucket, numBytesWritten, writeSize, AsyncPageFlushCallback, result);
                             }
                             catch (Exception ex)
                             {
@@ -223,7 +245,7 @@ namespace Tsavorite.core
                         }
                         else
                         {
-                            result.mem = new SectorAlignedMemory((int)chunkSize, (int)device.SectorSize);
+                            result.mem = new SectorAlignedMemory((int)writeSize, (int)device.SectorSize);
                             bool prot = false;
                             if (!epoch.ThisInstanceProtected())
                             {
@@ -232,7 +254,7 @@ namespace Tsavorite.core
                             }
                             try
                             {
-                                Buffer.MemoryCopy((void*)chunkStartBucket, result.mem.aligned_pointer, chunkSize, chunkSize);
+                                Buffer.MemoryCopy((void*)chunkStartBucket, result.mem.aligned_pointer, writeSize, writeSize);
                                 for (int j = 0; j < chunkSize; j += sizeof(HashBucket))
                                 {
                                     skipReadCache((HashBucket*)(result.mem.aligned_pointer + j));
@@ -249,7 +271,7 @@ namespace Tsavorite.core
                             BeginNativeIndexCheckpointIo();
                             try
                             {
-                                device.WriteAsync((IntPtr)result.mem.aligned_pointer, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
+                                device.WriteAsync((IntPtr)result.mem.aligned_pointer, numBytesWritten, writeSize, AsyncPageFlushCallback, result);
                             }
                             catch (Exception ex)
                             {

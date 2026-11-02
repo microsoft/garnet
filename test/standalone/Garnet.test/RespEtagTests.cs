@@ -1040,6 +1040,59 @@ namespace Garnet.test
         }
 
         [Test]
+        public void IncrementFromLongMinValueForEtagSetData()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "minKey";
+
+            _ = db.Execute("SETWITHETAG", [key, long.MinValue.ToString(CultureInfo.InvariantCulture)]);
+            ClassicAssert.AreEqual(long.MinValue + 1, db.StringIncrement(key));
+            ClassicAssert.AreEqual((long.MinValue + 1).ToString(CultureInfo.InvariantCulture), (string)db.StringGet(key));
+        }
+
+        /// <summary>
+        /// A write that would increment an ETag of long.MaxValue is rejected and leaves the value and ETag unchanged.
+        /// </summary>
+        [Test]
+        public void ETagIncrementBeyondLongMaxValueIsRejected([Values] bool readOnlyRegion)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "maxEtagKey";
+            var maxEtag = long.MaxValue.ToString(CultureInfo.InvariantCulture);
+
+            _ = db.Execute("SETWITHETAG", key, "v1");
+            var setRes = (RedisResult[])db.Execute("SETIFGREATER", key, "v2", maxEtag);
+            ClassicAssert.AreEqual(long.MaxValue, (long)setRes[0]);
+
+            if (readOnlyRegion)
+            {
+                var store = server.Provider.StoreWrapper.store;
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            }
+
+            var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SETWITHETAG", key, "v3"));
+            ClassicAssert.AreEqual("ERR ETag would overflow", ex.Message);
+            ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SETIFMATCH", key, "v4", maxEtag));
+            ClassicAssert.AreEqual("ERR ETag would overflow", ex.Message);
+
+            var getRes = (RedisResult[])db.Execute("GETWITHETAG", key);
+            ClassicAssert.AreEqual(long.MaxValue, (long)getRes[0]);
+            ClassicAssert.AreEqual("v2", (string)getRes[1]);
+
+            // A conditional write that does not match leaves the ETag alone, so it is not an overflow
+            setRes = (RedisResult[])db.Execute("SETIFMATCH", key, "v5", "1");
+            ClassicAssert.AreEqual(long.MaxValue, (long)setRes[0]);
+            ClassicAssert.AreEqual("v2", (string)setRes[1]);
+
+            // SETIFMATCH on a missing key creates it with the ETag after the one sent
+            ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SETIFMATCH", "missingKey", "v", maxEtag));
+            ClassicAssert.AreEqual("ERR ETag would overflow", ex.Message);
+            ClassicAssert.IsFalse(db.KeyExists("missingKey"));
+        }
+
+        [Test]
         [TestCase(0, 12.6)]
         [TestCase(12.6, 0)]
         [TestCase(10, 10)]
@@ -1531,7 +1584,7 @@ namespace Garnet.test
 
             //-len < s < 0 < e < len where len + s < e
             resp = (string)db.StringGetRange(key, -4, 8);
-            ClassicAssert.AreEqual(value.Substring(value.Length - 4, 2), resp);
+            ClassicAssert.AreEqual(value.Substring(value.Length - 4, 3), resp);
 
             //-len < s < e < 0
             resp = (string)db.StringGetRange(key, -4, -1);
@@ -1564,7 +1617,7 @@ namespace Garnet.test
 
             //equal offsets
             resp = db.StringGetRange(key, -101, -101);
-            ClassicAssert.AreEqual("9", resp);
+            ClassicAssert.AreEqual("0", resp);
 
             //start larger than end
             resp = db.StringGetRange(key, -1, -3);

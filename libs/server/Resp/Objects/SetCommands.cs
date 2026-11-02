@@ -641,8 +641,8 @@ namespace Garnet.server
             var countParameter = int.MinValue;
             if (parseState.Count == 2)
             {
-                // Prepare response
-                if (!parseState.TryGetInt(1, out countParameter))
+                // Prepare response. int.MinValue marks an absent count, and as a count it has no positive counterpart.
+                if (!parseState.TryGetInt(1, out countParameter) || countParameter == int.MinValue)
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }

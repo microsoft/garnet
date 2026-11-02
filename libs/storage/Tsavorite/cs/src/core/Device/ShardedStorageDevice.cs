@@ -142,7 +142,9 @@ namespace Tsavorite.core
         /// Constructs a new ShardedStorageDevice with the given partition scheme
         /// </summary>
         /// <param name="partitions"> The parition scheme to use </param>
-        public ShardedStorageDevice(IPartitionScheme partitions) : base("", 512, -1)
+        /// <remarks>Each request is split across the shards at chunk boundaries, which the partition scheme requires to be
+        /// whole sectors of every shard, so this device reports the largest of the shards' sector sizes.</remarks>
+        public ShardedStorageDevice(IPartitionScheme partitions) : base("", GetLargestSectorSize(partitions.Devices), -1)
         {
             this.partitions = partitions;
         }
