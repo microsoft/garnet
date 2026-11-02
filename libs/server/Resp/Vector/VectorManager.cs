@@ -58,6 +58,7 @@ namespace Garnet.server
         internal const long CreateIndexArg = VADDSetFlagsArg + 1; // New stub record creation. AOF: NO. InitialUpdater: YES.
         internal const long VSETATTRAppendLogArg = CreateIndexArg + 1; // User VSETATTR update, replayed on replicas. AOF: Yes. InitialUpdater: NO.
         internal const long SetImportStateArg = VSETATTRAppendLogArg + 1; // Import lifecycle flags. AOF: NO. InitialUpdater: NO (record must exist).
+        internal const long XVImportFailedArg = SetImportStateArg + 1; // Replication / replay for failed imports.  AOF: Yes.  InitialUpdater: No.
 
         /// <summary>
         /// Byte stored on log records to distinguish the INDEX key as a Vector Set

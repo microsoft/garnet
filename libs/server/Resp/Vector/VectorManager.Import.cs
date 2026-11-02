@@ -139,6 +139,8 @@ namespace Garnet.server
 
             if (!Service.FinishImport(context, indexPtr))
             {
+                ReplicateVectorSetFailedImport(key);
+
                 SetFlags(key, VectorSetFlags.ImportPending | VectorSetFlags.ImportFailed, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
                 errorMsg = "ERR Vector set import finish failed"u8;
                 return false;
@@ -169,6 +171,8 @@ namespace Garnet.server
 
             if (!Service.VerifyImport(context, indexPtr, taskIndex, taskCount))
             {
+                ReplicateVectorSetFailedImport(key);
+
                 SetFlags(key, VectorSetFlags.ImportPending | VectorSetFlags.ImportFailed, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
                 errorMsg = "ERR Vector set import validation failed"u8;
                 return false;

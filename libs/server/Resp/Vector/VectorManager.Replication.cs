@@ -214,6 +214,13 @@ namespace Garnet.server
             ReplicateImportOperation(key, ref input);
         }
 
+        private static void ReplicateVectorSetFailedImport(ReadOnlySpan<byte> key)
+        {
+            var input = new StringInput(RespCommand.XVIMPORT);
+            input.arg1 = XVImportFailedArg;
+            ReplicateImportOperation(key, ref input);
+        }
+
         internal void HandleVectorSetImportReplication(StorageSession session, Func<RespServerSession> obtainServerSession, ReadOnlySpan<byte> key, ref StringInput input)
         {
             if (!IsEnabled)
@@ -239,7 +246,12 @@ namespace Garnet.server
             }
             else if (input.parseState.Count == 0)
             {
-                if (input.arg1 != 0)
+                if (input.arg1 == XVImportFailedArg)
+                {
+                    SetFlags(key, VectorSetFlags.ImportPending | VectorSetFlags.ImportFailed, ref session.stringBasicContext, operation: SetImportStateArg);
+                    return;
+                }
+                else if (input.arg1 != 0)
                 {
                     throw new GarnetException("Invalid XVIMPORT FINISH AOF payload");
                 }

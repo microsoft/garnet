@@ -3158,6 +3158,9 @@ namespace Garnet.test.cluster
             var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", [ImportKey, "VERIFY", "0", "1"]));
             ClassicAssert.AreEqual("ERR Vector set import validation failed", exc.Message);
 
+            // Wait for replication to catch up
+            context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
+
             // Should leave vector set marked failed in both primary and replica
 
             var primary = connection.GetServer(context.endpoints[0]);
