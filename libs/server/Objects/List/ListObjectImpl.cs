@@ -248,6 +248,10 @@ namespace Garnet.server
         {
             var count = input.arg1;
 
+            // Set when the command included a count. That form always replies with an array,
+            // even when a single element is popped.
+            var hasCount = input.arg2 == 1;
+
             if (list.Count < count)
                 count = list.Count;
 
@@ -255,7 +259,10 @@ namespace Garnet.server
 
             if (list.Count == 0)
             {
-                writer.WriteNull();
+                if (hasCount)
+                    writer.WriteNullArray();
+                else
+                    writer.WriteNull();
                 count = 0;
             }
             else if (count <= 0)
@@ -265,7 +272,7 @@ namespace Garnet.server
                 // no reply at all, which shifts every following reply in a pipeline.
                 writer.WriteEmptyArray();
             }
-            else if (count > 1)
+            else if (hasCount || count > 1)
             {
                 writer.WriteArrayLength(count);
             }
