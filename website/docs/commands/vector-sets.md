@@ -345,8 +345,8 @@ RESP2 example:
 12) (integer) 16
 13) "size"
 14) (integer) 1024
-15) "import-pending"
-16) "0"
+15) "import-state"
+16) "not-importing"
 ```
 
 ---
