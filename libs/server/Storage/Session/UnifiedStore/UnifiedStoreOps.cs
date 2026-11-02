@@ -399,7 +399,7 @@ namespace Garnet.server
 
                         if (logRecord.DataHeader.HasExpiration)
                         {
-                            _ = EXPIREAT(newKey, ConvertUtils.UnixTimeInMillisecondsFromTicks(logRecord.Expiration), out var timeoutSet, ExpireOption.None, ref context, milliseconds: true);
+                            _ = EXPIREAT(newKey, ConvertUtils.UnixTimeInMillisecondsFromTicks(logRecord.Expiration), out var timeoutSet, out _, ExpireOption.None, ref context, milliseconds: true);
 
                             if (!timeoutSet)
                             {
