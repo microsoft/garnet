@@ -553,6 +553,11 @@ namespace Tsavorite.core
             if (IsNullDevice)
                 return;
 
+            // A streaming snapshot's scan may still push a record at or above its hold, so leave those marks to eviction.
+            var holdAddress = Volatile.Read(ref streamingScanHoldAddress);
+            if (untilAddress > holdAddress)
+                untilAddress = holdAddress;
+
             // Anything below HeadAddress has been evicted, and EvictRecordsInRange honors the mark, so clamping drops no obligation --
             // eviction is the fallback for every record this drain does not reach. Reading HeadAddress inside the epoch-protected
             // region is what makes the pages at or above it safe to walk: their eviction cannot run until the caller suspends.

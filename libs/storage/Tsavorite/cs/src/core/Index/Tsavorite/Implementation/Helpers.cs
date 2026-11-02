@@ -92,7 +92,8 @@ namespace Tsavorite.core
         // If the record is in a checkpoint range, it must not be modified. If it is in the fuzzy region, it can only be modified
         // if it is a new record. A record an allocator is still flushing from the live page is frozen for the same reason:
         // releasing its heap, rewriting its layout, or invalidating it would persist a torn record, or alter the image a
-        // checkpoint recovers. Such a record's release is marked for later; see ReleaseSupersededSource.
+        // checkpoint recovers. So is a record a streaming snapshot's scan may still push. Such a record's release is marked for
+        // later; see ReleaseSupersededSource.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, RecordInfo srcRecordInfo)
@@ -100,7 +101,8 @@ namespace Tsavorite.core
         {
             Debug.Assert(!stackCtx.recSrc.HasReadCacheSrc, "Should not call IsFrozen() for readcache records");
             return IsFrozenForCheckpoint<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, stackCtx.recSrc.LogicalAddress, srcRecordInfo)
-                || hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress);
+                || hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress)
+                || hlogBase.IsHeldForStreamingScan(stackCtx.recSrc.LogicalAddress);
         }
 
         // An ongoing checkpoint still needs the record's (v) image: it is in the checkpoint range, or in the fuzzy region and an old version.
@@ -237,6 +239,9 @@ namespace Tsavorite.core
         /// Snapshot flush completes a page before that page's ReadOnly flush can, and below the Snapshot's range it reads nothing. So a
         /// record already below FlushedUntilAddress, whose <c>(v)</c> image is on disk, is released at once. On a NullDevice main log,
         /// FlushedUntilAddress advances without anything being written, so the release waits for eviction.</item>
+        /// <item><b>By a streaming snapshot's scan:</b> the scan pushes the latest version of each key below the tail it sampled, so it pushes
+        /// a record that an operation supersedes after the sample. While it runs, a deletion of a record at or above where it started waits,
+        /// durable or not, and the drain leaves the mark, so eviction, or a drain after the scan, runs it.</item>
         /// </list>
         /// <para>The drain on flush completion runs a marked release once FlushedUntilAddress passes the record, except on a NullDevice main log,
         /// and eviction runs any it reaches first. Marking a frozen record is safe although the flush writes the live page, <see cref="RecordInfo"/>
@@ -257,8 +262,11 @@ namespace Tsavorite.core
             }
 
             var address = stackCtx.recSrc.LogicalAddress;
-            var heldByCheckpoint = (capturedForSnapshot || (deleted && IsFrozenForCheckpoint<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, address, source.Info)))
-                && (hlogBase.IsNullDevice || address >= hlogBase.FlushedUntilAddress);
+
+            // A streaming snapshot's scan may still push the record of a deletion, whether or not the record is durable, so the deletion waits.
+            var heldByCheckpoint = (deleted && hlogBase.IsHeldForStreamingScan(address))
+                || ((capturedForSnapshot || (deleted && IsFrozenForCheckpoint<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, address, source.Info)))
+                    && (hlogBase.IsNullDevice || address >= hlogBase.FlushedUntilAddress));
             if (!heldByCheckpoint && !hlog.IsFrozenForFlush(address))
             {
                 if (deleted)
@@ -272,7 +280,7 @@ namespace Tsavorite.core
 
             // Let the drain and eviction find the mark. The drain advances FlushedUntilAddress before it reads the marks, and this marks before it
             // reads FlushedUntilAddress, so if the drain has already passed the record, this sees that and releases the record itself. On a
-            // NullDevice main log the drain releases nothing, so only eviction runs the release.
+            // NullDevice main log the drain releases nothing, and it leaves a mark a streaming snapshot's scan holds, so eviction runs those.
             hlogBase.NoteDeferredDispose(address);
             if (address < hlogBase.FlushedUntilAddress)
                 hlogBase.DrainDeferredDisposes(address, address + source.AllocatedSize);

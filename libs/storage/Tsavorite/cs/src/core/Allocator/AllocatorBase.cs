@@ -156,6 +156,27 @@ namespace Tsavorite.core
         /// <paramref name="untilAddress"/>, whose flush has completed. Only implemented by ObjectAllocator.</summary>
         internal virtual void DrainDeferredDisposes(long fromAddress, long untilAddress) { }
 
+        /// <summary>While a streaming snapshot's second scan runs, the lowest address it may still push; <see cref="long.MaxValue"/>
+        /// otherwise.</summary>
+        /// <remarks>The scan pushes the latest version of each key below the tail it sampled, so it pushes a record that an operation
+        /// supersedes after the sample, value and all. A record at or above this address is therefore frozen until the scan ends: it is not
+        /// elided, a deletion of it is marked rather than run, and the drain leaves those marks, so eviction runs them.
+        /// <para>The hold is published before the scan samples the tail, with a full fence between the two, and an operation reads it after
+        /// the compare-and-swap that inserts its new record. So an operation that does not see the hold inserted its new record below the
+        /// sampled tail, where the scan finds it and does not push the superseded record.</para></remarks>
+        private protected long streamingScanHoldAddress = long.MaxValue;
+
+        /// <summary>Hold releases at or above <paramref name="fromAddress"/> for a streaming snapshot's second scan; see
+        /// <see cref="streamingScanHoldAddress"/>. Call before the scan samples the tail.</summary>
+        internal void BeginStreamingScanHold(long fromAddress) => _ = Interlocked.Exchange(ref streamingScanHoldAddress, fromAddress);
+
+        /// <summary>End the hold <see cref="BeginStreamingScanHold"/> began, once the scan has ended.</summary>
+        internal void EndStreamingScanHold() => _ = Interlocked.Exchange(ref streamingScanHoldAddress, long.MaxValue);
+
+        /// <summary>Whether a streaming snapshot's second scan may still push the record at <paramref name="logicalAddress"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool IsHeldForStreamingScan(long logicalAddress) => logicalAddress >= Volatile.Read(ref streamingScanHoldAddress);
+
         /// <summary>Lowest source address whose <c>(v)</c> image was cached by CopyUpdate since the last post-checkpoint
         /// <c>ClearSerializedObjectData</c> sweep, or <see cref="long.MaxValue"/> when none.</summary>
         /// <remarks>This pair both gates and bounds the sweep: the empty sentinels mean nothing was cached and the walk can be

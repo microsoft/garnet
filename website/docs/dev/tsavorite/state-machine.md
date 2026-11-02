@@ -435,7 +435,7 @@ does.
 | `PREPARE` | Initialize checkpoint state, record the start and begin addresses, initialize the index device where applicable, and start the fuzzy index checkpoint for index/full checkpoints. Snapshot and fold-over backends initialize hybrid-log metadata; snapshot log devices are not initialized until the `WAIT_FLUSH` before-hook. Streaming snapshot starts phase-one scanning. |
 | `IN_PROGRESS` | Notify the checkpoint manager that the version shift is starting, issue the version-shift trigger, publish the incremented version, and then track transactions that remain in the old version. |
 | `WAIT_INDEX_CHECKPOINT` | Add the already-running main-index and overflow-bucket checkpoint tasks to the waiting list. |
-| `WAIT_FLUSH` | End the version shift, issue the flush-begin trigger, verify old-version transactions are drained, and capture the final fuzzy-region address. Snapshot starts copying pages to snapshot devices; fold-over shifts the read-only address and waits for its flush; streaming snapshot performs phase-two scanning. |
+| `WAIT_FLUSH` | End the version shift, issue the flush-begin trigger, verify old-version transactions are drained, and capture the final fuzzy-region address. Snapshot starts copying pages to snapshot devices; fold-over shifts the read-only address and waits for its flush; streaming snapshot performs phase-two scanning, holding the release of records it may push (see [The streaming snapshot's scan](#the-streaming-snapshots-scan)). |
 | `PERSISTENCE_CALLBACK` | Commit index and hybrid-log metadata, capture final object-log positions, and dispose snapshot devices. |
 | `REST` | Clean old checkpoint artifacts, issue the checkpoint-completed trigger, dispose/reset checkpoint state, and advance the checkpoint completion chain. |
 
@@ -632,6 +632,30 @@ The release of a Delete or an expiration disposes the record as deleted, which
 runs the application's delete trigger; a CopyUpdate's source has only its value
 released. A freeze left unmarked, to eviction alone, would skip the trigger,
 because eviction calls only `OnEvict`.
+
+### The streaming snapshot's scan
+
+A streaming snapshot reads records rather than flushing pages. Its second scan
+runs in the `WAIT_FLUSH` before-hook: it samples the tail and pushes the latest
+version of each key below that sample, starting where its first scan ended. So
+it pushes a record that an operation supersedes after the sample, whatever the
+record's version, and neither freeze above covers that: `FlushedUntilAddress`
+says nothing about the scan's progress.
+
+While the second scan runs, the allocator holds every record at or above where
+the scan started (`streamingScanHoldAddress`). `IsFrozen` reports a held record
+as frozen, so it is not elided, and `ReleaseSupersededSource` marks a deletion
+of it, durable or not, instead of running it. The drain leaves marks in the held
+range, so eviction, or a drain after the scan, runs them. The hold is published
+before the scan samples the tail, and an operation reads it after the
+compare-and-swap that inserts its new record, so an operation that misses the
+hold inserted its new record below the sample, where the scan finds it and does
+not push the superseded record.
+
+`RecordLifecycleTests.StreamingSnapshotPushesTheValueOfARecordDeletedDuringItsScan`
+and `StreamingSnapshotPushesTheValueOfANewVersionRecordDeletedDuringItsScan`
+delete a record from the scan's reader callback and assert that the scan pushes
+the record's value.
 
 ### Practical rule
 

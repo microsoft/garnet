@@ -44,8 +44,19 @@ namespace Tsavorite.core
 
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
-                    var finalLogicalAddress = store.hlogBase.GetTailAddress();
-                    store.StreamingSnapshotScanPhase2(finalLogicalAddress);
+
+                    // The scan pushes a record that an operation supersedes after it samples the tail, so hold the release of such a record,
+                    // from where the scan starts, until the scan ends. The hold is published before the sample; see streamingScanHoldAddress.
+                    store.hlogBase.BeginStreamingScanHold(store.StreamingSnapshotScanStartAddress);
+                    try
+                    {
+                        var finalLogicalAddress = store.hlogBase.GetTailAddress();
+                        store.StreamingSnapshotScanPhase2(finalLogicalAddress);
+                    }
+                    finally
+                    {
+                        store.hlogBase.EndStreamingScanHold();
+                    }
                     break;
 
                 default:

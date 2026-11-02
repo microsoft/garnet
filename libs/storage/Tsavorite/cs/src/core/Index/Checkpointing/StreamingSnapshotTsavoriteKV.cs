@@ -14,6 +14,9 @@ namespace Tsavorite.core
         long scannedUntilAddressCursor;
         long numberOfRecords;
 
+        /// <summary>Where the second scan of a streaming snapshot starts: the end of the first scan.</summary>
+        internal long StreamingSnapshotScanStartAddress => scannedUntilAddressCursor;
+
         class StreamingSnapshotSessionFunctions : SessionFunctionsBase<Empty, Empty, Empty>
         {
 

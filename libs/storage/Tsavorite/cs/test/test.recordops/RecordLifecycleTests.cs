@@ -701,6 +701,162 @@ namespace Tsavorite.test
             await store.CompleteCheckpointAsync().ConfigureAwait(false);
         }
 
+        /// <summary>A streaming snapshot's scan functions that delete a key while the second scan pushes another, and record what it pushes.</summary>
+        private sealed class DeleteDuringStreamingScan(Action onPushOfFirstKey) : IStreamingSnapshotIteratorFunctions
+        {
+            /// <summary>The value pushed for each key; -1 if the record no longer held a value object.</summary>
+            internal readonly ConcurrentDictionary<int, int> Pushed = new();
+
+            /// <summary>Deletions the triggers had run when the scan pushed each key.</summary>
+            internal readonly ConcurrentDictionary<int, int> DeletionsAtPush = new();
+
+            internal Func<int> DeletionCount;
+            internal Exception Failure;
+            bool acted;
+
+            public bool OnStart(Guid checkpointToken, long currentVersion, long nextVersion) => true;
+
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords)
+                where TSourceLogRecord : ISourceLogRecord
+            {
+                var key = BitConverter.ToInt32(logRecord.Key);
+                Pushed[key] = logRecord.DataHeader.ValueIsObject && logRecord.ValueObject is TestObjectValue value ? value.value : -1;
+                DeletionsAtPush[key] = DeletionCount();
+                if (key == 1 && !acted)
+                {
+                    acted = true;
+                    try
+                    {
+                        onPushOfFirstKey();
+                    }
+                    catch (Exception ex)
+                    {
+                        Failure = ex;
+                    }
+                }
+                return true;
+            }
+
+            public void OnException(Exception exception, long numberOfRecords) => Failure ??= exception;
+
+            public void OnStop(bool completed, long numberOfRecords) { }
+        }
+
+        /// <summary>
+        /// A streaming snapshot's second scan pushes the latest version of each key below the tail it samples, so it pushes a record superseded
+        /// after that sample. A Delete during the scan, of a record the scan has not reached, must therefore leave the record's value, whether
+        /// the record's image is already durable or its release would wait for a flush. The deletion runs once, after the scan.
+        /// </summary>
+        [Test, Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task StreamingSnapshotPushesTheValueOfARecordDeletedDuringItsScan([Values] bool durableBeforeDelete)
+        {
+            Upsert(1, 100);
+            var deletedAddress = store.Log.TailAddress;
+            Upsert(2, 200);
+            Assert.That(store.hlogBase.GetPage(deletedAddress), Is.EqualTo(store.hlogBase.GetPage(store.Log.TailAddress - 1)),
+                "Precondition: the deleted record starts where the first record ended");
+            Assert.That(store.Log.SafeReadOnlyAddress, Is.LessThanOrEqualTo(deletedAddress),
+                "Precondition: the record is mutable when the checkpoint starts, so the second scan reads it");
+
+            using var deleteSession = NewSession();
+            tracker.Reset();
+            var epoch = store.hlogBase.epoch;
+            var scan = new DeleteDuringStreamingScan(() =>
+            {
+                // The scan has suspended its epoch to push key 1, and has sampled the tail, so the tombstone lies above it.
+                if (durableBeforeDelete)
+                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                _ = deleteSession.BasicContext.Delete(new TestObjectKey { key = 2 }, 0);
+                if (!durableBeforeDelete)
+                {
+                    // Make the record durable, then walk it as the drain on that flush's completion does.
+                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                    var resumed = epoch.ResumeIfNotProtected();
+                    try
+                    {
+                        store.hlogBase.DrainDeferredDisposes(deletedAddress, deletedAddress + 1);
+                    }
+                    finally
+                    {
+                        if (resumed)
+                            epoch.Suspend();
+                    }
+                }
+                if (store.Log.FlushedUntilAddress <= deletedAddress)
+                    throw new InvalidOperationException("The record should be durable");
+            })
+            { DeletionCount = () => tracker.DisposeCount(DisposeReason.Deleted) };
+
+            _ = await store.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: scan).ConfigureAwait(false);
+
+            Assert.That(scan.Failure, Is.Null, $"The scan failed: {scan.Failure}");
+            Assert.That(scan.Pushed.TryGetValue(2, out var pushed), Is.True, "The scan did not push the record deleted after its tail sample");
+            Assert.That(scan.DeletionsAtPush[2], Is.Zero, "The deletion ran before the scan pushed the record");
+            Assert.That(pushed, Is.EqualTo(200), "The scan pushed a released value for the deleted record");
+
+            // The hold ends with the scan, so a deletion of a durable record now runs at once.
+            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.Zero, "The deletion held for the scan ran before eviction");
+            _ = deleteSession.BasicContext.Delete(new TestObjectKey { key = 1 }, 0);
+            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "A deletion after the scan was still held");
+
+            store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
+            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(2), "Each deletion must run exactly once");
+        }
+
+        /// <summary>
+        /// The scan pushes the latest version of each key below the tail it sampled, whatever its version, so a Delete during the scan of a
+        /// <c>(v+1)</c> record that it could otherwise elide must leave the record in place, sealed, with its value. Elision would free the
+        /// record's value at once, and the scan would push the freed record.
+        /// </summary>
+        [Test, Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task StreamingSnapshotPushesTheValueOfANewVersionRecordDeletedDuringItsScan()
+        {
+            Upsert(1, 100);
+            using var session = NewSession();
+            tracker.Reset();
+
+            var scan = new DeleteDuringStreamingScan(() =>
+            {
+                // Make the record immutable, so the Delete supersedes it with a tombstone at the tail rather than deleting it in place.
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                _ = session.BasicContext.Delete(new TestObjectKey { key = 3 }, 0);
+            })
+            { DeletionCount = () => tracker.DisposeCount(DisposeReason.Deleted) };
+
+            // An old-version transaction holds the checkpoint in IN_PROGRESS, so the records below are written in the new version, below the
+            // tail the scan samples when the transaction ends.
+            var txnVersion = store.stateMachineDriver.AcquireTransactionVersion();
+            long deletedAddress;
+            Task checkpoint;
+            try
+            {
+                checkpoint = store.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: scan).AsTask();
+                Assert.That(SpinWait.SpinUntil(() => store.SystemState.Phase == Phase.IN_PROGRESS, TimeSpan.FromSeconds(30)), Is.True,
+                    "The checkpoint did not reach IN_PROGRESS");
+
+                // A filler takes the fuzzy region's start address, which CheckpointNeedsSourceImage counts as inside the checkpoint's range.
+                _ = session.BasicContext.Upsert(new TestObjectKey { key = 2 }, new TrackedObjectValue { value = 200 }, 0);
+                deletedAddress = NextRecordAddress();
+                _ = session.BasicContext.Upsert(new TestObjectKey { key = 3 }, new TrackedObjectValue { value = 300 }, 0);
+                Assert.That(store.hlogBase._wrapper.CreateLogRecord(deletedAddress).Info.IsInNewVersion, Is.True, "Precondition: the record is (v+1)");
+            }
+            finally
+            {
+                store.stateMachineDriver.EndTransaction(txnVersion);
+            }
+            await checkpoint.ConfigureAwait(false);
+
+            Assert.That(scan.Failure, Is.Null, $"The scan failed: {scan.Failure}");
+            Assert.That(scan.Pushed.TryGetValue(3, out var pushed), Is.True, "The scan did not push the record deleted after its tail sample");
+            Assert.That(scan.DeletionsAtPush[3], Is.Zero, "The deletion ran before the scan pushed the record");
+            Assert.That(pushed, Is.EqualTo(300), "The scan pushed a released value for the deleted record");
+            var deleted = store.hlogBase._wrapper.CreateLogRecord(deletedAddress);
+            Assert.That(deleted.Info.Valid && deleted.Info.IsSealed, Is.True, $"The deleted record was elided while the scan could push it: {deleted.Info}");
+
+            store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
+            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "The deletion must run exactly once");
+        }
+
         /// <summary>
         /// A CopyUpdate releases a durable source's value at once, even when the source sits in the sector the last flush ended in. The
         /// next flush starts in that sector and writes it again, but takes the bytes below its start from the image the previous flush
