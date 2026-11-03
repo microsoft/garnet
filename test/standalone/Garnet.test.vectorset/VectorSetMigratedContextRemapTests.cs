@@ -24,7 +24,7 @@ namespace Garnet.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableVectorSetPreview: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
             server.Start();
         }
 

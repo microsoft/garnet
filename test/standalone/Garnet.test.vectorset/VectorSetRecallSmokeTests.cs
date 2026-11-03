@@ -88,7 +88,6 @@ namespace Garnet.test
                 TestUtils.MethodTestDir,
                 memorySize: "16m",
                 pageSize: "1m",
-                enableVectorSetPreview: true,
                 enableReadCache: enableReadCache,
                 copyReadsToTail: copyReadsToTail);
             server.Start();
@@ -131,8 +130,7 @@ namespace Garnet.test
             server = TestUtils.CreateGarnetServer(
                 TestUtils.MethodTestDir,
                 memorySize: "256k",
-                pageSize: "32k",
-                enableVectorSetPreview: true);
+                pageSize: "32k");
             server.Start();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
@@ -168,8 +166,7 @@ namespace Garnet.test
                 memorySize: "8m",
                 pageSize: "16k",
                 enableAOF: true,
-                aofMemorySize: "2g",
-                enableVectorSetPreview: true);
+                aofMemorySize: "2g");
             server.Start();
 
             var data = GenerateData(500);
@@ -202,8 +199,7 @@ namespace Garnet.test
                 pageSize: "16k",
                 enableAOF: true,
                 aofMemorySize: "2g",
-                tryRecover: true,
-                enableVectorSetPreview: true);
+                tryRecover: true);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))

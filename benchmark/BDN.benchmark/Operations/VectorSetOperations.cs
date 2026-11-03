@@ -28,7 +28,6 @@ namespace BDN.benchmark.Operations
             {
                 QuietMode = true,
                 DisablePubSub = false,
-                EnableVectorSetPreview = true,
             };
 
             server = new EmbeddedRespServer(opts, null, new GarnetServerEmbedded());

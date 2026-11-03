@@ -37,7 +37,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, enableVectorSetPreview: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
             server.Start();
         }
 
@@ -77,7 +77,7 @@ namespace Garnet.test
             ClassicAssert.IsNotNull(storeWrapper, "Could not access storeWrapper via UnsafeAccessor");
 
             var vectorManager = storeWrapper.DefaultDatabase.VectorManager;
-            ClassicAssert.IsNotNull(vectorManager, "VectorManager not initialised — enableVectorSetPreview must be true");
+            ClassicAssert.IsNotNull(vectorManager, "VectorManager not initialised");
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);

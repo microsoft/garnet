@@ -216,11 +216,6 @@ namespace Garnet.server
 
         internal void HandleVectorSetImportReplication(StorageSession session, Func<RespServerSession> obtainServerSession, ReadOnlySpan<byte> key, ref StringInput input)
         {
-            if (!IsEnabled)
-            {
-                throw new GarnetException("Vector Set preview is disabled during import replay");
-            }
-
             Debug.Assert(input.header.cmd is RespCommand.XVCREATE or RespCommand.XVIMPORT, "Only XVCREATE and XVIMPORT should be redirected here");
 
             WaitForImportFinalization(key);
