@@ -1,0 +1,347 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
+using System.Net.Security;
+using System.Net.Sockets;
+using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
+using Garnet.common;
+using Microsoft.Extensions.Logging;
+using Tsavorite.core;
+
+namespace Garnet.client
+{
+    /// <summary>
+    /// Concurrent network writer for inline and out-of-line payloads.
+    /// <para>
+    /// This is a thin, network-owning shell over a
+    /// <see cref="DuplexOperationChannel{TRequest, TCompletion, TTransport}"/>
+    /// specialized to <see cref="RequestContext"/> requests and <see cref="TcsWrapper"/> completions. It owns
+    /// the socket, the <see cref="GarnetClientTcpNetworkHandler"/> and the send buffer pool, and forwards
+    /// all ring bookkeeping (allocation, request enqueue, flush, and the completion lane) to the ring.
+    /// </para>
+    /// <para>
+    /// The request lane is freed on flush (send); the completion lane is freed on reply. Because the ring's
+    /// single combined allocator advances the request address and the completion ticket together, a producer
+    /// receives an aligned (address, ticket) pair from one call and the reply reader can match replies to
+    /// completions in the same monotonic order.
+    /// </para>
+    /// </summary>
+    internal sealed class NetworkWriter : IDisposable
+    {
+        readonly struct RingTransport : ITransportContext
+        {
+            readonly ClientTcpNetworkSender tcpSender;
+            readonly GarnetClientTcpNetworkHandler networkHandler;
+            readonly bool useTls;
+
+            internal RingTransport(
+                ClientTcpNetworkSender tcpSender,
+                GarnetClientTcpNetworkHandler networkHandler,
+                bool useTls)
+            {
+                this.tcpSender = tcpSender;
+                this.networkHandler = networkHandler;
+                this.useTls = useTls;
+            }
+
+            public void Send(byte[] buffer, int offset, int length, object context)
+            {
+                if (useTls)
+                {
+#if DEBUG
+                    ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.GarnetClient_Tls_Pause_Before_Write);
+#endif
+                    networkHandler.SendResponse(buffer, offset, length, context);
+                }
+                else
+                    tcpSender.SendResponse(buffer, offset, length, context);
+            }
+
+            public void OnFlushError(Exception exception)
+                => networkHandler.Dispose();
+        }
+
+        readonly DuplexOperationChannel<RequestContext, TcsWrapper, RingTransport> channel;
+        readonly NetworkBufferSettings networkBufferSettings;
+        readonly LimitedFixedBufferPool networkPool;
+        LimitedFixedBufferPool requestPool;
+        readonly int maxPooledRequests;
+        readonly long maxPooledRequestBytes;
+        readonly MemoryThrottle outOfLineRentedBytesThrottle;
+        // Created on the first out-of-line admission, so writers that only send inline requests never allocate it.
+        WaiterQueue<MemoryThrottle, int> memoryThrottle;
+        readonly GarnetClientTcpNetworkHandler networkHandler;
+        readonly ILogger logger;
+        readonly long minMemoryFootprintBytes;
+        readonly long maxMemoryFootprintBytes;
+
+        int retiring;
+        int closed;
+        int disposed;
+
+        /// <summary>
+        /// Shared epoch protecting the ring's page allocator and flush machinery.
+        /// </summary>
+        public LightEpoch epoch => channel.epoch;
+
+        internal bool Closed => Volatile.Read(ref closed) != 0;
+
+        /// <summary>
+        /// Whether the writer is quiescing for graceful retirement: new sends are rejected while the channel and
+        /// network handler stay alive so already-reserved requests continue to flush and drain their replies.
+        /// </summary>
+        internal bool Retiring => Volatile.Read(ref retiring) != 0;
+
+        internal long ActiveMemoryUsageBytes
+            => SaturatingAdd(
+                SaturatingAdd(
+                    minMemoryFootprintBytes,
+                    (long)channel.AllocatedFlushContextCount * NetworkWriterOptions.FlushContextSizeBytes),
+                outOfLineRentedBytesThrottle.InUseBytes);
+
+        internal long MaxMemoryUsageBytes
+            => outOfLineRentedBytesThrottle.CapacityBytes == 0
+                ? long.MaxValue
+                : SaturatingAdd(maxMemoryFootprintBytes, outOfLineRentedBytesThrottle.CapacityBytes);
+
+        /// <summary>Number of completion tickets issued so far (task-space).</summary>
+        public int CompletionTail => channel.CompletionTail;
+
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        public NetworkWriter(
+            GarnetClient serverHook,
+            Socket socket,
+            NetworkWriterOptions options,
+            SslClientAuthenticationOptions sslOptions,
+            out GarnetClientTcpNetworkHandler networkHandler,
+            LightEpoch epoch,
+            PoolOwnerType ownerType,
+            ILogger logger = null)
+        {
+            this.logger = logger;
+            this.networkBufferSettings = new NetworkBufferSettings(options.NetworkBufferSizeBytes, options.NetworkBufferSizeBytes);
+            this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: ownerType, logger: logger);
+            this.outOfLineRentedBytesThrottle = new MemoryThrottle(options.MaxOutOfLineRentedBytes);
+            maxPooledRequests = Math.Max(16, options.MaxOutstandingRequests);
+            maxPooledRequestBytes = Math.Min(64L << 20,
+                options.MaxOutOfLineRentedBytes > 0 ? options.MaxOutOfLineRentedBytes : long.MaxValue);
+            this.minMemoryFootprintBytes = options.MinMemoryFootprint();
+            this.maxMemoryFootprintBytes = options.MaxMemoryFootprint();
+
+            // The flush-completion callback is a static routine on the flush result and recovers its ring via
+            // the result's sink, so the handler needs no ring instance at construction. That removes the
+            // ring<->handler cycle: build the handler first, then construct the fully-wired ring.
+            var handler = new GarnetClientTcpNetworkHandler(
+                serverHook,
+                DuplexOperationAsyncFlushResult<RequestContext>.CompleteChunk,
+                socket,
+                networkBufferSettings,
+                networkPool,
+                sslOptions != null,
+                serverHook,
+                networkSendThrottleMax: options.MaxConcurrentNetworkSends,
+                logger: logger);
+            this.networkHandler = networkHandler = handler;
+            var useTls = sslOptions != null;
+            var tcpSender = useTls ? null : (ClientTcpNetworkSender)handler.GetNetworkSender();
+
+            this.channel = new DuplexOperationChannel<RequestContext, TcsWrapper, RingTransport>(
+                options.RequestPageSizeBytes,
+                options.RequestPageCount,
+                options.MaxOutstandingRequests,
+                options.MaxOutstandingCompletions,
+                networkBufferSettings.sendBufferSize,
+                new RingTransport(tcpSender, handler, useTls),
+                epoch,
+                options.FlushResultAllocationMode,
+                logger);
+        }
+
+        /// <inheritdoc />
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref disposed, 1) != 0)
+                return;
+
+            Close();
+            networkHandler.Dispose();
+            networkPool?.Dispose();
+            Volatile.Read(ref requestPool)?.Dispose();
+        }
+
+        /// <summary>
+        /// Begins graceful retirement without tearing down the channel. Flips the one-shot <see cref="Retiring"/>
+        /// flag so in-flight producers observe it in their scheduling loop and stop reserving new sends, and
+        /// disposes the out-of-line admission queue so parked admissions fault and new admissions are rejected.
+        /// Already-reserved requests keep flushing and their replies keep draining because the channel and
+        /// network handler remain alive; the caller completes the drain via <see cref="WaitForIdleAsync"/> and
+        /// then calls <see cref="Dispose"/>.
+        /// </summary>
+        /// <returns>True on the transition from active to retiring; false if already retiring or closed.</returns>
+        internal bool TryRetire()
+        {
+            if (Interlocked.Exchange(ref retiring, 1) != 0)
+                return false;
+
+            // Fault parked admissions and reject new ones. Admitted in-flight rentals release their bytes
+            // normally; release after dispose is accounting-only and safe.
+            Volatile.Read(ref memoryThrottle)?.Dispose();
+            return true;
+        }
+
+        internal void Close()
+        {
+            if (Interlocked.Exchange(ref closed, 1) != 0)
+                return;
+
+            channel.Dispose();
+            Volatile.Read(ref memoryThrottle)?.Dispose();
+        }
+
+        WaiterQueue<MemoryThrottle, int> MemoryThrottleQueue
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => Volatile.Read(ref memoryThrottle) ?? CreateMemoryThrottleQueue();
+        }
+
+        LimitedFixedBufferPool RequestPool
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => Volatile.Read(ref requestPool) ?? CreateRequestPool();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        LimitedFixedBufferPool CreateRequestPool()
+        {
+            // Payload size classes are independent of transport buffers; the byte cap bounds idle retention.
+            var created = new LimitedFixedBufferPool(
+                minAllocationSize: 64,
+                maxEntriesPerLevel: maxPooledRequests,
+                numLevels: 25,
+                ownerType: PoolOwnerType.GarnetClient,
+                maxPooledBytes: maxPooledRequestBytes,
+                logger: logger);
+            var existing = Interlocked.CompareExchange(ref requestPool, created, null);
+            if (existing != null)
+            {
+                created.Dispose();
+                return existing;
+            }
+            if (Volatile.Read(ref disposed) != 0)
+                created.Dispose();
+            return created;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        WaiterQueue<MemoryThrottle, int> CreateMemoryThrottleQueue()
+        {
+            var created = new WaiterQueue<MemoryThrottle, int>(outOfLineRentedBytesThrottle);
+            var existing = Interlocked.CompareExchange(ref memoryThrottle, created, null);
+            if (existing != null)
+            {
+                created.Dispose();
+                return existing;
+            }
+
+            // TryRetire and Close set their flag with a full fence and then dispose any published queue; this
+            // publication is likewise fenced before reading the flags. Either they dispose this queue or this
+            // check does, so a queue published during teardown still rejects admissions. Dispose is idempotent.
+            if (Retiring || Closed)
+                created.Dispose();
+            return created;
+        }
+
+        static long SaturatingAdd(long left, long right)
+            => left > long.MaxValue - right ? long.MaxValue : left + right;
+
+        /// <summary>
+        /// Rent request buffer for out-of-line operation
+        /// </summary>
+        /// <param name="length"></param>
+        /// <returns></returns>
+        internal RequestContext RentRequestBuffer(int length)
+            => RequestContext.RentRequestBuffer(RequestPool, length);
+
+        /// <summary>
+        /// Gets the actual pooled allocation size that an out-of-line request will reserve.
+        /// </summary>
+        internal int GetRequestBufferAllocationSize(int length)
+            => RequestContext.GetRequestBufferAllocationSize(RequestPool, length);
+
+        internal ValueTask<bool> RentMemoryThrottle(int allocationSize, CancellationToken token)
+            => MemoryThrottleQueue.AdmitAsync(allocationSize, token);
+
+        internal bool AdmitOutOfLineRental(int allocationSize, CancellationToken token)
+            => MemoryThrottleQueue.Admit(allocationSize, token);
+
+        // Release and rent follow a successful admission, so the queue is already published.
+        internal void ReleaseOutOfLineRental(int allocationSize)
+            => Volatile.Read(ref memoryThrottle).Release(allocationSize);
+
+        internal RequestContext RentAdmittedOutOfLineBuffer(int length, int reservedBytes)
+            => RequestContext.RentRequestBuffer(RequestPool, length, Volatile.Read(ref memoryThrottle), reservedBytes);
+
+        /// <summary>
+        /// Attempts to reserve the paired request address and optional completion ticket for one send operation.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryScheduleSend(
+            int requestSize,
+            bool expectsResponse,
+            out DuplexOperationReservation reservation,
+            out CompletionEvent waitEvent)
+            => channel.TryScheduleOperation(requestSize, expectsResponse, out reservation, out waitEvent);
+
+        /// <summary>
+        /// Inline-buffer bytes a command of <paramref name="payloadLength"/> reserves, and whether it is written
+        /// inline (its whole payload packed into the inline buffer) or out-of-line (a rented buffer, no inline bytes).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetRecordSize(int payloadLength, out bool isInline)
+            => channel.GetRecordSize(payloadLength, out isInline);
+
+        /// <summary>
+        /// Reserve an inline record and return a pointer to write its payload directly into the inline buffer,
+        /// skipping the pooled buffer. The caller must hold the epoch, fill the payload, then call
+        /// <see cref="PublishInlineRecord"/> to publish it.
+        /// </summary>
+        public unsafe byte* RegisterInlineRecord(long address)
+            => channel.RegisterInlineRecord(address);
+
+        /// <summary>Publish an inline record whose payload has already been written into the inline buffer.</summary>
+        public void PublishInlineRecord(int requestId, long address, int payloadLength)
+            => channel.PublishInlineRecord(requestId, address, payloadLength);
+
+        /// <summary>Register (store and publish) an out-of-line request record.</summary>
+        public void RegisterOfflineRecord(int requestId, long address, RequestContext payload)
+            => channel.RegisterOfflineRecord(requestId, address, payload);
+
+        /// <summary>Register (store and publish) a completion for the given ticket.</summary>
+        public void RegisterCompletion(int ticket, TcsWrapper completion)
+            => channel.RegisterCompletion(ticket, completion);
+
+        /// <summary>Nudge the read-only shift so enqueued descriptors are flushed promptly.</summary>
+        public void DrainRequests()
+            => channel.DrainRequests();
+
+        internal ValueTask WaitForIdleAsync(CancellationToken token)
+            => channel.WaitForIdleAsync(token);
+
+        /// <summary>Reader-side: try to read a published completion for the given ticket.</summary>
+        public bool TryReadCompletion(int ticket, out TcsWrapper completion)
+            => channel.TryReadCompletion(ticket, out completion);
+
+        /// <summary>Atomically claim a published completion for single delivery (teardown/fault path).</summary>
+        public bool TryClaimCompletionTicket(int ticket, out TcsWrapper completion)
+            => channel.TryClaimCompletionTicket(ticket, out completion);
+
+        /// <summary>Reader-side: advance the reply watermark, freeing completion slots.</summary>
+        public void AdvanceReplied(int consumedCount)
+            => channel.AdvanceCompletion(consumedCount);
+    }
+}
