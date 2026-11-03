@@ -358,6 +358,9 @@ namespace Tsavorite.core
             Native32.DeleteFileW(GetSegmentName(segment));
         }
 
+        /// <inheritdoc/>
+        public override bool TryRemoveSegmentsAbove(int segment, out int removed) => TryRemoveSegmentFilesAbove(segment, out removed);
+
         /// <summary>
         /// <see cref="IDevice.RemoveSegmentAsync(int, AsyncCallback, IAsyncResult)"/>
         /// </summary>

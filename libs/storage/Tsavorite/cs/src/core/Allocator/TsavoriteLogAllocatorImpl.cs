@@ -99,6 +99,9 @@ namespace Tsavorite.core
 
         internal int OverflowPageCount => freePagePool.Count;
 
+        /// <summary>The device the log is stored on</summary>
+        internal IDevice Device => device;
+
         /// <inheritdoc/>
         protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
         {

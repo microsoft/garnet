@@ -118,15 +118,25 @@ void CALLBACK ThreadPoolIoHandler::IoCompletionCallback(PTP_CALLBACK_INSTANCE in
   auto callback_context = make_context_unique_ptr<IoCallbackContext>(
                             reinterpret_cast<IoCallbackContext*>(overlapped));
 
+  // A read that starts at or past the end of the file completes with ERROR_HANDLE_EOF and no
+  // data. Report it as a successful zero-byte read, as the Linux handlers do, so callers see the
+  // same end-of-file result on every platform. Only reads produce this error.
   HRESULT hr = HRESULT_FROM_WIN32(ioResult);
   Status return_status;
-  if(FAILED(hr)) {
+  if(FAILED(hr) && ioResult != ERROR_HANDLE_EOF) {
     return_status = Status::IOError;
   } else {
     return_status = Status::Ok;
   }
   callback_context->callback(callback_context->caller_context, return_status,
                              static_cast<size_t>(bytesTransferred));
+}
+
+void CALLBACK ThreadPoolIoHandler::EndOfFileCallback(PTP_CALLBACK_INSTANCE instance,
+    PVOID context) {
+  auto callback_context = make_context_unique_ptr<IoCallbackContext>(
+                            reinterpret_cast<IoCallbackContext*>(context));
+  callback_context->callback(callback_context->caller_context, Status::Ok, 0);
 }
 
 WindowsPtpThreadPool::WindowsPtpThreadPool(size_t max_threads)
@@ -213,6 +223,7 @@ Status ThreadPoolFile::Open(FileCreateDisposition create_disposition, const File
     Close();
     return Status::IOError;
   }
+  callback_environment_ = handler->callback_environment();
   return Status::Ok;
 }
 
@@ -262,7 +273,19 @@ Status ThreadPoolFile::ScheduleOperation(FileOperationType operationType, uint8_
     // Any error other than ERROR_IO_PENDING means the IO failed. Otherwise it will finish
     // asynchronously on the threadpool
     if(ERROR_IO_PENDING != win32_result) {
+      // An IO that fails here queues no completion, so the thread pool must stop expecting one.
       ::CancelThreadpoolIo(io_object_);
+      // A read that starts at or past the end of the file may fail here with ERROR_HANDLE_EOF
+      // rather than complete with it. Complete it as IoCompletionCallback does, as a successful
+      // zero-byte read. The completion is submitted to the thread pool, like any other, rather
+      // than run here: this thread is still inside the device's epoch-protected submit, and the
+      // caller's callback may itself submit IO.
+      if(FileOperationType::Read == operationType && ERROR_HANDLE_EOF == win32_result &&
+          ::TrySubmitThreadpoolCallback(ThreadPoolIoHandler::EndOfFileCallback, io_context.get(),
+                                        callback_environment_)) {
+        io_context.release();
+        return Status::Ok;
+      }
       std::stringstream ss;
       ss << "Failed to schedule async IO: " << FormatWin32AndHRESULT(win32_result);
       fprintf(stderr, "%s\n", ss.str().c_str());

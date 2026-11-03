@@ -219,6 +219,31 @@ namespace Tsavorite.core
         void RemoveSegment(int segment);
 
         /// <summary>
+        /// Remove every segment the device holds above a given segment, if the device can
+        /// </summary>
+        /// <param name="segment">The highest segment to keep</param>
+        /// <param name="removed">The number of segments removed, not counting any that the device could tell held nothing</param>
+        /// <returns>Whether the device removed every segment it holds above <paramref name="segment"/>; false if it cannot tell
+        /// which segments it holds, or cannot remove one without affecting others</returns>
+        /// <remarks>
+        /// <para>
+        /// Unlike <see cref="RemoveSegment(int)"/>, which some devices implement by truncating every segment up to the one named,
+        /// this leaves every segment at or below <paramref name="segment"/> unchanged. It reflects the device when called,
+        /// including segments far above <paramref name="segment"/> with gaps between them. The caller must ensure no IO to the
+        /// segments above is in flight.
+        /// </para>
+        /// <para>
+        /// Provided as a default interface method that reports the device cannot do this, so that existing external
+        /// <see cref="IDevice"/> implementations continue to compile and behave as before.
+        /// </para>
+        /// </remarks>
+        bool TryRemoveSegmentsAbove(int segment, out int removed)
+        {
+            removed = 0;
+            return false;
+        }
+
+        /// <summary>
         /// Get file size for given segment
         /// </summary>
         /// <param name="segment"></param>

@@ -89,6 +89,12 @@ namespace Tsavorite.core
         /// </summary>
         internal const uint ERROR_HANDLE_EOF = 38;
 
+        /// <summary>
+        /// A read from a segment that does not exist: Windows ERROR_FILE_NOT_FOUND, Linux ENOENT, and what
+        /// <see cref="LocalMemoryDevice"/> reports for a segment it never wrote.
+        /// </summary>
+        internal const uint ERROR_FILE_NOT_FOUND = 2;
+
         internal const int WIN32_MAX_PATH = 260;
         internal const uint GENERIC_READ = 0x80000000;
         internal const uint GENERIC_WRITE = 0x40000000;

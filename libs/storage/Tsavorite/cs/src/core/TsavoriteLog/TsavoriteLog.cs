@@ -247,6 +247,7 @@ namespace Tsavorite.core
             allocator = new(new AllocatorSettings(logSettings.GetLogSettings(), epoch, logger) { flushCallback = CommitCallback });
             allocator.Initialize();
             beginAddress = allocator.BeginAddress;
+            RecordCurrentPosition(cookie: null);
 
             // TsavoriteLog is used as a read-only iterator
             if (logSettings.ReadOnlyMode)
@@ -536,6 +537,7 @@ namespace Tsavorite.core
 
             commitNum = 0;
             this.beginAddress = beginAddress;
+            RecordCurrentPosition(cookie: null);
         }
 
         /// <summary>
@@ -608,6 +610,8 @@ namespace Tsavorite.core
 
                 if (lastCommitNum > 0)
                     logCommitManager.OnRecovery(lastCommitNum);
+
+                RecordCurrentPosition(cookie: null);
             }
             finally
             {
@@ -620,8 +624,21 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="requestedCommitNum">Requested commit number</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        public async ValueTask RecoverAsync(long requestedCommitNum = -1, CancellationToken cancellationToken = default)
+        /// <remarks>This leaves the device unchanged. Call <see cref="PrepareToAppend"/> before appending to the recovered log.</remarks>
+        public ValueTask RecoverAsync(long requestedCommitNum = -1, CancellationToken cancellationToken = default)
+            => RecoverAsync(requestedCommitNum, clearAboveTail: false, cancellationToken);
+
+        /// <summary>
+        /// Recover TsavoriteLog to the specific commit number, or latest if -1, optionally preparing it for appending
+        /// </summary>
+        /// <param name="requestedCommitNum">Requested commit number</param>
+        /// <param name="clearAboveTail">Whether to clear everything the device holds above the recovered tail, as
+        /// <see cref="PrepareToAppend"/> does. Records after the recovered commit are lost.</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        public async ValueTask RecoverAsync(long requestedCommitNum, bool clearAboveTail, CancellationToken cancellationToken = default)
         {
+            if (clearAboveTail && readOnlyMode)
+                throw new TsavoriteException("Cannot clear above the tail of a read-only log");
             if (CommittedUntilAddress > BeginAddress)
                 throw new TsavoriteException($"Already recovered until address {CommittedUntilAddress}");
 
@@ -629,6 +646,9 @@ namespace Tsavorite.core
                 ? await RestoreLatestAsync(cancellationToken).ConfigureAwait(false)
                 : await RestoreSpecificCommitAsync(requestedCommitNum, cancellationToken).ConfigureAwait(false);
             persistedCommitNum = commitNum;
+
+            if (clearAboveTail)
+                PrepareToAppend();
         }
 
         /// <summary>
@@ -2735,6 +2755,12 @@ namespace Tsavorite.core
             commitQueue.AddWorkItem(commitInfo);
         }
 
+        /// <summary>
+        /// Append <paramref name="info"/>'s commit record to the log: an entry whose length field is negative and whose payload
+        /// is the serialized <see cref="TsavoriteLogRecoveryInfo"/>. Fills in <see cref="TsavoriteLogRecoveryInfo.BeginAddress"/>
+        /// and <see cref="TsavoriteLogRecoveryInfo.UntilAddress"/>, the end of the record, before serializing.
+        /// </summary>
+        /// <returns>False if no log space is available yet</returns>
         private unsafe bool TryEnqueueCommitRecord(ref TsavoriteLogRecoveryInfo info)
         {
             var entryBodySize = info.SerializedSize();
@@ -2793,6 +2819,14 @@ namespace Tsavorite.core
             _ = Utility.MonotonicUpdate(ref persistedCommitNum, recoveryInfo.CommitNum, out _);
         }
 
+        /// <summary>
+        /// Pass <paramref name="recoveryInfo"/> to the log commit manager, which writes it as the commit's commit-metadata file,
+        /// then truncate the log below its <see cref="TsavoriteLogRecoveryInfo.BeginAddress"/>. Without fast commit, this write
+        /// completes the commit. In fast-commit mode the commit record already made the commit durable, so the commit manager
+        /// may skip the file (<see cref="DeviceLogCommitCheckpointManager"/> writes one every fastCommitThrottleFreq commits)
+        /// unless the begin address moved: recovery scans for commit records from the newest readable commit-metadata file, and
+        /// that scan cannot start in deleted segments.
+        /// </summary>
         private void WriteCommitMetadata(TsavoriteLogRecoveryInfo recoveryInfo)
         {
             // TODO: can change to write this in separate thread for fast commit
@@ -2953,13 +2987,20 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Restore log asynchronously
+        /// Recover to the latest commit. The newest readable commit-metadata file gives the commit to start from; without fast
+        /// commit, that is the recovered commit. In fast-commit mode, later commits are known only from their commit records,
+        /// so the log is scanned forward from that commit's <see cref="TsavoriteLogRecoveryInfo.UntilAddress"/> and every intact
+        /// commit record is accepted. The scan ends at the end of the written log, at an invalid record, or at data after
+        /// end-of-page padding. A read error fails recovery, unless device failures are tolerated. The log's tail is restored
+        /// to the last accepted commit; the device above it is left unchanged (see <see cref="PrepareToAppend"/>).
         /// </summary>
+        /// <returns>The recovered commit's cookie</returns>
         private async ValueTask<byte[]> RestoreLatestAsync(CancellationToken cancellationToken)
         {
             TsavoriteLogRecoveryInfo info = new();
 
             long scanStart = 0;
+            var unloadableCommits = 0;
             foreach (var metadataCommit in logCommitManager.ListCommits())
             {
                 try
@@ -2969,12 +3010,17 @@ namespace Tsavorite.core
                         scanStart = metadataCommit;
                         break;
                     }
+                    unloadableCommits++;
                 }
                 catch (Exception ex)
                 {
+                    unloadableCommits++;
                     logger?.LogWarning(ex, "Unable to load commit metadata for commit {metadataCommit}, trying the next older commit", metadataCommit);
                 }
             }
+
+            // Whether the recovered tail may be short of the log's end, because part of the log could not be read
+            var tailUnknown = false;
 
             // Only in fast commit mode will we potentially need to recover from an entry in the log
             if (fastCommitMode)
@@ -2989,11 +3035,20 @@ namespace Tsavorite.core
                     using var scanIterator = Scan(scanStartAddress, long.MaxValue, recover: false);
                     _ = scanIterator.ScanForwardForCommit(ref info);
                 }
+                catch (TsavoriteIOException ex) when (!tolerateDeviceFailure)
+                {
+                    // A read error leaves the end of the log unknown. Recovering to the last commit found would silently drop
+                    // any later commits, so fail instead.
+                    logger?.LogError(ex, "Fast-commit recovery scan from {scanStartAddress} could not read the log", scanStartAddress);
+                    ResetRecoveryState();
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     // The scan updates info at each valid commit it finds, so info holds the last one found before the failure
                     logger?.LogWarning(ex, "Fast-commit recovery scan from {scanStartAddress} failed; recovering to the last valid commit found (until address {untilAddress}, commitNum {commitNum})",
                         scanStartAddress, info.UntilAddress, info.CommitNum);
+                    tailUnknown = ex is TsavoriteIOException;
                 }
             }
 
@@ -3008,6 +3063,10 @@ namespace Tsavorite.core
                 beginAddress = allocator.BeginAddress;
                 if (readOnlyMode)
                     allocator.HeadAddress = long.MaxValue;
+
+                // Without fast commit, commit metadata is the only record of the log, so metadata that could not be loaded may
+                // describe a log that is still there
+                RecordCurrentPosition(cookie: null, unknown: tailUnknown || (!fastCommitMode && unloadableCommits > 0));
                 return null;
             }
 
@@ -3034,6 +3093,7 @@ namespace Tsavorite.core
                         ResetRecoveryState();
                         throw;
                     }
+                    tailUnknown = true;
                 }
             }
 
@@ -3047,9 +3107,17 @@ namespace Tsavorite.core
             if (scanStart > 0)
                 logCommitManager.OnRecovery(scanStart);
 
+            RecordCurrentPosition(cookie, unknown: tailUnknown);
             return cookie;
         }
 
+        /// <summary>
+        /// Recover to commit <paramref name="requestedCommitNum"/>. Recovery starts from the newest readable commit-metadata file
+        /// for that commit or an earlier one. In fast-commit mode, it then scans forward for the requested commit's commit record,
+        /// as <see cref="RestoreLatestAsync"/> does. The commits after it stay on the device, so a later recovery can still reach
+        /// them unless the log is cleared above its tail.
+        /// </summary>
+        /// <returns>The recovered commit's cookie</returns>
         private async ValueTask<byte[]> RestoreSpecificCommitAsync(long requestedCommitNum, CancellationToken cancellationToken)
         {
             TsavoriteLogRecoveryInfo info = new();
@@ -3110,6 +3178,9 @@ namespace Tsavorite.core
                 ResetRecoveryState();
                 throw new TsavoriteException($"Requested commit num is not available. Requested: {requestedCommitNum}, recovered: {info.CommitNum}");
             }
+
+            // Whether the recovered tail may be wrong, because the tail's page could not be read
+            var tailUnknown = false;
             if (!readOnlyMode)
             {
                 var headAddress = info.UntilAddress - allocator.GetOffsetOnPage(info.UntilAddress);
@@ -3133,6 +3204,7 @@ namespace Tsavorite.core
                         ResetRecoveryState();
                         throw;
                     }
+                    tailUnknown = true;
                 }
             }
 
@@ -3146,6 +3218,7 @@ namespace Tsavorite.core
             if (scanStart > 0)
                 logCommitManager.OnRecovery(scanStart);
 
+            RecordCurrentPosition(cookie, unknown: tailUnknown);
             return cookie;
         }
 
@@ -3167,6 +3240,7 @@ namespace Tsavorite.core
             allocator.Initialize();
             CommittedUntilAddress = FirstValidAddress;
             beginAddress = allocator.BeginAddress;
+            RecordCurrentPosition(cookie: null, unknown: true);
         }
 
         /// <summary>
@@ -3359,6 +3433,14 @@ namespace Tsavorite.core
             return length;
         }
 
+        /// <summary>
+        /// Create a commit of the log up to its tail. In fast-commit mode, the commit is a commit record appended to the log
+        /// (see <see cref="TryEnqueueCommitRecord"/>); flushing the log through that record makes the commit durable, and its
+        /// commit-metadata file is written afterwards, possibly not at all. Otherwise the commit covers the current tail and
+        /// becomes durable when its commit-metadata file is written after the flush (see <see cref="WriteCommitMetadata"/>).
+        /// </summary>
+        /// <returns>False if the commit was not created: the commit policy declined it, there was nothing to commit, or
+        /// <paramref name="proposedCommitNum"/> was not larger than the current commit number</returns>
         private bool CommitInternal(out long commitTail, out long actualCommitNum, bool fastForwardAllowed, byte[] cookie, long proposedCommitNum, Action callback)
         {
             if (cannedException != null)

@@ -115,13 +115,23 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteLog")]
-        public async Task FastCommitRecoveryEndsQuietlyAtTheEndOfTheLog(
+        public Task FastCommitRecoveryEndsQuietlyAtTheEndOfTheLog(
             [Values(DeviceType.Native, DeviceType.RandomAccess, DeviceType.FileStream)] DeviceType deviceType,
             [Values] RecoveryScanStart scanStart)
+            => RecoverToTheEndOfTheLog(Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, $"endOfLog{deviceType}.log"), deviceType: deviceType, deleteOnClose: true), scanStart);
+
+        [Test]
+        [Category("TsavoriteLog")]
+        public Task FastCommitRecoveryEndsQuietlyAtTheEndOfANativeStorageDeviceLog([Values] RecoveryScanStart scanStart)
+            // DeviceType.Native is LocalStorageDevice on Windows, so this covers NativeStorageDevice there
+            => RecoverToTheEndOfTheLog(new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "endOfLog.log"), deleteOnClose: true), scanStart);
+
+        async Task RecoverToTheEndOfTheLog(IDevice logDevice, RecoveryScanStart scanStart)
         {
             // The recovery scan for commit records has no end bound, so it always reads past the end of the written log.
-            // Windows reports that read as an end-of-file error where other platforms return zeros; neither is a failure.
-            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, $"endOfLog{deviceType}.log"), deviceType: deviceType, deleteOnClose: true);
+            // LocalStorageDevice reports that read as Windows' end-of-file error where the other devices return no bytes;
+            // neither is a failure.
+            device = logDevice;
             var logSettings = SmallPageFastCommitSettings(device);
 
             byte[] lastCookie = null;
@@ -167,10 +177,10 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteLog")]
-        public async Task FastCommitRecoveryReportsAReadErrorPastTheLastCommit()
+        public async Task FastCommitRecoveryFailsOnAReadErrorPastTheLastCommit([Values] bool tolerateDeviceFailure)
         {
-            // Only the end of the written log ends the recovery scan quietly. A device error is still reported, and recovery
-            // keeps the last commit the scan found.
+            // Only the end of the written log ends the recovery scan quietly. A device error leaves the end of the log unknown,
+            // so recovery fails rather than drop the commits the error may hide, unless device failures are tolerated.
             var failing = new ErrorCodeOnReadDevice(Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "readError.log"), deleteOnClose: true));
             device = failing;
             var logSettings = SmallPageFastCommitSettings(failing);
@@ -192,13 +202,26 @@ namespace Tsavorite.test
             failing.ReadErrorFromAddress = firstUnwrittenPage;
             failing.ReadErrorCode = 1117;
 
+            logSettings.TolerateDeviceFailure = tolerateDeviceFailure;
             var logger = new RecordingLogger();
             var recoveredLog = new TsavoriteLog(logSettings, logger);
             try
             {
-                await recoveredLog.RecoverAsync().ConfigureAwait(false);
-                ClassicAssert.AreEqual(cookie, recoveredLog.RecoveredCookie);
-                ClassicAssert.AreEqual(commitAddress, recoveredLog.TailAddress);
+                if (tolerateDeviceFailure)
+                {
+                    // Recovery keeps the last commit the scan found
+                    await recoveredLog.RecoverAsync().ConfigureAwait(false);
+                    ClassicAssert.AreEqual(cookie, recoveredLog.RecoveredCookie);
+                    ClassicAssert.AreEqual(commitAddress, recoveredLog.TailAddress);
+                }
+                else
+                {
+                    _ = Assert.ThrowsAsync<TsavoriteIOException>(async () => await recoveredLog.RecoverAsync().ConfigureAwait(false));
+                    ClassicAssert.AreEqual(recoveredLog.BeginAddress, recoveredLog.TailAddress, "a failed recovery leaves the log empty");
+                }
+
+                // Either way the log may extend past the tail, so clearing above the tail must not discard it
+                _ = Assert.Throws<TsavoriteException>(recoveredLog.PrepareToAppend);
             }
             finally
             {
@@ -367,6 +390,240 @@ namespace Tsavorite.test
 
             // Ensure clean shutdown
             log.Commit(true);
+        }
+
+        /// <summary>How a crash-image scenario prepares the recovered log for appending</summary>
+        public enum ClearMode
+        {
+            /// <summary>Append without clearing above the tail, relying on the recovery scan's padding check</summary>
+            None,
+
+            /// <summary>Clear above the tail as part of recovery</summary>
+            Recover,
+
+            /// <summary>Recover, then clear above the tail with PrepareToAppend</summary>
+            PrepareToAppend,
+        }
+
+        static readonly byte[] ReplacementCookie = [2, 4, 6, 8];
+
+        [Test]
+        [Category("TsavoriteLog")]
+        public Task FastCommitRecoveryRetainsNewTailWithEqualStaleCommit([Values] ClearMode clearMode)
+            => RunStaleSuffixScenario(clearMode, intermediateCommit: false, replacementLength: 4, replacementCommitNum: 4, ReplacementCookie);
+
+        [Test]
+        [Category("TsavoriteLog")]
+        public Task FastCommitRecoveryRetainsNewTailWithDecreasingStaleCommit([Values] ClearMode clearMode)
+            => RunStaleSuffixScenario(clearMode, intermediateCommit: false, replacementLength: 4, replacementCommitNum: 6, ReplacementCookie);
+
+        [Test]
+        [Category("TsavoriteLog")]
+        public Task FastCommitRecoveryRetainsNewTailWithIncreasingStaleCommit([Values] ClearMode clearMode)
+            => RunStaleSuffixScenario(clearMode, intermediateCommit: true, replacementLength: 4, replacementCommitNum: 4, ReplacementCookie);
+
+        // The replacement's flush zeroes the rest of the first page, so the padding check passes and only clearing stops the scan
+        [Test]
+        [Category("TsavoriteLog")]
+        public Task FastCommitRecoveryRetainsNewTailAfterFullTailPageRewrite([Values(ClearMode.Recover, ClearMode.PrepareToAppend)] ClearMode clearMode)
+            => RunStaleSuffixScenario(clearMode, intermediateCommit: true, replacementLength: 3200, replacementCommitNum: 4, ReplacementCookie,
+                replacementFillsTailPage: true);
+
+        // The replacement ends where commit 4 ended, before padding, so the padding check passes and only clearing stops the scan
+        [Test]
+        [Category("TsavoriteLog")]
+        public Task FastCommitRecoveryRetainsNewTailWhenReplacementMatchesStaleAddressAndNumber([Values(ClearMode.Recover, ClearMode.PrepareToAppend)] ClearMode clearMode)
+            => RunStaleSuffixScenario(clearMode, intermediateCommit: true, replacementLength: 2048, replacementCommitNum: 4, replacementCookie: null,
+                replacementMatchesIntermediateCommit: true);
+
+        /// <summary>
+        /// Builds a crash image in which recovery selects an acknowledged prefix while intact commit records remain on the
+        /// device past it, appends and commits a replacement, then verifies that a second recovery ends at the replacement.
+        /// </summary>
+        /// <remarks>
+        /// With 4 KB pages, the unacknowledged suffix is a 2048-byte entry, two 3500-byte entries that each need a page of their
+        /// own (starting at 4096 and 8192), and a commit record on the third page. Before the crash every byte of it is
+        /// written; the crash image restores one sector of the 2048-byte entry to its unwritten contents.
+        /// </remarks>
+        /// <param name="clearMode">How the first recovery prepares the log for the replacement</param>
+        /// <param name="intermediateCommit">Whether commit 4 follows the 2048-byte entry, making the commit on the third page commit 5</param>
+        /// <param name="replacementLength">Length of the entry appended after the first recovery</param>
+        /// <param name="replacementCommitNum">Commit number of the replacement's commit</param>
+        /// <param name="replacementCookie">Cookie of the replacement's commit</param>
+        /// <param name="replacementFillsTailPage">Whether the replacement's flush is expected to zero the rest of the first page</param>
+        /// <param name="replacementMatchesIntermediateCommit">Whether the replacement's commit is expected to end where commit 4 ended</param>
+        private static async Task RunStaleSuffixScenario(ClearMode clearMode, bool intermediateCommit, int replacementLength, long replacementCommitNum,
+            byte[] replacementCookie, bool replacementFillsTailPage = false, bool replacementMatchesIntermediateCommit = false)
+        {
+            const int PageSize = 1 << 12;
+            const int HeaderSize = 12;
+            const int SectorSize = 512;
+            const int TornSectorStart = 1024;
+
+            var logPath = Path.Join(TestUtils.MethodTestDir, "s.log");
+            var segmentPath = logPath + ".0";
+
+            var prefixEntry = new byte[100];
+            new Random(42).NextBytes(prefixEntry);
+            var payload = new byte[2048];
+            new Random(123).NextBytes(payload);
+            var suffixEntry = new byte[3500];
+            new Random(456).NextBytes(suffixEntry);
+            var replacement = new byte[replacementLength];
+            new Random(789).NextBytes(replacement);
+
+            long acknowledgedTail = 0, intermediateTail = 0;
+            byte[] oldImage, commitMetadata;
+            using (var original = new CrashImageLog(logPath, TestUtils.MethodTestDir))
+            {
+                // Acknowledged prefix. Commit-metadata files are throttled, so only commit 1 writes one.
+                for (var i = 0; i < 3; i++)
+                {
+                    _ = original.Log.Enqueue(prefixEntry);
+                    ClassicAssert.IsTrue(original.Log.CommitStrongly(out acknowledgedTail, out _, spinWait: true));
+                }
+                original.Commits.WaitForMetadata(3, acknowledgedTail);
+                oldImage = ReadDeviceFile(segmentPath);
+                Assert.That(original.Manager.ListCommits(), Is.EqualTo(new long[] { 1 }));
+                commitMetadata = original.Manager.GetCommitMetadata(1);
+
+                // Unacknowledged suffix
+                ClassicAssert.AreEqual(acknowledgedTail, original.Log.Enqueue(payload));
+                if (intermediateCommit)
+                    ClassicAssert.IsTrue(original.Log.CommitStrongly(out intermediateTail, out _, spinWait: false, proposedCommitNum: 4));
+                ClassicAssert.AreEqual(PageSize, original.Log.Enqueue(suffixEntry));
+                ClassicAssert.AreEqual(2 * PageSize, original.Log.Enqueue(suffixEntry));
+                var staleCommitNum = intermediateCommit ? 5 : 4;
+                ClassicAssert.IsTrue(original.Log.CommitStrongly(out var staleTail, out _, spinWait: true, proposedCommitNum: staleCommitNum));
+                original.Commits.WaitForMetadata(staleCommitNum, staleTail);
+                ClassicAssert.Greater(staleTail, 2 * PageSize + HeaderSize + suffixEntry.Length);
+                ClassicAssert.LessOrEqual(staleTail, 3 * PageSize);
+            }
+            var newImage = ReadDeviceFile(segmentPath);
+
+            // Crash image: one aligned sector inside the unacknowledged 2048-byte entry keeps its unwritten contents
+            var payloadStart = acknowledgedTail + HeaderSize;
+            Assert.That(TornSectorStart % SectorSize, Is.Zero);
+            Assert.That(TornSectorStart, Is.GreaterThanOrEqualTo(payloadStart));
+            Assert.That(TornSectorStart + SectorSize, Is.LessThanOrEqualTo(payloadStart + payload.Length));
+            var crashImage = (byte[])newImage.Clone();
+            for (var i = TornSectorStart; i < TornSectorStart + SectorSize; i++)
+                crashImage[i] = i < oldImage.Length ? oldImage[i] : (byte)0;
+            Assert.That(crashImage.AsSpan(TornSectorStart, SectorSize).SequenceEqual(newImage.AsSpan(TornSectorStart, SectorSize)), Is.False,
+                "The torn sector must differ from what was written");
+            Assert.That(crashImage.AsSpan(0, (int)acknowledgedTail).SequenceEqual(oldImage.AsSpan(0, (int)acknowledgedTail)), Is.True,
+                "Acknowledged bytes must be unchanged");
+            File.WriteAllBytes(segmentPath, crashImage);
+
+            long replacementTail;
+            using (var firstRecovery = new CrashImageLog(logPath, TestUtils.MethodTestDir))
+            {
+                Assert.That(firstRecovery.Manager.ListCommits(), Is.EqualTo(new long[] { 1 }));
+                Assert.That(firstRecovery.Manager.GetCommitMetadata(1), Is.EqualTo(commitMetadata));
+
+                // The scan stops at the torn entry, so recovery keeps exactly the acknowledged prefix
+                await firstRecovery.Log.RecoverAsync(-1, clearAboveTail: clearMode == ClearMode.Recover).ConfigureAwait(false);
+                if (clearMode == ClearMode.PrepareToAppend)
+                    firstRecovery.Log.PrepareToAppend();
+                ClassicAssert.AreEqual(acknowledgedTail, firstRecovery.Log.TailAddress);
+                ClassicAssert.AreEqual(acknowledgedTail, firstRecovery.Log.CommittedUntilAddress);
+                Assert.That(ReadEntries(firstRecovery.Log), Is.EqualTo([prefixEntry, prefixEntry, prefixEntry]));
+
+                // Replace the abandoned suffix. This commit manager is new, so it writes this commit's commit-metadata file.
+                ClassicAssert.AreEqual(acknowledgedTail, firstRecovery.Log.Enqueue(replacement));
+                ClassicAssert.IsTrue(firstRecovery.Log.CommitStrongly(out replacementTail, out _, spinWait: true, replacementCookie, replacementCommitNum));
+                firstRecovery.Commits.WaitForMetadata(replacementCommitNum, replacementTail);
+            }
+
+            var replacedImage = ReadDeviceFile(segmentPath);
+            if (clearMode == ClearMode.None)
+                Assert.That(replacedImage.AsSpan(PageSize).SequenceEqual(newImage.AsSpan(PageSize)), Is.True,
+                    "Without clearing, the pages past the replacement's page still hold the abandoned entries and commit record");
+            else
+                Assert.That(replacedImage.AsSpan((int)replacementTail).IndexOfAnyExcept((byte)0), Is.EqualTo(-1),
+                    "Clearing leaves nothing past the replacement");
+            if (replacementFillsTailPage)
+            {
+                Assert.That(replacedImage.AsSpan((int)replacementTail, PageSize - (int)replacementTail).IndexOfAnyExcept((byte)0), Is.EqualTo(-1),
+                    "The replacement's flush must zero the rest of the first page");
+                Assert.That(replacementTail + HeaderSize + suffixEntry.Length, Is.GreaterThan(PageSize),
+                    "A 3500-byte entry must not fit in the rest of the first page");
+            }
+            if (replacementMatchesIntermediateCommit)
+                ClassicAssert.AreEqual(intermediateTail, replacementTail);
+
+            using (var secondRecovery = new CrashImageLog(logPath, TestUtils.MethodTestDir))
+            {
+                var latestInfo = new TsavoriteLogRecoveryInfo();
+                latestInfo.Initialize(secondRecovery.Manager.GetCommitMetadata(secondRecovery.Manager.ListCommits().First()));
+                ClassicAssert.AreEqual(replacementTail, latestInfo.UntilAddress);
+
+                // Recovery must end at the replacement and adopt none of the commit records beyond it
+                await secondRecovery.Log.RecoverAsync().ConfigureAwait(false);
+                ClassicAssert.AreEqual(replacementTail, secondRecovery.Log.TailAddress);
+                ClassicAssert.AreEqual(replacementTail, secondRecovery.Log.CommittedUntilAddress);
+                Assert.That(secondRecovery.Log.RecoveredCookie, Is.EqualTo(replacementCookie));
+                Assert.That(ReadEntries(secondRecovery.Log), Is.EqualTo([prefixEntry, prefixEntry, prefixEntry, replacement]));
+            }
+        }
+
+        private static byte[] ReadDeviceFile(string path)
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            var bytes = new byte[stream.Length];
+            stream.ReadExactly(bytes);
+            return bytes;
+        }
+
+        private static List<byte[]> ReadEntries(TsavoriteLog log)
+        {
+            var entries = new List<byte[]>();
+            using var iterator = log.Scan(log.BeginAddress, log.TailAddress, recover: false);
+            while (iterator.GetNext(out var entry, out var length, out _))
+                entries.Add(entry.AsSpan(0, length).ToArray());
+            return entries;
+        }
+
+        /// <summary>
+        /// A log with its own device and commit manager over one log file, configured as in the crash-image scenarios:
+        /// 4 KB pages, per-entry checksums, and commit-metadata files throttled to every 256 commits.
+        /// </summary>
+        private sealed class CrashImageLog : IDisposable
+        {
+            internal readonly TsavoriteLog Log;
+            internal readonly IDevice Device;
+            internal readonly DeviceLogCommitCheckpointManager Manager;
+            internal readonly NotifyingLogCommitManager Commits;
+            bool disposed;
+
+            internal CrashImageLog(string logPath, string commitDirectory)
+            {
+                Device = new RandomAccessLocalStorageDevice(logPath, disableFileBuffering: false, osReadBuffering: true);
+                Manager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactoryCreator(),
+                    new DefaultCheckpointNamingScheme(commitDirectory), removeOutdated: false, fastCommitThrottleFreq: 256);
+                Commits = new NotifyingLogCommitManager(Manager);
+                Log = new TsavoriteLog(new TsavoriteLogSettings
+                {
+                    LogDevice = Device,
+                    LogCommitManager = Commits,
+                    LogChecksum = LogChecksumType.PerEntry,
+                    FastCommitMode = true,
+                    TryRecoverLatest = false,
+                    PageSizeBits = 12,
+                    MemorySizeBits = 14,
+                    SegmentSizeBits = 14
+                });
+            }
+
+            public void Dispose()
+            {
+                if (disposed)
+                    return;
+                disposed = true;
+                Log.Dispose();
+                Manager.Dispose();
+                Device.Dispose();
+            }
         }
     }
 }

@@ -399,6 +399,26 @@ namespace Tsavorite.devices
             }, TaskContinuationOptions.ExecuteSynchronously);
         }
 
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Removes the segment blobs that the device found when it started and those it has created since, from the highest down,
+        /// without listing storage again. These are the blobs that <see cref="RemoveSegmentAsync(int, AsyncCallback, IAsyncResult)"/>
+        /// can delete; a blob created since by another device instance is not removed.
+        /// </remarks>
+        public override bool TryRemoveSegmentsAbove(int segment, out int removed)
+        {
+            removed = 0;
+            if (OmitSegmentIdFromFileName)
+                return false;
+
+            foreach (var above in blobs.Keys.Where(listed => listed > segment).OrderDescending().ToArray())
+            {
+                RemoveSegment(above);
+                removed++;
+            }
+            return true;
+        }
+
         /// <summary>
         /// Delete the device blobs in storage.
         /// </summary>

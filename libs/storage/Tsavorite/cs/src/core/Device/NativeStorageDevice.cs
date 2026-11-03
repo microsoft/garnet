@@ -5,6 +5,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -717,10 +718,16 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Async callback delegate
+        /// Async callback delegate. Only the low byte of <paramref name="result"/> is defined: it is the native one-byte status.
         /// </summary>
         public delegate void AsyncIOCallback(IntPtr context, int result, ulong bytesTransferred);
         IntPtr nativeDevice;
+
+        /// <summary>
+        /// Native code passes and returns an IO status as <c>FASTER::core::Status</c>, a one-byte enum, but the calling
+        /// conventions do not define the rest of the register it arrives in. The status is the low byte alone.
+        /// </summary>
+        static int NativeStatus(int value) => (byte)value;
 
         /// <summary>
         /// Selects the IO backend used by the underlying native device. On Linux,
@@ -777,10 +784,13 @@ namespace Tsavorite.core
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_CreateDir", CallingConvention = CallingConvention.Cdecl)]
         static extern int NativeDevice_CreateDir(IntPtr device, string dir, int deleteExisting);
 
+        // The native functions return a one-byte C++ bool, so only one byte of the return value is defined
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_TryComplete", CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.U1)]
         static extern bool NativeDevice_TryComplete(IntPtr device);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_TryCompleteMine", CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.U1)]
         static extern bool NativeDevice_TryCompleteMine(IntPtr device);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_QueueRun", CallingConvention = CallingConvention.Cdecl)]
@@ -1060,7 +1070,7 @@ namespace Tsavorite.core
             // callbacks to finish before destroying the native device underneath them.
             try
             {
-                result.callback((uint)errorCode, (uint)numBytes, result.context, ioException: default);
+                result.callback((uint)NativeStatus(errorCode), (uint)numBytes, result.context, ioException: default);
             }
             catch (Exception ex)
             {
@@ -1728,7 +1738,7 @@ namespace Tsavorite.core
             {
                 try
                 {
-                    int _result = NativeDevice_ReadAsync(nativeDevice, ((ulong)segmentId << segmentSizeBits) | sourceAddress, destinationAddress, readLength, _callbackDelegate, (IntPtr)offset);
+                    int _result = NativeStatus(NativeDevice_ReadAsync(nativeDevice, ((ulong)segmentId << segmentSizeBits) | sourceAddress, destinationAddress, readLength, _callbackDelegate, (IntPtr)offset));
 
                     if (_result != 0)
                         throw new IOException($"Error reading from log file (status {_result}){FormatNativeError()}", _result);
@@ -1805,7 +1815,7 @@ namespace Tsavorite.core
             {
                 try
                 {
-                    int _result = NativeDevice_WriteAsync(nativeDevice, sourceAddress, ((ulong)segmentId << segmentSizeBits) | destinationAddress, numBytesToWrite, _callbackDelegate, (IntPtr)offset);
+                    int _result = NativeStatus(NativeDevice_WriteAsync(nativeDevice, sourceAddress, ((ulong)segmentId << segmentSizeBits) | destinationAddress, numBytesToWrite, _callbackDelegate, (IntPtr)offset));
 
                     if (_result != 0)
                     {
@@ -1849,6 +1859,11 @@ namespace Tsavorite.core
         /// <see cref="IDevice.RemoveSegment(int)"/>
         /// </summary>
         /// <param name="segment"></param>
+        /// <remarks>
+        /// The native device removes every segment from the first it holds open through <paramref name="segment"/>, not only
+        /// <paramref name="segment"/>; this suits truncation from the head of the log. Use <see cref="TryRemoveSegmentsAbove"/> to
+        /// remove the segments above a given one.
+        /// </remarks>
         public override void RemoveSegment(int segment)
         {
             if (Volatile.Read(ref disposedFlag) != 0) return;
@@ -1880,6 +1895,43 @@ namespace Tsavorite.core
             // (best-effort unlink that ignores ENOENT).
             try { File.Delete(GetSegmentName(segment)); }
             catch { }
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// <para>
+        /// The native device's RemoveSegment removes every segment from the first it holds open through the one named, so it cannot
+        /// remove only the segments above <paramref name="segment"/>. Instead each segment file above it is truncated to zero
+        /// length, from the highest down. The file stays, holding nothing, and is written again when the log reaches it.
+        /// </para>
+        /// <para>
+        /// Truncating rather than deleting is required because the native device may hold the file open: it keeps open every
+        /// segment from the lowest to the highest it has accessed. Truncating through a separate handle keeps that handle valid,
+        /// whereas on Linux deleting the file would let later writes through it go to a file that no longer has a name, and be lost.
+        /// </para>
+        /// </remarks>
+        public override bool TryRemoveSegmentsAbove(int segment, out int removed)
+        {
+            removed = 0;
+            if (!TryListSegmentFiles(out var segments))
+                return false;
+
+            foreach (var above in segments.Where(listed => listed > segment).OrderDescending())
+            {
+                try
+                {
+                    using var file = new FileStream(GetSegmentName(above), FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+                    if (file.Length == 0)
+                        continue;
+                    file.SetLength(0);
+                    removed++;
+                }
+                catch (FileNotFoundException)
+                {
+                    // The native device deleted it since it was listed
+                }
+            }
+            return true;
         }
 
         /// <summary>

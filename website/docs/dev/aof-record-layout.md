@@ -46,6 +46,8 @@ Every AOF entry — chunked or not — is a single `TsavoriteLog` entry:
 - The **entry-length prefix** is written by `TsavoriteLog` (`SetHeader`); it frames the entry on the page and is not
   part of the AOF header.
 - The **AOF header variant** is selected by the log topology (single vs. sharded, per-key vs. coordinated).
+- Commit records also appear among AOF entries: their length prefix is negative and their payload is the commit's
+  metadata. See [TsavoriteLog Commits and Recovery](./tsavorite/tsavoritelog-commits.md).
 
 ---
 

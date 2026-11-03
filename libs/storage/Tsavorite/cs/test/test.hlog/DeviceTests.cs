@@ -9,6 +9,7 @@ using System.Threading;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
+using Tsavorite.devices;
 
 namespace Tsavorite.test
 {
@@ -472,6 +473,43 @@ namespace Tsavorite.test
                 AssertBufferContents(rptr, size, j => (byte)((j * 5 + id) & 0xFF), $"{kind} stress block {id}");
             }
             GC.KeepAlive(roots); GC.KeepAlive(rbuf);
+        }
+
+        // ----- IDevice contract: a read past the end of a file reads nothing ------------
+
+        /// <summary>
+        /// A read that starts at or past the end of a segment's file, including a read of a segment that was never written,
+        /// completes with no error and no bytes. (LocalStorageDevice, not covered here, reports Windows' end-of-file error
+        /// instead; callers accept both.)
+        /// </summary>
+        [Test]
+        [TestCase(DeviceKind.Native)]
+        [TestCase(DeviceKind.RandomAccess)]
+        [TestCase(DeviceKind.ManagedLocal)]
+        [Category("IDevice")]
+        public unsafe void IDevice_ReadPastEndOfFile_CompletesWithNoBytes(DeviceKind kind)
+        {
+            using var device = CreateDeviceForTest(kind, Path.Join(TestUtils.MethodTestDir, "test.log"), 64 * Mib);
+
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i & 0xFF));
+            device.WriteAsync(wptr, 0, 0, HardeningSectorSize, IOCallback, null);
+            semaphore.Wait();
+
+            var (rbuf, rptr) = AllocateAlignedBuffer(HardeningSectorSize, _ => 0);
+            foreach (var (segmentId, address) in new[] { (0, (ulong)HardeningSectorSize), (0, 16UL * HardeningSectorSize), (1, 0UL) })
+            {
+                var (errorCode, numBytes) = (uint.MaxValue, uint.MaxValue);
+                device.ReadAsync(segmentId, address, rptr, HardeningSectorSize, (e, n, _, _) =>
+                {
+                    (errorCode, numBytes) = (e, n);
+                    _ = semaphore.Release();
+                }, null);
+                semaphore.Wait();
+                ClassicAssert.AreEqual(0u, errorCode, $"{kind}: error code reading segment {segmentId} at {address}");
+                ClassicAssert.AreEqual(0u, numBytes, $"{kind}: bytes read from segment {segmentId} at {address}");
+            }
+            GC.KeepAlive(wbuf);
+            GC.KeepAlive(rbuf);
         }
 
         // ----- IDevice contract: Initialize is optional; ctor defaults are valid for IO ------
@@ -1528,6 +1566,27 @@ namespace Tsavorite.test
 
         [Test]
         [Category("IDevice")]
+        public unsafe void Native_TryComplete_IsFalseWithNothingToComplete()
+        {
+            // The native functions return a one-byte C++ bool. Read as a four-byte value, its undefined upper bytes can turn
+            // false into true.
+            using var device = CreateDeviceForTest(DeviceKind.Native, Path.Join(TestUtils.MethodTestDir, "test.log"), 64 * Mib);
+            const int size = 4 * 1024;
+            var (wbuf, wptr) = AllocateAlignedBuffer(size, _ => 0x22);
+            device.WriteAsync(wptr, 0, 0, (uint)size, IOCallback, null);
+            semaphore.Wait();
+
+            // The write's completion has run, so nothing is left to complete
+            for (var i = 0; i < 100; i++)
+            {
+                ClassicAssert.IsFalse(device.TryComplete(), nameof(device.TryComplete));
+                ClassicAssert.IsFalse(device.TryCompleteMine(), nameof(device.TryCompleteMine));
+            }
+            GC.KeepAlive(wbuf);
+        }
+
+        [Test]
+        [Category("IDevice")]
         public unsafe void Native_RemoveSegment_RemovesPersistedData()
         {
             // Multi-segment device (segment files <base>.<id>); write segment 1, remove it, confirm gone.
@@ -1549,6 +1608,143 @@ namespace Tsavorite.test
             device.RemoveSegment(1);
             ClassicAssert.AreEqual(0L, device.GetFileSize(1), "segment 1 should report empty after RemoveSegment.");
             GC.KeepAlive(wbuf);
+        }
+
+        // ----- Removing the segments above a segment ---------------------------------
+
+        /// <summary>Device kinds that implement <see cref="IDevice.TryRemoveSegmentsAbove"/></summary>
+        public enum SegmentRemovingDeviceKind { Native, RandomAccess, ManagedLocal, LocalStorage, LocalMemory }
+
+        static IDevice CreateSegmentRemovingDeviceForTest(SegmentRemovingDeviceKind kind, string path, long segmentSize)
+        {
+            switch (kind)
+            {
+                case SegmentRemovingDeviceKind.Native:
+                    return CreateDeviceForTest(DeviceKind.Native, path, segmentSize);
+                case SegmentRemovingDeviceKind.RandomAccess:
+                    return CreateDeviceForTest(DeviceKind.RandomAccess, path, segmentSize);
+                case SegmentRemovingDeviceKind.ManagedLocal:
+                    return CreateDeviceForTest(DeviceKind.ManagedLocal, path, segmentSize);
+                case SegmentRemovingDeviceKind.LocalStorage when OperatingSystem.IsWindows():
+                    var localStorage = new LocalStorageDevice(path, false, true, true, Devices.CAPACITY_UNSPECIFIED, false, false);
+                    localStorage.Initialize(segmentSize);
+                    return localStorage;
+                case SegmentRemovingDeviceKind.LocalStorage:
+                    Assert.Ignore("LocalStorageDevice is Windows-only.");
+                    return null;
+                case SegmentRemovingDeviceKind.LocalMemory:
+                    var localMemory = new LocalMemoryDevice(capacity: 8 * segmentSize, segmentSize: segmentSize, parallelism: 1);
+                    localMemory.Initialize(segmentSize);
+                    return localMemory;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(kind));
+            }
+        }
+
+        [Test]
+        [Category("IDevice")]
+        public unsafe void IDevice_TryRemoveSegmentsAbove_KeepsTheSegmentsAtAndBelow([Values] SegmentRemovingDeviceKind kind)
+        {
+            // NativeStorageDevice's RemoveSegment removes every segment up to the one named, so check on every device that the
+            // segments at and below the one named keep their data
+            const long segmentSize = 1L << 16;
+            using var device = CreateSegmentRemovingDeviceForTest(kind, Path.Join(TestUtils.MethodTestDir, "test.log"), segmentSize);
+
+            // Files that are not this device's segments: its bare name, suffixes that are not segment ids as the device writes
+            // them, and another device's segment
+            string[] otherFiles = kind == SegmentRemovingDeviceKind.LocalMemory ? []
+                : ["test.log", "test.log.x", "test.log.007", "test.log.-1", "test.log.+2", "test.log.3.tmp", "test.logx.4", "other.log.6"];
+            foreach (var name in otherFiles)
+                File.WriteAllBytes(Path.Join(TestUtils.MethodTestDir, name), [1]);
+
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var (rbuf, rptr) = AllocateAlignedBuffer(HardeningSectorSize, _ => 0);
+            foreach (var segment in new[] { 5, 0, 1, 2 })
+            {
+                device.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+            }
+
+            ClassicAssert.IsTrue(device.TryRemoveSegmentsAbove(1, out var removed));
+            ClassicAssert.AreEqual(2, removed, "segments 2 and 5 held data");
+            ClassicAssert.IsTrue(device.TryRemoveSegmentsAbove(1, out removed));
+            ClassicAssert.AreEqual(0, removed, "no segment above 1 should hold data");
+
+            foreach (var segment in new[] { 0, 1 })
+            {
+                device.ReadAsync(segment, 0, rptr, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+                AssertBufferContents(rptr, HardeningSectorSize, i => (byte)(i * 3), $"{kind} segment {segment}");
+            }
+            foreach (var name in otherFiles)
+                ClassicAssert.IsTrue(File.Exists(Path.Join(TestUtils.MethodTestDir, name)), $"{name} is not a segment of the device");
+            GC.KeepAlive(wbuf);
+            GC.KeepAlive(rbuf);
+        }
+
+        [Test]
+        [Category("IDevice")]
+        public void IDevice_TryRemoveSegmentsAbove_IsFalseForAFileNamedWithoutASegmentId()
+        {
+            using var device = new RandomAccessLocalStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
+            device.Initialize(segmentSize: -1, omitSegmentIdFromFilename: true);
+            ClassicAssert.IsFalse(device.TryRemoveSegmentsAbove(0, out var removed));
+            ClassicAssert.AreEqual(0, removed);
+        }
+
+        [Test]
+        [Category("IDevice")]
+        public unsafe void AzureDevice_TryRemoveSegmentsAbove_RemovesTheBlobsItFound()
+        {
+            TestUtils.IgnoreIfNotRunningAzureTests();
+            const long segmentSize = 1L << 16;
+            var epoch = new LightEpoch();
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var (rbuf, rptr) = AllocateAlignedBuffer(HardeningSectorSize, _ => 0);
+            try
+            {
+                // A device that deletes on close removes every blob it found when it started, including any left by an earlier run
+                using (new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "test.log", deleteOnClose: true))
+                {
+                }
+
+                using (var writer = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "test.log"))
+                {
+                    writer.Initialize(segmentSize, epoch);
+                    foreach (var segment in new[] { 5, 0, 1, 2 })
+                    {
+                        writer.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                        semaphore.Wait();
+                    }
+                }
+
+                // Another instance finds the blobs when it starts, and removes those above the segment named
+                using (var remover = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "test.log"))
+                {
+                    remover.Initialize(segmentSize, epoch);
+                    ClassicAssert.IsTrue(remover.TryRemoveSegmentsAbove(1, out var removed));
+                    ClassicAssert.AreEqual(2, removed, "segments 2 and 5 held data");
+                }
+
+                using (var remaining = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "test.log", deleteOnClose: true))
+                {
+                    remaining.Initialize(segmentSize, epoch);
+                    ClassicAssert.IsTrue(remaining.TryRemoveSegmentsAbove(1, out var removed));
+                    ClassicAssert.AreEqual(0, removed, "no blob above segment 1 should remain");
+                    foreach (var segment in new[] { 0, 1 })
+                    {
+                        remaining.ReadAsync(segment, 0, rptr, HardeningSectorSize, IOCallback, null);
+                        semaphore.Wait();
+                        AssertBufferContents(rptr, HardeningSectorSize, i => (byte)(i * 3), $"segment {segment}");
+                    }
+                }
+            }
+            finally
+            {
+                epoch.Dispose();
+                GC.KeepAlive(wbuf);
+                GC.KeepAlive(rbuf);
+            }
         }
 
         [System.Runtime.InteropServices.DllImport("libc", SetLastError = true, EntryPoint = "chmod")]
