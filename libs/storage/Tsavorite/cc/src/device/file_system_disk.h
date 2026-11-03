@@ -442,6 +442,18 @@ class FileSystemSegmentedFile {
       return files->file(segment).size();
   }
 
+  /// Reports the segments whose files this holds open, [begin, end); both are 0 when it holds none. The file of a segment
+  /// outside that range can be deleted without affecting IO through this object, provided no IO to that segment is issued
+  /// meanwhile.
+  void open_segments(uint64_t& begin, uint64_t& end) {
+    // files_ is replaced only under mutex_, and a bundle is freed only after it has been replaced, so the bundle read here
+    // stays valid while mutex_ is held.
+    std::lock_guard<std::mutex> lock{ mutex_ };
+    bundle_t* files = files_.load();
+    begin = files ? files->begin_segment : 0;
+    end = files ? files->end_segment : 0;
+  }
+
  private:
   core::Status OpenSegment(uint64_t segment) {
     class Context : public core::IAsyncContext {

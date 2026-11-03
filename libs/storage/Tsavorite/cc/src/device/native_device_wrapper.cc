@@ -284,6 +284,14 @@ extern "C" {
 		CABIGuardVoid("NativeDevice_RemoveSegment", [&]() { device->RemoveSegment(segment); });
 	}
 
+	/// Reports the segments whose files the device holds open, [*begin, *end); both are 0 when it holds none. The file of a
+	/// segment outside that range can be deleted without affecting the device. Returns 1, or 0 if the range could not be read,
+	/// in which case the caller must treat every segment as open.
+	EXPORTED_SYMBOL int32_t NativeDevice_GetOpenSegments(INativeDevice* device, uint64_t* begin, uint64_t* end) {
+		return CABIGuard("NativeDevice_GetOpenSegments",
+			[&]() { device->GetOpenSegments(begin, end); return int32_t{ 1 }; }, int32_t{ 0 });
+	}
+
 	/// Returns the kernel's required direct-I/O alignment for `filename` (or the closest
 	/// existing ancestor) on Linux 6.1+ kernels that populate statx(STATX_DIOALIGN); returns
 	/// 512 otherwise. Always returns a power of two >= 512. Never sets last_error. The C#

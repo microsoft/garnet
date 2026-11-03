@@ -814,6 +814,9 @@ namespace Tsavorite.core
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_RemoveSegment", CallingConvention = CallingConvention.Cdecl)]
         static extern void NativeDevice_RemoveSegment(IntPtr device, ulong segment);
 
+        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_GetOpenSegments", CallingConvention = CallingConvention.Cdecl)]
+        static extern int NativeDevice_GetOpenSegments(IntPtr device, out ulong begin, out ulong end);
+
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_GetLastError", CallingConvention = CallingConvention.Cdecl)]
         static extern IntPtr NativeDevice_GetLastError();
         #endregion
@@ -1901,13 +1904,16 @@ namespace Tsavorite.core
         /// <remarks>
         /// <para>
         /// The native device's RemoveSegment removes every segment from the first it holds open through the one named, so it cannot
-        /// remove only the segments above <paramref name="segment"/>. Instead each segment file above it is truncated to zero
-        /// length, from the highest down. The file stays, holding nothing, and is written again when the log reaches it.
+        /// remove only the segments above <paramref name="segment"/>. Instead, from the highest down, each segment file above it is
+        /// deleted if the native device does not hold it open, and truncated to zero length if it does.
         /// </para>
         /// <para>
-        /// Truncating rather than deleting is required because the native device may hold the file open: it keeps open every
-        /// segment from the lowest to the highest it has accessed. Truncating through a separate handle keeps that handle valid,
-        /// whereas on Linux deleting the file would let later writes through it go to a file that no longer has a name, and be lost.
+        /// The native device keeps open every segment from the lowest to the highest it has accessed since it was created or
+        /// <see cref="Reset"/>, and an open file must not be deleted: Windows refuses, and on Linux later writes through the open
+        /// handle would go to a file that no longer has a name, and be lost. Truncating it through a separate handle keeps that
+        /// handle valid; the empty file is written again when the log reaches that segment. After <see cref="Reset"/>, which
+        /// <see cref="TsavoriteLog.Initialize"/> calls, the device holds nothing above the tail's segment open, so every file above it
+        /// is deleted.
         /// </para>
         /// </remarks>
         public override bool TryRemoveSegmentsAbove(int segment, out int removed)
@@ -1916,11 +1922,33 @@ namespace Tsavorite.core
             if (!TryListSegmentFiles(out var segments))
                 return false;
 
+            var (openBegin, openEnd) = GetOpenSegments();
             foreach (var above in segments.Where(listed => listed > segment).OrderDescending())
             {
+                var path = GetSegmentName(above);
+                if (above < openBegin || above >= openEnd)
+                {
+                    try
+                    {
+                        var length = new FileInfo(path).Length;
+                        File.Delete(path);
+                        if (length > 0)
+                            removed++;
+                        continue;
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        continue;
+                    }
+                    catch (IOException)
+                    {
+                        // Still open somewhere, such as a handle that Reset has yet to close on Windows: truncate it instead
+                    }
+                }
+
                 try
                 {
-                    using var file = new FileStream(GetSegmentName(above), FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+                    using var file = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
                     if (file.Length == 0)
                         continue;
                     file.SetLength(0);
@@ -1932,6 +1960,31 @@ namespace Tsavorite.core
                 }
             }
             return true;
+        }
+
+        /// <summary>
+        /// The segments whose files the native device holds open, [Begin, End). Every segment counts as open if the native library
+        /// cannot report them, as one built before it could.
+        /// </summary>
+        (long Begin, long End) GetOpenSegments()
+        {
+            if (!TryLease(out int shard))
+                return (0, long.MaxValue);
+            try
+            {
+                var dev = Volatile.Read(ref nativeDevice);
+                if (dev == IntPtr.Zero)
+                    return (0, 0);
+                return NativeDevice_GetOpenSegments(dev, out var begin, out var end) != 0 ? ((long)begin, (long)end) : (0, long.MaxValue);
+            }
+            catch (EntryPointNotFoundException)
+            {
+                return (0, long.MaxValue);
+            }
+            finally
+            {
+                ReleaseLease(shard);
+            }
         }
 
         /// <summary>

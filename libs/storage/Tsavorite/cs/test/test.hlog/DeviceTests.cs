@@ -1684,6 +1684,78 @@ namespace Tsavorite.test
 
         [Test]
         [Category("IDevice")]
+        public unsafe void Native_TryRemoveSegmentsAbove_EmptiesTheFilesItHoldsOpen()
+        {
+            // Deleting a segment file the native device holds open would lose later writes to it on Linux, and Windows refuses, so
+            // such a file is emptied instead, and later writes through the device still reach it
+            const long segmentSize = 1L << 16;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var (rbuf, rptr) = AllocateAlignedBuffer(HardeningSectorSize, _ => 0);
+            using (var device = CreateDeviceForTest(DeviceKind.Native, path, segmentSize, deleteOnClose: false))
+            {
+                // This leaves the device holding segments 0 through 5 open
+                foreach (var segment in new[] { 5, 0, 1, 2 })
+                {
+                    device.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+
+                ClassicAssert.IsTrue(device.TryRemoveSegmentsAbove(1, out var removed));
+                ClassicAssert.AreEqual(2, removed, "segments 2 and 5 held data");
+                for (var segment = 2; segment <= 5; segment++)
+                    ClassicAssert.AreEqual(0L, new FileInfo($"{path}.{segment}").Length, $"segment {segment} should be emptied, not deleted");
+
+                device.WriteAsync(wptr, 3, 0, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+            }
+
+            using (var reopened = CreateDeviceForTest(DeviceKind.Native, path, segmentSize, deleteOnClose: false))
+            {
+                reopened.ReadAsync(3, 0, rptr, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+                AssertBufferContents(rptr, HardeningSectorSize, i => (byte)(i * 3), "segment 3, written after it was emptied");
+            }
+            GC.KeepAlive(wbuf);
+            GC.KeepAlive(rbuf);
+        }
+
+        [Test]
+        [Category("IDevice")]
+        public unsafe void Native_TryRemoveSegmentsAbove_DeletesTheFilesItDoesNotHoldOpen()
+        {
+            const long segmentSize = 1L << 16;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            using var device = CreateDeviceForTest(DeviceKind.Native, path, segmentSize, deleteOnClose: false);
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var (rbuf, rptr) = AllocateAlignedBuffer(HardeningSectorSize, _ => 0);
+            foreach (var segment in new[] { 5, 0, 1, 2 })
+            {
+                device.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+            }
+
+            // Reset closes every segment, as TsavoriteLog.Initialize does; reading segment 1 then opens only that one
+            device.Reset();
+            device.ReadAsync(1, 0, rptr, HardeningSectorSize, IOCallback, null);
+            semaphore.Wait();
+
+            ClassicAssert.IsTrue(device.TryRemoveSegmentsAbove(1, out var removed));
+            ClassicAssert.AreEqual(2, removed, "segments 2 and 5 held data");
+            for (var segment = 2; segment <= 5; segment++)
+                ClassicAssert.IsFalse(File.Exists($"{path}.{segment}"), $"segment {segment} should be deleted");
+            foreach (var segment in new[] { 0, 1 })
+            {
+                device.ReadAsync(segment, 0, rptr, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+                AssertBufferContents(rptr, HardeningSectorSize, i => (byte)(i * 3), $"segment {segment}");
+            }
+            GC.KeepAlive(wbuf);
+            GC.KeepAlive(rbuf);
+        }
+
+        [Test]
+        [Category("IDevice")]
         public void IDevice_TryRemoveSegmentsAbove_IsFalseForAFileNamedWithoutASegmentId()
         {
             using var device = new RandomAccessLocalStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);

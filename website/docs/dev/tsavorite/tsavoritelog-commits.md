@@ -99,8 +99,11 @@ page is followed by older data on the same page.
    when a full sync positions its log far below them, with nothing in between.
    - File devices delete the segment files; `LocalMemoryDevice` drops the segments; Azure deletes the page blobs it found
      when it started and those it created since.
-   - `NativeStorageDevice` truncates the segment files to zero length instead. Its `RemoveSegment` removes every segment
-     from its first through the one named, and it may hold the files open, so deleting them could lose later writes.
+   - `NativeStorageDevice` deletes the segment files it does not hold open, and truncates those it does to zero length.
+     It holds open every segment from the lowest to the highest it has accessed since it was created or reset, and
+     deleting an open file could lose later writes through it. `Initialize` resets the device, so after it every file
+     above the tail's segment is deleted; after recovery, a segment past the tail's that the recovery scan read can stay
+     as an empty file.
    - `IDevice.RemoveSegment` is not used, because on `NativeStorageDevice` it would remove the tail's segment too.
 3. **Find the rest of the data:** the device cannot report how far its data extends, so clearing reads forward from the
    page after the tail's until it encounters a run of consecutive empty pages as long as the page buffer (the pages the

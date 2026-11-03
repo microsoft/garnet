@@ -38,8 +38,8 @@ namespace Tsavorite.test
             /// <summary>Removes them: a file device that deletes their files</summary>
             Removes,
 
-            /// <summary>Empties them: NativeStorageDevice, which truncates their files</summary>
-            Empties,
+            /// <summary>Removes them, or empties the files it holds open: NativeStorageDevice</summary>
+            RemovesOrEmpties,
 
             /// <summary>Cannot remove them, so clearing zeroes the data it finds above the tail instead</summary>
             CannotRemove,
@@ -264,7 +264,7 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteLog")]
-        public async Task ClearingRemovesSegmentsBeyondALongGap([Values(ClearingDevice.Removes, ClearingDevice.Empties)] ClearingDevice clearingDevice)
+        public async Task ClearingRemovesSegmentsBeyondALongGap([Values(ClearingDevice.Removes, ClearingDevice.RemovesOrEmpties)] ClearingDevice clearingDevice)
         {
             // A replica's log can hold old segments far above the tail that a full sync sets, with nothing in between: its lower
             // segments were truncated, and Initialize positions the log below the rest. No search from the tail can tell where
@@ -286,7 +286,10 @@ namespace Tsavorite.test
             {
                 replica.Log.Initialize(beginAddress: 0, committedUntilAddress: 0, lastCommitNum: 0);
                 replica.Log.PrepareToAppend();
-                Assert.That(SegmentsHoldingBytes(), Has.None.GreaterThan(0), "the old segments should be removed or emptied");
+
+                // Initialize resets the device, which leaves NativeStorageDevice holding no segment above the tail's open, so
+                // every device deletes the old segments' files
+                Assert.That(Segments().Select(segment => segment.Segment), Has.None.GreaterThan(0), "the old segments' files should be deleted");
 
                 _ = replica.Log.Enqueue(replacement);
                 ClassicAssert.IsTrue(replica.Log.CommitStrongly(out replacementTail, out var commitNum, spinWait: true));
@@ -449,7 +452,7 @@ namespace Tsavorite.test
 
         Dictionary<long, byte[]> ReadSegments() => Segments().ToDictionary(segment => segment.Segment, segment => File.ReadAllBytes(segment.Path));
 
-        /// <summary>The segments whose files hold any bytes; NativeStorageDevice empties the files of segments it removes</summary>
+        /// <summary>The segments whose files hold any bytes; NativeStorageDevice empties, rather than deletes, the files it holds open</summary>
         IEnumerable<long> SegmentsHoldingBytes() => Segments().Where(segment => new FileInfo(segment.Path).Length > 0).Select(segment => segment.Segment);
 
         /// <summary>Assert that the device holds nothing but zeros at and above <paramref name="address"/></summary>
@@ -486,7 +489,7 @@ namespace Tsavorite.test
             {
                 Device = device ?? clearingDevice switch
                 {
-                    ClearingDevice.Empties => new NativeStorageDevice(logPath, deleteOnClose: false, disableFileBuffering: false),
+                    ClearingDevice.RemovesOrEmpties => new NativeStorageDevice(logPath, deleteOnClose: false, disableFileBuffering: false),
                     ClearingDevice.CannotRemove => new RecordingDevice(CreateFileDevice(logPath), canRemoveSegments: false),
                     _ => CreateFileDevice(logPath),
                 };

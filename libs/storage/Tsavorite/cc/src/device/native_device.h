@@ -178,6 +178,8 @@ public:
     virtual bool TryCompleteMine() = 0;
     virtual uint64_t GetFileSize(uint64_t segment) = 0;
     virtual void RemoveSegment(uint64_t segment) = 0;
+    /// Reports the segments whose files the device holds open, [*begin, *end); both are 0 when it holds none.
+    virtual void GetOpenSegments(uint64_t* begin, uint64_t* end) = 0;
     virtual int QueueRun(int timeout_secs) = 0;
     /// Per-context (shard) drain. ctx_idx in [0, num_io_contexts). Used by completion threads
     /// bound 1:1 to a context. Returns -1 if ctx_idx is out of range.
@@ -569,6 +571,10 @@ public:
     void RemoveSegment(uint64_t segment) override {
         EpochGuard guard{ epoch_ };
         log_.RemoveSegment(segment);
+    }
+
+    void GetOpenSegments(uint64_t* begin, uint64_t* end) override {
+        log_.open_segments(*begin, *end);
     }
 
     int QueueRun(int timeout_secs) override {
