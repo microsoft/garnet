@@ -394,7 +394,7 @@ namespace Garnet.server
             {
                 KeySize = key.KeyBytes.Length,
                 ValueSize = value.Length,
-                HasETag = false
+                HasETag = input.HasEtag && input.arg2 != LogRecord.NoETag
             };
 
             switch (input.header.cmd)

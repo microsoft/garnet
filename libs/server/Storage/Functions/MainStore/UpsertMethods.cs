@@ -20,6 +20,12 @@ namespace Garnet.server
         {
             if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
+            if (input.HasEtag)
+            {
+                var etag = input.arg2;
+                if (etag != LogRecord.NoETag && !dstLogRecord.TrySetETag(etag))
+                    return false;
+            }
             if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
                 return false;
             sizeInfo.AssertOptionalsIfSet(dstLogRecord.DataHeader);
@@ -75,7 +81,20 @@ namespace Garnet.server
                 return false;
             }
 
-            if (!InPlaceWriterForSpanValue(ref logRecord, ref input, srcValue, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.arg1))
+            if (input.HasEtag)
+            {
+                var sizeInfo = new RecordSizeInfo { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
+                functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
+                if (!InitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo))
+                    return false;
+                if (!sizeInfo.FieldInfo.HasETag && logRecord.DataHeader.HasETag)
+                    _ = logRecord.RemoveETag();
+                if (!sizeInfo.FieldInfo.HasExpiration && logRecord.DataHeader.HasExpiration)
+                    _ = logRecord.RemoveExpiration();
+                if (!logRecord.Info.Modified)
+                    functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            }
+            else if (!InPlaceWriterForSpanValue(ref logRecord, ref input, srcValue, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.arg1))
                 return false;
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
@@ -96,7 +115,7 @@ namespace Garnet.server
         {
             if (inputLogRecord.DataHeader.ValueIsObject)
                 GarnetException.Throw("String store should not be called with IHeapObject");
-            if (!InPlaceWriterForLogRecordValue(ref logRecord, ref input, in inputLogRecord, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.arg1))
+            if (!InPlaceWriterForLogRecordValue(ref logRecord, ref input, in inputLogRecord, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState))
                 return false;
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
