@@ -66,6 +66,28 @@ namespace Garnet.common.Parsing
         }
 
         /// <summary>
+        /// Throw an exception indicating that a RESP reply nests arrays deeper than allowed.
+        /// </summary>
+        /// <param name="maxDepth">The maximum allowed nesting depth.</param>
+        [DoesNotReturn]
+        public static void ThrowExcessiveNestingDepth(int maxDepth)
+        {
+            Throw($"RESP array nesting exceeds maximum allowed depth of '{maxDepth}'.");
+        }
+
+        /// <summary>
+        /// Throw if a full receive buffer cannot grow within the allowed limit.
+        /// </summary>
+        /// <param name="currentSize">Current size of the full receive buffer.</param>
+        public static void ThrowIfReceiveBufferLimitExceeded(int currentSize)
+        {
+            if (currentSize >= RespLimits.MaxReceiveBufferBytes)
+            {
+                Throw($"Message exceeds the receive buffer limit of '{RespLimits.MaxReceiveBufferBytes}' bytes.");
+            }
+        }
+
+        /// <summary>
         /// Throw NaN (not a number) exception.
         /// </summary>
         /// <param name="buffer">Pointer to an ASCII-encoded byte buffer containing the string that could not be converted.</param>
