@@ -25,6 +25,19 @@ namespace Tsavorite.core
         public uint SectorSize { get; }
 
         /// <summary>
+        /// The largest sector size of <paramref name="devices"/>, and at least <see cref="IDevice.MinDeviceSectorSize"/>.
+        /// A device that forwards its requests to <paramref name="devices"/> reports this, so that every request it
+        /// accepts is aligned for each of them.
+        /// </summary>
+        internal static uint GetLargestSectorSize(IEnumerable<IDevice> devices)
+        {
+            uint sectorSize = IDevice.MinDeviceSectorSize;
+            foreach (var device in devices)
+                sectorSize = Math.Max(sectorSize, device.SectorSize);
+            return sectorSize;
+        }
+
+        /// <summary>
         /// 
         /// </summary>
         public string FileName { get; }

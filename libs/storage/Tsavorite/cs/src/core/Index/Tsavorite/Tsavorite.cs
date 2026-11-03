@@ -30,7 +30,6 @@ namespace Tsavorite.core
 
         internal readonly bool UseReadCache;
         private readonly ReadCopyOptions ReadCopyOptions;
-        internal readonly int sectorSize;
         /// <summary>Initial IO record size from <see cref="KVSettings"/>; <see cref="KVSettings.UseDefaultInitialIORecordSize"/> means unset.</summary>
         internal readonly int InitialIORecordSize;
         internal readonly StateMachineDriver stateMachineDriver;
@@ -109,6 +108,13 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Memory an overflow-bucket generation of this store commits as soon as it exists, before it hands out a bucket:
+        /// whole pages, each over-allocated by a sector so it can be aligned to the sector size of the store's devices.
+        /// This much is inherent to having an index, so a budget for index memory includes it.
+        /// </summary>
+        public long IndexOverflowFloorSizeBytes => MallocFixedPageSize<HashBucket>.GetMinCommittedMemorySize(sectorSize);
+
+        /// <summary>
         /// Total index memory in bytes: the main hash table (<see cref="IndexSizeBytes"/>) plus the memory committed
         /// by the overflow-bucket allocators (<see cref="IndexOverflowSizeBytes"/>). During an index resize this also
         /// includes the superseded hash table, which stays allocated until the split completes and makes the resize the
@@ -124,12 +130,21 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Index memory in bytes excluding the generation an index resize is replacing: the main hash table
+        /// (<see cref="IndexSizeBytes"/>) plus the memory committed by the current overflow-bucket generation. Equal to
+        /// <see cref="IndexTotalSizeBytes"/> except during an index resize, when it omits the superseded hash table and
+        /// overflow buckets, which the resize frees when its split completes.
+        /// </summary>
+        public long IndexSettledSizeBytes => IndexSizeBytes + overflowBucketsAllocator.AllocatedSizeBytes;
+
         /// <summary>Number of allocations performed</summary>
         public long OverflowBucketAllocations => overflowBucketsAllocator.NumAllocations;
 
         /// <summary>
-        /// Resample <see cref="IndexTotalSizeBytes"/> into the log size tracker, waking the resizer if it grew. Called
-        /// where index memory steps by a whole generation at once, so the log is not left over budget until the
+        /// Resample the log size tracker's external memory (see
+        /// <see cref="LogSizeTracker{TStoreFunctions, TAllocator}.ExternalMemorySizeProvider"/>), waking the resizer if it grew.
+        /// Called where index memory steps by a whole generation at once, so the log is not left over budget until the
         /// resizer's next periodic sample.
         /// </summary>
         internal void RefreshIndexMemoryCharge()
@@ -237,6 +252,10 @@ namespace Tsavorite.core
 
                 var logSettings = kvSettings.GetLogSettings();
 
+                // Size the log pages, hash index and overflow buckets for the checkpoint devices as well as the log
+                // devices, since checkpoints write from and recovery reads into them directly.
+                logSettings.CheckpointSectorSize = (int)checkpointManager.GetCheckpointDeviceSectorSize();
+
                 UseReadCache = kvSettings.ReadCacheEnabled;
 
                 ReadCopyOptions = logSettings.ReadCopyOptions;
@@ -263,6 +282,7 @@ namespace Tsavorite.core
                         ObjectLogDevice = hlog.HasObjectLog ? new NullDevice() : null,
                         MemorySize = logSettings.ReadCacheSettings.MemorySize,
                         PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
+                        PageCount = logSettings.ReadCacheSettings.PageCount,
                         SegmentSizeBits = logSettings.ReadCacheSettings.PageSizeBits + 1,   // Not used by readcache but make sure it passes validation
                         MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                     };
@@ -275,9 +295,8 @@ namespace Tsavorite.core
                     ReadCache = new(this, readcache);
                 }
 
-                sectorSize = (int)logSettings.LogDevice.SectorSize;
                 InitialIORecordSize = kvSettings.InitialIORecordSize;
-                Initialize(kvSettings.GetIndexSizeCacheLines(), sectorSize);
+                Initialize(kvSettings.GetIndexSizeCacheLines(), hlogBase.GetDeviceSectorSize());
 
                 LockTable = new OverflowBucketLockTable<TStoreFunctions, TAllocator>(this);
                 RevivificationManager = new(this, kvSettings.RevivificationSettings, logSettings);

@@ -1850,6 +1850,26 @@ namespace Garnet.test
         }
 
         [Test]
+        public void HashIncrementByFloatRejectsNaNAndNonFiniteResults()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "floathash";
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("HINCRBYFLOAT", key, "new", "nan"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT), ex.Message);
+            ClassicAssert.IsFalse(db.HashExists(key, "new"));
+
+            _ = db.HashSet(key, "big", "1.7e308");
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("HINCRBYFLOAT", key, "big", "nan"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT), ex.Message);
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("HINCRBYFLOAT", key, "big", "1.7e308"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR), ex.Message);
+            ClassicAssert.AreEqual("1.7e308", (string)db.HashGet(key, "big"));
+        }
+
+        [Test]
         public void CanDoHRANDFIELDCommandLC()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
@@ -1954,6 +1974,26 @@ namespace Garnet.test
             response = lightClientRequest.SendCommands("HRANDFIELD randhash 2 WITHVALUES", "PING", 5, 1);
             expectedResponse = "*4\r\n"; // 2 field/value pairs
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void CanDoHRANDFIELDWithUnrepresentableNegativeCountLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("HSET randhash f1 v1 f2 v2 f3 v3");
+            TestUtils.AssertEqualUpToExpectedLength(":3\r\n", response);
+
+            // A negative count asks for that many fields with repeats, so unlike a positive count it cannot be reduced
+            // to the size of the hash; a count below what the packed count field represents is rejected
+            const string expectedResponse = "-ERR value is not an integer or out of range.\r\n+PONG\r\n";
+            foreach (var count in new[] { "-536870913", "-2147483648" })
+            {
+                response = lightClientRequest.SendCommands($"HRANDFIELD randhash {count}", "PING", 1, 1);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+                response = lightClientRequest.SendCommands($"HRANDFIELD randhash {count} WITHVALUES", "PING", 1, 1);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
         }
 
         [Test]

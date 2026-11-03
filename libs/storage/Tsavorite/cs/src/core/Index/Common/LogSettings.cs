@@ -90,6 +90,13 @@ namespace Tsavorite.core
         public IDevice ObjectLogDevice;
 
         /// <summary>
+        /// Sector size required by the store's checkpoint devices, or 0 if none. The allocator aligns its pages and
+        /// rounds its IO to at least this size when it is not larger than the page size, so that pages can be
+        /// snapshotted to and recovered from those devices.
+        /// </summary>
+        public int CheckpointSectorSize;
+
+        /// <summary>
         /// Total size of in-memory part of log, in bytes. Does not need to be a power of 2
         /// </summary>
         public long MemorySize = 1L << 34;

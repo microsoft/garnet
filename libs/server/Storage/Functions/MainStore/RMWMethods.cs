@@ -30,8 +30,18 @@ namespace Garnet.server
                     return false;
                 case RespCommand.SETEXXX:
                     return false;
-                case RespCommand.SETIFGREATER:
+                case RespCommand.APPEND:
+                    // A new value is the appended value alone
+                    return !AppendExceedsMaxSize(0, input.parseState.GetArgSliceByRef(0).Length, ref output);
                 case RespCommand.SETIFMATCH:
+                    // The new record's ETag is one past the ETag sent by the client
+                    if (input.parseState.GetLong(1) == long.MaxValue)
+                    {
+                        WriteEtagOverflowError(ref output);
+                        return false;
+                    }
+                    return true;
+                case RespCommand.SETIFGREATER:
                 case RespCommand.SETWITHETAG:
                 // add etag on first insertion, already tracked by header.CheckWithEtagFlag()
                 case RespCommand.SET:
@@ -820,6 +830,9 @@ namespace Garnet.server
                     {
                         // Try to grow in place.
                         var originalLength = logRecord.ValueSpan.Length;
+                        if (AppendExceedsMaxSize(originalLength, appendLength, ref output))
+                            return IPUResult.NotUpdated;
+
                         totalLength = originalLength + appendLength;
 
                         // Try to grow in place. We are not changing the presence of ETag or Expiration
@@ -1027,6 +1040,16 @@ namespace Garnet.server
                 case RespCommand.RICREATE:
                     // Index already exists — never copy-update, reject in caller
                     return false;
+                case RespCommand.APPEND:
+                    var appendLength = input.parseState.GetArgSliceByRef(0).Length;
+
+                    // An expired value is absent: the append starts a new value, or only deletes the expired one if the new value is too long
+                    if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+                    {
+                        rmwInfo.Action = AppendExceedsMaxSize(0, appendLength, ref output) ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
+                        return false;
+                    }
+                    return !AppendExceedsMaxSize(srcLogRecord.ValueSpan.Length, appendLength, ref output);
                 case RespCommand.RIPROMOTE:
                     // Always copy to tail to promote from read-only region
                     return true;
@@ -1159,7 +1182,8 @@ namespace Garnet.server
 
                 case RespCommand.INCRBYFLOAT:
                     var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
-                    _ = TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output, input: incrByFloat);
+                    if (!TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output, input: incrByFloat))
+                        return false;
                     break;
 
                 case RespCommand.SETBIT:
@@ -1492,13 +1516,11 @@ namespace Garnet.server
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
                         var functions = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd);
-                        var expirationInTicks = input.arg1;
-                        if (expirationInTicks > 0)
-                        {
-                            // We want to update to the given expiration
-                            if (!dstLogRecord.TrySetExpiration(expirationInTicks))
-                                return false;
-                        }
+
+                        // A positive expiration sets it, 0 keeps the existing one, and -1 removes it
+                        var expirationInTicks = input.arg1 == 0 && srcLogRecord.DataHeader.HasExpiration ? srcLogRecord.Expiration : input.arg1;
+                        if (expirationInTicks > 0 && !dstLogRecord.TrySetExpiration(expirationInTicks))
+                            return false;
 
                         var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
                         try

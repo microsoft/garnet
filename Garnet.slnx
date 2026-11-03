@@ -15,6 +15,7 @@
   </Folder>
   <Folder Name="/benchmark/">
     <Project Path="benchmark/BDN.benchmark/BDN.benchmark.csproj" />
+    <Project Path="benchmark/Client.benchmark/Client.benchmark.csproj" />
     <Project Path="benchmark/Resp.benchmark/Resp.benchmark.csproj" />
   </Folder>
   <Folder Name="/hosting/" />
@@ -51,7 +52,6 @@
     <Project Path="playground/CommandInfoUpdater/CommandInfoUpdater.csproj" />
     <Project Path="playground/Embedded.perftest/Embedded.perftest.csproj" />
     <Project Path="playground/GarnetClientStress/GarnetClientStress.csproj" />
-    <Project Path="playground/LightEpochLitmus/LightEpochLitmus.csproj" />
     <Project Path="playground/MigrateBench/MigrateBench.csproj" />
     <Project Path="playground/SampleModule/SampleModule.csproj" />
     <Project Path="playground/TstRunner/TstRunner.csproj" />
