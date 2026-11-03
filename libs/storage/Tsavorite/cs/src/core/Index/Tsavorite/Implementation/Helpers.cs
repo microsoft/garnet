@@ -229,8 +229,8 @@ namespace Tsavorite.core
         /// <item>A CopyUpdate, after PostCopyUpdater, when a Snapshot checkpoint captured the source's value or no checkpoint needs its
         /// <c>(v)</c> image. A source whose <c>(v)</c> bytes CacheSerializedObjectData cached keeps its value until eviction, as does an
         /// overflow source whose <c>(v)</c> array a checkpoint still needs.</item>
-        /// <item>A Delete, and the expirations, once the new record is in the chain. An expiration whose source is elided ends here just before
-        /// the elision.</item>
+        /// <item>A Delete, and the expirations, once the new record is in the chain. An expiration that elides its source in place, with no new
+        /// record, disposes the source itself, and only when the source is not frozen.</item>
         /// </list>
         /// <para>A CopyUpdate's release does not wait for a flush or a checkpoint that reads the source: it points the value's slot at a
         /// placeholder and changes none of the record's bytes; see the allocator's <c>ReleaseCopyUpdatedSourceInPlace</c>. A read-cache source,
@@ -256,8 +256,10 @@ namespace Tsavorite.core
         /// included: the flush never changes <see cref="RecordInfo"/> in memory, it is one aligned word, so a device sees it with or without the
         /// mark, and every read from disk strips the mark. The freeze exists to prevent destructive changes: freeing heap, zeroing the
         /// object-log position a flush just stamped, or changing the record's layout.</para>
+        /// <para>A marked source must stay valid, because the drain and eviction skip invalid records; see <see cref="DetachBypassedSource{TInput, TOutput, TContext, TSessionFunctionsWrapper}"/>.</para>
         /// </remarks>
-        private void ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+        /// <returns>True if the disposal of a deleted source was marked to run later, rather than run now</returns>
+        private bool ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord source, bool deleted, SnapshotObjectLogState capturingSnapshot = null)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
@@ -266,13 +268,13 @@ namespace Tsavorite.core
             if (stackCtx.recSrc.HasReadCacheSrc)
             {
                 readcache.ReleaseCopyUpdatedSourceValue(ref source);
-                return;
+                return false;
             }
 
             if (!deleted)
             {
                 hlog.ReleaseCopyUpdatedSourceInPlace(ref source, capturingSnapshot);
-                return;
+                return false;
             }
 
             var address = stackCtx.recSrc.LogicalAddress;
@@ -284,13 +286,50 @@ namespace Tsavorite.core
             if (!heldByCheckpoint && !hlog.IsFrozenForFlush(address))
             {
                 OnDispose(ref source, DisposeReason.Deleted);
-                return;
+                return false;
             }
 
             // The drain and eviction run the mark. If the drain has already passed the record, the allocator sees that and disposes the record
             // itself. On a NullDevice main log the drain disposes nothing, and it leaves a mark a streaming snapshot's scan holds, so eviction
             // runs those.
             hlog.DeferDispose(ref source, address);
+            return true;
+        }
+
+        /// <summary>
+        /// Detach a source record that the operation's new record now bypasses, the new record having taken the source's PreviousAddress before
+        /// the compare-and-swap that put it in the chain. The source is elided, or sealed if it must stay valid.
+        /// </summary>
+        /// <param name="sessionFunctions">The session, whose phase says whether a checkpoint is in progress</param>
+        /// <param name="stackCtx">The operation's context, whose record source is the bypassed record</param>
+        /// <param name="source">The bypassed record, already released by <see cref="ReleaseSupersededSource{TInput, TOutput, TContext, TSessionFunctionsWrapper}"/> if the operation releases it</param>
+        /// <param name="disposalDeferred">What <see cref="ReleaseSupersededSource{TInput, TOutput, TContext, TSessionFunctionsWrapper}"/> returned for a deleted source; false otherwise</param>
+        /// <remarks>
+        /// <para>The operation chose to bypass the source before it allocated the new record, when nothing froze the source. A freeze can begin
+        /// after that choice. The allocation can refresh the epoch, which can run a ReadOnly flush's start; another thread can run that start, for
+        /// an epoch bump this operation did not hold back; and a streaming snapshot's scan publishes its hold at any time. So the source is elided
+        /// only if its disposal was not deferred and it is still not frozen.</para>
+        /// <para>A source that stays is sealed, not invalidated. A marked source must stay valid, because the drain and eviction skip invalid
+        /// records, so its delete trigger would never run, and the drain may already be disposing it. A frozen source must stay valid because a
+        /// flush, a checkpoint or a scan still reads it. The new record bypasses the source, so no operation reaches it through the chain.</para>
+        /// <para>The freeze is read after the compare-and-swap. A streaming snapshot publishes its hold before it samples the tail, with a full
+        /// fence between, so if this does not see the hold, the new record is below the sampled tail and the scan pushes it, not the source.</para>
+        /// </remarks>
+        private void DetachBypassedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord source, bool disposalDeferred)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            if (disposalDeferred || IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, source.Info))
+            {
+                source.InfoRef.Seal();
+                return;
+            }
+
+            source.InfoRef.SealAndInvalidate();
+            if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
+                _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, stackCtx.recSrc.LogicalAddress, ref source);
+            else
+                OnDispose(ref source, DisposeReason.Elided);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]

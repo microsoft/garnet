@@ -693,7 +693,8 @@ namespace Tsavorite.core
 
         /// <summary>Run a deferred disposal of a deleted record that the caller has claimed with <see cref="RecordInfo.TryTakeDeferredDispose"/>.</summary>
         /// <remarks>The record was deleted, by a Delete or an expiration, and is disposed as deleted, which runs the application's delete trigger,
-        /// whether or not the record was sealed. An invalid record was elided after it was marked, and the elision already disposed it.</remarks>
+        /// whether or not the record was sealed. A marked record stays valid, because the operation that marked it seals it rather than eliding
+        /// it; the check is defensive, so that a record invalidated some other way, whose components that path released, is not disposed again.</remarks>
         private void RunDeferredDispose(ref LogRecord logRecord)
         {
             if (logRecord.Info.Valid)

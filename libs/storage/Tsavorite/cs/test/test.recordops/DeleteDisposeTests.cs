@@ -320,6 +320,8 @@ namespace Tsavorite.test
             internal bool expireOnlyInCU; // If true, only CopyUpdater returns the expire action (not IPU/NCU)
             internal bool expireInPostCopyUpdater; // If true, PostCopyUpdater returns ExpireAndStop
             internal bool declineInitialUpdate; // If true, NeedInitialUpdate declines to create a record
+            internal Action onNeedCopyUpdate; // Called first in NeedCopyUpdate, after the RMW has chosen whether to elide its source
+            internal Action onCopyUpdater; // Called first in CopyUpdater, after the RMW has allocated its new record
 
             public override bool InPlaceUpdater(ref LogRecord logRecord, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
             {
@@ -330,6 +332,7 @@ namespace Tsavorite.test
 
             public override bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
             {
+                onNeedCopyUpdate?.Invoke();
                 if (!expireOnlyInCU && expireAction != RMWAction.Default) { rmwInfo.Action = expireAction; return false; }
                 return true;
             }
@@ -339,6 +342,7 @@ namespace Tsavorite.test
 
             public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
             {
+                onCopyUpdater?.Invoke();
                 if (expireAction != RMWAction.Default) { rmwInfo.Action = expireAction; return false; }
                 return base.CopyUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
             }
@@ -347,6 +351,30 @@ namespace Tsavorite.test
             {
                 if (expireInPostCopyUpdater) { rmwInfo.Action = RMWAction.ExpireAndStop; return false; }
                 return base.PostCopyUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+            }
+        }
+
+        /// <summary>Calls a hook from InitialDeleter or InitialWriter, after the Delete or Upsert has chosen whether to elide its source and
+        /// allocated its new record, and before the new record's compare-and-swap.</summary>
+        internal class ObjHookFunctions : TestObjectFunctionsDelete
+        {
+            internal Action onInitialDeleter;
+            internal Action onInitialWriter;
+            internal bool failInPlaceWriter; // If true, an Upsert of a mutable record writes a new record
+
+            public override bool InitialDeleter(ref LogRecord dstLogRecord, ref DeleteInfo deleteInfo)
+            {
+                onInitialDeleter?.Invoke();
+                return base.InitialDeleter(ref dstLogRecord, ref deleteInfo);
+            }
+
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
+                => !failInPlaceWriter && base.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo);
+
+            public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
+            {
+                onInitialWriter?.Invoke();
+                return base.InitialWriter(ref dstLogRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
             }
         }
 
@@ -746,6 +774,204 @@ namespace Tsavorite.test
             Assert.That(SpinWait.SpinUntil(() => tracker.DisposeRecordDeletedCount > 0, TimeSpan.FromSeconds(30)), Is.True,
                 "The drain must dispose the expired source as deleted once its flush completes");
             ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) should be called exactly once");
+        }
+
+        #endregion
+
+        #region A freeze that begins after the operation chose to elide its source
+
+        /// <summary>
+        /// An operation chooses to elide its source before it allocates its new record, and a freeze can begin after that choice. Here a
+        /// ReadOnly flush of the source starts while the CopyUpdater runs: the epoch bump that makes the source read-only runs the flush's start
+        /// on this thread, as an allocation's epoch refresh can. The CopyUpdater then expires the key, so the source's disposal is marked to
+        /// wait for the flush. The source must stay valid: an elided source is invalid, and the drain skips invalid records, so its delete
+        /// trigger would never run.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjCopyUpdaterExpireAndStopFrozenForFlushDuringTheOperationRunsTheDeleteTriggerTest()
+        {
+            var sourceAddress = store.Log.TailAddress;
+            UpsertObj(1, 100);
+            var newRecordAddress = store.Log.TailAddress;
+
+            // Hold the flush's device write, so FlushedUntilAddress stays behind the source once the flush starts.
+            gatedLog.Gate = true;
+            tracker.Reset();
+
+            // The source is mutable, so it is not frozen when the RMW chooses to elide it.
+            var fn = new ObjExpirableFunctions
+            {
+                failIPU = true,
+                expireOnlyInCU = true,
+                expireAction = RMWAction.ExpireAndStop,
+                onCopyUpdater = () => store.hlogBase.ShiftReadOnlyAddressWithWait(newRecordAddress, wait: false)
+            };
+            using (var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, ObjExpirableFunctions>(fn))
+            {
+                var input = new TestObjectInput { value = 0 };
+                _ = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, 0);
+            }
+
+            Assert.That(store.hlogBase.SafeReadOnlyAddress, Is.GreaterThan(sourceAddress), "Precondition: the source's flush should have started during the RMW");
+            Assert.That(store.hlogBase.FlushedUntilAddress, Is.LessThanOrEqualTo(sourceAddress), "Precondition: the source's flush should still be in flight");
+            ClassicAssert.AreEqual(0, tracker.DisposeRecordDeletedCount, "The expired source's release must wait for its flush");
+            var source = store.hlogBase._wrapper.CreateLogRecord(sourceAddress);
+            Assert.That(source.Info.Valid, Is.True, "A source whose disposal is marked must not be elided");
+            Assert.That(source.Info.IsSealed, Is.True, "The bypassed source should be sealed");
+            Assert.That(source.Info.DeferredDispose, Is.True, "The source's disposal should be marked");
+
+            // The drain runs on the flush completion, after the wait is released, so poll for it.
+            gatedLog.Release(0);
+            gatedLog.WaitForCompletion(0, TimeSpan.FromSeconds(30));
+            Assert.That(SpinWait.SpinUntil(() => tracker.DisposeRecordDeletedCount > 0, TimeSpan.FromSeconds(30)), Is.True,
+                "The drain must run the expired source's delete trigger once its flush completes");
+            ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) should be called exactly once");
+        }
+
+        /// <summary>
+        /// A streaming snapshot's scan can publish its hold while a Delete runs, after the Delete chose to elide its source. The scan may then
+        /// push the source, value and all, so the Delete marks the source's disposal and leaves the source valid. Eviction runs the mark once
+        /// the scan has ended.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjDeleteHeldForStreamingScanDuringTheOperationDefersTheDeleteTriggerTest()
+        {
+            var sourceAddress = store.Log.TailAddress;
+            UpsertObj(1, 100);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            tracker.Reset();
+
+            var fn = new ObjHookFunctions { onInitialDeleter = () => store.hlogBase.BeginStreamingScanHold(sourceAddress) };
+            try
+            {
+                using (var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, ObjHookFunctions>(fn))
+                    _ = s.BasicContext.Delete(new TestObjectKey { key = 1 });
+
+                ClassicAssert.AreEqual(0, tracker.DisposeRecordDeletedCount, "The scan may still push the source, so its disposal must wait");
+                var source = store.hlogBase._wrapper.CreateLogRecord(sourceAddress);
+                Assert.That(source.Info.Valid, Is.True, "A source the scan may push must not be elided");
+                Assert.That(source.Info.IsSealed, Is.True, "The bypassed source should be sealed");
+                Assert.That(source.Info.DeferredDispose, Is.True, "The source's disposal should be marked");
+                Assert.That(source.ValueObject, Is.Not.Null, "The source must keep its value while the scan may push it");
+            }
+            finally
+            {
+                store.hlogBase.EndStreamingScanHold();
+            }
+
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
+            ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "Eviction must run the deletion exactly once");
+        }
+
+        /// <summary>
+        /// NeedCopyUpdate expiring a key whose only record is elidable elides that record in place, with no new record. A streaming snapshot's
+        /// hold that begins after the RMW chose to elide sends it down the non-elidable path instead: a tombstone record, with the source's
+        /// disposal marked until the scan ends. Eliding the source would invalidate the mark, so the delete trigger would never run.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjNeedCopyUpdateExpireAndStopHeldForStreamingScanDuringTheOperationAddsATombstoneTest()
+        {
+            var sourceAddress = store.Log.TailAddress;
+            UpsertObj(1, 100);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            var tombstoneAddress = store.Log.TailAddress;
+            tracker.Reset();
+
+            var fn = new ObjExpirableFunctions
+            {
+                expireAction = RMWAction.ExpireAndStop,
+                onNeedCopyUpdate = () => store.hlogBase.BeginStreamingScanHold(sourceAddress)
+            };
+            try
+            {
+                using (var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, ObjExpirableFunctions>(fn))
+                {
+                    var input = new TestObjectInput { value = 0 };
+                    _ = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, 0);
+                }
+
+                ClassicAssert.AreEqual(0, tracker.DisposeRecordDeletedCount, "The scan may still push the source, so its disposal must wait");
+                Assert.That(store.Log.TailAddress, Is.GreaterThan(tombstoneAddress), "A held source should get a tombstone record");
+                Assert.That(store.hlogBase._wrapper.CreateLogRecord(tombstoneAddress).Info.Tombstone, Is.True, "The new record should be a tombstone");
+                var source = store.hlogBase._wrapper.CreateLogRecord(sourceAddress);
+                Assert.That(source.Info.Valid, Is.True, "A source the scan may push must not be elided");
+                Assert.That(source.Info.Tombstone, Is.False, "A held source must not be tombstoned in place");
+                Assert.That(source.Info.DeferredDispose, Is.True, "The source's disposal should be marked");
+                Assert.That(source.ValueObject, Is.Not.Null, "The source must keep its value while the scan may push it");
+            }
+            finally
+            {
+                store.hlogBase.EndStreamingScanHold();
+            }
+
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
+            ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "Eviction must run the deletion exactly once");
+        }
+
+        /// <summary>
+        /// An Upsert that chose to elide its source must not elide one that a streaming snapshot's scan began holding since: the scan may push
+        /// the source, value and all. Upsert finds only a mutable source, and elides it when it cannot write the source in place.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjUpsertHeldForStreamingScanDuringTheOperationKeepsTheSourceTest()
+        {
+            var sourceAddress = store.Log.TailAddress;
+            UpsertObj(1, 100);
+
+            var fn = new ObjHookFunctions { failInPlaceWriter = true, onInitialWriter = () => store.hlogBase.BeginStreamingScanHold(sourceAddress) };
+            try
+            {
+                var tailBefore = store.Log.TailAddress;
+                using (var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, ObjHookFunctions>(fn))
+                    _ = s.BasicContext.Upsert(new TestObjectKey { key = 1 }, new TestObjectValue { value = 200 }, 0);
+
+                Assert.That(store.Log.TailAddress, Is.GreaterThan(tailBefore), "Precondition: the Upsert should have written a new record");
+                var source = store.hlogBase._wrapper.CreateLogRecord(sourceAddress);
+                Assert.That(source.Info.Valid, Is.True, "A source the scan may push must not be elided");
+                Assert.That(source.Info.IsSealed, Is.True, "The bypassed source should be sealed");
+                Assert.That(((TestObjectValue)source.ValueObject).value, Is.EqualTo(100), "The source must keep its value while the scan may push it");
+            }
+            finally
+            {
+                store.hlogBase.EndStreamingScanHold();
+            }
+        }
+
+        /// <summary>
+        /// A CopyUpdate that chose to elide its source must not elide one that a streaming snapshot's scan began holding since. The source's
+        /// value is released at once, as for any CopyUpdate, which changes none of its bytes, but the source stays valid and sealed.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjCopyUpdateHeldForStreamingScanDuringTheOperationKeepsTheSourceValidTest()
+        {
+            var sourceAddress = store.Log.TailAddress;
+            UpsertObj(1, 100);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+            var fn = new ObjExpirableFunctions { onCopyUpdater = () => store.hlogBase.BeginStreamingScanHold(sourceAddress) };
+            try
+            {
+                using (var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, ObjExpirableFunctions>(fn))
+                {
+                    var input = new TestObjectInput { value = 1 };
+                    _ = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, 0);
+                }
+
+                var source = store.hlogBase._wrapper.CreateLogRecord(sourceAddress);
+                Assert.That(source.Info.Valid, Is.True, "A source the scan may push must not be elided");
+                Assert.That(source.Info.IsSealed, Is.True, "The bypassed source should be sealed");
+            }
+            finally
+            {
+                store.hlogBase.EndStreamingScanHold();
+            }
         }
 
         #endregion

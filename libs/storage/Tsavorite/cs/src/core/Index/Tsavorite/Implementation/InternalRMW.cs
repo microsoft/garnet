@@ -419,20 +419,25 @@ namespace Tsavorite.core
                     }
                     else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                     {
-                        if (allocOptions.elideSourceRecord)
+                        // Nothing replaces an elidable expired source: it is disposed as deleted and elided in place. CanElide was decided before
+                        // NeedCopyUpdate, and a freeze can begin since, so check again: a source frozen now gets a tombstone record, as a
+                        // non-elidable one does, and its release waits as a frozen source's does.
+                        if (allocOptions.elideSourceRecord && !IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info))
                         {
-                            // Nothing replaces the expired source, so release it as deleted now, before the elision releases its key.
-                            ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true);
+                            // Dispose rather than release through ReleaseSupersededSource, which would mark the disposal of a source frozen since the
+                            // check: the elision below invalidates the source, and the drain and eviction skip invalid records.
+                            ref var inMemoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
+                            OnDispose(ref inMemoryLogRecord, DisposeReason.Deleted);
                             srcLogRecord.InfoRef.SetTombstone();
                             srcLogRecord.InfoRef.SetModified();
 
-                            // Elide from hei, and try to either do in-chain tombstoning or free list transfer. srcLogRecord is elidable so must be a memory LogRecord.
-                            ref var inMemoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
+                            // Elide from hei, and try to either do in-chain tombstoning or free list transfer.
                             HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref inMemoryLogRecord);
                             // no new record created and hash entry is empty now
                             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Expired);
                         }
                         // Non-elidable: create a tombstone record. The expired source is released as deleted once the tombstone is in the chain.
+                        allocOptions.elideSourceRecord = false;
                         addTombstone = true;
                     }
                     else if (rmwInfo.Action == RMWAction.WrongType)
@@ -589,10 +594,13 @@ namespace Tsavorite.core
 
                     // The new record replaces an expired source, which is released as deleted.
                     if (forExpiration && stackCtx.recSrc.HasMainLogSrc)
-                        ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true);
+                        _ = ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true);
                 }
                 else
                 {
+                    // Whether the release of a deleted source marked its disposal to run later, which keeps the source from being elided.
+                    var sourceDisposalDeferred = false;
+
                     // Else it was a CopyUpdater so call PCU if tombstoning has not been requested by NCU or CU
                     if (!addTombstone)
                     {
@@ -674,7 +682,7 @@ namespace Tsavorite.core
                             }
 
                             if (releaseSourceValue)
-                                ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: false, capturingSnapshot);
+                                _ = ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: false, capturingSnapshot);
                         }
                         else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {
@@ -684,7 +692,7 @@ namespace Tsavorite.core
                             newLogRecord.ClearValueIfHeap();
                             status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
                             if (isMemoryLogRecord)
-                                ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true, capturingSnapshot);
+                                sourceDisposalDeferred = ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true, capturingSnapshot);
                         }
                         else if (rmwInfo.Action == RMWAction.WrongType)
                         {
@@ -698,23 +706,12 @@ namespace Tsavorite.core
                         // tombstone a value, which was never counted, so drop it without a release, and release the expired source as deleted.
                         newLogRecord.ClearValueIfHeap();
                         if (stackCtx.recSrc.HasMainLogSrc)
-                            ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true);
+                            sourceDisposalDeferred = ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true);
                     }
 
-                    // ElideSourceRecord means we have verified that the old source record is elidable and now that CAS has replaced it in the HashBucketEntry with
-                    // the new source record that does not point to the old source record, we have elided it, so try to transfer to freelist.
+                    // The new record took the source's PreviousAddress when the source was chosen for elision, so the CAS bypassed the source.
                     if (allocOptions.elideSourceRecord)
-                    {
-                        // Success should always Seal the old record. This may be readcache, readonly, or the temporary recordInfo, which is OK and saves the cost of an "if".
-                        srcLogRecord.InfoRef.SealAndInvalidate();    // The record was elided, so Invalidate
-
-                        // If we're here we have MainLogSrc so AsLogRecord is a simple reassignment guaranteed to succeed.
-                        ref var inMemoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
-                        if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
-                            _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, stackCtx.recSrc.LogicalAddress, ref inMemoryLogRecord);
-                        else
-                            OnDispose(ref inMemoryLogRecord, DisposeReason.Elided);
-                    }
+                        DetachBypassedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), sourceDisposalDeferred);
                     else
                     {
                         // If it is in mutable or fuzzy region, we must Seal

@@ -218,7 +218,7 @@ namespace Tsavorite.core
             };
 
             // If the source record is elidable we will detach it from the tag chain below, after the CAS, by carrying its
-            // PreviousAddress on the new tombstone. CanElide() excludes frozen records.
+            // PreviousAddress on the new tombstone. CanElide() excludes frozen records; one frozen since is detached without being elided.
             if (!TryAllocateRecord(sessionFunctions, ref operationState, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
                 return status;
 
@@ -262,24 +262,17 @@ namespace Tsavorite.core
                 if (allocOptions.elideSourceRecord)
                 {
                     // The CAS above replaced the source in the HashBucketEntry with a tombstone that carries the source's
-                    // PreviousAddress, so the source is now detached from the tag chain and can be freelisted.
-                    // Fire the Deleted disposal first so triggers keyed on deletion (e.g. range-index file cleanup and
-                    // Vector Set deletion) still run; that releases and un-accounts the value. The elide/freelist disposal
-                    // below then releases the key, which eviction would otherwise have accounted for.
-                    // CanElide() already excluded frozen records, so no IsFrozen check is needed here.
-                    OnDispose(ref srcLogRecord, DisposeReason.Deleted);
-
-                    srcLogRecord.InfoRef.SealAndInvalidate();    // The record was elided, so Invalidate
-
-                    if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
-                        _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, stackCtx.recSrc.LogicalAddress, ref srcLogRecord);
-                    else
-                        OnDispose(ref srcLogRecord, DisposeReason.Elided);
+                    // PreviousAddress, so the source is now detached from the tag chain. Release it as deleted first so triggers
+                    // keyed on deletion (e.g. range-index file cleanup and Vector Set deletion) still run; that releases and
+                    // un-accounts the value, or marks that for later if the source is frozen. Then elide it, which releases the key,
+                    // or seal it if it must stay valid.
+                    var disposalDeferred = ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord, deleted: true);
+                    DetachBypassedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord, disposalDeferred);
                 }
                 else if (stackCtx.recSrc.HasMainLogSrc)
                 {
                     // Dispose the deleted source record's resources, or mark that for later if a checkpoint or an in-flight flush has frozen it.
-                    ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord, deleted: true);
+                    _ = ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord, deleted: true);
                     srcLogRecord.InfoRef.Seal();    // Not elided so Seal without invalidate
                 }
 

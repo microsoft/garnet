@@ -361,18 +361,9 @@ namespace Tsavorite.core
                         hlogBase.logSizeTracker?.IncrementSize(valueHeap);
                 }
 
-                // ElideSourceRecord means we have verified that the old source record is elidable and now that CAS has replaced it in the HashBucketEntry with
-                // the new source record that does not point to the old source record, we have elided it, so try to transfer to freelist.
+                // ElideSourceRecord means the new record took the source's PreviousAddress, so the CAS bypassed the source in the chain.
                 if (allocOptions.elideSourceRecord)
-                {
-                    // Success should always Seal the old record. This may be readcache, readonly, or the temporary recordInfo, which is OK and saves the cost of an "if".
-                    srcLogRecord.InfoRef.SealAndInvalidate();    // The record was elided, so Invalidate
-
-                    if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
-                        _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, stackCtx.recSrc.LogicalAddress, ref srcLogRecord);
-                    else
-                        OnDispose(ref srcLogRecord, DisposeReason.Elided);
-                }
+                    DetachBypassedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord, disposalDeferred: false);
                 else
                 {
                     // If it is in mutable or fuzzy region, we must Seal

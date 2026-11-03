@@ -592,7 +592,15 @@ elided or released in memory without changing the checkpoint's image.
 
 Every release of a superseded source that changes its record honors it: elision
 is declined, and `ReleaseSupersededSource` defers a Delete's or an expiration's
-disposal. A CopyUpdate's release of its source's value does not wait: it points
+disposal. An operation chooses to elide its source before it allocates its new
+record, and a freeze can begin after that choice, so it checks again after the
+compare-and-swap that inserts the new record (`DetachBypassedSource`). A source
+frozen by then, or whose disposal was deferred, is sealed rather than elided: the
+new record already bypasses it, and an invalid record's mark would never run,
+because the drain and eviction skip invalid records. An expiration that elides its
+source in place, with no new record, checks the freeze again before it disposes
+the source, and adds a tombstone record instead if the source is frozen.
+A CopyUpdate's release of its source's value does not wait: it points
 the value's `ObjectIdMap` slot at a placeholder, which changes none of the
 record's bytes, and a flush writes a placeholder as a null value.
 
