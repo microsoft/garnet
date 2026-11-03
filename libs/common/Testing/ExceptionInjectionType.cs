@@ -177,6 +177,20 @@ namespace Garnet.common
         /// </summary>
         Replication_Fail_Replica_Unreadable_Checkpoint,
         /// <summary>
+        /// Cluster gossip: pause at the top of a pending connection add (before the store write lock is taken),
+        /// so a test can republish the GOSSIP_CLIENT configuration while an add is in flight and verify the
+        /// pending node was built against the stale snapshot and is rebuilt before being advertised.
+        /// </summary>
+        Cluster_Gossip_Pause_Before_AddConnection,
+        /// <summary>
+        /// GarnetClient: pause before encrypting a flush chunk, while its source buffer is still in use.
+        /// </summary>
+        GarnetClient_Tls_Pause_Before_Write,
+        /// <summary>
+        /// GarnetClient: pause after connecting a socket, before publishing its writer.
+        /// </summary>
+        GarnetClient_Connect_Pause_Before_Publish,
+        /// <summary>
         /// Pause after receiving the full diskless snapshot, before recovery resets the AOF addresses.
         /// </summary>
         Replication_Pause_Before_Diskless_Snapshot_Recovery,
