@@ -36,7 +36,7 @@ namespace Garnet.cluster
             try
             {
                 var client = transferOption == TransferOption.SLOTS ? migrateOperation[0].Client : keysMigrateOperation[0].Client;
-                var reservedCtxs = await client.ExecuteForArrayAsync("CLUSTER", "RESERVE", "VECTOR_SET_CONTEXTS", neededContexts.ToString());
+                var reservedCtxs = await client.ExecuteForArrayAsync("CLUSTER", "RESERVE", "VECTOR_SET_CONTEXTS_U64_V10", neededContexts.ToString());
 
                 var rootNamespacesMigrating = _namespaces.Where(static x => (x % VectorManager.ContextStep) == 0);
 

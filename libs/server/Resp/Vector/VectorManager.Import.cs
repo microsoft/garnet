@@ -23,7 +23,7 @@ namespace Garnet.server
             VectorDistanceMetricType distanceMetric,
             bool hasQuantState,
             ReadOnlySpan<byte> quantState,
-            uint startPointId,
+            ulong startPointId,
             out VectorManagerResult result,
             out ReadOnlySpan<byte> errorMsg
         )

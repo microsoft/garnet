@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -68,7 +69,7 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> filterCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, void> logCallback,
-            uint startPointId,
+            ulong startPointId,
             out bool quantizationRequested
         )
         {
@@ -82,7 +83,10 @@ namespace Garnet.server
 
                 var ret = NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, distanceMetric, buildExplorationFactor, numLinks, startPointId, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback, (nint)filterCallback, (nint)logCallback, out quantizationRequested);
 
-                Debug.Assert(ret != 0, "create_index failed, returning a null pointer - this shouldn't be possible");
+                if (ret == 0)
+                {
+                    throw new GarnetException("DiskANN index creation failed; legacy or invalid Vector Set storage is not supported");
+                }
 
                 return ret;
             }
@@ -102,7 +106,7 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> filterCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, void> logCallback,
-            uint startPointId,
+            ulong startPointId,
             out bool quantizationRequested
         )
         => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetricType, readCallback, writeCallback, deleteCallback, readModifyWriteCallback, filterCallback, logCallback, startPointId, out quantizationRequested);
@@ -548,7 +552,7 @@ namespace Garnet.server
             VectorDistanceMetricType metricType,
             uint buildExplorationFactor,
             uint numLinks,
-            uint startPointId,
+            ulong startPointId,
             nint readCallback,
             nint writeCallback,
             nint deleteCallback,

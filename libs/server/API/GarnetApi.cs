@@ -419,7 +419,7 @@ namespace Garnet.server
         => storageSession.VectorSetRandomMembers(key, count, ref idResults, out actualCount, out importPending);
 
         public GarnetStatus VectorSetCreate(PinnedSpanByte key, int dimensions, int reduceDims, VectorQuantType quantizer,
-            int buildExplorationFactor, int numLinks, VectorDistanceMetricType distanceMetric, PinnedSpanByte? quantState, uint startPointId,
+            int buildExplorationFactor, int numLinks, VectorDistanceMetricType distanceMetric, PinnedSpanByte? quantState, ulong startPointId,
             out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         => storageSession.VectorSetCreate(key, dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, quantState, startPointId, out result, out errorMsg);
 

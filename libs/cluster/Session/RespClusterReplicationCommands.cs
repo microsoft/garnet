@@ -130,14 +130,14 @@ namespace Garnet.cluster
         /// </summary>
         private bool NetworkClusterReserve(VectorManager vectorManager, out bool invalidParameters)
         {
-            if (parseState.Count < 2)
+            if (parseState.Count != 2)
             {
                 invalidParameters = true;
                 return true;
             }
 
             var kind = parseState.GetArgSliceByRef(0);
-            if (!kind.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("VECTOR_SET_CONTEXTS"u8))
+            if (!kind.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("VECTOR_SET_CONTEXTS_U64_V10"u8))
             {
                 while (!RespWriteUtils.TryWriteError("Unrecognized reservation type"u8, ref dcurr, dend))
                     SendAndReset();

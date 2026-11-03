@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -20,7 +21,11 @@ namespace Garnet.server
     public sealed partial class VectorManager
     {
         public const int IndexSize = Index.Size;
-        public const uint DefaultStartPointId = uint.MaxValue;
+        public const ulong DefaultStartPointId = ulong.MaxValue;
+
+        private static bool IsLegacyFsmKey(ReadOnlySpan<byte> key)
+            // The native tag is u32::from_be_bytes(*b"_fsm"), stored in native byte order.
+            => key.Length == sizeof(ulong) && MemoryMarshal.Read<uint>(key) == BinaryPrimitives.ReadUInt32BigEndian("_fsm"u8);
 
         [StructLayout(LayoutKind.Explicit, Size = Size)]
         private struct Index
@@ -46,10 +51,8 @@ namespace Garnet.server
             [FieldOffset(40)]
             public VectorSetFlags Flags;
 
-            [FieldOffset(44)]
-            public uint StartPointId;
             [FieldOffset(48)]
-            private ulong unused0;
+            public ulong StartPointId;
         }
 
         /// <summary>
@@ -65,7 +68,7 @@ namespace Garnet.server
             ulong newContext,
             nint newIndexPtr,
             Span<byte> indexSpan,
-            uint startPointId)
+            ulong startPointId)
         {
             AssertHaveStorageSession();
 
@@ -165,7 +168,7 @@ namespace Garnet.server
         /// <summary>
         /// Extract the internal id of the start point from the given index.
         /// </summary>
-        public static uint ReadStartPointId(ReadOnlySpan<byte> indexValue)
+        public static ulong ReadStartPointId(ReadOnlySpan<byte> indexValue)
         {
             Debug.Assert(indexValue.Length == Index.Size, "Index size is incorrect");
             return Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexValue)).StartPointId;

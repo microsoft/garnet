@@ -36,6 +36,13 @@ namespace Garnet.server
         )
         {
             var ns = ExtractContextFromNamespaces(namespaceBytes);
+            var term = ns & (ContextStep - 1);
+            if ((term is DiskANNService.FullVector or DiskANNService.NeighborList or DiskANNService.QuantizedVector or DiskANNService.Attributes or DiskANNService.ExternalIdMap && keyWithoutNamespace.Length != sizeof(ulong)) ||
+                (term == DiskANNService.InternalIdMap && value.Length != sizeof(ulong)) ||
+                (term == DiskANNService.Metadata && IsLegacyFsmKey(keyWithoutNamespace)))
+            {
+                throw new GarnetException("Legacy or invalid Vector Set migration records are not supported");
+            }
 
 #if DEBUG
             // Do some extra sanity checking in DEBUG builds
@@ -126,6 +133,7 @@ namespace Garnet.server
                 }
             }
         }
+
 
         /// <summary>
         /// Called to handle a Vector Set key being received during a migration.  These are "index" keys.
@@ -231,7 +239,7 @@ namespace Garnet.server
 
                 var expirationTicks = expiration?.Ticks ?? 0;
                 var expirationArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<long, byte>(MemoryMarshal.CreateSpan(ref expirationTicks, 1)));
-                var startPointArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref startPointId, 1)));
+                var startPointArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref startPointId, 1)));
 
                 input.parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg, ctxArg, indexArg, expirationArg, startPointArg]);
 

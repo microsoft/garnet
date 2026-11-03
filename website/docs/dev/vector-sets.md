@@ -350,6 +350,16 @@ Migrating a Vector Set between two primaries (either as part of a `MIGRATE ... K
 Migration preserves import flags. Pending and terminally failed imports arrive without a native handle;
 an eligible FINISH recreates it on demand, while terminal failures remain blocked.
 
+Context reservation uses `CLUSTER RESERVE VECTOR_SET_CONTEXTS_U64_V10 <count>`.
+The legacy reservation kind is rejected before allocating any destination context;
+primary migration peers must use the same eight-byte internal-ID format.
+
+Vector-enabled destinations apply migration batches synchronously, including when
+`FastMigrate` is enabled. An acknowledgment covers namespace writes or native
+index activation, not just queueing work. Failed reservations remain unavailable
+until recovery cleanup; they cannot be recycled while other connections may still
+be delivering records.
+
 Namespaces (intentionally) do not participate in hash slots or clustering, and are a node specific concept.  This means that migration must also update the namespaces of elements as they are migrated.
 
 At a high level, migration between the originating primary a destination primary behaves as follows:
@@ -363,7 +373,7 @@ At a high level, migration between the originating primary a destination primary
     * Also unlike with normal keys, we synthesize a write on the _destination_ (using a special arg and `VADD`) so replicas of the destination also get these writes
  5. Once all namespace keys are migrated, we migrate the Vector Set index keys, but mutate their values to have the appropriate context reserved in step 3
     * As in 4, we synthesize a write on the _destination_ to tell any replicas to also create the index key
- 6. When the target slots transition back to `STABLE`, we do a delete of the Vector Set index keys, drop the DiskANN indexes, and schedule the original contexts for cleanup on the originating primary
+ 6. After the destination acknowledges successful activation of each Vector Set, the originating primary deletes that set's index key, drops its DiskANN index, and schedules its original contexts for cleanup. Slot ownership transfer completes separately.
     * Unlike in 4 & 5, we do no synthetic writes here.  The normal replication of `DEL` will cleanup replicas of the originating primary.
 
  `KEYS` migrations differ only in the slot discovery being omitted.  We still have to determine the migrating namespaces, reserve new ones on the destination primary, and schedule cleanup only once migration is completed.  This does mean that, if any of the keys being migrated is a Vector Set, `MIGRATE ... KEYS` causes a scan of the store.

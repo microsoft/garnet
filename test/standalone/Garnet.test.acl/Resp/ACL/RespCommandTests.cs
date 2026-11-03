@@ -2049,7 +2049,7 @@ namespace Garnet.test.Resp.ACL
             {
                 try
                 {
-                    await client.ExecuteForStringResultAsync("CLUSTER", ["RESERVE", "VECTOR_SET_CONTEXTS", "16"]).ConfigureAwait(false);
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["RESERVE", "VECTOR_SET_CONTEXTS_U64_V10", "16"]).ConfigureAwait(false);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
                 catch (Exception e)
@@ -7957,7 +7957,7 @@ namespace Garnet.test.Resp.ACL
             {
                 try
                 {
-                    _ = await client.ExecuteForStringResultAsync("XVIMPORT", ["missing", "VECTOR", "\u0001\0\0\0", new string('\0', 12)]).ConfigureAwait(false);
+                    _ = await client.ExecuteForStringResultAsync("XVIMPORT", ["missing", "VECTOR", "\u0001\0\0\0\0\0\0\0", new string('\0', 12)]).ConfigureAwait(false);
                     ClassicAssert.Fail("Import into a missing vector set should fail");
                 }
                 catch (Exception exception) when (exception.Message.Equals("ERR vector set does not exist"))

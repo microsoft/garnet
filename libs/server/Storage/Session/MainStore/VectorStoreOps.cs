@@ -275,7 +275,7 @@ namespace Garnet.server
     {
         /// <inheritdoc cref="IGarnetApi.VectorSetCreate"/>
         public GarnetStatus VectorSetCreate(PinnedSpanByte key, int dimensions, int reduceDims, VectorQuantType quantizer,
-            int buildExplorationFactor, int numLinks, VectorDistanceMetricType distanceMetric, PinnedSpanByte? quantState, uint startPointId,
+            int buildExplorationFactor, int numLinks, VectorDistanceMetricType distanceMetric, PinnedSpanByte? quantState, ulong startPointId,
             out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
             result = VectorManagerResult.BadParams;

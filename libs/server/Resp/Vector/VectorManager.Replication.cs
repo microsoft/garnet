@@ -181,13 +181,19 @@ namespace Garnet.server
 
         private static void ReplicateVectorSetCreate(ReadOnlySpan<byte> key, uint dimensions, uint reduceDims,
             VectorQuantType quantizer, uint buildExplorationFactor, uint numLinks, VectorDistanceMetricType distanceMetric,
-            bool hasQuantState, ReadOnlySpan<byte> quantState, uint startPointId)
+            bool hasQuantState, ReadOnlySpan<byte> quantState, ulong startPointId)
         {
-#pragma warning disable IDE0302
-            Span<uint> configuration = stackalloc uint[] { dimensions, reduceDims, (uint)quantizer, buildExplorationFactor, numLinks, (uint)distanceMetric, startPointId };
-#pragma warning restore IDE0302
+            Span<byte> configurationBytes = stackalloc byte[6 * sizeof(uint) + sizeof(ulong)];
+            var configuration = MemoryMarshal.Cast<byte, uint>(configurationBytes[..(6 * sizeof(uint))]);
+            configuration[0] = dimensions;
+            configuration[1] = reduceDims;
+            configuration[2] = (uint)quantizer;
+            configuration[3] = buildExplorationFactor;
+            configuration[4] = numLinks;
+            configuration[5] = (uint)distanceMetric;
+            MemoryMarshal.Write(configurationBytes[(6 * sizeof(uint))..], in startPointId);
             var input = new StringInput(RespCommand.XVCREATE);
-            var configurationArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(configuration));
+            var configurationArg = PinnedSpanByte.FromPinnedSpan(configurationBytes);
             if (hasQuantState)
             {
                 input.parseState.InitializeWithArguments(configurationArg, PinnedSpanByte.FromPinnedSpan(quantState));
@@ -235,14 +241,16 @@ namespace Garnet.server
             ReadOnlySpan<byte> error;
             if (input.header.cmd == RespCommand.XVCREATE)
             {
-                if (input.parseState.Count is not (1 or 2) || input.parseState.GetArgSliceByRef(0).Length != 7 * sizeof(uint))
+                if (input.parseState.Count is not (1 or 2) || input.parseState.GetArgSliceByRef(0).Length != 6 * sizeof(uint) + sizeof(ulong))
                 {
                     throw new GarnetException("Invalid XVCREATE AOF payload");
                 }
-                var configuration = MemoryMarshal.Cast<byte, uint>(input.parseState.GetArgSliceByRef(0).ReadOnlySpan);
+                var configurationBytes = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                var configuration = MemoryMarshal.Cast<byte, uint>(configurationBytes[..(6 * sizeof(uint))]);
+                var startPointId = MemoryMarshal.Read<ulong>(configurationBytes[(6 * sizeof(uint))..]);
                 status = session.VectorSetCreate(PinnedSpanByte.FromPinnedSpan(key), (int)configuration[0], (int)configuration[1],
                     (VectorQuantType)configuration[2], (int)configuration[3], (int)configuration[4], (VectorDistanceMetricType)configuration[5],
-                    input.parseState.Count == 2 ? input.parseState.GetArgSliceByRef(1) : null, configuration[6], out result, out error);
+                    input.parseState.Count == 2 ? input.parseState.GetArgSliceByRef(1) : null, startPointId, out result, out error);
             }
             else if (input.parseState.Count == 0)
             {

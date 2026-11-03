@@ -91,8 +91,17 @@ namespace Garnet.cluster
             var replaceOption = replace.EqualsUpperCaseSpanIgnoringCase("T"u8);
             var vectorSetOption = vectorSet.EqualsUpperCaseSpanIgnoringCase("T"u8);
 
-            // Consume the receive buffer synchronously; reassemblers own any fragments retained across commands.
-            var applied = Process(basicGarnetApi, new ReadOnlySpan<byte>(payloadStartPtr, (int)(payloadEndPtr - payloadStartPtr)), replaceOption, vectorSetOption);
+            // Consume the receive buffer synchronously so the source retains its keys if applying the batch fails.
+            bool applied;
+            try
+            {
+                applied = Process(basicGarnetApi, new ReadOnlySpan<byte>(payloadStartPtr, (int)(payloadEndPtr - payloadStartPtr)), replaceOption, vectorSetOption);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Migration payload processing failed");
+                applied = false;
+            }
 
             bool Process(BasicGarnetApi basicGarnetApi, ReadOnlySpan<byte> input, bool replaceOption, bool vectorSetOption)
             {

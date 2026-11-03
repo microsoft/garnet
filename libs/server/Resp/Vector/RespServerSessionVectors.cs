@@ -3,6 +3,7 @@
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Buffers.Text;
 using System.Runtime.InteropServices;
 using Garnet.common;
 using Tsavorite.core;
@@ -28,7 +29,7 @@ namespace Garnet.server
             int? reduceDims = null;
             int? numLinks = null;
             int? buildExplorationFactor = null;
-            uint? startPointId = null;
+            ulong? startPointId = null;
             VectorQuantType? quantizer = null;
             VectorDistanceMetricType? distanceMetric = null;
             PinnedSpanByte? quantState = null;
@@ -122,11 +123,12 @@ namespace Garnet.server
                     {
                         return AbortWithErrorMessage("ERR START_POINT specified multiple times"u8);
                     }
-                    if (!parseState.TryGetLong(optionIndex, out var parsedStartPointId) || parsedStartPointId is < 0 or > uint.MaxValue)
+                    var startPointToken = parseState.GetArgSliceByRef(optionIndex).ReadOnlySpan;
+                    if (!Utf8Parser.TryParse(startPointToken, out ulong parsedStartPointId, out var bytesConsumed) || bytesConsumed != startPointToken.Length)
                     {
-                        return AbortWithErrorMessage("ERR START_POINT must be an integer between 0 and 4294967295"u8);
+                        return AbortWithErrorMessage("ERR START_POINT must be an integer between 0 and 18446744073709551615"u8);
                     }
-                    startPointId = (uint)parsedStartPointId;
+                    startPointId = parsedStartPointId;
                 }
                 else if (option.EqualsUpperCaseSpanIgnoringCase("QUANT_STATE"u8, allowNonAlphabeticChars: true))
                 {
@@ -308,13 +310,13 @@ namespace Garnet.server
             var id = parseState.GetArgSliceByRef(2);
             var value = parseState.GetArgSliceByRef(3);
 
-            if (termType == VectorImportTermType.IntMap && value.length != sizeof(uint))
+            if (termType == VectorImportTermType.IntMap && value.length != sizeof(ulong))
             {
-                return AbortWithErrorMessage("ERR imported INTMAP value must 4-bytes");
+                return AbortWithErrorMessage("ERR imported INTMAP value must be 8-bytes");
             }
-            else if (termType is VectorImportTermType.Vector or VectorImportTermType.Neighbors or VectorImportTermType.Quant or VectorImportTermType.Attrs or VectorImportTermType.ExtMap && id.length != sizeof(uint))
+            else if (termType is VectorImportTermType.Vector or VectorImportTermType.Neighbors or VectorImportTermType.Quant or VectorImportTermType.Attrs or VectorImportTermType.ExtMap && id.length != sizeof(ulong))
             {
-                return AbortWithErrorMessage("ERR imported id for this term must be 4-bytes");
+                return AbortWithErrorMessage("ERR imported id for this term must be 8-bytes");
             }
 
             var status = storageApi.VectorSetImport(key, termType, id, value, out var result, out var errorMsg);

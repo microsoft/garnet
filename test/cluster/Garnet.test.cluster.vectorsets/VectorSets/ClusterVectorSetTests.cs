@@ -961,13 +961,33 @@ namespace Garnet.test.cluster
 
             // Setup simple vector set on Primary0 in some hash slot
 
-            var vectorData = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
-            var vectorSimData = Enumerable.Range(0, 75).Select(static x => (byte)(x * 2)).ToArray();
+            var vectorValues = Enumerable.Range(0, 75).Select(static x => (float)x).ToArray();
+            var vectorData = MemoryMarshal.AsBytes(vectorValues.AsSpan()).ToArray();
+            var vectorSimData = MemoryMarshal.AsBytes(Enumerable.Range(0, 75).Select(static x => (float)(x * 2)).ToArray().AsSpan()).ToArray();
+            var externalId = new byte[] { 0, 0, 0, 0 };
+            const ulong InternalId = 1; // Ordinary IDs are dense; the high-bit start point is reserved separately.
+            const ulong StartPointId = 0xFEDCBA9876543210UL;
+            var internalId = BitConverter.GetBytes(InternalId);
+            var startPointId = BitConverter.GetBytes(StartPointId);
+            var neighbors = new byte[17 * sizeof(ulong)];
+            BinaryPrimitives.WriteUInt64LittleEndian(neighbors, InternalId);
+            BinaryPrimitives.WriteUInt64LittleEndian(neighbors.AsSpan(16 * sizeof(ulong)), 1);
 
-            var add0Res = (int)context.clusterTestUtils.Execute(primary0, "VADD", [primary0Key, "XB8", vectorData, new byte[] { 0, 0, 0, 0 }, "XPREQ8", "SETATTR", "{\"hello\": \"world\"}"], flags: CommandFlags.NoRedirect);
-            ClassicAssert.AreEqual(1, add0Res);
+            ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(primary0, "XVCREATE", [primary0Key, "DIM", 75, "M", 16, "NOQUANT", "START_POINT", StartPointId.ToString()], flags: CommandFlags.NoRedirect));
+            foreach (var term in new (string Name, byte[] Key, byte[] Value)[]
+            {
+                ("VECTOR", internalId, vectorData), ("NEIGHBORS", internalId, neighbors),
+                ("INTMAP", externalId, internalId), ("EXTMAP", internalId, externalId),
+                ("ATTRS", internalId, "{\"hello\": \"world\"}"u8.ToArray()),
+                ("VECTOR", startPointId, vectorData), ("NEIGHBORS", startPointId, neighbors),
+            })
+            {
+                ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(primary0, "XVIMPORT", [primary0Key, term.Name, term.Key, term.Value], flags: CommandFlags.NoRedirect));
+            }
+            ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(primary0, "XVIMPORT", [primary0Key, "VERIFY", 0, 1], flags: CommandFlags.NoRedirect));
+            ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(primary0, "XVIMPORT", [primary0Key, "FINISH"], flags: CommandFlags.NoRedirect));
 
-            var sim0Res = (byte[][])context.clusterTestUtils.Execute(primary0, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
+            var sim0Res = (byte[][])context.clusterTestUtils.Execute(primary0, "VSIM", [primary0Key, "FP32", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
             ClassicAssert.AreEqual(3, sim0Res.Length);
             ClassicAssert.IsTrue(new byte[] { 0, 0, 0, 0 }.SequenceEqual(sim0Res[0]));
             ClassicAssert.IsFalse(float.IsNaN(float.Parse(Encoding.ASCII.GetString(sim0Res[1]))));
@@ -978,7 +998,7 @@ namespace Garnet.test.cluster
             var readonlyOnReplica0 = (string)context.clusterTestUtils.Execute(secondary0, "READONLY", [], flags: CommandFlags.NoRedirect);
             ClassicAssert.AreEqual("OK", readonlyOnReplica0);
 
-            var simOnReplica0 = (byte[][])context.clusterTestUtils.Execute(secondary0, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
+            var simOnReplica0 = (byte[][])context.clusterTestUtils.Execute(secondary0, "VSIM", [primary0Key, "FP32", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
             ClassicAssert.IsTrue(simOnReplica0.Length > 0);
             for (var i = 0; i < sim0Res.Length; i++)
             {
@@ -993,6 +1013,7 @@ namespace Garnet.test.cluster
 
             context.clusterTestUtils.WaitForReplicaAofSync(Primary0Index, Secondary0Index);
             context.clusterTestUtils.WaitForReplicaAofSync(Primary1Index, Secondary1Index);
+            context.clusterTestUtils.WaitForSlotOwnership(Secondary1Index, context.clusterTestUtils.ClusterMyId(primary1), [primary0HashSlot, primary0HashSlot]);
 
             var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, NullLogger.Instance);
             var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, NullLogger.Instance);
@@ -1002,7 +1023,7 @@ namespace Garnet.test.cluster
 
             // Check available on other primary & secondary
 
-            var sim1Res = (byte[][])context.clusterTestUtils.Execute(primary1, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
+            var sim1Res = (byte[][])context.clusterTestUtils.Execute(primary1, "VSIM", [primary0Key, "FP32", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
             ClassicAssert.IsTrue(sim1Res.Length > 0);
             for (var i = 0; i < sim0Res.Length; i++)
             {
@@ -1012,15 +1033,31 @@ namespace Garnet.test.cluster
             var readonlyOnReplica1 = (string)context.clusterTestUtils.Execute(secondary1, "READONLY", [], flags: CommandFlags.NoRedirect);
             ClassicAssert.AreEqual("OK", readonlyOnReplica1);
 
-            var simOnReplica1 = (byte[][])context.clusterTestUtils.Execute(secondary1, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
-            ClassicAssert.IsTrue(simOnReplica1.Length > 0);
-            for (var i = 0; i < sim0Res.Length; i++)
+            var simOnReplica1 = (byte[][])context.clusterTestUtils.Execute(secondary1, "VSIM", [primary0Key, "FP32", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect | CommandFlags.DemandReplica);
+            CollectionAssert.AreEqual(sim0Res, simOnReplica1, $"Replica response: {string.Join(" | ", simOnReplica1.Select(Encoding.UTF8.GetString))}");
+
+            foreach (var endpoint in new[] { primary1, secondary1 })
             {
-                ClassicAssert.IsTrue(sim0Res[i].AsSpan().SequenceEqual(simOnReplica0[i]));
+                var flags = CommandFlags.NoRedirect | (endpoint.Equals(secondary1) ? CommandFlags.DemandReplica : CommandFlags.DemandMaster);
+                var embedding = (string[])context.clusterTestUtils.Execute(endpoint, "VEMB", [primary0Key, externalId], flags: flags);
+                CollectionAssert.AreEqual(vectorValues, embedding.Select(float.Parse).ToArray());
             }
+            CollectionAssert.AreEqual(internalId, ReadRawVectorTerm(context.nodes[Primary1Index], primary0Key, DiskANNService.InternalIdMap, externalId));
+            CollectionAssert.AreEqual(neighbors, ReadRawVectorTerm(context.nodes[Primary1Index], primary0Key, DiskANNService.NeighborList, startPointId));
+
+            var addedExternalId = new byte[] { 255, 0, 128 };
+            ClassicAssert.AreEqual(1, (int)context.clusterTestUtils.Execute(primary1, "VADD", [primary0Key, "FP32", vectorData, addedExternalId, "NOQUANT", "SETATTR", "{\"after\":true}"], flags: CommandFlags.NoRedirect));
+            context.clusterTestUtils.WaitForReplicaAofSync(Primary1Index, Secondary1Index);
+            foreach (var endpoint in new[] { primary1, secondary1 })
+            {
+                var flags = CommandFlags.NoRedirect | (endpoint.Equals(secondary1) ? CommandFlags.DemandReplica : CommandFlags.DemandMaster);
+                CollectionAssert.AreEqual(vectorValues, ((string[])context.clusterTestUtils.Execute(endpoint, "VEMB", [primary0Key, addedExternalId], flags: flags)).Select(float.Parse).ToArray());
+                ClassicAssert.AreEqual("{\"after\":true}", (string)context.clusterTestUtils.Execute(endpoint, "VGETATTR", [primary0Key, addedExternalId], flags: flags));
+            }
+            ClassicAssert.AreEqual(sizeof(ulong), ReadRawVectorTerm(context.nodes[Primary1Index], primary0Key, DiskANNService.InternalIdMap, addedExternalId).Length);
 
             // Check no longer available on old primary or secondary
-            var exc0 = (string)context.clusterTestUtils.Execute(primary0, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
+            var exc0 = (string)context.clusterTestUtils.Execute(primary0, "VSIM", [primary0Key, "FP32", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
             ClassicAssert.IsTrue(exc0.StartsWith("Key has MOVED to "), $"Expected exc0 to start with 'Key has MOVED to '; actual is {exc0}");
 
             // After migration the source replica (secondary0) keeps serving the key for a short
@@ -1038,7 +1075,7 @@ namespace Garnet.test.cluster
             {
                 try
                 {
-                    var exc1 = (string)context.clusterTestUtils.Execute(secondary0, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
+                    var exc1 = (string)context.clusterTestUtils.Execute(secondary0, "VSIM", [primary0Key, "FP32", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
                     lastResponse = exc1;
                     if (exc1 is not null && exc1.StartsWith("Key has MOVED to "))
                     {
@@ -2844,6 +2881,60 @@ namespace Garnet.test.cluster
 
         [Test]
         [CancelAfter(30_000)]
+        public async Task RejectInvalidVectorMigrationBeforeAcknowledgementAsync([Values] bool indexRecord)
+        {
+            const string KeyName = "invalid-migrated-vector-set";
+            _ = await SimpleSetupClusterAsync(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2,
+                replicaCount: 1, useTLS: false).ConfigureAwait(false);
+
+            var slot = HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(KeyName));
+            var sourceNodeIndex = context.clusterTestUtils.GetSourceNodeIndexFromSlot(slot, null);
+            var targetNodeIndex = sourceNodeIndex == 0 ? 1 : 0;
+            var sourceNodeId = context.clusterTestUtils.GetLocalNodeId(sourceNodeIndex);
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "IMPORTING", sourceNodeId));
+
+            var client = context.clusterTestUtils.GetGarnetClientSession(targetNodeIndex);
+            ClassicAssert.ThrowsAsync<Exception>(() => client.ExecuteAsync("CLUSTER", "RESERVE", "VECTOR_SET_CONTEXTS", "1"));
+            ClassicAssert.ThrowsAsync<Exception>(() => client.ExecuteAsync("CLUSTER", "RESERVE", "VECTOR_SET_CONTEXTS_U64_V10", "1", "extra"));
+            var reserved = await client.ExecuteForArrayAsync("CLUSTER", "RESERVE", "VECTOR_SET_CONTEXTS_U64_V10", "1").ConfigureAwait(false);
+            var destinationContext = ulong.Parse(reserved.Single());
+
+            byte[] payload;
+            if (indexRecord)
+            {
+                var invalidIndex = new byte[VectorManager.IndexSize];
+                BinaryPrimitives.WriteUInt64LittleEndian(invalidIndex, destinationContext);
+                var key = Encoding.ASCII.GetBytes(KeyName);
+                payload = new byte[VectorManager.GetMigratedIndexKeySerializationSize(key, invalidIndex)];
+                VectorManager.SerializeMigratedIndexKey(payload, key, invalidIndex, null);
+            }
+            else
+            {
+                var ns = BitConverter.GetBytes(checked((uint)(destinationContext | DiskANNService.Metadata)));
+                var legacyFsmKey = BitConverter.GetBytes(0x5f66736dUL);
+                var value = new byte[8192];
+                payload = new byte[VectorManager.GetMigratedElementKeySerializationSize(legacyFsmKey, value)];
+                VectorManager.SerializeMigratedElementKey(payload, ns, legacyFsmKey, value);
+            }
+
+            client.SetClusterMigrateHeader(sourceNodeId, false, indexRecord);
+            ClassicAssert.True(client.TryWriteRecordSpan(payload,
+                indexRecord ? MigrationRecordSpanType.VectorSetIndex : MigrationRecordSpanType.VectorSetElement, out var task));
+            ClassicAssert.IsNull(task);
+            ClassicAssert.ThrowsAsync<Exception>(async () => await client.SendAndResetIterationBuffer().ConfigureAwait(false));
+            ClassicAssert.AreEqual("OK", await client.ExecuteAsync("ASKING").ConfigureAwait(false));
+            ClassicAssert.AreEqual("0", await client.ExecuteAsync("EXISTS", KeyName).ConfigureAwait(false));
+
+            // A failed migration must not recycle a reservation while writers may still be active.
+            GetStoreWrapper(context.nodes[targetNodeIndex]).DefaultDatabase.VectorManager.GetContextState(destinationContext,
+                out var inUse, out var cleaningUp, out var migrating);
+            ClassicAssert.IsTrue(inUse);
+            ClassicAssert.IsFalse(cleaningUp);
+            ClassicAssert.IsTrue(migrating);
+        }
+
+        [Test]
+        [CancelAfter(30_000)]
         public async Task RejectDiskLogRecordVectorSetMigrationsAsync(CancellationToken cancellation)
         {
             const string KeyName = "0123456789abcdef";
@@ -2890,13 +2981,13 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public async Task ImportReplicationAsync()
+        public async Task ImportReplicationAsync([Values] bool recoverReplica)
         {
             const string ExportKey = nameof(ImportReplicationAsync) + "_Export";
             const string ImportKey = nameof(ImportReplicationAsync) + "_Import";
             const int NumElements = 1_000;
             const int FanOut = 8;
-            const uint StartPointId = uint.MaxValue; // Garnet always uses this start point id, so we'll export using it
+            const ulong StartPointId = 0xFEDCBA9876543210UL;
 
             _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: DefaultShards / 2, replicaCount: 1, useTLS: false).ConfigureAwait(false);
 
@@ -2916,18 +3007,17 @@ namespace Garnet.test.cluster
             BinaryPrimitives.WriteUInt32LittleEndian(stateKey, BinaryPrimitives.ReadUInt32BigEndian("_qnt"u8));
             var state = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.Metadata, stateKey);
 
-            var startPointKey = BitConverter.GetBytes(0U);
-
             var importArgs = new List<RedisValue[]>();
 
             for (var i = 0; i < NumElements; i++)
             {
                 var internalId = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.InternalIdMap, Encoding.UTF8.GetBytes(i.ToString()));
+                ClassicAssert.AreEqual(sizeof(ulong), internalId.Length);
 
                 var fullVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.FullVector, internalId);
                 var attributes = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.Attributes, internalId);
                 var quantVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.QuantizedVector, internalId);
-                var neighbors = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.NeighborList, internalId);
+                var neighbors = RemapImportedNeighbors(ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.NeighborList, internalId), StartPointId);
                 var externalId = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.ExternalIdMap, internalId);
 
                 // Imports are actually stored under internal id
@@ -2943,12 +3033,12 @@ namespace Garnet.test.cluster
 
             // Deal with the start point
             {
-                var internalId = new byte[4];
-                BinaryPrimitives.WriteUInt32LittleEndian(internalId, StartPointId);
+                var internalId = BitConverter.GetBytes(VectorManager.DefaultStartPointId);
 
                 var fullVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.FullVector, internalId);
                 var quantVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.QuantizedVector, internalId);
-                var neighbors = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.NeighborList, internalId);
+                var neighbors = RemapImportedNeighbors(ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.NeighborList, internalId), StartPointId);
+                internalId = BitConverter.GetBytes(StartPointId);
 
                 // Imports are actually stored under internal id
                 importArgs.Add(["VECTOR", internalId, fullVector]);
@@ -2964,7 +3054,7 @@ namespace Garnet.test.cluster
                     fanCons[i] = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
                 }
 
-                var createTask = db.ExecuteAsync("XVCREATE", [ImportKey, "DIM", 3, "M", 16, "Q8", "QUANT_STATE", state]);
+                var createTask = db.ExecuteAsync("XVCREATE", [ImportKey, "DIM", 3, "M", 16, "Q8", "QUANT_STATE", state, "START_POINT", StartPointId.ToString()]);
 
                 var parallelImport =
                     createTask.ContinueWith(
@@ -3036,6 +3126,13 @@ namespace Garnet.test.cluster
 
             context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
 
+            if (recoverReplica)
+            {
+                context.nodeOptions[1].Recover = true;
+                context.RestartNode(1, ensureAofFlush: true);
+                context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
+            }
+
             var replica = connection.GetServer(context.endpoints[1]);
             ClassicAssert.AreEqual("OK", (string)await replica.ExecuteAsync("READONLY").ConfigureAwait(false));
 
@@ -3043,6 +3140,11 @@ namespace Garnet.test.cluster
             for (var i = 0; i < NumElements; i++)
             {
                 var exactMatch = new float[] { i, i + 1, i + 2 };
+                var expectedAttributes = $"{{\"id\": \"{i}\"}}";
+                CollectionAssert.AreEqual(exactMatch, ((string[])await db.ExecuteAsync("VEMB", [ImportKey, i.ToString()]).ConfigureAwait(false)).Select(float.Parse).ToArray());
+                CollectionAssert.AreEqual(exactMatch, ((string[])await replica.ExecuteAsync(0, "VEMB", [ImportKey, i.ToString()], flags: CommandFlags.NoRedirect).ConfigureAwait(false)).Select(float.Parse).ToArray());
+                ClassicAssert.AreEqual(expectedAttributes, (string)await db.ExecuteAsync("VGETATTR", [ImportKey, i.ToString()]).ConfigureAwait(false));
+                ClassicAssert.AreEqual(expectedAttributes, (string)await replica.ExecuteAsync(0, "VGETATTR", [ImportKey, i.ToString()], flags: CommandFlags.NoRedirect).ConfigureAwait(false));
                 var searchReq = VectorSetSimilaritySearchRequest.ByVector(exactMatch);
                 searchReq.WithAttributes = true;
 
@@ -3052,6 +3154,7 @@ namespace Garnet.test.cluster
 
                 ClassicAssert.AreEqual(searchExportRes.Length, searchImportRes.Length);
                 ClassicAssert.AreEqual(searchExportRes.Length, replicaImportRes.Length / 2);
+                ClassicAssert.Greater(searchImportRes.Length, 0);
 
                 for (var j = 0; j < searchExportRes.Length; j++)
                 {
@@ -3079,7 +3182,7 @@ namespace Garnet.test.cluster
             const string ExportKey = nameof(FailedImportMarkedFailedAsync) + "_Export";
             const string ImportKey = nameof(FailedImportMarkedFailedAsync) + "_Import";
             const int NumElements = 10;
-            const uint StartPointId = uint.MaxValue; // Garnet always uses this start point id, so we'll export using it
+            const ulong StartPointId = ulong.MaxValue;
             const int SEED = 2026_11_02_00;
 
             var rand = new Random(SEED);
@@ -3102,18 +3205,17 @@ namespace Garnet.test.cluster
             BinaryPrimitives.WriteUInt32LittleEndian(stateKey, BinaryPrimitives.ReadUInt32BigEndian("_qnt"u8));
             var state = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.Metadata, stateKey);
 
-            var startPointKey = BitConverter.GetBytes(0U);
-
             var importArgsList = new List<RedisValue[]>();
 
             for (var i = 0; i < NumElements; i++)
             {
                 var internalId = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.InternalIdMap, Encoding.UTF8.GetBytes(i.ToString()));
+                ClassicAssert.AreEqual(sizeof(ulong), internalId.Length);
 
                 var fullVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.FullVector, internalId);
                 var attributes = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.Attributes, internalId);
                 var quantVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.QuantizedVector, internalId);
-                var neighbors = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.NeighborList, internalId);
+                var neighbors = RemapImportedNeighbors(ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.NeighborList, internalId), StartPointId);
                 var externalId = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.ExternalIdMap, internalId);
 
                 // Imports are actually stored under internal id
@@ -3129,12 +3231,11 @@ namespace Garnet.test.cluster
 
             // Deal with the start point
             {
-                var internalId = new byte[4];
-                BinaryPrimitives.WriteUInt32LittleEndian(internalId, StartPointId);
+                var internalId = BitConverter.GetBytes(StartPointId);
 
                 var fullVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.FullVector, internalId);
                 var quantVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.QuantizedVector, internalId);
-                var neighbors = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.NeighborList, internalId);
+                var neighbors = RemapImportedNeighbors(ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.NeighborList, internalId), StartPointId);
 
                 // Imports are actually stored under internal id
                 importArgsList.Add(["VECTOR", internalId, fullVector]);
@@ -3174,6 +3275,23 @@ namespace Garnet.test.cluster
 
             ClassicAssert.AreEqual("failed", (string)primaryInfo["import-state"]);
             ClassicAssert.AreEqual("failed", (string)replicaInfo["import-state"]);
+        }
+
+        private static byte[] RemapImportedNeighbors(byte[] neighbors, ulong startPointId)
+        {
+            const int MaxNeighbors = 16;
+            ClassicAssert.AreEqual((MaxNeighbors + 1) * sizeof(ulong), neighbors.Length);
+            var count = BinaryPrimitives.ReadUInt64LittleEndian(neighbors.AsSpan(MaxNeighbors * sizeof(ulong)));
+            ClassicAssert.LessOrEqual(count, (ulong)MaxNeighbors);
+            for (var i = 0; i < (int)count; i++)
+            {
+                var slot = neighbors.AsSpan(i * sizeof(ulong), sizeof(ulong));
+                if (BinaryPrimitives.ReadUInt64LittleEndian(slot) == VectorManager.DefaultStartPointId)
+                {
+                    BinaryPrimitives.WriteUInt64LittleEndian(slot, startPointId);
+                }
+            }
+            return neighbors;
         }
 
         private static unsafe byte[] ReadRawVectorTerm(GarnetServer server, string key, byte termType, ReadOnlySpan<byte> termKey, int bufferSize = 8192)
@@ -3254,7 +3372,6 @@ namespace Garnet.test.cluster
             foreach (var server in context.nodes)
             {
                 var wrapper = GetStoreWrapper(server);
-
                 wrapper.DefaultDatabase.VectorManager.AllocateTestContexts(preAllocatedContexts);
             }
 

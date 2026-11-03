@@ -500,6 +500,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Collects every live Vector Set index record in the store into <see cref="recoveredIndexes"/>.
+        /// Rejects legacy native FSM records before reconciliation can persist metadata or queue cleanup.
         /// </summary>
         private sealed class RecoveredIndexScanFunctions : IScanIteratorFunctions
         {
@@ -510,7 +511,7 @@ namespace Garnet.server
                 this.manager = manager;
             }
 
-            public void OnException(Exception exception, long numberOfRecords) { }
+            public void OnException(Exception exception, long numberOfRecords) => ExceptionUtils.ThrowException(exception);
             public bool OnStart(long beginAddress, long endAddress) => true;
             public void OnStop(bool completed, long numberOfRecords) { }
 
@@ -520,7 +521,21 @@ namespace Garnet.server
             {
                 cursorRecordResult = CursorRecordResult.Skip;
 
-                if (logRecord.HasNamespace || logRecord.RecordType != RecordType || logRecord.ValueSpan.Length != IndexSize)
+                if (logRecord.HasNamespace)
+                {
+                    var namespaceBytes = logRecord.NamespaceBytes;
+                    if (namespaceBytes.Length is sizeof(byte) or sizeof(uint))
+                    {
+                        var ns = ExtractContextFromNamespaces(namespaceBytes);
+                        if ((ns & (ContextStep - 1)) == DiskANNService.Metadata && IsLegacyFsmKey(logRecord.KeyBytes))
+                        {
+                            throw new GarnetException("Legacy eight-byte Vector Set FSM keys are not supported");
+                        }
+                    }
+                    return true;
+                }
+
+                if (logRecord.RecordType != RecordType || logRecord.ValueSpan.Length != IndexSize)
                 {
                     return true;
                 }
@@ -1407,7 +1422,7 @@ namespace Garnet.server
             AssertHaveStorageSession();
             ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
 
-            Span<byte> internalId = stackalloc byte[sizeof(int)];
+            Span<byte> internalId = stackalloc byte[sizeof(ulong)];
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
             var foundInternalId = ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes);
 
@@ -1435,7 +1450,7 @@ namespace Garnet.server
             Span<byte> attributeFull = stackalloc byte[32];
             var attributeMem = SpanByteAndMemory.FromPinnedSpan(attributeFull);
 
-            Span<byte> internalId = stackalloc byte[sizeof(int)];
+            Span<byte> internalId = stackalloc byte[sizeof(ulong)];
             var internalIdMem = SpanByteAndMemory.FromPinnedSpan(internalId);
 
             try
@@ -1530,7 +1545,7 @@ namespace Garnet.server
                 outputDistances.Length = (int)dimensions * sizeof(float);
             }
 
-            Span<byte> internalId = stackalloc byte[sizeof(int)];
+            Span<byte> internalId = stackalloc byte[sizeof(ulong)];
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
             try
             {
@@ -1616,7 +1631,7 @@ namespace Garnet.server
             ReadIndex(indexValue, out var context, out _, out _, out quantType, out _, out _, out _, out _, out _);
 
             // Get internal id for the given element
-            Span<byte> internalId = stackalloc byte[sizeof(int)];
+            Span<byte> internalId = stackalloc byte[sizeof(ulong)];
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
             try
             {
@@ -1679,7 +1694,7 @@ namespace Garnet.server
         {
             ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
 
-            Span<byte> internalId = stackalloc byte[sizeof(int)];
+            Span<byte> internalId = stackalloc byte[sizeof(ulong)];
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
             var foundInternalId = ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes);
             if (foundInternalId)

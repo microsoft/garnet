@@ -244,7 +244,7 @@ namespace Garnet.test
             return TestVectorSetCommandAsync(RunCommandAsync);
 
             static Task RunCommandAsync(IDatabase db, RedisKey againstKey)
-            => db.ExecuteAsync("XVIMPORT", againstKey, "VECTOR", new byte[] { 1, 0, 0, 0 }, new byte[12]);
+            => db.ExecuteAsync("XVIMPORT", againstKey, "VECTOR", BitConverter.GetBytes(1UL), new byte[12]);
         }
 
         [Test]
