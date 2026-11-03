@@ -491,6 +491,23 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>Return the staging and directory buffers to their pools. A writer kept idle between records calls this so that it does not
+        /// hold a staging buffer of <see cref="ObjectLogWriterSettings.ChunkSize"/> bytes while idle; the next record rents them again.</summary>
+        internal void ReturnBuffers()
+        {
+            Debug.Assert(!inRecord, "ReturnBuffers between records only");
+            if (staging is not null)
+            {
+                ArrayPool<byte>.Shared.Return(staging);
+                staging = null;
+            }
+            if (entries is not null)
+            {
+                ArrayPool<DirectoryEntry>.Shared.Return(entries);
+                entries = null;
+            }
+        }
+
         /// <inheritdoc/>
         public void Dispose()
         {
@@ -506,16 +523,8 @@ namespace Tsavorite.core
                 localMemoryStream.Dispose();
             }
 
-            if (staging is not null)
-            {
-                ArrayPool<byte>.Shared.Return(staging);
-                staging = null;
-            }
-            if (entries is not null)
-            {
-                ArrayPool<DirectoryEntry>.Shared.Return(entries);
-                entries = null;
-            }
+            inRecord = false;
+            ReturnBuffers();
         }
     }
 }

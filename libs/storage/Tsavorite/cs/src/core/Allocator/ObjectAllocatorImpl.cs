@@ -96,8 +96,9 @@ namespace Tsavorite.core
         /// into the live record, and writes the live page to the device with the epoch suspended. Disposal in that window
         /// corrupts the image two ways: releasing the heap can persist a Valid record whose ObjectLogPosition refers to a freed -
         /// or recycled, hence unrelated - object, and <see cref="LogRecord.ClearOptionals"/> zeroes the ObjectLogPosition field
-        /// this flush just stamped. Such a record keeps its heap and metadata until the window closes; its release is marked
-        /// with <see cref="RecordInfo.DeferredDispose"/> and run by the drain on flush completion, or by eviction.
+        /// this flush just stamped. So a deleted record keeps its heap and metadata until the window closes; its disposal is marked
+        /// with <see cref="RecordInfo.DeferredDispose"/> and run by the drain on flush completion, or by eviction. A CopyUpdate's release of
+        /// its source does not wait: it replaces only the value's <see cref="ObjectIdMap"/> slot, which changes no byte of the image.
         /// <para>
         /// The upper bound is <see cref="AllocatorBase{TStoreFunctions, TAllocator}.SafeReadOnlyAddress"/>, not
         /// <see cref="LastIssuedFlushedUntilAddress"/>: <see cref="OnPagesMarkedReadOnly"/> advances SafeReadOnlyAddress first and
@@ -248,6 +249,7 @@ namespace Tsavorite.core
             objectPages = new ObjectPage[BufferSize];
             for (var ii = 0; ii < BufferSize; ii++)
                 objectPages[ii] = new();
+            deferredDisposeCounts = new int[BufferSize];
         }
 
         /// <summary>Initialize allocator</summary>
@@ -291,6 +293,7 @@ namespace Tsavorite.core
                 objectPages[index] = new();
             }
             PageHeader.Initialize(pagePointers[index]);
+            deferredDisposeCounts[index] = 0;
         }
 
         void ReturnPage(int index)
@@ -330,6 +333,9 @@ namespace Tsavorite.core
 
         internal void FreePage(int page)
         {
+            // Nothing on a freed page is claimed later: eviction has claimed its marks, and a mark lost without a claim leaves a count to drop.
+            deferredDisposeCounts[page % BufferSize] = 0;
+
             // If the logSizeTracker is not active, then all pages are used once allocated so there's nothing to add to the overflow pool.
             if (logSizeTracker is not null)
                 ReturnPage(page % BufferSize);
@@ -548,8 +554,8 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         internal override void DrainDeferredDisposes(long fromAddress, long untilAddress)
         {
-            // A NullDevice main log notes no mark for the drain, and the drain leaves every mark there to eviction: FlushedUntilAddress
-            // advances without anything being written, so passing a record does not mean a Snapshot checkpoint's flush has read it.
+            // On a NullDevice main log the drain leaves every mark to eviction: FlushedUntilAddress advances without anything being
+            // written, so passing a record does not mean a Snapshot checkpoint's flush has read it.
             if (IsNullDevice)
                 return;
 
@@ -574,7 +580,10 @@ namespace Tsavorite.core
                     address = firstValidAddress;
 
                 var pageIndex = GetPageIndexForAddress(address);
-                if (IsAllocated(pageIndex))
+
+                // A page with no outstanding mark is skipped whole. A mark made after this read on a record below FlushedUntilAddress is
+                // run by the operation that made it, which reads FlushedUntilAddress after counting the mark; see NoteDeferredDispose.
+                if (IsAllocated(pageIndex) && Volatile.Read(ref deferredDisposeCounts[pageIndex]) != 0)
                 {
                     var objectIdMap = objectPages[pageIndex].objectIdMap;
                     while (address < stopAddress)
@@ -588,8 +597,8 @@ namespace Tsavorite.core
                         if (offset == 0 || offset + allocatedSize > PageSize)
                             break;
 
-                        if (logRecord.InfoRef.TryTakeDeferredDispose(out var copyUpdate))
-                            RunDeferredRelease(ref logRecord, copyUpdate);
+                        if (TryTakeDeferredDispose(ref logRecord, pageIndex))
+                            RunDeferredDispose(ref logRecord);
 
                         address += allocatedSize;
                     }
@@ -599,17 +608,23 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Run a deferred release of a superseded source that the caller has claimed with <see cref="RecordInfo.TryTakeDeferredDispose(out bool)"/>.</summary>
-        /// <remarks>A CopyUpdate's source has only its value released. Any other source was deleted, by a Delete or an expiration, and is
-        /// disposed as deleted, which runs the application's delete trigger, whether or not the record was sealed. An invalid record was
-        /// elided after it was marked, once its freeze lifted, and the elision already disposed it.</remarks>
-        private void RunDeferredRelease(ref LogRecord logRecord, bool copyUpdate)
+        /// <summary>Claim the deferred disposal marked on <paramref name="logRecord"/>, on the page in slot <paramref name="pageIndex"/>, and
+        /// count it off that page.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool TryTakeDeferredDispose(ref LogRecord logRecord, int pageIndex)
         {
-            if (!logRecord.Info.Valid)
-                return;
-            if (copyUpdate)
-                ReleaseCopyUpdatedSourceValue(ref logRecord);
-            else
+            if (!logRecord.InfoRef.TryTakeDeferredDispose())
+                return false;
+            _ = Interlocked.Decrement(ref deferredDisposeCounts[pageIndex]);
+            return true;
+        }
+
+        /// <summary>Run a deferred disposal of a deleted record that the caller has claimed with <see cref="RecordInfo.TryTakeDeferredDispose"/>.</summary>
+        /// <remarks>The record was deleted, by a Delete or an expiration, and is disposed as deleted, which runs the application's delete trigger,
+        /// whether or not the record was sealed. An invalid record was elided after it was marked, and the elision already disposed it.</remarks>
+        private void RunDeferredDispose(ref LogRecord logRecord)
+        {
+            if (logRecord.Info.Valid)
                 OnDispose(ref logRecord, DisposeReason.Deleted);
         }
 
@@ -662,8 +677,8 @@ namespace Tsavorite.core
                 // disposal at the supersede site, then eviction -- so the heap accounting below sees a value-cleared record and
                 // does not double-count. Invalid records were skipped above, which is what keeps an elided record, whose
                 // disposal already ran, from being disposed twice.
-                if (logRecord.InfoRef.TryTakeDeferredDispose(out var copyUpdate))
-                    RunDeferredRelease(ref logRecord, copyUpdate);
+                if (TryTakeDeferredDispose(ref logRecord, GetPageIndexForAddress(address)))
+                    RunDeferredDispose(ref logRecord);
 
                 // Decrement the record's heap contribution in a single call.
                 // For non-tombstoned records, CalculateHeapMemorySize returns key + value heap.
@@ -852,6 +867,30 @@ namespace Tsavorite.core
                 _ = Interlocked.CompareExchange(ref snapshotObjectLogState, null, captures);
         }
 
+        /// <summary>Write a capture's out-of-line components to <paramref name="captures"/>' object log, through a writer the checkpoint keeps
+        /// between captures.</summary>
+        /// <remarks>Call within a capture admitted by <see cref="SnapshotObjectLogState.TryBeginCapture"/>. A writer whose write failed may have a
+        /// record in progress, so it is disposed rather than kept.</remarks>
+        private ObjectLogWriteResult WriteCapture(SnapshotObjectLogState captures, in OverflowByteArray keyOverflow, in OverflowByteArray valueOverflow,
+            bool valueIsObject, IHeapObject valueObject)
+        {
+            var writer = captures.RentCaptureWriter<ObjectLogWriter<TStoreFunctions>>()
+                ?? new ObjectLogWriter<TStoreFunctions>(captures.Log, storeFunctions, objectLogWriterSettings);
+            ObjectLogWriteResult result;
+            try
+            {
+                result = writer.WriteRecordObjects(in keyOverflow, in valueOverflow, valueIsObject, valueObject);
+            }
+            catch
+            {
+                writer.Dispose();
+                throw;
+            }
+            writer.ReturnBuffers();
+            captures.ReturnCaptureWriter(writer);
+            return result;
+        }
+
         /// <inheritdoc/>
         /// <remarks>
         /// <para>The capture claims the source object, which waits out a flush that is writing it, and then acts on what was published:</para>
@@ -904,8 +943,7 @@ namespace Tsavorite.core
                     HeapObjectBase.BeginClaimedWrite(sourceObject);
                     try
                     {
-                        using var writer = new ObjectLogWriter<TStoreFunctions>(captures.Log, storeFunctions, objectLogWriterSettings);
-                        result = writer.WriteRecordObjects(in keyOverflow, default, valueIsObject: true, valueObject);
+                        result = WriteCapture(captures, in keyOverflow, default, valueIsObject: true, valueObject);
                     }
                     finally
                     {
@@ -972,8 +1010,7 @@ namespace Tsavorite.core
                     sourceRecord.InfoRef.HasSnapshotObjectLogReference = true;
                 else
                 {
-                    using var writer = new ObjectLogWriter<TStoreFunctions>(captures.Log, storeFunctions, objectLogWriterSettings);
-                    var result = writer.WriteRecordObjects(in keyOverflow, in valueOverflow, valueIsObject: false, valueObject: null);
+                    var result = WriteCapture(captures, in keyOverflow, in valueOverflow, valueIsObject: false, valueObject: null);
 
                     // Stamp before marking: a flush that sees the marker keeps the stamp.
                     sourceRecord.SetObjectLogPositionAndHints(in result);
@@ -1009,6 +1046,47 @@ namespace Tsavorite.core
             if (credit != 0)
                 logSizeTracker?.IncrementSize(-credit);
             valueOverflow.ReleasePublicationClaim((int)SerializationPhase.REST, owner: 0);
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// <para>Points the source's value slot at a placeholder and credits the value's heap. A flush or a checkpoint may still be reading the
+        /// source, so its bytes do not change.</para>
+        /// <list type="bullet">
+        /// <item>An object's slot gets <paramref name="capturingSnapshot"/>'s placeholder if that checkpoint captured the object, or else
+        /// <see cref="SupersededObjectValue.Released"/>, and the object is disposed. The CopyUpdate marked the object superseded before
+        /// PostCopyUpdater, so a flush that read the slot before this never serializes the object's collections: it keeps the record's reference
+        /// to its own checkpoint's capture, or writes a null value. A flush that reads the slot after this does the same through the placeholder;
+        /// see <see cref="PublishSupersededObject"/>.</item>
+        /// <item>An overflow value's slot gets <see cref="OverflowByteArray.Released"/>. The array may also be the new record's, which then owns
+        /// it. An overflow source is released here only when no checkpoint still needs its array: none needs its image, or its image is durable
+        /// or already published by a ReadOnly flush, or the checkpoint has stopped capturing. A flush that reads the slot after this writes an
+        /// empty value, which nothing recovers. The sentinel's share of the heap is credited at eviction, as for a capture's sentinel.</item>
+        /// </list>
+        /// </remarks>
+        internal override void ReleaseCopyUpdatedSourceInPlace(ref LogRecord source, SnapshotObjectLogState capturingSnapshot)
+        {
+            var dataHeader = source.DataHeader;
+            if (dataHeader.ValueIsObject)
+            {
+                var valueObject = source.ExchangeValueObjectSlot(capturingSnapshot?.ObjectSentinel ?? SupersededObjectValue.Released);
+                if (valueObject is null)
+                    return;
+                var valueHeap = valueObject.HeapMemorySize;
+                if (valueHeap != 0)
+                    logSizeTracker?.IncrementSize(-valueHeap);
+                valueObject.Dispose();
+            }
+            else if (dataHeader.ValueIsOverflow)
+            {
+                Debug.Assert(capturingSnapshot is null, "A capture of an overflow value releases its source in CompleteOverflowCapture");
+                var valueOverflow = source.ExchangeValueOverflowSlot(OverflowByteArray.Released);
+                if (valueOverflow.IsEmpty)
+                    return;
+                var credit = valueOverflow.HeapMemorySize - OverflowByteArray.Released.HeapMemorySize;
+                if (credit != 0)
+                    logSizeTracker?.IncrementSize(-credit);
+            }
         }
 
         /// <inheritdoc/>
@@ -1681,6 +1759,9 @@ namespace Tsavorite.core
                                         if (valueObject is HeapObjectBase heapObject)
                                             wroteObjects |= PublishFlushedObject(heapObject, ref logRecord, logicalAddress, in keyOverflow, logWriter,
                                                 asyncResult.flushRequestState, snapshotFlushState);
+                                        else if (valueObject is SupersededObjectValue superseded)
+                                            wroteObjects |= PublishSupersededObject(superseded, ref logRecord, logicalAddress, in keyOverflow, logWriter,
+                                                asyncResult.flushRequestState, snapshotFlushState);
                                         else if (!valueOverflow.IsEmpty)
                                             wroteObjects |= PublishFlushedOverflow(ref logRecord, logicalAddress, in keyOverflow, valueOverflow, logWriter,
                                                 asyncResult.flushRequestState, snapshotFlushState);
@@ -1698,9 +1779,10 @@ namespace Tsavorite.core
                                     else
                                     {
                                         // A still-Valid record must keep its heap. The paths that free an overflow key or value
-                                        // (OnDispose with Elided or RevivificationFreeList) are preceded by SealAndInvalidate, and both the Deleted
-                                        // path and a CopyUpdate's release of its source value are declined for this flush range by IsFrozenForFlush,
-                                        // which defers the release to the drain or eviction. So a lost capture means the live record is Invalid (elided).
+                                        // (OnDispose with Elided or RevivificationFreeList) are preceded by SealAndInvalidate, the Deleted path
+                                        // is declined for this flush range by IsFrozenForFlush, which defers it to the drain or eviction, and a
+                                        // CopyUpdate's release of its source value replaces the value's slot rather than freeing it. So a lost
+                                        // capture means the live record is Invalid (elided).
                                         Debug.Assert(!logRecord.Info.Valid,
                                             "A Valid record lost its captured heap during object-log flush; expected the live record to be Invalid (elided).");
                                     }
@@ -1942,6 +2024,39 @@ namespace Tsavorite.core
                 HeapObjectBase.EndClaimedWrite();
                 valueObject.ReleaseClaim(finalWord);
             }
+            return true;
+        }
+
+        /// <summary>
+        /// Publish a flushed record whose value a CopyUpdate has released, leaving a placeholder in its slot: keep its reference to the active
+        /// Snapshot checkpoint's capture, or write it with a null value and stamp it.
+        /// </summary>
+        /// <param name="superseded">The placeholder in the record's value slot</param>
+        /// <param name="logRecord">The record, on the live page</param>
+        /// <param name="logicalAddress">The record's address</param>
+        /// <param name="keyOverflow">The record's overflow key, or default</param>
+        /// <param name="logWriter">The writer for the flush's object log</param>
+        /// <param name="flushRequestState">Whether this is a Snapshot or a ReadOnly flush</param>
+        /// <param name="snapshotFlushState">For a Snapshot flush, its checkpoint; otherwise null</param>
+        /// <returns>True if this wrote to the flush's object log.</returns>
+        /// <remarks>This is what <see cref="PublishFlushedObject"/> does for the released object, which is superseded: the placeholder names the
+        /// checkpoint that captured the object, in place of the object's phase. The placeholder never reaches the store's value serializer.</remarks>
+        private bool PublishSupersededObject(SupersededObjectValue superseded, ref LogRecord logRecord, long logicalAddress, in OverflowByteArray keyOverflow,
+            ObjectLogWriter<TStoreFunctions> logWriter, FlushRequestState flushRequestState, SnapshotObjectLogState snapshotFlushState)
+        {
+            if (logRecord.Info.HasSnapshotObjectLogReference && superseded.CapturingSnapshot is { } capturingSnapshot)
+            {
+                // As for an object, a ReadOnly flush reads the active checkpoint only after finding the capture.
+                var state = flushRequestState == FlushRequestState.Snapshot ? snapshotFlushState : ActiveSnapshotObjectLog;
+                if (ReferenceEquals(capturingSnapshot, state))
+                {
+                    if (flushRequestState == FlushRequestState.ReadOnly)
+                        state.NoteMainLogReference(logicalAddress);
+                    return false;
+                }
+            }
+            var result = logWriter.WriteRecordObjects(in keyOverflow, default, valueIsObject: true, valueObject: null);
+            StampFlushedRecord(ref logRecord, in result);
             return true;
         }
 

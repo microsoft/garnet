@@ -135,7 +135,9 @@ namespace Tsavorite.core
         /// <see cref="ObjectIdMap.InvalidObjectId"/> into the field, then publishes an inline header. So a field whose slot id is
         /// <see cref="ObjectIdMap.InvalidObjectId"/>, or whose slot no longer holds a component of the field's kind, has been released:</para>
         /// <list type="bullet">
-        /// <item>A released value resolves to nothing: a null value object, or an empty overflow value.</item>
+        /// <item>A released value resolves to nothing: a null value object, or an empty overflow value. So does a value a CopyUpdate released
+        /// without changing the record's bytes: its slot holds a placeholder (<see cref="SupersededObjectValue"/>), which
+        /// <see cref="ValueObject"/> reads as null, or an overflow sentinel, which reads as an empty value.</item>
         /// <item>A released overflow key cannot be reported, so the remap fails. A key is released only when a sealed and invalidated record is
         /// disposed: an elision, a free-listing, or an abandoned insert.</item>
         /// </list>
@@ -298,6 +300,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        /// <remarks>A superseded record whose value a CopyUpdate released reads as null; see <see cref="SupersededObjectValue"/>.</remarks>
         public readonly IHeapObject ValueObject
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -306,7 +309,8 @@ namespace Tsavorite.core
                 if (DataHeader.ValueIsObject)
                 {
                     var (_ /*valueLength*/, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
-                    return objectIdMap.GetHeapObject(*(int*)valueAddress);
+                    var valueObject = objectIdMap.GetHeapObject(*(int*)valueAddress);
+                    return valueObject is SupersededObjectValue ? null : valueObject;
                 }
                 ThrowTsavoriteException("ValueObject is not valid for Span values");
                 return default;
@@ -1616,6 +1620,38 @@ namespace Tsavorite.core
             Debug.Assert(DataHeader.ValueIsOverflow, "ReplaceValueOverflowSlot requires an overflow value");
             var (_ /*valueLength*/, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
             objectIdMap.Set(*(int*)valueAddress, replacement);
+        }
+
+        /// <summary>Point this record's object value slot at <paramref name="replacement"/> without changing the record's bytes, and return the
+        /// object the slot held.</summary>
+        /// <returns>The object replaced; null, with the slot unchanged, if the slot held no object or already held a placeholder.</returns>
+        /// <remarks>Only the <see cref="ObjectIdMap"/> changes, so a device write of the record's page in flight is unaffected. A CopyUpdate
+        /// uses this to release its superseded source's object; see <see cref="SupersededObjectValue"/>. The caller holds the record's key,
+        /// so no other writer changes the slot.</remarks>
+        internal readonly IHeapObject ExchangeValueObjectSlot(SupersededObjectValue replacement)
+        {
+            Debug.Assert(DataHeader.ValueIsObject, "ExchangeValueObjectSlot requires an object value");
+            var (_ /*valueLength*/, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
+            var objectId = *(int*)valueAddress;
+            if (!objectIdMap.TryGetHeapObject(objectId, out var valueObject) || valueObject is SupersededObjectValue)
+                return null;
+            objectIdMap.Set(objectId, replacement);
+            return valueObject;
+        }
+
+        /// <summary>Point this record's overflow value slot at <paramref name="replacement"/> without changing the record's bytes, and return the
+        /// array the slot held.</summary>
+        /// <returns>The array replaced; empty, with the slot unchanged, if the slot held no array or already held a sentinel.</returns>
+        /// <remarks>As for <see cref="ExchangeValueObjectSlot"/>: a CopyUpdate uses this to release its superseded source's share of the array.</remarks>
+        internal readonly OverflowByteArray ExchangeValueOverflowSlot(OverflowByteArray replacement)
+        {
+            Debug.Assert(DataHeader.ValueIsOverflow, "ExchangeValueOverflowSlot requires an overflow value");
+            var (_ /*valueLength*/, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
+            var objectId = *(int*)valueAddress;
+            if (!objectIdMap.TryGetOverflowByteArray(objectId, out var valueOverflow) || valueOverflow.IsSentinel)
+                return default;
+            objectIdMap.Set(objectId, replacement);
+            return valueOverflow;
         }
 
         /// <summary>Stamp the position word and initial-read hints that an object-log write produced for this record.</summary>

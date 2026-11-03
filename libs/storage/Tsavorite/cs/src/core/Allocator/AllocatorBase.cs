@@ -133,24 +133,23 @@ namespace Tsavorite.core
         internal virtual void ResetRecoveredResidentPageHeader(int page) { }
 
         /// <summary>Highest logical address ever marked <see cref="RecordInfo.DeferredDispose"/>. Used only to skip the drain
-        /// entirely once FlushedUntilAddress has passed every mark, which is the overwhelmingly common case, and to make eviction walk a
-        /// range that may hold a mark even when nothing else needs the walk.</summary>
-        /// <remarks>Deliberately a monotonic high-water mark rather than a count of outstanding marks. A marked record can be
-        /// elided and revivified once its freeze lifts, and reuse reinitializes <see cref="RecordInfo"/>, so a count would lose
-        /// a decrement and drift upward forever -- making every later flush completion walk a range that holds nothing. A
-        /// high-water address cannot drift: marks only ever raise it, and it is self-clearing in effect because the drain range
-        /// advances with FlushedUntilAddress and stops matching once it is past.</remarks>
+        /// entirely once FlushedUntilAddress has passed every mark, which is the overwhelmingly common case.</summary>
+        /// <remarks>A monotonic high-water mark, which cannot drift: marks only ever raise it, and it is self-clearing in effect because the
+        /// drain range advances with FlushedUntilAddress and stops matching once it is past. Which pages the drain and eviction then walk is
+        /// decided by <see cref="deferredDisposeCounts"/>.</remarks>
         private protected long deferredDisposeMaxAddress;
+
+        /// <summary>For each in-memory page slot, the number of records on its page that are marked <see cref="RecordInfo.DeferredDispose"/>
+        /// and not yet claimed; null for an allocator that runs no deferred disposal. One int per page slot, allocated once.</summary>
+        /// <remarks>The drain and eviction walk only pages whose count is nonzero. The count can stay high: a marked record that is elided
+        /// and then reused through revivification loses its mark unclaimed. That costs at most one walk of the page by the drain and one by
+        /// eviction, because each range is drained once; the count is reset when the page is allocated or freed.</remarks>
+        private protected int[] deferredDisposeCounts;
 
         /// <summary>High-water address the deferred-disposal drain has already covered.</summary>
         /// <remarks>A flush completion claims [this, FlushedUntilAddress) by advancing it with MonotonicUpdate, so concurrent completions
         /// drain disjoint ranges, and a range passed over while nothing was marked is carried into the next one.</remarks>
         private protected long deferredDisposeDrainedUntilAddress;
-
-        /// <summary>Record that the superseded source at <paramref name="logicalAddress"/> was marked for deferred release because a flush or a
-        /// checkpoint still reads it, so the drain on flush completion, or eviction, releases it.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void NoteDeferredDispose(long logicalAddress) => _ = MonotonicUpdate(ref deferredDisposeMaxAddress, logicalAddress, out _);
 
         /// <summary>Dispose records marked <see cref="RecordInfo.DeferredDispose"/> in <paramref name="fromAddress"/> ..
         /// <paramref name="untilAddress"/>, whose flush has completed. Only implemented by ObjectAllocator.</summary>
@@ -493,13 +492,13 @@ namespace Tsavorite.core
         internal LogSizeTracker<TStoreFunctions, TAllocator> logSizeTracker;
 
         /// <summary>
-        /// Release the value of a source record that a CopyUpdate has superseded: credit its object's heap to the tracker, dispose the
-        /// object, and clear the value's heap field. The key, including an overflow key, stays for chain traversal and is accounted
-        /// at eviction.
+        /// Release the value of a read-cache source record that a CopyUpdate has superseded: credit its object's or overflow array's heap to the
+        /// tracker, dispose an object, and clear the value's heap field. The key, including an overflow key, stays for chain traversal and is
+        /// accounted at eviction.
         /// </summary>
-        /// <remarks>Run at the CopyUpdate site, or later by the deferred-disposal drain or eviction when the source was frozen for flush.
-        /// The trigger is not involved: a CopyUpdate is a partial clear (value only), which trigger implementers should not have to
-        /// distinguish from a Delete.</remarks>
+        /// <remarks>No flush or checkpoint reads the read cache, so this may change the record's bytes. A main-log source is released by
+        /// <see cref="ReleaseCopyUpdatedSourceInPlace"/>, which does not. The trigger is not involved: a CopyUpdate is a partial clear (value
+        /// only), which trigger implementers should not have to distinguish from a Delete.</remarks>
         internal void ReleaseCopyUpdatedSourceValue(ref LogRecord logRecord)
         {
             if (logRecord.DataHeader.ValueIsObject)
@@ -513,9 +512,23 @@ namespace Tsavorite.core
                     valueObject.Dispose();
                 }
             }
+            else if (logRecord.DataHeader.ValueIsOverflow)
+            {
+                var valueHeap = logRecord.GetValueHeapMemorySize();
+                if (valueHeap != 0)
+                    logSizeTracker?.IncrementSize(-valueHeap);
+            }
 
             logRecord.ClearValueIfHeap();
         }
+
+        /// <summary>
+        /// Release the value of a main-log source record that a CopyUpdate has superseded, without changing the record's bytes, so that no flush
+        /// or checkpoint reading the record holds the release back. Only implemented by ObjectAllocator, whose records have heap values.
+        /// </summary>
+        /// <param name="source">The superseded record</param>
+        /// <param name="capturingSnapshot">The Snapshot checkpoint that captured the source's object value into its object log, or null</param>
+        internal virtual void ReleaseCopyUpdatedSourceInPlace(ref LogRecord source, SnapshotObjectLogState capturingSnapshot) { }
 
         /// <summary>The "event" to be waited on for flush completion by the initiator of an operation</summary>
         internal CompletionEvent flushEvent;
@@ -1434,6 +1447,23 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetPageIndexForAddress(long logicalAddress) => GetPageIndexForPage(_wrapper.GetPageOfAddress(logicalAddress, LogPageSizeBits));
 
+        /// <summary>Record that the deleted source at <paramref name="logicalAddress"/> was marked for deferred disposal because a flush or a
+        /// checkpoint still reads it, so the drain on flush completion, or eviction, disposes it.</summary>
+        /// <remarks>The caller marks the record first and reads FlushedUntilAddress after this; the count's increment is a full fence, so a
+        /// drain that advanced FlushedUntilAddress before that read sees the count.</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void NoteDeferredDispose(long logicalAddress)
+        {
+            if (deferredDisposeCounts is { } counts)
+                _ = Interlocked.Increment(ref counts[GetPageIndexForAddress(logicalAddress)]);
+            _ = MonotonicUpdate(ref deferredDisposeMaxAddress, logicalAddress, out _);
+        }
+
+        /// <summary>Whether the page holding <paramref name="logicalAddress"/> may hold a record marked <see cref="RecordInfo.DeferredDispose"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private protected bool PageHasDeferredDisposes(long logicalAddress)
+            => deferredDisposeCounts is { } counts && Volatile.Read(ref counts[GetPageIndexForAddress(logicalAddress)]) != 0;
+
         /// <summary>Get page size</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetPageSize() => PageSize;
@@ -2266,10 +2296,10 @@ namespace Tsavorite.core
 
                     // Per-record eviction walk: handles internal heap-size accounting (key overflow
                     // and value heap via logSizeTracker) and optionally notifies the application
-                    // via OnEvict for app-level cleanup. It also runs any deferred release still marked
-                    // in the range, so it walks whenever a mark may lie there.
+                    // via OnEvict for app-level cleanup. It also runs any deferred disposal still marked
+                    // on the page, so it walks whenever the page holds a mark.
                     var evictSource = IsReadCache ? EvictionSource.ReadCache : EvictionSource.MainLog;
-                    if (logSizeTracker is not null || storeFunctions.CallOnEvict || start <= Volatile.Read(ref deferredDisposeMaxAddress))
+                    if (logSizeTracker is not null || storeFunctions.CallOnEvict || PageHasDeferredDisposes(start))
                         _wrapper.EvictRecordsInRange(start, end, evictSource, isRecovery: false);
 
                     // If we are using a null storage device, we must also shift BeginAddress (leave it in-memory)
@@ -2428,10 +2458,9 @@ namespace Tsavorite.core
                     if ((oldFlushedUntilAddress < notifyFlushedUntilAddress) && (currentFlushedUntilAddress >= notifyFlushedUntilAddress))
                         _ = notifyFlushedUntilAddressTcs?.TrySetResult(true);
 
-                    // A superseded source whose release was declined while frozen - a deleted record's disposal, or a CopyUpdate
-                    // source's value release - becomes releasable once no flush can read it from the live page. On a real main-log device
-                    // that also ends a checkpoint's hold on it, because the Snapshot flush completes a page before the page's ReadOnly flush
-                    // can. This delta is that range,
+                    // A deleted record whose disposal was declined while frozen becomes disposable once no flush can read it from the live
+                    // page. On a real main-log device that also ends a checkpoint's hold on it, because the Snapshot flush completes a page
+                    // before the page's ReadOnly flush can. This delta is that range,
                     // and it is contiguous by construction because FlushedUntilAddress advances only over completed writes -- unlike
                     // anything page-scoped, which cannot be sound when a page is flushed in fragments that are neither tracked nor
                     // coalesced, so a callback cannot tell whether it holds the last one. A later flush that rewrites the sector holding

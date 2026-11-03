@@ -26,10 +26,11 @@ namespace Tsavorite.test.recovery
         const byte CapturedFill = 2;
         const byte LaterFill = 3;
 
-        /// <summary>RMW input: the byte every byte of the value becomes.</summary>
+        /// <summary>RMW input: the byte every byte of the value becomes, and how many bytes a CopyUpdate adds to the value.</summary>
         internal struct FillInput
         {
             internal byte fill;
+            internal int growBy;
         }
 
         /// <summary>Read output: the value, and the address of the record it came from.</summary>
@@ -40,8 +41,9 @@ namespace Tsavorite.test.recovery
         }
 
         /// <summary>
-        /// RMW fills the value with <see cref="FillInput.fill"/>, keeping its length. As Garnet's SETBIT, BITFIELD and SETRANGE do, CopyUpdater
-        /// only copies the source, which shares its overflow array with the new record, and PostCopyUpdater makes the change.
+        /// RMW fills the value with <see cref="FillInput.fill"/>, keeping its length unless <see cref="FillInput.growBy"/> asks a CopyUpdate to
+        /// grow it. As Garnet's SETBIT, BITFIELD and SETRANGE do, CopyUpdater only copies the source, which shares its overflow array with the
+        /// new record when the length is kept, and PostCopyUpdater makes the change.
         /// </summary>
         internal sealed class FillFunctions : SessionFunctionsBase<FillInput, FillOutput, Empty>
         {
@@ -60,6 +62,8 @@ namespace Tsavorite.test.recovery
 
             public override bool InPlaceUpdater(ref LogRecord logRecord, ref FillInput input, ref FillOutput output, ref RMWInfo rmwInfo)
             {
+                if (input.growBy != 0)
+                    return false;
                 logRecord.ValueSpan.Fill(input.fill);
                 return true;
             }
@@ -76,7 +80,7 @@ namespace Tsavorite.test.recovery
             }
 
             public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref FillInput input)
-                => new() { KeySize = srcLogRecord.Key.Length, ValueSize = srcLogRecord.ValueSpan.Length };
+                => new() { KeySize = srcLogRecord.Key.Length, ValueSize = srcLogRecord.ValueSpan.Length + input.growBy };
 
             public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref FillInput input)
                 => new() { KeySize = key.KeyBytes.Length, ValueSize = OverflowValueLength };
@@ -109,10 +113,10 @@ namespace Tsavorite.test.recovery
             return address;
         }
 
-        static void FillRmw(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, int key, byte fill)
+        static void FillRmw(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, int key, byte fill, int growBy = 0)
         {
             using var session = store.NewSession<TestObjectKey, FillInput, FillOutput, Empty, FillFunctions>(new FillFunctions());
-            FillInput input = new() { fill = fill };
+            FillInput input = new() { fill = fill, growBy = growBy };
             FillOutput output = new();
             var status = session.BasicContext.RMW(new TestObjectKey { key = key }, ref input, ref output);
             if (status.IsPending)
@@ -148,17 +152,111 @@ namespace Tsavorite.test.recovery
                 Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).GetObjectLogRecordRef(), Is.EqualTo(priorStamp),
                     "The RMW restamped a source that a flush had already published");
 
-            // A captured source is detached from the array its new record changes; any other source still shares it.
+            // A captured source is detached from the array its new record changes. Any other source here was declined because a ReadOnly flush
+            // had written it, so the checkpoint needs no image of it, and the CopyUpdate releases its share of the array.
             var sourceValue = GetValueOverflow(store, sourceAddress);
             var newValue = GetValueOverflow(store, newRecordAddress);
+            Assert.That(sourceValue.IsSentinel, Is.True, "The source still references the array its new record changes");
             if (expectCapture)
-            {
-                Assert.That(sourceValue.IsSentinel, Is.True, "The captured source still references the array its new record changes");
                 Assert.That(ReferenceEquals(sourceValue.Array, store.hlogBase.ActiveSnapshotObjectLog.OverflowSentinel.Array), Is.True,
                     "The captured source references another checkpoint's sentinel");
-            }
             else
-                Assert.That(ReferenceEquals(sourceValue.Array, newValue.Array), Is.True, "The CopyUpdate did not share the source's array");
+                Assert.That(ReferenceEquals(sourceValue.Array, OverflowByteArray.Released.Array), Is.True,
+                    "The source that was not captured must hold the released sentinel");
+            Assert.That(newValue.IsSentinel, Is.False, "The new record lost its array");
+        }
+
+        /// <summary>
+        /// A CopyUpdate that changes an overflow value's length copies the value into the new record's own array, so it captures nothing, and
+        /// the source keeps its array, which still holds the (v) value the checkpoint's flushes write; recovery returns that value.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoveryReadsTheSupersededOverflowValueWhenTheCopyUpdateChangesItsLength([Values] bool overflowKeys)
+        {
+            Guid token;
+            long sourceAddress;
+            var store = CreateOverflowStore(overflowKeys);
+            try
+            {
+                // A first record, so that the source's address is the tail its upsert reads.
+                _ = UpsertOverflow(store, 2, InitialFill);
+                sourceAddress = UpsertOverflow(store, 1, InitialFill);
+
+                var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
+                store.stateMachineDriver.UnsafeRegisterCallback(pause);
+                try
+                {
+                    Assert.That(store.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot), Is.True);
+                    Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True, "The checkpoint did not reach IN_PROGRESS");
+                    var newAddress = store.Log.TailAddress;
+                    FillRmw(store, 1, LaterFill, growBy: 8);
+                    Assert.That(store.hlogBase._wrapper.CreateLogRecord(newAddress).Info.IsInNewVersion, Is.True, "The RMW was not a (v+1) CopyUpdate");
+                    Assert.That(SourceIsMarked(store, sourceAddress), Is.False, "A source whose new record has its own array needs no capture");
+                    Assert.That(GetValueOverflow(store, sourceAddress).IsSentinel, Is.False, "The source must keep the array that holds its (v) value");
+                }
+                finally
+                {
+                    pause.Release.Set();
+                }
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                store.Dispose();
+            }
+
+            store = CreateOverflowStore(overflowKeys);
+            try
+            {
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+                ReadOverflowVersion(store, 1, sourceAddress, InitialFill, "a CopyUpdate that changed the value's length");
+            }
+            finally
+            {
+                store.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A CopyUpdate that keeps an overflow value's length gives the new record the source's array. Outside a checkpoint it releases the
+        /// source's share at once, leaving the released sentinel in the source's slot, so the size tracker counts the array once rather than
+        /// once per record; and evicting every record credits exactly what the records were charged.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void CopyUpdateOfASharedOverflowValueCountsTheArrayOnce()
+        {
+            const long TargetSize = 1L << 16;
+            var store = CreateOverflowStore();
+            try
+            {
+                var tracker = new LogSizeTracker<ClassStoreFunctions, ClassAllocator>(store.Log, TargetSize, TargetSize / 8, TargetSize / 16, logger: null);
+                store.Log.SetLogSizeTracker(tracker);
+
+                // An earlier record for the key keeps the source in a chain, so the CopyUpdate does not elide it.
+                _ = UpsertOverflow(store, 1, InitialFill);
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                var sourceAddress = UpsertOverflow(store, 1, CapturedFill);
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                var sharedArray = GetValueOverflow(store, sourceAddress).Array;
+                var heapBefore = tracker.LogHeapSizeBytes;
+
+                var newAddress = store.Log.TailAddress;
+                FillRmw(store, 1, LaterFill);
+                Assert.That(GetValueOverflow(store, newAddress).Array, Is.SameAs(sharedArray), "Precondition: the new record shares the source's array");
+                Assert.That(GetValueOverflow(store, sourceAddress).Array, Is.SameAs(OverflowByteArray.Released.Array),
+                    "The CopyUpdate did not release the source's share of the array");
+                Assert.That(tracker.LogHeapSizeBytes, Is.EqualTo(heapBefore + OverflowByteArray.Released.HeapMemorySize),
+                    "The array the two records share must be counted once");
+
+                store.Log.FlushAndEvict(wait: true);
+                Assert.That(tracker.LogHeapSizeBytes, Is.Zero, "Eviction must credit exactly what the records were charged");
+            }
+            finally
+            {
+                store.Dispose();
+            }
         }
 
         static void ReadOverflowVersion(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, int key, long expectedAddress, byte expectedFill, string when)

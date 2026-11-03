@@ -14,9 +14,9 @@ namespace Tsavorite.core
 
     // RecordInfo layout (64 bits total, high to low):
     //   Unused/Reserved bits:
-    //      [Unused0]..[Unused7]
-    //   Deferred-release bits (in memory only; cleared from every image read from disk):
-    //      [DeferredCopyUpdate][DeferredDispose]
+    //      [Unused0]..[Unused8]
+    //   Deferred-release bit (in memory only; cleared from every image read from disk):
+    //      [DeferredDispose]
     //   RecordInfo bits:
     //      [SnapshotObjectLog][Sealed][Modified][InNewVersion][Valid][Tombstone]
     //   LogAddress bits (where A = address):
@@ -29,8 +29,8 @@ namespace Tsavorite.core
 #pragma warning disable IDE1006 // Naming Styles: Must begin with uppercase letter
         const int kTotalBits = Size * 8;
 
-        // Other marker bits. Unused* means bits not yet assigned. Numbered Unused0 (highest bit position) down to Unused7
-        // (just above the deferred-release bits) so the ToString output prints them in the natural high-to-low bit order.
+        // Other marker bits. Unused* means bits not yet assigned. Numbered Unused0 (highest bit position) down to Unused8
+        // (just above the deferred-release bit) so the ToString output prints them in the natural high-to-low bit order.
         const int kIsReadCacheBitOffset = kAddressBits - 1;
         const int kTombstoneBitOffset = kIsReadCacheBitOffset + 1;
         const int kValidBitOffset = kTombstoneBitOffset + 1;
@@ -39,8 +39,8 @@ namespace Tsavorite.core
         const int kSealedBitOffset = kModifiedBitOffset + 1;
         const int kSnapshotObjectLogBitOffset = kSealedBitOffset + 1;
         const int kDeferredDisposeBitOffset = kSnapshotObjectLogBitOffset + 1;
-        const int kDeferredCopyUpdateBitOffset = kDeferredDisposeBitOffset + 1;
-        const int kUnused7BitOffset = kDeferredCopyUpdateBitOffset + 1;
+        const int kUnused8BitOffset = kDeferredDisposeBitOffset + 1;
+        const int kUnused7BitOffset = kUnused8BitOffset + 1;
         const int kUnused6BitOffset = kUnused7BitOffset + 1;
         const int kUnused5BitOffset = kUnused6BitOffset + 1;
         const int kUnused4BitOffset = kUnused5BitOffset + 1;
@@ -57,8 +57,7 @@ namespace Tsavorite.core
         const long kSealedBitMask = 1L << kSealedBitOffset;
         const long kSnapshotObjectLogBitMask = 1L << kSnapshotObjectLogBitOffset;
         const long kDeferredDisposeBitMask = 1L << kDeferredDisposeBitOffset;
-        const long kDeferredCopyUpdateBitMask = 1L << kDeferredCopyUpdateBitOffset;
-        const long kDeferredReleaseBitsMask = kDeferredDisposeBitMask | kDeferredCopyUpdateBitMask;
+        const long kUnused8BitMask = 1L << kUnused8BitOffset;
         const long kUnused7BitMask = 1L << kUnused7BitOffset;
         const long kUnused6BitMask = 1L << kUnused6BitOffset;
         const long kUnused5BitMask = 1L << kUnused5BitOffset;
@@ -121,8 +120,8 @@ namespace Tsavorite.core
         public void ClearBitsForDiskImages()
         {
             // A Sealed record may become current again during recovery if the RCU-inserted record was not written to disk during a crash. So clear that bit here.
-            // Deferred release bits describe in-memory ownership. A recovered image has no pending flush or disposal to claim.
-            word &= ~(kSealedBitMask | kDeferredReleaseBitsMask);
+            // The deferred-release bit describes in-memory ownership. A recovered image has no pending flush or disposal to claim.
+            word &= ~(kSealedBitMask | kDeferredDisposeBitMask);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -359,19 +358,13 @@ namespace Tsavorite.core
             set => word = value ? word | kUnused7BitMask : word & ~kUnused7BitMask;
         }
 
-        /// <summary>A deferred CopyUpdate value release, including a sealed checkpoint source.</summary>
-        internal bool DeferredCopyUpdate
+        internal bool Unused8
         {
-            readonly get => (word & kDeferredCopyUpdateBitMask) != 0;
-            set
-            {
-                if (value)
-                    _ = Interlocked.Or(ref word, kDeferredCopyUpdateBitMask);
-                else
-                    _ = Interlocked.And(ref word, ~kDeferredCopyUpdateBitMask);
-            }
+            readonly get => (word & kUnused8BitMask) != 0;
+            set => word = value ? word | kUnused8BitMask : word & ~kUnused8BitMask;
         }
 
+        /// <summary>A deletion of this superseded record whose disposal waits until no flush or checkpoint reads the record.</summary>
         internal bool DeferredDispose
         {
             readonly get => (word & kDeferredDisposeBitMask) != 0;
@@ -384,24 +377,17 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Mark a superseded record for deferred release, setting every bit of the mark in one atomic step so that a drain or an
-        /// eviction that sees <see cref="DeferredDispose"/> also sees what kind of release it is.</summary>
-        /// <param name="copyUpdate">The release is of a CopyUpdate's source, so only its value is released; otherwise it is disposed as deleted.</param>
-        internal void SetDeferredRelease(bool copyUpdate)
-            => _ = Interlocked.Or(ref word, kDeferredDisposeBitMask | (copyUpdate ? kDeferredCopyUpdateBitMask : 0));
-
-        /// <summary>Claim a deferred release once, including when a late mark races the flush completion drain.</summary>
-        /// <param name="copyUpdate">The release is of a CopyUpdate's source, so only its value is released.</param>
-        internal bool TryTakeDeferredDispose(out bool copyUpdate)
+        /// <summary>Claim a deferred disposal once, including when a late mark races the flush completion drain.</summary>
+        /// <remarks>Reads before it writes, so a walk over unmarked records does not write their headers.</remarks>
+        internal bool TryTakeDeferredDispose()
         {
             long previous;
             do
             {
                 previous = Volatile.Read(ref word);
-                copyUpdate = (previous & kDeferredCopyUpdateBitMask) != 0;
                 if ((previous & kDeferredDisposeBitMask) == 0)
                     return false;
-            } while (Interlocked.CompareExchange(ref word, previous & ~kDeferredReleaseBitsMask, previous) != previous);
+            } while (Interlocked.CompareExchange(ref word, previous & ~kDeferredDisposeBitMask, previous) != previous);
             return true;
         }
 
@@ -409,12 +395,12 @@ namespace Tsavorite.core
         {
             static string bstr(bool value) => value ? "T" : "F";
             static string bstr01(bool value) => value ? "1" : "0";
-            // Unused0..Unused7 printed in declared order (Unused0 leftmost = highest bit position), grouped in 4s separated by '|'.
+            // Unused0..Unused8 printed in declared order (Unused0 leftmost = highest bit position), grouped in 4s separated by '|'.
             var unusedStr = $"{bstr01(Unused0)}{bstr01(Unused1)}{bstr01(Unused2)}{bstr01(Unused3)}"
-                          + $"|{bstr01(Unused4)}{bstr01(Unused5)}{bstr01(Unused6)}{bstr01(Unused7)}";
+                          + $"|{bstr01(Unused4)}{bstr01(Unused5)}{bstr01(Unused6)}{bstr01(Unused7)}|{bstr01(Unused8)}";
             return $"prev {AddressString(PreviousAddress)}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(IsSealed)}, rc {bstr(IsReadCache)},"
-                 + $" mod {bstr(Modified)}, inv {bstr(IsInNewVersion)}, defDisp {bstr(DeferredDispose)}, defCopy {bstr(DeferredCopyUpdate)},"
-                 + $" snapshot {bstr(HasSnapshotObjectLogReference)}, Unused0-7 {unusedStr}";
+                 + $" mod {bstr(Modified)}, inv {bstr(IsInNewVersion)}, defDisp {bstr(DeferredDispose)},"
+                 + $" snapshot {bstr(HasSnapshotObjectLogReference)}, Unused0-8 {unusedStr}";
         }
     }
 }

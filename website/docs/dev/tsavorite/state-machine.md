@@ -590,9 +590,11 @@ the image the previous flush kept, or from the device, never from the live page.
 A FoldOver checkpoint recovers those records from the main log, so they can be
 elided or released in memory without changing the checkpoint's image.
 
-Every release of a superseded source honors it: elision is declined, and
-`ReleaseSupersededSource` defers a Delete's or an expiration's disposal, and a
-CopyUpdate's release of its source's value.
+Every release of a superseded source that changes its record honors it: elision
+is declined, and `ReleaseSupersededSource` defers a Delete's or an expiration's
+disposal. A CopyUpdate's release of its source's value does not wait: it points
+the value's `ObjectIdMap` slot at a placeholder, which changes none of the
+record's bytes, and a flush writes a placeholder as a null value.
 
 The freeze protects a superseded source's record *image*. Outside a checkpoint,
 nothing needs the source's pre-update *content*. The CopyUpdate's new record is
@@ -604,7 +606,9 @@ recovers a source that a flush is still writing: a FoldOver's image ends at its
 either the pre-update image, if it serialized the value first (the CopyUpdate
 waits for that), or a null value: the superseded object stays in its final
 serialization phase, `SERIALIZED`, with no cached bytes, so `Serialize` writes
-only its type byte marked null. Staying in that phase also keeps any later flush
+only its type byte marked null, and a flush that reads the slot after the
+release finds the placeholder and writes a null value itself. Staying in that
+phase also keeps any later flush
 from enumerating collections the new record still shares and mutates.
 That is why `CacheSerializedObjectData` preserves nothing when the new record is
 not in a new version. Only an active checkpoint that recovers the source as part
@@ -612,7 +616,7 @@ of its `(v)` image needs the pre-update content.
 
 The two freezes are released by different signals, and that difference matters:
 
-| Freeze | Released by | Deferred release |
+| Freeze | Released by | Deferred disposal of a deleted source |
 |---|---|---|
 | Flush | `FlushedUntilAddress` passing the record; on a NullDevice main log, `LastIssuedFlushedUntilAddress` | **Marked** (`RecordInfo.DeferredDispose`), and run by the drain on flush completion, or at eviction |
 | Checkpoint | the checkpoint no longer reading the record | **Marked**. On a real main-log device the drain runs it when `FlushedUntilAddress` passes the record |
@@ -621,17 +625,17 @@ On a real main-log device, `FlushedUntilAddress` passing a record also ends the
 checkpoint's hold on it. A ReadOnly flush of a page at or above the Snapshot
 flush's start waits until the Snapshot flush has completed that page, and below
 that start the Snapshot flush reads nothing. So a record already below
-`FlushedUntilAddress`, whose `(v)` image is on disk, is released at once. A
+`FlushedUntilAddress`, whose `(v)` image is on disk, is disposed at once. A
 NullDevice main log advances `FlushedUntilAddress` without writing anything, and
 without that ordering for the pages its ReadOnly flushes passed before the
-Snapshot flush began, so there the drain releases nothing, and eviction runs
-every marked release. Eviction walks a range that may hold a mark even when no
-size tracker or `OnEvict` trigger needs the walk.
+Snapshot flush began, so there the drain disposes nothing, and eviction runs
+every marked disposal. Each in-memory page slot counts the marks on its page, so
+the drain walks only pages that hold one, and eviction walks such a page even
+when no size tracker or `OnEvict` trigger needs the walk.
 
-The release of a Delete or an expiration disposes the record as deleted, which
-runs the application's delete trigger; a CopyUpdate's source has only its value
-released. A freeze left unmarked, to eviction alone, would skip the trigger,
-because eviction calls only `OnEvict`.
+Only a Delete or an expiration is marked. Its disposal runs the application's
+delete trigger; a freeze left unmarked, to eviction alone, would skip the
+trigger, because eviction calls only `OnEvict`.
 
 ### The streaming snapshot's scan
 
@@ -673,8 +677,9 @@ asserts the delete trigger runs once, after the flush on a real device and at
 eviction on a NullDevice;
 `RecordLifecycleTests.FrozenSupersededSourceIsDisposedWhenTheFlushCompletes`
 parks a flush mid-write and asserts disposal is declined and then drained;
-`RecordLifecycleTests.CopyUpdateDuringTheReadOnlyFlushWalkKeepsTheSource` does the
-same for a CopyUpdate; and
+`RecordLifecycleTests.CopyUpdateDuringTheReadOnlyFlushWalkReleasesTheSourceWithoutChangingItsBytes`
+asserts that a CopyUpdate releases such a source's value at once while its
+bytes stay as the flush found them; and
 `FlushBoundarySectorRecoveryTests.SupersedingABoundarySectorRecordKeepsTheFoldOverImage`
 recovers a FoldOver after an RMW, Upsert, or Delete of a record in its last
 sector, with and without the next flush in flight, and

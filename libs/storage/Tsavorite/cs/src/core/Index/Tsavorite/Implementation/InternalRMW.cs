@@ -596,18 +596,19 @@ namespace Tsavorite.core
                     // Else it was a CopyUpdater so call PCU if tombstoning has not been requested by NCU or CU
                     if (!addTombstone)
                     {
-                        // The new record already holds the key's value, so a source's value object is released once PostCopyUpdater, which may
-                        // still change the object the two records share, has run. The exception is a source whose (v) image a FoldOver or
-                        // streaming checkpoint still needs: it keeps its object, whose (v) bytes CacheSerializedObjectData caches. A Snapshot
-                        // checkpoint captures that image into its own object log instead, and the source is released. An overflow value's source
-                        // keeps its value until eviction, and a pending-IO source is a DiskLogRecord, which no checkpoint reads and which is
-                        // disposed up the pending chain.
+                        // The new record already holds the key's value, so the source's value is released once PostCopyUpdater, which may still
+                        // change the object or overflow array the two records share, has run; see ReleaseSupersededSource. The exception is a
+                        // source whose (v) image a FoldOver or streaming checkpoint still needs: an object keeps its value, whose (v) bytes
+                        // CacheSerializedObjectData caches, and an overflow value keeps its array. A Snapshot checkpoint captures that image into
+                        // its own object log instead, and the source is released. A pending-IO source is a DiskLogRecord, which no checkpoint
+                        // reads and which is disposed up the pending chain.
                         var isMemoryLogRecord = srcLogRecord.IsMemoryLogRecord;
-                        var capturedForSnapshot = false;
                         var releaseSourceValue = false;
 
-                        // A Snapshot checkpoint that captures an overflow value holds the value array's claim through PostCopyUpdater.
-                        SnapshotObjectLogState overflowCaptures = null;
+                        // The Snapshot checkpoint that captured the source's value, if any. A capture of an overflow value holds the value
+                        // array's claim through PostCopyUpdater, and then releases the source's share of the array itself.
+                        SnapshotObjectLogState capturingSnapshot = null;
+                        var overflowCaptured = false;
                         if (srcLogRecord.DataHeader.ValueIsObject)
                         {
                             // A read-cache source is a copy of a durable main-log record, so no checkpoint needs its image.
@@ -618,22 +619,40 @@ namespace Tsavorite.core
                             if (needsSourceImage && newLogRecord.Info.IsInNewVersion && srcLogRecord.ValueObject is HeapObjectBase sourceObject
                                 && hlogBase.ActiveSnapshotObjectLog is { } snapshotCaptures)
                             {
-                                capturedForSnapshot = TryCaptureCopyUpdateSource(snapshotCaptures, sourceObject, ref srcLogRecord.AsMemoryLogRecordRef(),
-                                    stackCtx.recSrc.LogicalAddress, ref newLogRecord);
+                                if (TryCaptureCopyUpdateSource(snapshotCaptures, sourceObject, ref srcLogRecord.AsMemoryLogRecordRef(),
+                                        stackCtx.recSrc.LogicalAddress, ref newLogRecord))
+                                    capturingSnapshot = snapshotCaptures;
                                 needsSourceImage = false;
                             }
-                            if (!capturedForSnapshot && srcLogRecord.ValueObject.CacheSerializedObjectData(ref newLogRecord, isMemoryLogRecord, needsSourceImage))
+                            if (capturingSnapshot is null && srcLogRecord.ValueObject.CacheSerializedObjectData(ref newLogRecord, isMemoryLogRecord, needsSourceImage))
                                 hlogBase.NoteSerializedObjectCache(stackCtx.recSrc.LogicalAddress);
 
                             // After a Snapshot checkpoint's capture attempt the source no longer needs its image: the capture holds it, or the
                             // checkpoint recovers the value from elsewhere; see TryCaptureCopyUpdateSource.
                             releaseSourceValue = isMemoryLogRecord && (!newLogRecord.Info.IsInNewVersion || !needsSourceImage);
                         }
-                        else if (srcLogRecord.DataHeader.ValueIsOverflow && isMemoryLogRecord && stackCtx.recSrc.HasMainLogSrc && newLogRecord.Info.IsInNewVersion
-                                && hlogBase.ActiveSnapshotObjectLog is { } snapshotCaptures
-                                && CheckpointNeedsSourceImage(stackCtx.recSrc.LogicalAddress, srcLogRecord.Info)
-                                && TryCaptureCopyUpdateOverflowSource(snapshotCaptures, ref srcLogRecord.AsMemoryLogRecordRef(), stackCtx.recSrc.LogicalAddress, ref newLogRecord))
-                            overflowCaptures = snapshotCaptures;
+                        else if (srcLogRecord.DataHeader.ValueIsOverflow && isMemoryLogRecord)
+                        {
+                            var needsSourceImage = stackCtx.recSrc.HasMainLogSrc && newLogRecord.Info.IsInNewVersion
+                                && CheckpointNeedsSourceImage(stackCtx.recSrc.LogicalAddress, srcLogRecord.Info);
+
+                            // A Snapshot checkpoint captures the (v) value when the new record shares the source's array, which PostCopyUpdater
+                            // goes on to change. As for an object, a source it does not capture otherwise needs no image, except one whose array
+                            // is its own: that array still holds the (v) value the checkpoint's flushes write.
+                            if (needsSourceImage && hlogBase.ActiveSnapshotObjectLog is { } snapshotCaptures)
+                            {
+                                if (TryCaptureCopyUpdateOverflowSource(snapshotCaptures, ref srcLogRecord.AsMemoryLogRecordRef(), stackCtx.recSrc.LogicalAddress,
+                                        ref newLogRecord, out var sourceKeepsArray))
+                                {
+                                    capturingSnapshot = snapshotCaptures;
+                                    overflowCaptured = true;
+                                }
+                                else
+                                    releaseSourceValue = !sourceKeepsArray;
+                            }
+                            else
+                                releaseSourceValue = !needsSourceImage;
+                        }
 
                         bool pcuSuccess;
                         try
@@ -642,8 +661,8 @@ namespace Tsavorite.core
                         }
                         finally
                         {
-                            if (overflowCaptures is not null)
-                                hlogBase.CompleteOverflowCapture(overflowCaptures, ref srcLogRecord.AsMemoryLogRecordRef());
+                            if (overflowCaptured)
+                                hlogBase.CompleteOverflowCapture(capturingSnapshot, ref srcLogRecord.AsMemoryLogRecordRef());
                         }
                         if (pcuSuccess)
                         {
@@ -654,10 +673,8 @@ namespace Tsavorite.core
                                     hlogBase.logSizeTracker?.IncrementSize(newValueHeap);
                             }
 
-                            // A captured source keeps its value until no flush reads it, and so does a source that a flush is still writing; see
-                            // ReleaseSupersededSource.
                             if (releaseSourceValue)
-                                ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: false, capturedForSnapshot);
+                                ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: false, capturingSnapshot);
                         }
                         else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {
@@ -667,7 +684,7 @@ namespace Tsavorite.core
                             newLogRecord.ClearValueIfHeap();
                             status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
                             if (isMemoryLogRecord)
-                                ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true, capturedForSnapshot);
+                                ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true, capturingSnapshot);
                         }
                         else if (rmwInfo.Action == RMWAction.WrongType)
                         {

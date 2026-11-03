@@ -262,7 +262,20 @@ namespace Tsavorite.test
             _ = s.BasicContext.RMW(new TestObjectKey { key = key }, ref input, ref output, 0);
         }
 
-        private bool SourceHoldsObject(long logicalAddress) => store.hlogBase._wrapper.CreateLogRecord(logicalAddress).DataHeader.ValueIsObject;
+        /// <summary>Whether the record at <paramref name="logicalAddress"/> still holds its value object. A CopyUpdate's release leaves a
+        /// placeholder in the slot, which reads as no object; an elision converts the value to inline.</summary>
+        private bool SourceHoldsObject(long logicalAddress)
+        {
+            var logRecord = store.hlogBase._wrapper.CreateLogRecord(logicalAddress);
+            return logRecord.DataHeader.ValueIsObject && logRecord.ValueObject is not null;
+        }
+
+        /// <summary>A copy of the bytes of the record at <paramref name="logicalAddress"/> on its page.</summary>
+        private unsafe byte[] RecordBytes(long logicalAddress)
+        {
+            var logRecord = store.hlogBase._wrapper.CreateLogRecord(logicalAddress);
+            return new ReadOnlySpan<byte>((void*)logRecord.physicalAddress, logRecord.AllocatedSize).ToArray();
+        }
 
         /// <summary>Replace the store with one whose main log and object log are NullDevices.</summary>
         private void UseNullDevice()
@@ -574,11 +587,11 @@ namespace Tsavorite.test
 
         /// <summary>
         /// On a NullDevice main log a Snapshot checkpoint's flush holds FlushedUntilAddress back on the pages it has not completed, but the
-        /// ReadOnly flush, which reads no record there, has run the OnFlush trigger and passed them. A CopyUpdate in that window of a source
-        /// that no checkpoint needs therefore releases the source's value at once.
+        /// ReadOnly flush, which reads no record there, has run the OnFlush trigger and passed them. A Delete in that window of a source that
+        /// no checkpoint needs therefore disposes the source at once.
         /// </summary>
         [Test, Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async Task NullDeviceCopyUpdateWhileTheSnapshotFlushHoldsBackFlushedUntilAddressReleasesTheSource()
+        public async Task NullDeviceDeleteWhileTheSnapshotFlushHoldsBackFlushedUntilAddressDisposesTheSource()
         {
             if (!ObjectFlushInjection.IsAvailable)
                 Assert.Ignore("ObjectFlushInjection is compiled out in Release, so the Snapshot flush cannot be held mid-page.");
@@ -624,11 +637,10 @@ namespace Tsavorite.test
                 Assert.That(store.Log.FlushedUntilAddress, Is.LessThanOrEqualTo(sourceAddress),
                     "Precondition: the Snapshot flush holds FlushedUntilAddress below the source");
 
-                TestObjectInput input = new() { value = 7 };
-                TestObjectOutput output = new();
-                var status = session.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, ref output, 0);
-                Assert.That(status.Record.CopyUpdated, Is.True, "The RMW did not copy-update the immutable source");
-                Assert.That(SourceHoldsObject(sourceAddress), Is.False, "The CopyUpdate did not release the source's value at once");
+                tracker.Reset();
+                var status = session.BasicContext.Delete(new TestObjectKey { key = 1 }, 0);
+                Assert.That(status.Record.Created, Is.True, "The Delete did not insert a tombstone for the immutable source");
+                Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "The Delete did not dispose the source at once");
             }
             finally
             {
@@ -883,12 +895,12 @@ namespace Tsavorite.test
         }
 
         /// <summary>
-        /// A CopyUpdate outside a checkpoint whose source the read-only flush has captured but not yet stamped must leave the source
-        /// intact. Releasing it there converts the value to inline under the flush, which then stamps an object-log position into an
-        /// inline record.
+        /// A CopyUpdate outside a checkpoint whose source the ReadOnly flush is walking releases the source's value at once, without changing
+        /// the bytes of the record, which the flush writes from the live page: the value's slot gets a placeholder, and the record stays an
+        /// object record with its position and hints.
         /// </summary>
         [Test, Category("TsavoriteKV")]
-        public void CopyUpdateDuringTheReadOnlyFlushWalkKeepsTheSource()
+        public void CopyUpdateDuringTheReadOnlyFlushWalkReleasesTheSourceWithoutChangingItsBytes()
         {
             var sourceAddress = store.Log.TailAddress;
             Upsert(1, 100);
@@ -914,9 +926,15 @@ namespace Tsavorite.test
                 var shift = Task.Run(() => store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true));
                 Assert.That(insideFlushWindow.Wait(TimeSpan.FromSeconds(30)), Is.True,
                     "the flush never reached AfterCapture, so this test proves nothing (note the hook is DEBUG-only)");
+                Assert.That(store.hlog.IsFrozenForFlush(sourceAddress), Is.True, "Precondition: the flush is walking the source");
 
+                var bytesBefore = RecordBytes(sourceAddress);
                 RmwAdd(1, 7);
-                Assert.That(SourceHoldsObject(sourceAddress), Is.True, "the CopyUpdate released a source the flush is walking");
+                Assert.That(TrackedObjectValue.Snapshot().total, Is.EqualTo(1), "the CopyUpdate did not release the source's value at once");
+                Assert.That(SourceHoldsObject(sourceAddress), Is.False, "the source still holds its value object");
+                Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).DataHeader.ValueIsObject, Is.True,
+                    "the release must leave the source an object record");
+                Assert.That(RecordBytes(sourceAddress), Is.EqualTo(bytesBefore), "the release changed the bytes of a record the flush is writing");
 
                 _ = releaseFlush.Release();
                 Assert.That(shift.Wait(TimeSpan.FromSeconds(30)), Is.True, "the read-only shift did not complete");
@@ -926,8 +944,6 @@ namespace Tsavorite.test
                 ObjectFlushInjection.Reset();
             }
 
-            Assert.That(() => TrackedObjectValue.Snapshot().total, Is.EqualTo(1).After(30_000, 10),
-                "the deferred release must dispose the source's value once its flush completes");
             Assert.That(TrackedObjectValue.Snapshot().max, Is.EqualTo(1), "no value object may be disposed more than once");
         }
 
@@ -936,11 +952,10 @@ namespace Tsavorite.test
         #region CopyUpdate — value-object slot clearing
 
         /// <summary>
-        /// RMW on a record in the immutable region forces CopyUpdate. After the CAS succeeds,
-        /// Tsavorite internally clears the source value-object slot and decrements the logSizeTracker
-        /// for the value-object's heap. The trigger is NOT involved — <see cref="DisposeReason.CopyUpdated"/>
-        /// does not fire via <see cref="IRecordTriggers.OnDispose"/>. The source record stays alive
-        /// (sealed) until eviction, where OnEvict picks up any remaining key overflow.
+        /// RMW on a record in the immutable region forces CopyUpdate. After the CAS succeeds, Tsavorite releases the source's value object
+        /// and decrements the logSizeTracker for its heap. The trigger is NOT involved — <see cref="DisposeReason.CopyUpdated"/>
+        /// does not fire via <see cref="IRecordTriggers.OnDispose"/>. The source record stays in the log until eviction, where OnEvict
+        /// picks up any remaining key overflow.
         /// </summary>
         [Test, Category("TsavoriteKV")]
         public void CopyUpdateDoesNotFireOnDisposeCopyUpdated()
@@ -965,9 +980,8 @@ namespace Tsavorite.test
         }
 
         /// <summary>
-        /// After CopyUpdate, the source value-object is cleared from the ObjectIdMap (via ClearValueIfHeap).
-        /// Tsavorite calls IHeapObject.Dispose on the freed object internally — the trigger is not involved.
-        /// Verify that exactly one IHeapObject.Dispose fires for the source value object.
+        /// After CopyUpdate, the source's value object is released: its slot gets a placeholder, and Tsavorite calls IHeapObject.Dispose on
+        /// the object internally — the trigger is not involved. Verify that exactly one IHeapObject.Dispose fires for the source value object.
         /// </summary>
         [Test, Category("TsavoriteKV")]
         public void CopyUpdateDisposesSourceValueExactlyOnce()
@@ -989,6 +1003,38 @@ namespace Tsavorite.test
             var (total, max) = TrackedObjectValue.Snapshot();
             ClassicAssert.AreEqual(1, total, "Exactly one IHeapObject.Dispose call expected (the CU source object)");
             ClassicAssert.AreEqual(1, max, "No value object should be disposed more than once");
+        }
+
+        /// <summary>
+        /// A log scan reports a CopyUpdate's superseded source, which outside a checkpoint stays valid and unsealed in the immutable region,
+        /// as an object record with no value object: the CopyUpdate released the value, leaving a placeholder that reads as null.
+        /// </summary>
+        [Test, Category("TsavoriteKV")]
+        public void ScanReportsACopyUpdatedSourceWithNoValueObject()
+        {
+            // An earlier record for the key keeps the source in a chain, so the CopyUpdate does not elide it.
+            Upsert(1, 50);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            var sourceAddress = store.Log.TailAddress;
+            Upsert(1, 100);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            RmwAdd(1, 7);
+            Assert.That(TrackedObjectValue.Snapshot().total, Is.EqualTo(1), "Precondition: the CopyUpdate released the source's value");
+
+            var found = false;
+            using (var iter = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress, DiskScanBufferingMode.SinglePageBuffering))
+            {
+                while (iter.GetNext())
+                {
+                    if (iter.CurrentAddress != sourceAddress)
+                        continue;
+                    found = true;
+                    Assert.That(iter.Info.Valid, Is.True, "The superseded source should still be valid");
+                    Assert.That(iter.DataHeader.ValueIsObject, Is.True, "The superseded source should still be an object record");
+                    Assert.That(iter.ValueObject, Is.Null, "The scan reported the released value of a CopyUpdate's source");
+                }
+            }
+            Assert.That(found, Is.True, "The scan did not report the superseded source");
         }
 
         #endregion

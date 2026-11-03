@@ -48,7 +48,7 @@ namespace Tsavorite.test.recovery
             DuringReadOnlyFlushBeforeSource,
 
             /// <summary>After the ReadOnly flush serializes the source, before its page write completes. That write holds the (v) value, so
-            /// nothing is captured, and the source's release waits for the write.</summary>
+            /// nothing is captured, and the source is released at once without changing its bytes.</summary>
             DuringReadOnlyFlush,
 
             /// <summary>After the ReadOnly flush has written the source's page, so its image is durable and nothing is captured.</summary>
@@ -108,31 +108,20 @@ namespace Tsavorite.test.recovery
             RecordInfo info = default;
             info.InitializeForNewRecord();
             info.HasSnapshotObjectLogReference = true;
-            info.DeferredCopyUpdate = true;
             info.DeferredDispose = true;
-            Assert.That(info.TryTakeDeferredDispose(out var copyUpdate), Is.True);
-            Assert.That(copyUpdate, Is.True);
-            Assert.That(info.TryTakeDeferredDispose(out _), Is.False, "A release must be claimed only once");
+            Assert.That(info.TryTakeDeferredDispose(), Is.True);
+            Assert.That(info.TryTakeDeferredDispose(), Is.False, "A disposal must be claimed only once");
+            Assert.That(info.DeferredDispose, Is.False, "Claiming a disposal must clear its mark");
             Assert.That(info.HasSnapshotObjectLogReference, Is.True);
 
-            info.DeferredCopyUpdate = true;
             info.DeferredDispose = true;
             info.ClearBitsForDiskImages();
+            Assert.That(info.DeferredDispose, Is.False, "A disk image carries no disposal mark");
             Assert.That(info.HasSnapshotObjectLogReference, Is.True);
-            Assert.That(info.DeferredCopyUpdate, Is.False);
-            Assert.That(info.DeferredDispose, Is.False);
 
-            // A mark is set whole, and claimed whole.
-            info.SetDeferredRelease(copyUpdate: false);
-            Assert.That(info.DeferredDispose && !info.DeferredCopyUpdate, Is.True, "A deletion's mark must not read as a CopyUpdate's");
-            Assert.That(info.TryTakeDeferredDispose(out copyUpdate), Is.True);
-            Assert.That(copyUpdate, Is.False);
-            Assert.That(info.DeferredDispose, Is.False, "Claiming a release must clear its whole mark");
-
-            info.SetDeferredRelease(copyUpdate: true);
-            info.ClearBitsForDiskImages();
-            Assert.That(info.DeferredCopyUpdate || info.DeferredDispose, Is.False, "A disk image carries no release mark");
-            Assert.That(info.HasSnapshotObjectLogReference, Is.True);
+            // The bit above the mark is unused: a CopyUpdate's release is never deferred.
+            info.Unused8 = true;
+            Assert.That(info.DeferredDispose, Is.False, "Unused8 must not read as a disposal mark");
         }
 
         [Test]
@@ -259,8 +248,8 @@ namespace Tsavorite.test.recovery
                         Assert.That(readOnlyFlushAtSource.Wait(TimeSpan.FromSeconds(30)), Is.True, "The ReadOnly flush never reached the source");
 
                         // The Checkpoint Flush has published the source, and here the ReadOnly flush is walking its page, so the capture must
-                        // not rewrite the stamp either flush may be writing. Without a capture, the source's release waits for the write.
-                        Rmw(store, sourceAddress, expectCapture, expectStampUnchanged: true, expectDeferredRelease: !expectCapture);
+                        // not rewrite the stamp either flush may be writing. The source's release does not wait for the write.
+                        Rmw(store, sourceAddress, expectCapture, expectStampUnchanged: true);
                         releaseReadOnlyFlushAtSource.Set();
                         Assert.That(readOnlyShift.Wait(TimeSpan.FromSeconds(30)), Is.True, "The ReadOnly shift did not complete");
                         break;
@@ -274,8 +263,9 @@ namespace Tsavorite.test.recovery
                 if (readOnlyFlushesTheSource)
                 {
                     Assert.That(store.Log.FlushedUntilAddress, Is.GreaterThanOrEqualTo(sourcePageEnd), "The ReadOnly flush did not write the source's page");
-                    Assert.That(() => store.hlogBase._wrapper.CreateLogRecord(sourceAddress).DataHeader.ValueIsObject, Is.False.After(5000, 10),
-                        "A superseded object's heap must be released after its page is durable, without waiting for eviction");
+                    var flushedSource = store.hlogBase._wrapper.CreateLogRecord(sourceAddress);
+                    Assert.That(flushedSource.DataHeader.ValueIsObject && flushedSource.ValueObject is null, Is.True,
+                        "The superseded source must stay released, as an object record, after its page is durable");
                 }
 
                 releaseCheckpointFlushAtNextPage.Set();
@@ -881,8 +871,9 @@ namespace Tsavorite.test.recovery
         }
 
         /// <summary>
-        /// A NullDevice main log holds no (v) image, so a (v+1) CopyUpdate captures its source even below FlushedUntilAddress, and the captured
-        /// source keeps its value object until eviction. With the Checkpoint Flush already past the source, the capture only marks it.
+        /// A NullDevice main log holds no (v) image, so a (v+1) CopyUpdate captures its source even below FlushedUntilAddress, and releases the
+        /// captured source's value at once, leaving its checkpoint's placeholder. With the Checkpoint Flush already past the source, the capture
+        /// only marks it.
         /// </summary>
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
@@ -937,8 +928,9 @@ namespace Tsavorite.test.recovery
                         }
                     }
                     await store.CompleteCheckpointAsync().ConfigureAwait(false);
-                    Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).DataHeader.ValueIsObject, Is.True,
-                        "A captured source on a NullDevice main log must keep its value object until eviction");
+                    _ = store.hlogBase._wrapper.CreateLogRecord(sourceAddress).TryGetOutOfLineComponents(out _, out _, out var slotObject);
+                    Assert.That(slotObject is SupersededObjectValue { CapturingSnapshot: not null }, Is.True,
+                        "A captured source on a NullDevice main log must be released at once, leaving its checkpoint's placeholder");
                 }
                 finally
                 {
@@ -1219,10 +1211,8 @@ namespace Tsavorite.test.recovery
         /// <param name="key">The source's key</param>
         /// <param name="expectStampUnchanged">Whether a flush of this checkpoint already published the source, so the CopyUpdate must leave its
         /// stamp alone</param>
-        /// <param name="expectDeferredRelease">Whether a source that is not captured is frozen for an in-flight flush, so it keeps its value
-        /// object until that flush completes</param>
         static void Rmw(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, long sourceAddress, bool expectCapture, int key = 1,
-            bool expectStampUnchanged = false, bool expectDeferredRelease = false)
+            bool expectStampUnchanged = false)
         {
             var priorStamp = store.hlogBase._wrapper.CreateLogRecord(sourceAddress).GetObjectLogRecordRef();
             using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions()))
@@ -1244,12 +1234,15 @@ namespace Tsavorite.test.recovery
                 Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).GetObjectLogRecordRef(), Is.EqualTo(priorStamp),
                     "The RMW restamped a source that a flush had already published");
 
-            // Releasing a source rewrites its value field as inline. A captured source must keep its object, because the flushes that stamp or
-            // write its record may still walk it; so must a source frozen for an in-flight flush. Any other source must be released, as it
-            // would be outside a checkpoint.
-            var expectValueObject = expectCapture || expectDeferredRelease;
-            Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).DataHeader.ValueIsObject, Is.EqualTo(expectValueObject),
-                expectValueObject ? "The source released its value object while a flush could still walk it" : "The durable source kept its value object");
+            // A CopyUpdate releases its source at once, captured or not, without changing the record's bytes, which a flush may still be
+            // writing: the source stays an object record, and its value slot gets a placeholder. A captured source's placeholder is its
+            // checkpoint's, through which the flushes keep the capture.
+            var source = store.hlogBase._wrapper.CreateLogRecord(sourceAddress);
+            Assert.That(source.DataHeader.ValueIsObject, Is.True, "The release must leave the source an object record");
+            Assert.That(source.ValueObject, Is.Null, "The source kept its value object");
+            _ = source.TryGetOutOfLineComponents(out _, out _, out var slotObject);
+            Assert.That(slotObject, Is.SameAs(expectCapture ? captures.ObjectSentinel : SupersededObjectValue.Released),
+                expectCapture ? "A captured source's slot must hold its checkpoint's placeholder" : "A released source's slot must hold the released placeholder");
         }
 
         static void ReadSourceVersion(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, TestObjectKey key, long sourceAddress, string when,
@@ -1271,6 +1264,77 @@ namespace Tsavorite.test.recovery
 
         static bool SourceIsMarked(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, long sourceAddress)
             => store.hlogBase._wrapper.CreateLogRecord(sourceAddress).Info.HasSnapshotObjectLogReference;
+
+        /// <summary>
+        /// CopyUpdates on several threads capture many sources during one Snapshot checkpoint, through the object-log writers the checkpoint
+        /// keeps between captures, and recovery returns every key's (v) value.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task ConcurrentCapturesRecoverEveryValue([Values] bool overflowKeys)
+        {
+            const int KeyCount = 64;
+            const int ThreadCount = 4;
+            Guid token;
+            var sourceAddresses = new long[KeyCount];
+            var store = CreateStore(overflowKeys);
+            try
+            {
+                // A first record, so that each source's address is the tail its upsert reads.
+                _ = UpsertSource(store, new TestObjectKey { key = KeyCount });
+                for (var k = 0; k < KeyCount; k++)
+                    sourceAddresses[k] = UpsertSource(store, new TestObjectKey { key = k });
+
+                var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
+                store.stateMachineDriver.UnsafeRegisterCallback(pause);
+                try
+                {
+                    Assert.That(store.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot), Is.True);
+                    Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True, "The checkpoint did not reach IN_PROGRESS");
+
+                    var tasks = new Task[ThreadCount];
+                    for (var t = 0; t < ThreadCount; t++)
+                    {
+                        var first = t;
+                        tasks[t] = Task.Run(() =>
+                        {
+                            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions());
+                            for (var k = first; k < KeyCount; k += ThreadCount)
+                            {
+                                TestObjectInput input = new() { value = RmwValue };
+                                TestObjectOutput output = new();
+                                if (session.BasicContext.RMW(new TestObjectKey { key = k }, ref input, ref output).IsPending)
+                                    _ = session.BasicContext.CompletePending(wait: true);
+                            }
+                        });
+                    }
+                    Assert.That(Task.WaitAll(tasks, TimeSpan.FromSeconds(60)), Is.True, "The CopyUpdates did not complete");
+                    for (var k = 0; k < KeyCount; k++)
+                        Assert.That(SourceIsMarked(store, sourceAddresses[k]), Is.True, $"The CopyUpdate of key {k} did not capture its source");
+                }
+                finally
+                {
+                    pause.Release.Set();
+                }
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                store.Dispose();
+            }
+
+            store = CreateStore(overflowKeys);
+            try
+            {
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+                for (var k = 0; k < KeyCount; k++)
+                    ReadSourceVersion(store, new TestObjectKey { key = k }, sourceAddresses[k], $"key {k}");
+            }
+            finally
+            {
+                store.Dispose();
+            }
+        }
 
         static long UpsertSource(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, TestObjectKey key)
         {

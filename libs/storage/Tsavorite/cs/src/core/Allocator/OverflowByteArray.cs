@@ -143,7 +143,11 @@ namespace Tsavorite.core
             return sentinel;
         }
 
-        /// <summary>Whether this is a Snapshot checkpoint's sentinel; see <see cref="CreateSentinel"/>.</summary>
+        /// <summary>The sentinel a CopyUpdate leaves in the value slot of a source whose value no checkpoint captured, when it releases the
+        /// value without changing the source's bytes. It reads as an empty value, and a flush writes it as one.</summary>
+        internal static readonly OverflowByteArray Released = CreateSentinel();
+
+        /// <summary>Whether this is a sentinel; see <see cref="CreateSentinel"/> and <see cref="Released"/>.</summary>
         internal readonly bool IsSentinel => Volatile.Read(ref Unsafe.As<byte, OverflowHeader>(ref Array[0]).phaseWord) == SentinelWord;
 
         /// <summary>Wait until no thread holds this array's publication claim, then take it.</summary>

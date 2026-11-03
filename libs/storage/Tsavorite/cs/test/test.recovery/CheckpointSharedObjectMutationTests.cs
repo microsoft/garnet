@@ -810,8 +810,8 @@ namespace Tsavorite.test.recovery
                 Assert.That(source.DataHeader.ValueIsInline, Is.False,
                     "the checkpoint-frozen source was disposed: its ObjectIdMap slot was freed and the field converted to inline, "
                     + "which lets the in-flight snapshot resolve that id to whatever record reuses the slot");
-                Assert.That(source.Info.DeferredDispose && !source.Info.DeferredCopyUpdate, Is.True,
-                    "a checkpoint freeze must be marked as a deletion, so that the drain or eviction disposes it once no flush reads it; "
+                Assert.That(source.Info.DeferredDispose, Is.True,
+                    "a checkpoint freeze must be marked, so that the drain or eviction disposes it once no flush reads it; "
                     + $"the record's info is {source.Info}");
             });
 
