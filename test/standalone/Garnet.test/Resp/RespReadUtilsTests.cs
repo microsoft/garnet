@@ -141,6 +141,8 @@ namespace Garnet.test.Resp
         [TestCase("-2147483649")] // Should cause overflow
         [TestCase("123abc")]      // Not a number
         [TestCase("abc121cba")]   // Not a number
+        [TestCase("-")]           // Sign without digits
+        [TestCase("+")]           // Sign without digits
         public static unsafe void ReadIntWithLengthHeaderExceptionsTest(string text)
         {
             var bytes = Encoding.ASCII.GetBytes($"${text.Length}\r\n{text}\r\n");
@@ -187,6 +189,8 @@ namespace Garnet.test.Resp
         [TestCase("10000000000000000000")] // Should cause overflow
         [TestCase("123abc")]               // Not a number
         [TestCase("abc121cba")]            // Not a number
+        [TestCase("-")]                    // Sign without digits
+        [TestCase("+")]                    // Sign without digits
         public static unsafe void ReadLongWithLengthHeaderExceptionsTest(string text)
         {
             var bytes = Encoding.ASCII.GetBytes($"${text.Length}\r\n{text}\r\n");
@@ -199,6 +203,73 @@ namespace Garnet.test.Resp
                     _ = RespReadUtils.TryReadInt64WithLengthHeader(out var length, ref start, ptr + bytes.Length);
                 }
             });
+        }
+
+        /// <summary>
+        /// A sign without digits is not an integer.
+        /// </summary>
+        /// <param name="text">A lone sign.</param>
+        [TestCase("-")]
+        [TestCase("+")]
+        public static unsafe void SignWithoutDigitsIsNotAnInteger(string text)
+        {
+            var bytes = ToAsciiWithCrlf(text);
+            fixed (byte* ptr = bytes)
+            {
+                var start = ptr;
+                ClassicAssert.IsFalse(RespReadUtils.TryReadInt64Safe(ref start, ptr + text.Length, out _, out _, out _, out _));
+
+                start = ptr;
+                ClassicAssert.IsFalse(RespReadUtils.TryReadInt32Safe(ref start, ptr + text.Length, out _, out _, out _, out _));
+            }
+        }
+
+        /// <summary>
+        /// When leading zeros are disallowed, 32-bit and 64-bit parsing accept only canonical integers.
+        /// Otherwise they also accept leading zeros, a '+' sign and -0.
+        /// </summary>
+        /// <param name="text">Integer encoded as an ASCII string.</param>
+        /// <param name="canonical">Whether the whole string parses when leading zeros are disallowed.</param>
+        [TestCase("0", true)]
+        [TestCase("70", true)]
+        [TestCase("-70", true)]
+        [TestCase("007", false)]
+        [TestCase("-007", false)]
+        [TestCase("+007", false)]
+        [TestCase("+70", false)]
+        [TestCase("+0", false)]
+        [TestCase("-0", false)]
+        public static unsafe void OnlyCanonicalIntegersParseWhenLeadingZerosAreDisallowed(string text, bool canonical)
+        {
+            var bytes = ToAsciiWithCrlf(text);
+            fixed (byte* ptr = bytes)
+            {
+                foreach (var (allowLeadingZeros, expected) in new[] { (false, canonical), (true, true) })
+                {
+                    var start = ptr;
+                    var success = RespReadUtils.TryReadInt64Safe(ref start, ptr + text.Length, out _, out var bytesRead, out _, out _, allowLeadingZeros)
+                        && (int)bytesRead == text.Length;
+                    ClassicAssert.AreEqual(expected, success, $"Int64, allowLeadingZeros: {allowLeadingZeros}");
+
+                    start = ptr;
+                    success = RespReadUtils.TryReadInt32Safe(ref start, ptr + text.Length, out _, out bytesRead, out _, out _, allowLeadingZeros)
+                        && (int)bytesRead == text.Length;
+                    ClassicAssert.AreEqual(expected, success, $"Int32, allowLeadingZeros: {allowLeadingZeros}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Returns <paramref name="text"/> as ASCII followed by CRLF, which stands in for the rest of the network buffer the parsers may peek at.
+        /// </summary>
+        static byte[] ToAsciiWithCrlf(string text)
+        {
+            var bytes = new byte[text.Length + 2];
+            for (var i = 0; i < text.Length; i++)
+                bytes[i] = (byte)text[i];
+            bytes[^2] = (byte)'\r';
+            bytes[^1] = (byte)'\n';
+            return bytes;
         }
 
         /// <summary>

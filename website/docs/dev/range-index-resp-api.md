@@ -39,7 +39,7 @@ by `GarnetRecordTriggers`:
 
 | Trigger | When | What it does for RangeIndex |
 |---------|------|---------------------------|
-| `OnFlush(addr)` | Page moves to read-only | Branch on `stub.TreeHandle`: `!=0` (live) → `BfTreeService.CprSnapshotByPtr(handle, <addr:x16>.flush.bftree)` (CPR snapshot written **directly** to the per-flush file; concurrent-safe with workers via CPR); `==0` (cold, just-CAS'd at tail) → S-lock to block RestoreTree from registering mid-copy; if a live tree exists under another stub for this key → CPR snapshot via that handle, else `File.Copy(data.bftree → <addr>.flush.bftree)`. Set `IsFlushed`. **No per-key X-lock taken.** Per-tree atomic (`TreeEntry.SnapshotInProgress`) serializes against concurrent checkpoint snapshot. |
+| `OnFlush(addr)` | Page moves to read-only | Branch on `stub.TreeHandle`: `!=0` (live) → `BfTreeService.CprSnapshotByPtr(handle, <addr:x16>.flush.bftree)` (CPR snapshot written **directly** to the per-flush file; concurrent-safe with workers via CPR); `==0` (cold, just-CAS'd at tail) → S-lock to block RestoreTree from registering mid-copy; if a live tree exists under another stub for this key → CPR snapshot via that handle, else `File.Copy(data.bftree → <addr>.flush.bftree)`. Set `IsFlushed`. Both branches replace a file already at `<addr>`, which a flush after recovery can find (see Recovery Flow). **No per-key X-lock taken.** Per-tree atomic (`TreeEntry.SnapshotInProgress`) serializes against concurrent checkpoint snapshot. |
 | `OnEvict` | Page evicted past HeadAddress | Remove entry from `liveIndexes` under per-key exclusive lock; **defer** `bfTree.Dispose()` via `storeEpoch.BumpCurrentEpoch(...)` so concurrent readers using `TreeHandle` complete before native free. Data files preserved for lazy restore |
 | `OnDiskRead` | Record loaded from disk | Zero `TreeHandle` (native pointer is stale); no file work |
 | `PostCopyToTail` | After `TryCopyToTail` CAS, before unseal | Propagate `RecordType=RangeIndexRecordType` from src to dst (CTT does not carry it). Branch on `src.TreeHandle`: `!=0` live transfer (clear src.TreeHandle); `==0` cold pre-stage (`PreStageAndRegisterPending`). Set src.`IsTransferred` so a later eviction of src does not free dst's tree / pending entry. Clear `IsFlushed` on dst. |
@@ -65,7 +65,7 @@ Lifetime tracks log addresses (cleared by `OnTruncate(newBA)`).
 {riLogRoot}/
     <hash>.data.bftree              # bftree's working file (disk-backed) / cold-restore staging (memory-backed)
     <hash>.scratch.cpr              # CPR snapshot-enable path passed at create/recover (use_snapshot); not written — snapshots go directly to the flush/checkpoint/migration file
-    <hash>.<addr:x16>.flush.bftree  # immutable per-flush snapshot
+    <hash>.<addr:x16>.flush.bftree  # per-flush snapshot of the stub at addr
 ```
 
 **Checkpoint-tied root** — `{CheckpointBaseDirectory}/Store/checkpoints[_dbId]/cpr-checkpoints/`
@@ -196,7 +196,11 @@ still holding. Server startup fails fast with a clear error if both are enabled.
    is removed when Tsavorite deletes the parent token directory.
 5. Below-FUA-at-checkpoint stubs (`IsFlushed=1`) are NOT pre-staged at recovery; they're
    handled lazily by RIPROMOTE `PostCopyUpdater`-cold on first access (which uses
-   `<srcAddr>.flush.bftree`, the immutable per-flush snapshot).
+   `<srcAddr>.flush.bftree`, the per-flush snapshot).
+6. Addresses at and above the checkpoint's flushed address are flushed again after recovery,
+   by recovery's own ReadOnly shift or by later writes. A per-flush file at such an address is
+   from the run before the restart, and its tree can hold writes that recovery rolled back, so
+   `OnFlush` replaces it.
 
 ### Compaction Lifecycle
 

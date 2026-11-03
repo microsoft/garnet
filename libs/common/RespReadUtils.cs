@@ -113,7 +113,7 @@ namespace Garnet.common
         /// <param name="end">The end of the string to parse.</param>
         /// <param name="value">If parsing was successful, contains the parsed long value.</param>
         /// <param name="bytesRead">If parsing was successful, contains the number of bytes that were parsed.</param>
-        /// <param name="allowLeadingZeros">True if leading zeros allowed</param>
+        /// <param name="allowLeadingZeros">True to also accept non-canonical forms: leading zeros, a '+' sign and -0</param>
         /// <returns>
         /// True if a long was successfully parsed, false if the input string did not start with
         /// a valid integer or the end of the string was reached before finishing parsing.
@@ -145,7 +145,7 @@ namespace Garnet.common
         /// <param name="bytesRead">If parsing was successful, contains the number of bytes that were parsed.</param>
         /// <param name="signRead">True if +/- sign was read during parsing</param>
         /// <param name="overflow">True if overflow occured during parsing</param>
-        /// <param name="allowLeadingZeros">True if leading zeros allowed</param>
+        /// <param name="allowLeadingZeros">True to also accept non-canonical forms: leading zeros, a '+' sign and -0</param>
         /// <returns>
         /// True if a long was successfully parsed, false if the input string did not start with
         /// a valid integer or the end of the string was reached before finishing parsing.
@@ -162,6 +162,9 @@ namespace Garnet.common
             signRead = TryReadSign(ptr, out var negative);
             if (signRead)
             {
+                if (!negative && !allowLeadingZeros)
+                    return false;
+
                 ptr++;
                 bytesRead = 1;
             }
@@ -181,6 +184,13 @@ namespace Garnet.common
                 overflow = uint64Overflow;
                 return false;
             }
+
+            // A sign alone is not a number
+            if (digitsRead == 0)
+                return false;
+
+            if (negative && number == 0 && !allowLeadingZeros)
+                return false;
 
             // Check for overflows and convert digits to long, if possible
             if (negative)
@@ -216,7 +226,7 @@ namespace Garnet.common
         /// <param name="end">The end of the string to parse.</param>
         /// <param name="value">If parsing was successful, contains the parsed int value.</param>
         /// <param name="bytesRead">If parsing was successful, contains the number of bytes that were parsed.</param>
-        /// <param name="allowLeadingZeros">True if leading zeros allowed</param>
+        /// <param name="allowLeadingZeros">True to also accept non-canonical forms: leading zeros, a '+' sign and -0</param>
         /// <returns>
         /// True if an int was successfully parsed, false if the input string did not start with
         /// a valid integer or the end of the string was reached before finishing parsing.
@@ -248,7 +258,7 @@ namespace Garnet.common
         /// <param name="bytesRead">If parsing was successful, contains the number of bytes that were parsed.</param>
         /// <param name="signRead">True if +/- sign was read during parsing</param>
         /// <param name="overflow">True if overflow occured during parsing</param>
-        /// <param name="allowLeadingZeros">True if leading zeros allowed</param>
+        /// <param name="allowLeadingZeros">True to also accept non-canonical forms: leading zeros, a '+' sign and -0</param>
         /// <returns>
         /// True if an int was successfully parsed, false if the input string did not start with
         /// a valid integer or the end of the string was reached before finishing parsing.
@@ -265,8 +275,18 @@ namespace Garnet.common
             signRead = TryReadSign(ptr, out var negative);
             if (signRead)
             {
+                if (!negative && !allowLeadingZeros)
+                    return false;
+
                 ptr++;
                 bytesRead = 1;
+            }
+
+            if (!allowLeadingZeros)
+            {
+                // Do not allow leading zeros
+                if (end - ptr > 1 && *ptr == '0')
+                    return false;
             }
 
             // Parse digits as unsigned 64-bit integer
@@ -277,6 +297,13 @@ namespace Garnet.common
                 overflow = uint64Overflow;
                 return false;
             }
+
+            // A sign alone is not a number
+            if (digitsRead == 0)
+                return false;
+
+            if (negative && number == 0 && !allowLeadingZeros)
+                return false;
 
             // Check for overflows and convert digits to int, if possible
             if (negative)
@@ -597,7 +624,8 @@ namespace Garnet.common
             var numberStart = ptr;
             if (!TryReadInt32(ref ptr, end, out number, out var bytesRead))
             {
-                return false;
+                // The whole number is present, so a parse failure means it is not a number
+                RespParsingException.ThrowNotANumber(numberStart, numberLength);
             }
 
             if ((int)bytesRead != numberLength)
@@ -638,7 +666,8 @@ namespace Garnet.common
             var numberStart = ptr;
             if (!TryReadInt64(ref ptr, end, out number, out var bytesRead))
             {
-                return false;
+                // The whole number is present, so a parse failure means it is not a number
+                RespParsingException.ThrowNotANumber(numberStart, numberLength);
             }
 
             if ((int)bytesRead != numberLength)
