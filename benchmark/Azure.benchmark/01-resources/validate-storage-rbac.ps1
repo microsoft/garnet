@@ -28,13 +28,13 @@
     Uploads and deletes a temporary blob to validate Storage Blob Data Contributor access.
 
 .EXAMPLE
-    .\validate-storage-rbac.ps1 -rg vazois-devbox
+    .\validate-storage-rbac.ps1 -rg <resource-group>
 
 .EXAMPLE
-    .\validate-storage-rbac.ps1 -rg vazois-devbox -TestWriteAccess
+    .\validate-storage-rbac.ps1 -rg <resource-group> -TestWriteAccess
 
 .EXAMPLE
-    .\validate-storage-rbac.ps1 -rg vazois-devbox -VmssName server,client
+    .\validate-storage-rbac.ps1 -rg <resource-group> -VmssName server,client
 #>
 
 param(
