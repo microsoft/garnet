@@ -29,6 +29,13 @@ namespace Garnet.test.cluster
             Assert.That(TsavoriteSnapshotReader.GetSegmentSize(Enum.Parse<CheckpointFileType>(type), options), Is.EqualTo(expected));
         }
 
+        [Test]
+        public void UnsupportedCheckpointTypesHaveNoSegmentSize()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                TsavoriteSnapshotReader.GetSegmentSize((CheckpointFileType)byte.MaxValue, new GarnetServerOptions()));
+        }
+
         [TestCase("128k", 128 << 10)]
         [TestCase("4m", 4 << 20)]
         public async Task CheckpointReaderAndClientUseConfiguredChunkSize(string size, int chunkSize)
@@ -54,11 +61,23 @@ namespace Garnet.test.cluster
                 var provider = (ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider;
                 var manager = provider.replicationManager;
                 Assert.That(manager.GetRSSNetworkBufferSettings.sendBufferSize, Is.EqualTo(Math.Max(1 << 20, 2 * chunkSize)));
+                Assert.That(manager.GetNetworkPool.Validate(ReplicationManager.CreateRSSNetworkBufferSettings(
+                    GarnetServerOptions.ReplicaDiskBasedSyncChunkSizeBytesMax)), Is.True);
+                Assert.That(manager.GetNetworkPool.LiveBytes + manager.GetNetworkPool.PooledBytes, Is.Zero,
+                    "Supporting larger runtime size classes must not allocate their buffers at startup");
                 Assert.That(manager.TryGetLatestCheckpointEntryFromMemory(out var entry), Is.True);
                 try
                 {
                     Assert.That(manager.TryAcquireSettledMetadataForMainStore(entry, out var logInfo, out var indexSize), Is.True);
                     using var reader = new TsavoriteSnapshotReader(provider, entry, logInfo, indexSize, TimeSpan.FromSeconds(5));
+                    var newChunkSize = chunkSize == 128 << 10 ? 4 << 20 : 128 << 10;
+                    var runtimeConfig = provider.storeWrapper.runtimeConfig;
+                    Assert.That(runtimeConfig.TrySet(ServerConfigType.REPL_DISK_BASED_SYNC_CHUNK_SIZE, newChunkSize.ToString(), out var error),
+                        Is.True, error);
+                    Assert.That(runtimeConfig.TrySet(ServerConfigType.REPL_DISK_BASED_SYNC_PIPELINE_DEPTH, "3", out error), Is.True, error);
+                    var newSettings = manager.GetRSSNetworkBufferSettings;
+                    Assert.That(newSettings.sendBufferSize, Is.EqualTo(Math.Max(1 << 20, 2 * newChunkSize)));
+                    Assert.That(manager.GetNetworkPool.Validate(newSettings), Is.True, "Runtime sizes must remain recyclable");
                     var seen = new HashSet<CheckpointFileType>();
                     foreach (var source in reader.GetTransmitSources())
                     {
@@ -84,6 +103,26 @@ namespace Garnet.test.cluster
                     Assert.That(seen, Does.Contain(CheckpointFileType.STORE_HLOG));
                     Assert.That(seen, Does.Contain(CheckpointFileType.STORE_INDEX));
                     Assert.That(seen, Does.Contain(CheckpointFileType.STORE_SNAPSHOT_OBJ));
+                    using var newReader = new TsavoriteSnapshotReader(provider, entry, logInfo, indexSize, TimeSpan.FromSeconds(5));
+                    foreach (var source in newReader.GetTransmitSources())
+                    {
+                        if (source is not FileTransmitSource || !source.DataSource.HasNextChunk)
+                            continue;
+                        var dataSource = source.DataSource;
+                        var segment = TsavoriteSnapshotReader.GetSegmentSize(dataSource.Type, context.nodeOptions[0]);
+                        var expected = Math.Min(newChunkSize, dataSource.EndOffset - dataSource.CurrentOffset);
+                        if (segment > 0)
+                            expected = Math.Min(expected, segment - dataSource.CurrentOffset % segment);
+                        var result = await dataSource.ReadNextChunkAsync();
+                        try
+                        {
+                            Assert.That(result.BytesRead, Is.EqualTo((expected + 511) & ~511L), dataSource.Type.ToString());
+                        }
+                        finally
+                        {
+                            result.Buffer.Return();
+                        }
+                    }
                 }
                 finally
                 {

@@ -1011,9 +1011,9 @@ namespace Garnet.networking
         }
 
         /// <summary>
-        /// Releases one TLS plaintext-buffer owner without waiting for the other owner or closing the socket.
+        /// Disposes one TLS plaintext-buffer ownership interest; the last owner returns the buffer.
         /// </summary>
-        protected void ReleaseTransportSendBuffer()
+        protected void DisposeTransportSendBuffer()
         {
             if (transportSendBufferEntry != null && Interlocked.Decrement(ref transportSendBufferOwners) == 0)
                 transportSendBufferEntry.Dispose();
@@ -1053,7 +1053,7 @@ namespace Garnet.networking
             }
             finally
             {
-                ReleaseTransportSendBuffer();
+                DisposeTransportSendBuffer();
 #if DEBUG
                 if (transportSendBufferEntry != null)
                     _ = ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Tls_Signal_After_Handler_Dispose);

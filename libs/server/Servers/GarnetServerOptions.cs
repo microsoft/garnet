@@ -659,7 +659,8 @@ namespace Garnet.server
 
         /// <summary>
         /// Maximum disk-based Tsavorite checkpoint transfer chunk, rounded down to a power of two.
-        /// Accepts sizes from 512 bytes through 512 MiB. Configured on the primary.
+        /// Accepts sizes from 512 bytes through 512 MiB, subject to device-sector alignment.
+        /// Configured on the primary; CONFIG SET changes apply to new transfers.
         /// </summary>
         public string ReplicaDiskBasedSyncChunkSize = "128k";
 
@@ -669,9 +670,22 @@ namespace Garnet.server
         public const int ReplicaDiskBasedSyncPipelineDepthMax = 64;
 
         /// <summary>
+        /// Maximum checkpoint payload bytes outstanding per replica.
+        /// </summary>
+        public const long ReplicaDiskBasedSyncOutstandingPayloadBytesMax = 512L << 20;
+
+        /// <summary>
+        /// Maximum checkpoint transfer chunk size in bytes.
+        /// </summary>
+        public const int ReplicaDiskBasedSyncChunkSizeBytesMax = 1 << 29;
+
+        internal uint ReplicaDiskBasedSyncSectorSize = IDevice.MinDeviceSectorSize;
+
+        /// <summary>
         /// Maximum unacknowledged disk-based Tsavorite checkpoint chunks per replica on the primary.
         /// Accepts 1 through 64; default 1 disables pipelining.
         /// Depth times effective chunk size must not exceed 512 MiB.
+        /// CONFIG SET changes apply to new transfers.
         /// </summary>
         public int ReplicaDiskBasedSyncPipelineDepth = 1;
 
@@ -680,13 +694,17 @@ namespace Garnet.server
         /// </summary>
         public int GetReplicaDiskBasedSyncPipelineDepth()
         {
-            const long MaxOutstandingPayloadBytes = 512L << 20;
             var chunkSize = GetReplicaDiskBasedSyncChunkSizeBytes();
-            if (ReplicaDiskBasedSyncPipelineDepth is < 1 or > ReplicaDiskBasedSyncPipelineDepthMax ||
-                (long)ReplicaDiskBasedSyncPipelineDepth * chunkSize > MaxOutstandingPayloadBytes)
-                throw new ArgumentException($"{nameof(ReplicaDiskBasedSyncPipelineDepth)} must be from 1 through {ReplicaDiskBasedSyncPipelineDepthMax}, with depth times effective chunk size at most {MaxOutstandingPayloadBytes >> 20} MiB.",
-                    nameof(ReplicaDiskBasedSyncPipelineDepth));
+            ValidateReplicaDiskBasedSyncPipelineDepth(chunkSize, ReplicaDiskBasedSyncPipelineDepth);
             return ReplicaDiskBasedSyncPipelineDepth;
+        }
+
+        internal static void ValidateReplicaDiskBasedSyncPipelineDepth(int chunkSize, int pipelineDepth)
+        {
+            if (pipelineDepth is < 1 or > ReplicaDiskBasedSyncPipelineDepthMax ||
+                (long)pipelineDepth * chunkSize > ReplicaDiskBasedSyncOutstandingPayloadBytesMax)
+                throw new ArgumentException($"{nameof(ReplicaDiskBasedSyncPipelineDepth)} must be from 1 through {ReplicaDiskBasedSyncPipelineDepthMax}, with depth times effective chunk size at most {ReplicaDiskBasedSyncOutstandingPayloadBytesMax >> 20} MiB.",
+                    nameof(ReplicaDiskBasedSyncPipelineDepth));
         }
 
         /// <summary>
@@ -694,7 +712,20 @@ namespace Garnet.server
         /// </summary>
         public int GetReplicaDiskBasedSyncChunkSizeBytes()
         {
-            var value = ReplicaDiskBasedSyncChunkSize;
+            var size = ParseReplicaDiskBasedSyncChunkSizeBytes(ReplicaDiskBasedSyncChunkSize, logger);
+            ValidateReplicaDiskBasedSyncChunkSectorSize(size);
+            return size;
+        }
+
+        internal void ValidateReplicaDiskBasedSyncChunkSectorSize(int chunkSize)
+        {
+            if (chunkSize < ReplicaDiskBasedSyncSectorSize || chunkSize % ReplicaDiskBasedSyncSectorSize != 0)
+                throw new ArgumentException($"{nameof(ReplicaDiskBasedSyncChunkSize)} must be at least and a multiple of the configured device sector size ({ReplicaDiskBasedSyncSectorSize} bytes).",
+                    nameof(ReplicaDiskBasedSyncChunkSize));
+        }
+
+        internal static int ParseReplicaDiskBasedSyncChunkSizeBytes(string value, ILogger logger = null)
+        {
             var digits = 0;
             while (digits < value?.Length && value[digits] is >= '0' and <= '9')
                 digits++;
@@ -709,9 +740,8 @@ namespace Garnet.server
             };
 
             // Leave room for framing in the next power-of-two network buffer.
-            const long MaxChunkSize = 1L << 29;
             if (multiplier == 0 || !long.TryParse(value.AsSpan(0, digits), NumberStyles.None, CultureInfo.InvariantCulture, out var size) ||
-                size > MaxChunkSize / multiplier || size * multiplier < 512)
+                size > ReplicaDiskBasedSyncChunkSizeBytesMax / multiplier || size * multiplier < IDevice.MinDeviceSectorSize)
                 throw new ArgumentException($"{nameof(ReplicaDiskBasedSyncChunkSize)} '{value}' must be a memory size from 512 bytes through 512 MiB.", nameof(ReplicaDiskBasedSyncChunkSize));
 
             size *= multiplier;
@@ -1176,6 +1206,26 @@ namespace Garnet.server
                 logger?.LogInformation("Using device type {deviceType} (io-backend={ioBackend}, completion-threads={ct}, io-contexts={ioc}, queue-depth={qd}, throttle-limit={tl}, uring-sqpoll={sqpoll})", DeviceType, DeviceIoBackend, DeviceCompletionThreads, DeviceIoContexts > 0 ? DeviceIoContexts.ToString() : "device-default", DeviceQueueDepth > 0 ? DeviceQueueDepth.ToString() : "device-default", DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default", DeviceIoBackend == NativeStorageDevice.IoBackend.Uring && DeviceUringSqPoll ? "on" : "off");
             else
                 logger?.LogInformation("Using device type {deviceType} (throttle-limit={tl})", DeviceType, DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default");
+
+            if (EnableCluster && !ReplicaDisklessSync)
+            {
+                // Query the configured factories without opening checkpoint files or creating directories.
+                var checkpointFactory = GetInitializedDeviceFactory(GetStoreCheckpointDirectory(0));
+                var naming = new DefaultCheckpointNamingScheme();
+                var sectorSize = Math.Max(checkpointFactory.GetSectorSize(naming.HashTable(Guid.Empty)),
+                    checkpointFactory.GetSectorSize(naming.LogSnapshot(Guid.Empty)));
+                if (!DisableObjects)
+                    sectorSize = Math.Max(sectorSize, checkpointFactory.GetSectorSize(naming.ObjectLogSnapshot(Guid.Empty)));
+                if (EnableStorageTier)
+                {
+                    var factory = GetInitializedDeviceFactory(string.IsNullOrEmpty(LogDir) ? Directory.GetCurrentDirectory() : LogDir);
+                    sectorSize = Math.Max(sectorSize, factory.GetSectorSize(new FileDescriptor("Store", "hlog")));
+                    if (!DisableObjects)
+                        sectorSize = Math.Max(sectorSize, factory.GetSectorSize(new FileDescriptor("Store", "hlog_objs")));
+                }
+                ReplicaDiskBasedSyncSectorSize = sectorSize;
+                _ = GetReplicaDiskBasedSyncChunkSizeBytes();
+            }
 
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");

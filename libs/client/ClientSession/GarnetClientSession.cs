@@ -511,7 +511,7 @@ namespace Garnet.client
             }
             finally
             {
-                handler?.ReleaseClientSendBuffer();
+                handler?.DisposeClientSendBuffer();
                 networkHandler = null;
                 networkSender = null;
                 socket = null;

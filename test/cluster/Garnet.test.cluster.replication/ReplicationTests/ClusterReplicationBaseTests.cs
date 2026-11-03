@@ -493,15 +493,28 @@ namespace Garnet.test.cluster
         [TestCase("4m", 3)]
         [TestCase("16m", 3)]
         public void DiskBasedSyncWithConfiguredChunks(string chunkSize, int pipelineDepth)
+            => RunDiskBasedSyncWithConfiguredChunks(chunkSize, pipelineDepth, runtime: false);
+
+        [TestCase("4m", 3)]
+        [TestCase("16m", 3)]
+        public void DiskBasedSyncWithRuntimeConfiguredChunks(string chunkSize, int pipelineDepth)
+            => RunDiskBasedSyncWithConfiguredChunks(chunkSize, pipelineDepth, runtime: true);
+
+        void RunDiskBasedSyncWithConfiguredChunks(string chunkSize, int pipelineDepth, bool runtime)
         {
             context.CreateInstances(2, enableAOF: true, lowMemory: true, memorySize: "4m", pageSize: "1m", segmentSize: "4m",
                 useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount,
-                replicaDiskBasedSyncChunkSize: chunkSize, replicaDiskBasedSyncPipelineDepth: pipelineDepth);
+                replicaDiskBasedSyncChunkSize: runtime ? "128k" : chunkSize, replicaDiskBasedSyncPipelineDepth: runtime ? 1 : pipelineDepth);
             context.CreateConnection(useTLS: useTLS);
             Assert.That(context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger), Is.EqualTo("OK"));
             context.clusterTestUtils.BumpEpoch(0, logger: context.logger);
 
             var primary = context.clusterTestUtils.GetServer(0);
+            if (runtime)
+            {
+                Assert.That((string)primary.Execute(0, "CONFIG", ["SET", "repl-disk-based-sync-chunk-size", chunkSize]), Is.EqualTo("OK"));
+                Assert.That((string)primary.Execute(0, "CONFIG", ["SET", "repl-disk-based-sync-pipeline-depth", pipelineDepth.ToString()]), Is.EqualTo("OK"));
+            }
             var value = new string('v', 256 << 10);
             for (var i = 0; i < 64; i++)
             {

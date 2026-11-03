@@ -16,7 +16,7 @@ namespace Garnet.cluster
 {
     /// <summary>
     /// Transmits checkpoint file segments over the network using chunked reads from its owned <see cref="FileDataSource"/>.
-    /// Sends each chunk via <see cref="GarnetClientSession.ExecuteClusterSnapshotData"/>
+    /// Sends each chunk via <see cref="GarnetClientSession.ExecuteClusterSnapshotData(Memory{byte}, int, long, Span{byte}, bool)"/>
     /// followed by an empty end-of-transmission packet.
     /// </summary>
     internal sealed class FileTransmitSource : ISnapshotTransmitSource
@@ -26,7 +26,7 @@ namespace Garnet.cluster
 
         public ISnapshotDataSource DataSource { get; }
 
-        public FileTransmitSource(ISnapshotDataSource dataSource, ILogger logger = null, int pipelineDepth = 1)
+        public FileTransmitSource(ISnapshotDataSource dataSource, int pipelineDepth = 1, ILogger logger = null)
         {
             if (pipelineDepth is < 1 or > GarnetServerOptions.ReplicaDiskBasedSyncPipelineDepthMax)
                 throw new ArgumentOutOfRangeException(nameof(pipelineDepth));
@@ -60,6 +60,7 @@ namespace Garnet.cluster
             // Only this async flow mutates pending; response continuations cannot change its head across an await.
             // Peek retains the head in the abort-cleanup set until its acknowledgement succeeds.
             var pending = new Queue<Task>(pipelineDepth);
+            Task<DataSourceReadResult> inFlightRead = null;
 
             try
             {
@@ -68,17 +69,25 @@ namespace Garnet.cluster
                 {
                     if (pending.Count == pipelineDepth)
                     {
+                        gcs.CompletePending(wait: false);
                         // Wait for the oldest item to acknowledge completion before dequeueing it and sending another chunk.
                         await pending.Peek().ConfigureAwait(false);
                         _ = pending.Dequeue();
                     }
 
                     abort.Token.ThrowIfCancellationRequested();
-                    var result = await DataSource.ReadNextChunkAsync(abort.Token).ConfigureAwait(false);
+                    inFlightRead = DataSource.ReadNextChunkAsync(abort.Token);
+                    // Batch ready chunks, but do not hold framed requests behind an asynchronous disk read.
+                    if (!inFlightRead.IsCompletedSuccessfully && pending.Count > 0)
+                        gcs.CompletePending(wait: false);
+                    var result = await inFlightRead.ConfigureAwait(false);
+                    inFlightRead = null;
                     pending.Enqueue(SendChunkAsync(result.ChunkStartAddress, result.BytesRead, result.Buffer));
                 }
 
                 // Wait for all outstanding acknowledgements before sending the completion marker.
+                if (pending.Count > 0)
+                    gcs.CompletePending(wait: false);
                 while (pending.Count > 0)
                 {
                     await pending.Peek().ConfigureAwait(false);
@@ -93,6 +102,18 @@ namespace Garnet.cluster
                 _ = firstFailure.TrySetResult(ex);
                 await abort.CancelAsync().ConfigureAwait(false);
                 gcs.Dispose();
+                if (inFlightRead != null)
+                {
+                    try
+                    {
+                        var result = await inFlightRead.ConfigureAwait(false);
+                        result.Buffer?.Return();
+                    }
+                    catch (Exception cleanupException)
+                    {
+                        logger?.LogDebug(cleanupException, "Aborting an outstanding checkpoint read for {type}", DataSource.Type);
+                    }
+                }
                 try
                 {
                     await Task.WhenAll(pending).ConfigureAwait(false);
@@ -126,7 +147,8 @@ namespace Garnet.cluster
                         deadline.CancelAfter(timeout);
                         abort.Token.ThrowIfCancellationRequested();
                         Volatile.Write(ref response, gcs.ExecuteClusterSnapshotData(
-                            fileTokenBytes, (int)DataSource.Type, address, buffer == null ? [] : buffer.GetSlice(length)));
+                            fileTokenBytes, (int)DataSource.Type, address, buffer == null ? [] : buffer.GetSlice(length),
+                            flush: length == 0));
                     }
                     finally
                     {

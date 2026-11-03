@@ -131,6 +131,32 @@ namespace Garnet.test.cluster
             return ((PoolEntry)field.GetValue(handler)).entry;
         }
 
+        [Test]
+        public async Task SnapshotRequestsCanBeBatchedWithExplicitFlush()
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            using var client = new GarnetClientSession(listener.LocalEndpoint, new NetworkBufferSettings(1 << 20, 4096));
+            var accept = listener.AcceptTcpClientAsync(timeout.Token);
+            await client.ConnectAsync(token: timeout.Token);
+            using var peer = await accept;
+            using var stream = peer.GetStream();
+            var data = new byte[4096];
+            var first = client.ExecuteClusterSnapshotData(Guid.Empty.ToByteArray(), (int)CheckpointFileType.STORE_HLOG, 0, data, flush: false);
+            var second = client.ExecuteClusterSnapshotData(Guid.Empty.ToByteArray(), (int)CheckpointFileType.STORE_HLOG, data.Length, data, flush: false);
+            await Task.Delay(50, timeout.Token);
+            Assert.That(peer.Available, Is.Zero, "Commands that fit must remain buffered until the producer flushes");
+            Assert.That(first.IsCompleted || second.IsCompleted, Is.False);
+            client.CompletePending(wait: false);
+            Assert.That((await ReadChunkAsync(stream, timeout.Token)).Address, Is.Zero);
+            Assert.That((await ReadChunkAsync(stream, timeout.Token)).Address, Is.EqualTo(data.Length));
+            await ReplyAsync(stream, "+OK\r\n", timeout.Token);
+            await ReplyAsync(stream, "+OK\r\n", timeout.Token);
+            Assert.That(await first.WaitAsync(timeout.Token), Is.EqualTo("OK"));
+            Assert.That(await second.WaitAsync(timeout.Token), Is.EqualTo("OK"));
+        }
+
         [TestCase(1)]
         [TestCase(3)]
         [TestCase(8)]

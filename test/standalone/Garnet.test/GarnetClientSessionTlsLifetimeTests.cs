@@ -66,7 +66,7 @@ namespace Garnet.test
 
             // No send is active here. Exercise both release orders independently of receive-callback timing.
             if (clientFirst)
-                handler.ReleaseClientSendBuffer();
+                handler.DisposeClientSendBuffer();
             else
                 handler.Dispose();
             using (var probe = pool.Get(settings.sendBufferSize))
@@ -74,8 +74,8 @@ namespace Garnet.test
             if (clientFirst)
                 handler.Dispose();
             else
-                handler.ReleaseClientSendBuffer();
-            handler.ReleaseClientSendBuffer();
+                handler.DisposeClientSendBuffer();
+            handler.DisposeClientSendBuffer();
             client.Dispose();
             client.Dispose();
             await Task.Run(pool.Dispose).WaitAsync(Deadline);

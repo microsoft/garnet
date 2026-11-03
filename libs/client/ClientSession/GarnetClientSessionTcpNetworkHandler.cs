@@ -11,7 +11,7 @@ namespace Garnet.client
 {
     sealed class GarnetClientSessionTcpNetworkHandler : TcpNetworkHandlerBase<GarnetClientSession, GarnetTcpNetworkSender>
     {
-        int clientSendBufferReleased;
+        int clientSendBufferDisposed;
 
         public GarnetClientSessionTcpNetworkHandler(GarnetClientSession serverHook, Socket socket, NetworkBufferSettings networkBufferSettings, LimitedFixedBufferPool networkPool, bool useTLS, IMessageConsumer messageConsumer, int networkSendThrottleMax = 8, ILogger logger = null)
             : base(serverHook, new GarnetTcpNetworkSender(socket, networkBufferSettings, networkPool, networkSendThrottleMax), socket, networkBufferSettings, networkPool, useTLS, messageConsumer: messageConsumer, logger: logger)
@@ -21,10 +21,10 @@ namespace Garnet.client
             RetainTransportSendBuffer();
         }
 
-        internal void ReleaseClientSendBuffer()
+        internal void DisposeClientSendBuffer()
         {
-            if (Interlocked.Exchange(ref clientSendBufferReleased, 1) == 0)
-                ReleaseTransportSendBuffer();
+            if (Interlocked.Exchange(ref clientSendBufferDisposed, 1) == 0)
+                DisposeTransportSendBuffer();
         }
 
         public byte[] RawTransportBuffer => transportReceiveBuffer;

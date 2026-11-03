@@ -268,6 +268,18 @@ namespace Garnet.client
         /// <param name="data">The data to send.</param>
         /// <seealso cref="M:Garnet.cluster.ClusterSession.NetworkClusterSnapshotData"/>
         public Task<string> ExecuteClusterSnapshotData(Memory<byte> fileTokenBytes, int fileType, long startAddress, Span<byte> data)
+            => ExecuteClusterSnapshotData(fileTokenBytes, fileType, startAddress, data, flush: true);
+
+        /// <summary>
+        /// Frame snapshot data with optional flushing for a single producer's bounded batch.
+        /// </summary>
+        /// <param name="fileTokenBytes">The checkpoint token bytes.</param>
+        /// <param name="fileType">The checkpoint file type (including metadata variants).</param>
+        /// <param name="startAddress">The start address for this chunk (-1 for metadata).</param>
+        /// <param name="data">The data to send.</param>
+        /// <param name="flush">Flush after framing; false lets the single producer batch requests before explicitly flushing.</param>
+        /// <seealso cref="M:Garnet.cluster.ClusterSession.NetworkClusterSnapshotData"/>
+        public Task<string> ExecuteClusterSnapshotData(Memory<byte> fileTokenBytes, int fileType, long startAddress, Span<byte> data, bool flush)
         {
             // The data payload must fit in the send buffer (as a RESP bulk string) after a flush,
             // otherwise the TryWriteBulkString/Flush loop below will spin forever.
@@ -340,7 +352,8 @@ namespace Garnet.client
             }
             offset = curr;
 
-            Flush();
+            if (flush)
+                Flush();
             Interlocked.Increment(ref numCommands);
             return tcs.Task;
         }

@@ -3,6 +3,7 @@
 
 using System;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -12,7 +13,10 @@ namespace Garnet.cluster
         /// <summary>
         /// NetworkBufferSettings for the buffer pool maintained by the ReplicationManager
         /// </summary>
-        internal NetworkBufferSettings networkBufferSettings => NetworkBufferSettings.GetInclusive([GetRSSNetworkBufferSettings, GetIRSNetworkBufferSettings, GetAofSyncNetworkBufferSettings]);
+        // Reserve size classes, not buffers, for the entire runtime-adjustable chunk range.
+        internal NetworkBufferSettings networkBufferSettings => NetworkBufferSettings.GetInclusive([
+            CreateRSSNetworkBufferSettings(GarnetServerOptions.ReplicaDiskBasedSyncChunkSizeBytesMax),
+            GetIRSNetworkBufferSettings, GetAofSyncNetworkBufferSettings]);
 
         /// <summary>
         /// Network pool maintained by the ReplicationManager
@@ -24,8 +28,12 @@ namespace Garnet.cluster
         /// NetworkBufferSettings for the replica sync session clients
         /// </summary>
         const int rssInitialReceiveBufferSize = 1 << 12;
-        public NetworkBufferSettings GetRSSNetworkBufferSettings => new(
-            Math.Max(1 << 20, 2 * clusterProvider.serverOptions.GetReplicaDiskBasedSyncChunkSizeBytes()),
+        const int rssMinimumSendBufferSize = 1 << 20;
+        public NetworkBufferSettings GetRSSNetworkBufferSettings => CreateRSSNetworkBufferSettings(
+            clusterProvider.storeWrapper.runtimeConfig.GetReplicaDiskBasedSyncSettings().ChunkSize);
+
+        internal static NetworkBufferSettings CreateRSSNetworkBufferSettings(int chunkSize) => new(
+            Math.Max(rssMinimumSendBufferSize, 2 * chunkSize),
             rssInitialReceiveBufferSize);
 
         /// <summary>

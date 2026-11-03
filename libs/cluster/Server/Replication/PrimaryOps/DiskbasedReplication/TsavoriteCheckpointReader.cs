@@ -16,6 +16,7 @@ namespace Garnet.cluster
         readonly ClusterProvider clusterProvider;
         readonly TimeSpan timeout;
         readonly ILogger logger;
+        readonly (int ChunkSize, int PipelineDepth) transferSettings;
         readonly List<ISnapshotDataSource> fileDataSources = [];
         readonly List<ISnapshotDataSource> metadataDataSources = [];
         SectorAlignedBufferPool bufferPool;
@@ -30,7 +31,8 @@ namespace Garnet.cluster
             {
                 CheckpointFileType.STORE_HLOG or CheckpointFileType.STORE_SNAPSHOT => 1L << serverOptions.SegmentSizeBits(isObj: false),
                 CheckpointFileType.STORE_HLOG_OBJ or CheckpointFileType.STORE_SNAPSHOT_OBJ => 1L << serverOptions.SegmentSizeBits(isObj: true),
-                _ => -1
+                CheckpointFileType.STORE_INDEX => -1,
+                _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Unsupported checkpoint file type.")
             };
         }
 
@@ -40,11 +42,13 @@ namespace Garnet.cluster
             LogFileInfo logFileInfo,
             long indexSize,
             TimeSpan timeout,
+            (int ChunkSize, int PipelineDepth)? transferSettings = null,
             ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
             this.timeout = timeout;
             this.logger = logger;
+            this.transferSettings = transferSettings ?? clusterProvider.storeWrapper.runtimeConfig.GetReplicaDiskBasedSyncSettings();
 
             // 1. send hlog file segments
             if (clusterProvider.serverOptions.EnableStorageTier && logFileInfo.hybridLogFileEndAddress > PageHeader.Size)
@@ -110,7 +114,7 @@ namespace Garnet.cluster
         {
             foreach (var dataSource in fileDataSources)
             {
-                yield return new FileTransmitSource(dataSource, logger, clusterProvider.serverOptions.GetReplicaDiskBasedSyncPipelineDepth());
+                yield return new FileTransmitSource(dataSource, transferSettings.PipelineDepth, logger);
             }
 
             foreach (var dataSource in metadataDataSources)
@@ -121,7 +125,7 @@ namespace Garnet.cluster
 
         private FileDataSource CreateFileDataSource(CheckpointFileType type, Guid token, long startOffset, long endOffset)
         {
-            var maxBatchSize = clusterProvider.serverOptions.GetReplicaDiskBasedSyncChunkSizeBytes();
+            var maxBatchSize = transferSettings.ChunkSize;
             var device = CreateCheckpointDevice(type, token);
             try
             {

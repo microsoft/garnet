@@ -34,6 +34,50 @@ namespace Garnet.test
             Assert.That(new GarnetServerOptions().GetReplicaDiskBasedSyncPipelineDepth(), Is.EqualTo(1));
         }
 
+        [TestCase("512", false)]
+        [TestCase("4096", true)]
+        public void CheckpointChunkSectorCompatibilityIsValidatedBeforeOpeningDevices(string chunkSize, bool valid)
+        {
+            var factory = new SectorProbeFactory();
+            var options = new GarnetServerOptions
+            {
+                EnableCluster = true,
+                ReplicaDiskBasedSyncChunkSize = chunkSize,
+                DeviceFactoryCreator = factory,
+            };
+            if (valid)
+            {
+                var settings = options.GetSettings(null, null, null, out _);
+                settings.LogDevice.Dispose();
+            }
+            else
+            {
+                var exception = Assert.Throws<ArgumentException>(() => options.GetSettings(null, null, null, out _));
+                Assert.That(exception.Message, Does.Contain("4096"));
+            }
+            Assert.That(factory.ProbeCount, Is.GreaterThanOrEqualTo(3));
+            Assert.That(factory.OpenCount, Is.Zero, "Validation must not open checkpoint files");
+        }
+
+        sealed class SectorProbeFactory : INamedDeviceFactoryCreator, INamedDeviceFactory
+        {
+            internal int ProbeCount;
+            internal int OpenCount;
+            public INamedDeviceFactory Create(string baseName) => this;
+            public uint GetSectorSize(FileDescriptor fileInfo)
+            {
+                ProbeCount++;
+                return 4096;
+            }
+            public IDevice Get(FileDescriptor fileInfo)
+            {
+                OpenCount++;
+                throw new InvalidOperationException("Device opening is not expected during the sector probe.");
+            }
+            public void Delete(FileDescriptor fileInfo) => throw new NotSupportedException();
+            public IEnumerable<FileDescriptor> ListContents(string path) => [];
+        }
+
         [TestCase(1, "512m", true)]
         [TestCase(3, "16m", true)]
         [TestCase(64, "128k", true)]

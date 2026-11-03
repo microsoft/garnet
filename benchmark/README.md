@@ -48,6 +48,15 @@ The three layers — Device (raw IDevice), [KV](../libs/storage/Tsavorite/cs/ben
 (Tsavorite engine), and Resp (full RESP server) — stack as **Resp ≤ KV ≤ Device ≤ fio**,
 and each has a matching disk and **LocalMemory (memory)** scenario for comparison.
 
+## Checkpoint.benchmark
+
+The [checkpoint-file transfer benchmark](Checkpoint.benchmark/README.md) runs a sender
+and receiver on one machine or two to compare disk-based replica-sync chunk sizes and
+pipeline depths. It uses the actual device-backed source, checkpoint transmitter,
+Garnet client and acknowledged device-write sink without resetting a Garnet replica.
+The README includes local and two-machine sweeps, CSV output and measurement caveats.
+Checkpoint creation, recovery and AOF catch-up are outside the timed transfer.
+
 ## Privacy
 
 [Microsoft Privacy Statement](https://go.microsoft.com/fwlink/?LinkId=521839)
