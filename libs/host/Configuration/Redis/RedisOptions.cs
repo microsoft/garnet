@@ -51,6 +51,9 @@ Specify your subject name via the cert-subject-name command line argument, if ap
         [RedisOption("cluster-enabled", nameof(Options.EnableCluster))]
         public Option<RedisBoolean> ClusterEnabled { get; set; }
 
+        [RedisOption("sentinel-replication", nameof(Options.EnableStandaloneReplication))]
+        public Option<RedisBoolean> SentinelReplication { get; set; }
+
         [RedisOption("requirepass", nameof(Options.Password))]
         public Option<string> RequirePass { get; set; }
 

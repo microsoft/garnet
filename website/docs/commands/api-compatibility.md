@@ -288,8 +288,8 @@ Legend: ➕ = supported, ➖ = not supported.
 |  | [LASTSAVE](checkpoint.md#lastsave) | ➕ |  |
 |  | LOLWUT | ➖ |  |
 |  | [MONITOR](server.md#monitor) | ➕ |  |
-|  | PSYNC | ➖ |  |
-|  | REPLCONF | ➖ |  |
+|  | [PSYNC](server.md#psync) | ➕ | Handshake only; always replies +FULLRESYNC with an empty snapshot. Partial resync (+CONTINUE) is not implemented |
+|  | [REPLCONF](server.md#replconf) | ➕ | Known options accepted; ACK/GETACK are no-reply, matching Redis |
 |  | [REPLICAOF](server.md#replicaof) | ➕ |  |
 |  | RESTORE-ASKING | ➖ |  |
 |  | [ROLE](server.md#role) | ➕ |  |

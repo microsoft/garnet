@@ -5,7 +5,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Garnet.cluster
+namespace Garnet.server
 {
     /// <summary>
     /// Interface for a checkpoint data source that provides chunk-based reading.

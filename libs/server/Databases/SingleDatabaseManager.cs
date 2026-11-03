@@ -81,7 +81,15 @@ namespace Garnet.server
                     }
 
                     if (storeVersion > 0)
+                    {
                         defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
+                        if (defaultDatabase.StandaloneCheckpointStore != null)
+                        {
+                            StoreWrapper.StoreCheckpointManager.SetRecoveredSafeAofAddress(ref metadata.storeCheckpointCoveredAofAddress);
+                            StoreWrapper.StoreCheckpointManager.RecoveredHistoryId = metadata.storePrimaryReplId;
+                            defaultDatabase.StandaloneCheckpointStore.Initialize(metadata);
+                        }
+                    }
                 }
                 else
                 {

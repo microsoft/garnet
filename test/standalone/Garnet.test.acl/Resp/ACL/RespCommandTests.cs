@@ -5660,6 +5660,46 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ReplConfACLsAsync()
+        {
+            // REPLCONF accepts an even-length list of options and replies +OK. We use
+            // listening-port since it is the form a replica sends first and it produces
+            // a plain +OK that GarnetClient can parse.
+            await CheckCommandsAsync(
+                "REPLCONF",
+                [DoReplConfAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoReplConfAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringResultAsync("REPLCONF", ["listening-port", "6380"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", res);
+            }
+        }
+
+        [Test]
+        public async Task PsyncACLsAsync()
+        {
+            // PSYNC replies +FULLRESYNC followed by a raw, length-delimited RDB payload.
+            // GarnetClient has no response shape for that, so the success path cannot be
+            // asserted here; skipPermitted keeps the permission-denied checks (which are
+            // the point of this suite) while avoiding a bogus parse failure.
+            await CheckCommandsAsync(
+                "PSYNC",
+                [DoPsyncAsync],
+                skipPermitted: true
+            ).ConfigureAwait(false);
+
+            static async Task DoPsyncAsync(GarnetClient client)
+            {
+                // If this is ever permitted the client will choke on the RDB payload;
+                // thrown as any exception other than NOPERM would fail the test, which is
+                // why the permitted case is skipped above.
+                await client.ExecuteForStringResultAsync("PSYNC", ["?", "-1"]).ConfigureAwait(false);
+            }
+        }
+
+        [Test]
         public async Task ReplicaOfACLsAsync()
         {
             // Uses exceptions as control flow, since clustering is disabled in these tests

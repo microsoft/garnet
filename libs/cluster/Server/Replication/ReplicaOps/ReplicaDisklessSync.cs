@@ -159,7 +159,7 @@ namespace Garnet.cluster
 
                     // Used only for disk-based replication
                     if (!disklessSync)
-                        recvCheckpointHandler = new ReceiveCheckpointHandler(clusterProvider, logger);
+                        recvCheckpointHandler = CreateReceiveCheckpointHandler();
 
                     await gcs.ConnectAsync((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, linkedCts.Token).ConfigureAwait(false);
 

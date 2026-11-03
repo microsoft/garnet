@@ -5,7 +5,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Garnet.cluster
+namespace Garnet.server
 {
     /// <summary>
     /// A checkpoint data source backed by in-memory byte data (e.g., checkpoint metadata).

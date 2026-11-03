@@ -44,6 +44,11 @@ namespace Garnet.server
         /// </summary>
         public readonly AofBackpressure backpressure;
 
+        /// <summary>
+        /// Coordinates AOF truncation with active replication and snapshot consumers.
+        /// </summary>
+        internal readonly AofRetentionManager RetentionManager;
+
         public readonly GarnetServerOptions serverOptions;
 
         public long HeaderSize => Log.HeaderSize;
@@ -84,6 +89,7 @@ namespace Garnet.server
             // constructed (even when AofSyncMaxLagBytes <= 0) so a runtime CONFIG SET can enable the
             // gate live; the disabled state is carried by an internal flag that short-circuits Wait.
             backpressure = new AofBackpressure(serverOptions, logger);
+            RetentionManager = new(serverOptions.AofPhysicalSublogCount);
             Log = new(this, serverOptions, logSettings, logger);
         }
 
@@ -92,6 +98,7 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
+            RetentionManager.Dispose();
             backpressure?.Dispose();
             Log.Dispose();
         }

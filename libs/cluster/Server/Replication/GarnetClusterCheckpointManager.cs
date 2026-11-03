@@ -49,10 +49,15 @@ namespace Garnet.cluster
         public override void CheckpointVersionShiftEnd(long oldVersion, long newVersion, bool isStreaming)
             => checkpointVersionShiftEnd?.Invoke(isMainStore, oldVersion, newVersion, isStreaming);
 
-        public void DeleteLogCheckpoint(Guid logToken)
+        // These shadow the GarnetCheckpointManager base implementations (moved into the
+        // server assembly by the standalone-replication refactor). The base members are
+        // internal and non-virtual, so the cluster variants are hidden rather than
+        // overridden: they resolve devices through this instance's device factory and
+        // naming scheme, which is what the cluster checkpoint paths expect.
+        public new void DeleteLogCheckpoint(Guid logToken)
             => deviceFactory.Delete(checkpointNamingScheme.LogCheckpointBase(logToken));
 
-        public void DeleteIndexCheckpoint(Guid indexToken)
+        public new void DeleteIndexCheckpoint(Guid indexToken)
             => deviceFactory.Delete(checkpointNamingScheme.IndexCheckpointBase(indexToken));
 
         public IDevice GetDevice(CheckpointFileType retStateType, Guid fileToken)
@@ -106,7 +111,7 @@ namespace Garnet.cluster
         /// <param name="recoveredSafeAofAddress"></param>
         /// <param name="recoveredReplicationId"></param>
         /// <exception cref="Exception"></exception>
-        public unsafe void GetCheckpointCookieMetadata(Guid logToken, ref AofAddress recoveredSafeAofAddress, out string recoveredReplicationId)
+        public new unsafe void GetCheckpointCookieMetadata(Guid logToken, ref AofAddress recoveredSafeAofAddress, out string recoveredReplicationId)
         {
             var metadata = GetLogCheckpointMetadata(logToken);
             var hlri = ConvertMetadata(metadata);
