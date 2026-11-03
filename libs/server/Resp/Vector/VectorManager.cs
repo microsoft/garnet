@@ -608,13 +608,6 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void Dispose()
         {
-            if (!IsEnabled)
-            {
-                replicationBlockEvent.Dispose();
-
-                return;
-            }
-
             // We must drain all these before disposing, otherwise we'll leave replicationBlockEvent unset
             foreach (var channel in replicationReplayChannels)
             {
