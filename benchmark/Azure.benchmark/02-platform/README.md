@@ -23,8 +23,8 @@ Workstation-side assets that deploy and manage the VMSS compute platform. Run th
 
 # Storage has Shared Key/SAS disabled. Instances download `tools/tools.tar.gz` with
 # the VMSS managed identity, which needs Storage Blob Data Reader on the account.
-# `-GrantStorageAccess` creates that role assignment (requires RBAC Administrator,
-# User Access Administrator, or Owner); without it, an administrator must grant it.
+# `-GrantStorageAccess` creates that role assignment (this script requires active
+# Owner on the resource group); without it, an administrator must grant it.
 # Creation stops before ARM deployment unless the blob exists; publish it first with
 # `-Action publish-tools` (requires Storage Blob Data Contributor).
 
@@ -72,10 +72,16 @@ pwsh .\02-platform\manage-vmss.ps1 --help
 
 ### Actions
 
+With `-GrantStorageAccess`, `create` checks for active Owner access on the resource group
+assignment before deployment. If missing, it exits with manual Azure Portal PIM
+instructions and the validator command. No automatic activation is performed.
+Run `01-resources/grant-perms.ps1` after shared-resource deployment to grant the
+publisher blob data access. See [RBAC and elevation](../README-RBAC.md).
+
 | Action | Description |
 |--------|-------------|
 | `refresh` (default) | Git pull all repos (garnet, valkey, dragonfly, redis, memtier, AzureBench) |
-| `create` | Provision the VMSS from `vmss.bicep`. Confirms the active tenant/subscription/resource group, offers to generate a missing machine-local `vmss-parameters.json` through `01-resources/deploy-common-resources.ps1 -Action stage`, and validates its NSG, VNet, subnets, PPG, locations, subscription, and resource group before deployment. Staging also copies manifest-declared public keys from the local `basePath` (normally `%USERPROFILE%\.ssh`) into the git-ignored security cache. Explicit `-ParametersFile` inputs are never overwritten. Create re-syncs those keys before deployment, inline-discovers the Key Vault, and grants the VMSS managed identity secret-get access. Add `-GrantStorageAccess` to also grant the VMSS managed identity Storage Blob Data Reader on the tools storage account (requires **RBAC Administrator**, **User Access Administrator**, or **Owner**); instances need that role to download the tools bundle. Remaining VM inputs are prompted by az |
+| `create` | Provision the VMSS from `vmss.bicep`. Confirms the active tenant/subscription/resource group, offers to generate a missing machine-local `vmss-parameters.json` through `01-resources/deploy-common-resources.ps1 -Action stage`, and validates its NSG, VNet, subnets, PPG, locations, subscription, and resource group before deployment. Staging also copies manifest-declared public keys from the local `basePath` (normally `%USERPROFILE%\.ssh`) into the git-ignored security cache. Explicit `-ParametersFile` inputs are never overwritten. Create re-syncs those keys before deployment, inline-discovers the Key Vault, and grants the VMSS managed identity secret-get access. Add `-GrantStorageAccess` to also grant the VMSS managed identity Storage Blob Data Reader on the tools storage account (this script requires active **Owner on the resource group**, elevated manually); instances need that role to download the tools bundle. Remaining VM inputs are prompted by az |
 | `rebuild` | Git pull + rebuild specified system (requires `-System` parameter) |
 | `deploy` | Fetch the tools bundle with the VM managed identity and run the full deployment workflow, including ordinary Valkey, TLS-enabled `valkey-server-tls`/`valkey-cli-tls`, and `redis-server-tls`/`redis-cli-tls` |
 | `install` | Git pull AzureBench + copy scripts to system paths only |

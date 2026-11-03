@@ -131,8 +131,15 @@ or the `tools-sas-url` Key Vault secret, and `refresh-sas` has been removed.
 `02-platform/manage-vmss.ps1 -Action publish-tools` uploads `tools.tar.gz` with Entra
 auth (requires Storage Blob Data Contributor). VMSS instances download it with their
 managed identity, which needs Storage Blob Data Reader; grant it with
-`manage-vmss.ps1 -Action create -GrantStorageAccess` (requires RBAC Administrator,
-User Access Administrator, or Owner).
+`manage-vmss.ps1 -Action create -GrantStorageAccess` (requires active Owner on the
+resource group under this workflow's policy).
+
+After deploying shared resources, manually activate Owner on the resource group in Azure
+Portal PIM and run `01-resources/grant-perms.ps1 -rg <rg>`. It grants the deployer
+Storage Blob Data Owner on the `tools` container and verifies upload/delete access,
+so later publishing does not need elevation. It exits with manual instructions
+if Owner access on the resource group is not active; it never activates PIM itself. See
+[RBAC and manual elevation](../README-RBAC.md).
 
 ## Region / Location Handling
 

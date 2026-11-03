@@ -60,7 +60,11 @@ pwsh .\01-resources\deploy-common-resources.ps1 `
   --rg testrg `
   --location southcentralus
 
-# 2. Publish the tools bundle before creating any VMSS
+# 2. Manually activate Owner on the resource group in Azure Portal PIM, then grant
+# publisher access. See README-RBAC.md. This grant persists after PIM expires.
+pwsh .\01-resources\grant-perms.ps1 -rg testrg
+
+# Publish the tools bundle before creating any VMSS
 # This requires the storage account from step 1. VM provisioning cannot fetch
 # /home/guser/tools when tools.tar.gz has not been uploaded. Shared Key is disabled,
 # so the uploader needs Storage Blob Data Contributor on the account or container.
@@ -72,8 +76,8 @@ pwsh .\02-platform\manage-vmss.ps1 `
 # See 02-platform/README.md. DeploymentName identifies the Azure deployment
 # record; the VMSS resource name comes from the vmssName Bicep parameter.
 # -GrantStorageAccess gives the VMSS managed identity Storage Blob Data Reader so
-# instances can download the tools bundle; it requires RBAC Administrator, User
-# Access Administrator, or Owner (e.g. activated through PIM).
+# instances can download the tools bundle; this script requires active
+# Owner on the resource group (manually activated through Azure Portal PIM).
 pwsh .\02-platform\manage-vmss.ps1 `
   --rg testrg `
   --action create `

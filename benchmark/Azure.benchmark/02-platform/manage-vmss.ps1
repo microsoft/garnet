@@ -146,7 +146,7 @@ if ($Help -or -not $rg) {
     Write-Host "  -ContainerName <c>  Blob container for -Action publish-tools (default: tools)"
     Write-Host "  -ToolsBlobName <n>  Blob name for -Action publish-tools (default: tools.tar.gz)"
     Write-Host "  -GrantStorageAccess Grant the VMSS identity Storage Blob Data Reader during -Action create"
-    Write-Host "                      (requires RBAC Administrator, User Access Administrator, or Owner; skipped by default)"
+    Write-Host "                      (requires active Owner on the resource group; activate manually in Azure Portal PIM)"
     Write-Host "  -Verbose            Show per-instance command output"
     Write-Host "  -Force              Force pull (git reset --hard) instead of fast-forward"
     Write-Host "  -NoPull             Skip git pull on rebuild (build local changes only)"
@@ -174,6 +174,7 @@ $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $securityDir = Join-Path $scriptDir '..\01-resources\security'
 . (Join-Path $securityDir 'ssh-key-utils.ps1')
+. (Join-Path $scriptDir '..\01-resources\storage-permission-utils.ps1')
 
 function Write-CreateError {
     param([string]$Message)
@@ -492,6 +493,15 @@ if ($Action -eq 'create') {
     if (-not $st) {
         Write-Error "No storage account found in '$rg'. Run 01-resources/deploy-common-resources.ps1 first."
         exit 1
+    }
+
+    if ($GrantStorageAccess) {
+        $ownerContext = Get-ResourceGroupOwnerContext -ResourceGroup $rg
+        if (-not $ownerContext) { exit 1 }
+        if ($ownerContext.Account.id -ne $azureContext.SubscriptionId) {
+            Write-CreateError 'The active subscription changed after context confirmation. Rerun create with the intended subscription.'
+            exit 1
+        }
     }
 
     $toolsDelivery = Test-ToolsDelivery -ResourceGroup $rg -StorageAccount $st `
