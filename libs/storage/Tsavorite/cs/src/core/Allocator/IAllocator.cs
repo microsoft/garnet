@@ -124,8 +124,8 @@ namespace Tsavorite.core
         void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason);
 
         /// <summary>
-        /// Whether <paramref name="logicalAddress"/> is in a flush that is committed but not yet durable, so the record's
-        /// image must not be mutated or its heap freed.
+        /// Whether a flush may be reading <paramref name="logicalAddress"/> from the live page, now or as soon as it starts, so the
+        /// record's image must not be mutated or its heap freed.
         /// </summary>
         /// <remarks>
         /// Declared here rather than as an <c>AllocatorBase</c> virtual because callers reach it through the

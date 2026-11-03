@@ -33,6 +33,10 @@ namespace Tsavorite.core
             switch (next.Phase)
             {
                 case Phase.PREPARE:
+                    // On a NullDevice main log, hold deferred disposals until the checkpoint reads no more records; see
+                    // AllocatorBase.checkpointHoldAddress. The hold must be in place before PREPARE is published.
+                    store.hlogBase.BeginCheckpointHold();
+
                     // Capture state before checkpoint starts
                     lastVersion = store._hybridLogCheckpoint.info.version = next.Version;
                     store._hybridLogCheckpoint.info.fuzzyRegionStartAddress = store.hlogBase.GetTailAddress();
@@ -74,6 +78,10 @@ namespace Tsavorite.core
                     store.CleanupLogCheckpoint();
                     store.storeFunctions.OnCheckpoint(CheckpointTrigger.CheckpointCompleted, guid);
                     store.hlogBase.EndSnapshotObjectLog(store._hybridLogCheckpoint.snapshotObjectLogState);
+
+                    // The checkpoint reads no more records, so run the deletions held for it. This precedes signaling completion, so that a
+                    // delete trigger that throws fails this checkpoint rather than the next one.
+                    store.hlogBase.EndCheckpointHold();
                     store._hybridLogCheckpoint.Dispose();
                     var nextTcs = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
                     store.checkpointTcs.SetResult(new LinkedCheckpointInfo { NextTask = nextTcs.Task });
@@ -183,6 +191,10 @@ namespace Tsavorite.core
             var previousTcs = store.checkpointTcs;
             store.checkpointTcs = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
             _ = previousTcs.TrySetException(exception ?? new TsavoriteException("Checkpoint state machine aborted"));
+
+            // The snapshot flush has been awaited above, so nothing of this checkpoint reads records any more; run the deletions held for
+            // it. Last, so that a delete trigger that throws leaves the cleanup above done.
+            store.hlogBase.EndCheckpointHold();
         }
     }
 }

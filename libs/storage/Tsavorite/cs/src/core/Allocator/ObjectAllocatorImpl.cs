@@ -96,8 +96,8 @@ namespace Tsavorite.core
             => Volatile.Read(ref LastIssuedFlushedUntilAddress);
 
         /// <summary>
-        /// Whether <paramref name="logicalAddress"/> is in a read-only flush that is committed but not yet durable, so that its record
-        /// image must not be mutated.
+        /// Whether a read-only flush may be reading <paramref name="logicalAddress"/> from the live page, now or as soon as it starts, so that
+        /// its record image must not be mutated.
         /// </summary>
         /// <remarks>
         /// This allocator resolves objectIds against the live <see cref="ObjectIdMap"/>, stamps ObjectLogPosition and size hints
@@ -108,11 +108,14 @@ namespace Tsavorite.core
         /// with <see cref="RecordInfo.DeferredDispose"/> and run by the drain on flush completion, or by eviction. A CopyUpdate's release of
         /// its source does not wait: it replaces only the value's <see cref="ObjectIdMap"/> slot, which changes no byte of the image.
         /// <para>
-        /// The upper bound is <see cref="AllocatorBase{TStoreFunctions, TAllocator}.SafeReadOnlyAddress"/>, not
-        /// <see cref="LastIssuedFlushedUntilAddress"/>: <see cref="OnPagesMarkedReadOnly"/> advances SafeReadOnlyAddress first and
-        /// only then publishes LastIssued and issues the flush, so a thread that already sees an address as immutable can still
-        /// see LastIssued below it. SafeReadOnlyAddress is where a flush of the address becomes committed, so it is the first
-        /// bound that cannot be observed too late.
+        /// The upper bound is <see cref="AllocatorBase{TStoreFunctions, TAllocator}.ReadOnlyAddress"/>. A read-only shift publishes
+        /// ReadOnlyAddress and then bumps the epoch with <see cref="OnPagesMarkedReadOnly"/>, which advances SafeReadOnlyAddress and starts
+        /// the flush's walk of the live records in the same call. That action waits only for threads that held the epoch at the bump, so it
+        /// does not wait for an operation that resumed after the bump, or whose allocation refreshed its epoch. Such an operation sees the
+        /// address below ReadOnlyAddress, so it treats the record as frozen. An operation that sees the address at or above ReadOnlyAddress
+        /// held the epoch before the bump, so the flush cannot start until that operation refreshes or suspends its epoch. SafeReadOnlyAddress
+        /// would be read too late: it can pass the address, and the flush can start, after an operation has found the record unfrozen. An
+        /// operation that may refresh its epoch between this check and changing the record checks again after the refresh.
         /// </para>
         /// <para>
         /// A record below <see cref="AllocatorBase{TStoreFunctions, TAllocator}.FlushedUntilAddress"/> is free, even one that shares a
@@ -129,7 +132,7 @@ namespace Tsavorite.core
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool IsFrozenForFlush(long logicalAddress)
-            => logicalAddress < SafeReadOnlyAddress
+            => logicalAddress < ReadOnlyAddress
                 && logicalAddress >= (IsNullDevice ? Volatile.Read(ref LastIssuedFlushedUntilAddress) : FlushedUntilAddress);
 
         /// <summary>
@@ -560,13 +563,13 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Mark the deleted source record at <paramref name="logicalAddress"/> for deferred disposal, because a flush or a checkpoint still reads
-        /// it; the drain on flush completion, or eviction, disposes it.
+        /// it; the drain on flush completion, the drain at the end of a hold, or eviction disposes it.
         /// </summary>
         /// <param name="source">The superseded record, which the caller's operation has just deleted</param>
         /// <param name="logicalAddress">The record's address</param>
         /// <remarks>The page's count is raised before the mark is set, and FlushedUntilAddress is read after both. The drain advances
         /// FlushedUntilAddress before it reads the counts and the marks, and each of these steps is a full fence, so if the drain has already
-        /// passed the record, this sees that and disposes the record itself. The caller holds the epoch.</remarks>
+        /// passed the record, this sees that and disposes the record itself, unless a hold covers it. The caller holds the epoch.</remarks>
         internal void DeferDispose(ref LogRecord source, long logicalAddress)
         {
             _ = Interlocked.Increment(ref objectPages[GetPageIndexForAddress(logicalAddress)].deferredDisposeCount);
@@ -577,7 +580,7 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Dispose the records marked <see cref="RecordInfo.DeferredDispose"/> in <paramref name="fromAddress"/> .. <paramref name="untilAddress"/>,
-        /// whose flushes have completed: the range a flush completion advanced FlushedUntilAddress over.
+        /// whose flushes have completed: the range a flush completion advanced FlushedUntilAddress over, or the range a hold covered.
         /// </summary>
         /// <remarks>
         /// <para>Returns at once, without the epoch, when no page in the range holds a mark; that is almost always. The counts live in an array
@@ -588,10 +591,12 @@ namespace Tsavorite.core
         /// thread that holds none, and BumpCurrentEpoch requires one. The walk needs no barrier, because the flushes that froze these records
         /// have completed and the records are superseded. What it needs is for the pages it walks to stay resident, which holding the epoch
         /// guarantees for everything at or above the HeadAddress it reads inside the protected region.</para>
+        /// <para>The walk leaves a mark that a hold covers; the drain at the end of the hold runs it. See
+        /// <see cref="AllocatorBase{TStoreFunctions, TAllocator}.DeferredDisposeHoldAddress"/>.</para>
         /// </remarks>
         internal void DrainDeferredDisposes(long fromAddress, long untilAddress)
         {
-            if (untilAddress <= fromAddress || IsNullDevice || !RangeHasDeferredDisposes(fromAddress, untilAddress))
+            if (untilAddress <= fromAddress || !RangeHasDeferredDisposes(fromAddress, untilAddress))
                 return;
 
             var resumed = epoch.ResumeIfNotProtected();
@@ -626,16 +631,6 @@ namespace Tsavorite.core
         /// <summary>The walk of <see cref="DrainDeferredDisposes"/>; the caller holds the epoch.</summary>
         private void DrainDeferredDisposesProtected(long fromAddress, long untilAddress)
         {
-            // On a NullDevice main log the drain leaves every mark to eviction: FlushedUntilAddress advances without anything being
-            // written, so passing a record does not mean a Snapshot checkpoint's flush has read it.
-            if (IsNullDevice)
-                return;
-
-            // A streaming snapshot's scan may still push a record at or above its hold, so leave those marks to eviction.
-            var holdAddress = Volatile.Read(ref streamingScanHoldAddress);
-            if (untilAddress > holdAddress)
-                untilAddress = holdAddress;
-
             // Anything below HeadAddress has been evicted, and EvictRecordsInRange honors the mark, so clamping drops no obligation --
             // eviction is the fallback for every record this drain does not reach. Reading HeadAddress inside the epoch-protected
             // region is what makes the pages at or above it safe to walk: their eviction cannot run until the caller suspends.
@@ -643,6 +638,10 @@ namespace Tsavorite.core
 
             while (address < untilAddress)
             {
+                // A hold covers every address at or above it, and the drain at the hold's end runs those marks.
+                if (address >= DeferredDisposeHoldAddress)
+                    return;
+
                 var page = GetPage(address);
                 var pageEndAddress = GetLogicalAddressOfStartOfPage(page + 1);
                 var stopAddress = untilAddress < pageEndAddress ? untilAddress : pageEndAddress;
@@ -669,15 +668,68 @@ namespace Tsavorite.core
                         if (offset == 0 || offset + allocatedSize > PageSize)
                             break;
 
-                        if (TryTakeDeferredDispose(ref logRecord, pageIndex))
-                            RunDeferredDispose(ref logRecord);
-
+                        var claim = TryTakeUnheldDeferredDispose(ref logRecord, pageIndex, address);
+                        if (claim == DeferredDisposeClaim.Held)
+                            return;
                         address += allocatedSize;
+                        if (claim == DeferredDisposeClaim.None)
+                            continue;
+
+                        RunDeferredDispose(ref logRecord);
+
+                        // A delete trigger can refresh the epoch: Garnet's RangeIndex trigger bumps it. HeadAddress may then pass the rest
+                        // of the range, and eviction free it, so read HeadAddress again. Eviction runs the marks below it.
+                        var headAddress = HeadAddress;
+                        if (address < headAddress)
+                        {
+                            address = headAddress;
+                            goto NextPage;
+                        }
                     }
                 }
 
                 address = stopAddress;
+            NextPage:;
             }
+        }
+
+        /// <summary>The outcome of <see cref="TryTakeUnheldDeferredDispose"/>.</summary>
+        private enum DeferredDisposeClaim
+        {
+            /// <summary>The record is not marked, or another thread claimed its mark.</summary>
+            None,
+
+            /// <summary>The caller claimed the mark and must run the disposal.</summary>
+            Taken,
+
+            /// <summary>A hold covers the record, which keeps its mark.</summary>
+            Held,
+        }
+
+        /// <summary>Claim the deferred disposal marked on <paramref name="logRecord"/> at <paramref name="logicalAddress"/>, on the page in
+        /// slot <paramref name="pageIndex"/>, unless a hold covers the record.</summary>
+        /// <remarks>
+        /// <para>The hold is read after the claim, because the streaming hold begins with no epoch barrier before its scan reads records:
+        /// a drain that read no hold before the claim may claim a mark made after the hold began. An operation that marks a record the
+        /// scan may push read the hold before marking, so a drain that claims that mark sees the hold too, and gives the mark back.</para>
+        /// <para>A hold that ends drains its range after it ends, so it may walk past the record while this has the mark. So after giving the
+        /// mark back, this reads the hold once more, and claims the mark again if the hold has ended. Each side writes before it reads, with
+        /// full fences, so either this sees the end of the hold or that drain sees the mark.</para>
+        /// </remarks>
+        private DeferredDisposeClaim TryTakeUnheldDeferredDispose(ref LogRecord logRecord, int pageIndex, long logicalAddress)
+        {
+            while (TryTakeDeferredDispose(ref logRecord, pageIndex))
+            {
+                if (logicalAddress < DeferredDisposeHoldAddress)
+                    return DeferredDisposeClaim.Taken;
+
+                // Count the mark before setting it, as DeferDispose does, so the count never falls below the page's marks.
+                _ = Interlocked.Increment(ref objectPages[pageIndex].deferredDisposeCount);
+                logRecord.InfoRef.DeferredDispose = true;
+                if (logicalAddress >= DeferredDisposeHoldAddress)
+                    return DeferredDisposeClaim.Held;
+            }
+            return DeferredDisposeClaim.None;
         }
 
         /// <summary>Claim the deferred disposal marked on <paramref name="logRecord"/>, on the page in slot <paramref name="pageIndex"/>, and

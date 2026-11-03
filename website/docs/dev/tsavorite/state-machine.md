@@ -573,13 +573,24 @@ becomes immutable and the moment its bytes are durable, it is just as
 unsafe to dispose:
 
 ```
-FlushedUntilAddress <= A < SafeReadOnlyAddress   → IsFrozenForFlush(A)
+FlushedUntilAddress <= A < ReadOnlyAddress       → IsFrozenForFlush(A)
 ```
+
+The upper bound is `ReadOnlyAddress`, not `SafeReadOnlyAddress`. A read-only
+shift publishes `ReadOnlyAddress` and then bumps the epoch with
+`OnPagesMarkedReadOnly`, which advances `SafeReadOnlyAddress` and starts the
+flush's walk of the live records in the same action. The action waits only for
+threads that held the epoch at the bump. An operation that resumed after the
+bump, or whose allocation refreshed its epoch, sees the record below
+`ReadOnlyAddress` and treats it as frozen. An operation that sees the record at
+or above `ReadOnlyAddress` held the epoch before the bump, so the flush cannot
+start until it refreshes or suspends. Checked against `SafeReadOnlyAddress`, the
+record could look unfrozen and then be flushed while the operation releases it.
 
 A NullDevice main log's flush writes nothing and reads no record, so there the
 freeze covers only the OnFlush trigger and the read-only observer, which read the
 live records before `LastIssuedFlushedUntilAddress` passes them:
-`LastIssuedFlushedUntilAddress <= A < SafeReadOnlyAddress`. Unlike
+`LastIssuedFlushedUntilAddress <= A < ReadOnlyAddress`. Unlike
 `FlushedUntilAddress`, that bound does not wait for a Snapshot checkpoint's flush
 of the page, so the window stays short.
 
@@ -627,7 +638,7 @@ The two freezes are released by different signals, and that difference matters:
 | Freeze | Released by | Deferred disposal of a deleted source |
 |---|---|---|
 | Flush | `FlushedUntilAddress` passing the record; on a NullDevice main log, `LastIssuedFlushedUntilAddress` | **Marked** (`RecordInfo.DeferredDispose`), and run by the drain on flush completion, or at eviction |
-| Checkpoint | the checkpoint no longer reading the record | **Marked**. On a real main-log device the drain runs it when `FlushedUntilAddress` passes the record |
+| Checkpoint | the checkpoint no longer reading the record | **Marked**. On a real main-log device the drain runs it when `FlushedUntilAddress` passes the record; on a NullDevice main log, when the checkpoint ends |
 
 On a real main-log device, `FlushedUntilAddress` passing a record also ends the
 checkpoint's hold on it. A ReadOnly flush of a page at or above the Snapshot
@@ -636,11 +647,22 @@ that start the Snapshot flush reads nothing. So a record already below
 `FlushedUntilAddress`, whose `(v)` image is on disk, is disposed at once. A
 NullDevice main log advances `FlushedUntilAddress` without writing anything, and
 without that ordering for the pages its ReadOnly flushes passed before the
-Snapshot flush began, so there the drain disposes nothing, and eviction runs
-every marked disposal. Each in-memory page holds a count of its marks, so the
-drain walks only pages that hold one, a flush completion whose range holds none
-returns without taking the epoch, and eviction walks such a page even when no
-size tracker or `OnEvict` trigger needs the walk.
+Snapshot flush began. So on a NullDevice main log every checkpoint holds the
+drain from before it publishes `PREPARE` until it ends (`checkpointHoldAddress`),
+and its end drains the marks it held. Outside a checkpoint the drain runs a
+NullDevice's marks once `FlushedUntilAddress` passes them, as on a real device:
+by then the OnFlush trigger and the read-only observer are done with the record.
+Each in-memory page holds a count of its marks, so the drain walks only pages
+that hold one, a flush completion whose range holds none returns without taking
+the epoch, and eviction walks such a page even when no size tracker or `OnEvict`
+trigger needs the walk.
+
+A drain reads the holds after it claims each mark, and gives back a mark that a
+hold covers. A drain that missed a checkpoint's hold holds the epoch, so the
+checkpoint cannot leave `PREPARE` until the drain refreshes it. But a delete
+trigger can refresh it: Garnet's RangeIndex trigger bumps the epoch. For the same
+reason the drain reads `HeadAddress` again after each disposal, and leaves the
+marks below it to eviction.
 
 Only a Delete or an expiration is marked. Its disposal runs the application's
 delete trigger; a freeze left unmarked, to eviction alone, would skip the
@@ -659,11 +681,13 @@ While the second scan runs, the allocator holds every record at or above where
 the scan started (`streamingScanHoldAddress`). `IsFrozen` reports a held record
 as frozen, so it is not elided, and `ReleaseSupersededSource` marks a deletion
 of it, durable or not, instead of running it. The drain leaves marks in the held
-range, so eviction, or a drain after the scan, runs them. The hold is published
+range, and the end of the scan drains them. The hold is published
 before the scan samples the tail, and an operation reads it after the
 compare-and-swap that inserts its new record, so an operation that misses the
 hold inserted its new record below the sample, where the scan finds it and does
-not push the superseded record.
+not push the superseded record. Nothing separates the hold from the scan's reads
+with an epoch barrier, which is why a drain reads the hold after it claims a
+mark: the operation that marked a record the scan may push read the hold first.
 
 `RecordLifecycleTests.StreamingSnapshotPushesTheValueOfARecordDeletedDuringItsScan`
 and `StreamingSnapshotPushesTheValueOfANewVersionRecordDeletedDuringItsScan`

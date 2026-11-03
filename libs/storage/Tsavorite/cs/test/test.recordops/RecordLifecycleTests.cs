@@ -442,10 +442,11 @@ namespace Tsavorite.test
         }
 
         /// <summary>
-        /// A Delete of a record that a checkpoint still needs runs the delete trigger exactly once, when no flush reads the record any more.
-        /// On a real main-log device that is when FlushedUntilAddress passes the record. On a NullDevice main log FlushedUntilAddress advances
-        /// without writing anything, so it is at eviction. Eviction runs only OnEvict, so a deletion left to eviction without a mark would
-        /// never run the trigger, and Garnet would leave a deleted RangeIndex key's files, and a deleted vector set's data, behind.
+        /// A Delete of a record that a checkpoint still needs runs the delete trigger exactly once, when no flush reads the record any more:
+        /// here, when FlushedUntilAddress passes the record after the checkpoint. Eviction runs only OnEvict, so a deletion left to eviction
+        /// without a mark would never run the trigger, and Garnet would leave a deleted RangeIndex key's files, and a deleted vector set's data,
+        /// behind. On a NullDevice main log the drain runs the mark only outside a checkpoint; see
+        /// <see cref="NullDeviceCheckpointHoldsADeletionWhoseFlushCompletesDuringIt"/>.
         /// </summary>
         [Test, Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async Task CheckpointFrozenDeleteRunsTheDeleteTriggerOnceNoFlushReadsIt([Values] bool nullDevice)
@@ -482,24 +483,54 @@ namespace Tsavorite.test
 
             store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
             Assert.That(store.Log.FlushedUntilAddress, Is.GreaterThan(sourceAddress));
-            if (!nullDevice)
+
+            // The drain runs on the flush completion, after the wait is released, so poll for it.
+            Assert.That(SpinWait.SpinUntil(() => tracker.DisposeCount(DisposeReason.Deleted) > 0, TimeSpan.FromSeconds(30)), Is.True,
+                "The drain did not run the deletion once FlushedUntilAddress passed the record");
+            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "The deletion must run exactly once");
+            Assert.That(tracker.TotalEvict(), Is.Zero, "The drain, not eviction, should have run the deletion");
+        }
+
+        /// <summary>
+        /// On a NullDevice main log, FlushedUntilAddress advances without anything being written, and the Snapshot flush reads every resident
+        /// page, so FlushedUntilAddress passing a record says nothing about the checkpoint. A checkpoint therefore holds the drain from before
+        /// it publishes PREPARE until it ends. A Delete during the checkpoint of a record it still needs, whose ReadOnly flush then completes,
+        /// keeps its value until the checkpoint ends, and the end of the checkpoint runs the deletion.
+        /// </summary>
+        [Test, Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task NullDeviceCheckpointHoldsADeletionWhoseFlushCompletesDuringIt()
+        {
+            UseNullDevice();
+            var sourceAddress = NextRecordAddress();
+            Upsert(1, 100);
+
+            // Create the session before the checkpoint, so that it takes part from PREPARE onward and sees the checkpoint in progress.
+            using var deleteSession = NewSession();
+            var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
+            store.stateMachineDriver.UnsafeRegisterCallback(pause);
+            tracker.Reset();
+            try
             {
-                // The drain runs on the flush completion, after the wait is released, so poll for it.
-                Assert.That(SpinWait.SpinUntil(() => tracker.DisposeCount(DisposeReason.Deleted) > 0, TimeSpan.FromSeconds(30)), Is.True,
-                    "The drain did not run the deletion once FlushedUntilAddress passed the record");
-                Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "The deletion must run exactly once");
-                Assert.That(tracker.TotalEvict(), Is.Zero, "The drain, not eviction, should have run the deletion");
-                return;
+                Assert.That(store.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot), Is.True);
+                Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True, "The checkpoint did not reach IN_PROGRESS");
+                _ = deleteSession.BasicContext.Delete(new TestObjectKey { key = 1 }, 0);
+                Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).Info.DeferredDispose, Is.True,
+                    "The deletion should be marked for later release");
+
+                // The Snapshot flush has not read the record yet; FlushedUntilAddress passing it must not release it.
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                Assert.That(store.Log.FlushedUntilAddress, Is.GreaterThan(sourceAddress), "Precondition: FlushedUntilAddress passed the record");
+                Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.Zero, "The drain ran a deletion the checkpoint still held");
+                Assert.That(SourceHoldsObject(sourceAddress), Is.True, "The record must keep the value the checkpoint still needs");
             }
+            finally
+            {
+                pause.Release.Set();
+            }
+            await store.CompleteCheckpointAsync().ConfigureAwait(false);
 
-            // On a NullDevice the drain releases nothing, whatever range it is given, because FlushedUntilAddress passing a record does not mean a
-            // Snapshot checkpoint's flush has read it. So drain over the record directly: the deletion must still wait for eviction.
-            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.Zero, "On a NullDevice a deletion held back by a checkpoint must wait for eviction");
-            store.hlog.DrainDeferredDisposes(sourceAddress, store.Log.TailAddress);
-            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.Zero, "A drain over the record on a NullDevice must leave the deletion to eviction");
-
-            store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
-            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "Eviction must run the deletion exactly once");
+            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "The end of the checkpoint must run the deletion exactly once");
+            Assert.That(tracker.TotalEvict(), Is.Zero, "The end of the checkpoint, not eviction, should have run the deletion");
         }
 
         /// <summary>
@@ -534,8 +565,7 @@ namespace Tsavorite.test
 
         /// <summary>
         /// On a NullDevice main log, whose flush writes nothing, a record is still frozen while the OnFlush trigger may read it, so a Delete
-        /// then defers the delete trigger. Eviction runs it exactly once, although neither a size tracker nor OnEvict needs eviction to walk
-        /// the records.
+        /// then defers the delete trigger. No checkpoint is in progress, so the drain runs it once the flush completes, as on a real device.
         /// </summary>
         [Test, Category("TsavoriteKV")]
         public void NullDeviceDeleteDuringOnFlushDefersTheDeleteTrigger()
@@ -571,8 +601,11 @@ namespace Tsavorite.test
             }
             Assert.That(shift.Wait(TimeSpan.FromSeconds(30)), Is.True, "The read-only shift did not complete");
 
+            // The drain runs on the flush completion, which the shift's wait can return before, so poll for it.
+            Assert.That(SpinWait.SpinUntil(() => tracker.DisposeCount(DisposeReason.Deleted) > 0, TimeSpan.FromSeconds(30)), Is.True,
+                "The drain did not run the deferred deletion once the flush completed");
             store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
-            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "Eviction must run the deferred deletion exactly once");
+            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "The deferred deletion must run exactly once");
         }
 
         /// <summary>
@@ -786,10 +819,10 @@ namespace Tsavorite.test
             Assert.That(scan.DeletionsAtPush[2], Is.Zero, "The deletion ran before the scan pushed the record");
             Assert.That(pushed, Is.EqualTo(200), "The scan pushed a released value for the deleted record");
 
-            // The hold ends with the scan, so a deletion of a durable record now runs at once.
-            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.Zero, "The deletion held for the scan ran before eviction");
+            // The record is durable, so the end of the scan's hold ran the deletion, and a deletion of a durable record now runs at once.
+            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "The end of the scan's hold did not run the deletion");
             _ = deleteSession.BasicContext.Delete(new TestObjectKey { key = 1 }, 0);
-            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "A deletion after the scan was still held");
+            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(2), "A deletion after the scan was still held");
 
             store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
             Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(2), "Each deletion must run exactly once");
@@ -845,6 +878,8 @@ namespace Tsavorite.test
             var deleted = store.hlogBase._wrapper.CreateLogRecord(deletedAddress);
             Assert.That(deleted.Info.Valid && deleted.Info.IsSealed, Is.True, $"The deleted record was elided while the scan could push it: {deleted.Info}");
 
+            // The record is durable, so the end of the scan's hold ran the deletion.
+            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "The end of the scan's hold did not run the deletion");
             store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
             Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "The deletion must run exactly once");
         }

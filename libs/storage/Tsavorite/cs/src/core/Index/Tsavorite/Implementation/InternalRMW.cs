@@ -577,6 +577,9 @@ namespace Tsavorite.core
                 if (newLogRecord.DataHeader.KeyIsOverflow)
                     hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
 
+                // Whether the release of a deleted source marked its disposal to run later, which keeps the source from being elided.
+                var sourceDisposalDeferred = false;
+
                 // If IU, status will be NOTFOUND; return that.
                 if (!doingCU)
                 {
@@ -594,13 +597,10 @@ namespace Tsavorite.core
 
                     // The new record replaces an expired source, which is released as deleted.
                     if (forExpiration && stackCtx.recSrc.HasMainLogSrc)
-                        _ = ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true);
+                        sourceDisposalDeferred = ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true);
                 }
                 else
                 {
-                    // Whether the release of a deleted source marked its disposal to run later, which keeps the source from being elided.
-                    var sourceDisposalDeferred = false;
-
                     // Else it was a CopyUpdater so call PCU if tombstoning has not been requested by NCU or CU
                     if (!addTombstone)
                     {
@@ -696,8 +696,8 @@ namespace Tsavorite.core
                         }
                         else if (rmwInfo.Action == RMWAction.WrongType)
                         {
+                            // The new record is in the chain, so the source is superseded as on success, but its value is not released.
                             status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
-                            goto Done;
                         }
                     }
                     else
@@ -708,19 +708,19 @@ namespace Tsavorite.core
                         if (stackCtx.recSrc.HasMainLogSrc)
                             sourceDisposalDeferred = ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true);
                     }
-
-                    // The new record took the source's PreviousAddress when the source was chosen for elision, so the CAS bypassed the source.
-                    if (allocOptions.elideSourceRecord)
-                        DetachBypassedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), sourceDisposalDeferred);
-                    else
-                    {
-                        // If it is in mutable or fuzzy region, we must Seal
-                        if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress > hlogBase.SafeReadOnlyAddress)
-                            srcLogRecord.InfoRef.Seal();              // The record was not elided, so do not Invalidate
-                    }
                 }
 
-            Done:
+                // Whether or not the new record was copy-updated, it took the source's PreviousAddress when the source was chosen for elision,
+                // so the CAS bypassed the source.
+                if (allocOptions.elideSourceRecord)
+                    DetachBypassedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), sourceDisposalDeferred);
+                else
+                {
+                    // If it is in mutable or fuzzy region, we must Seal
+                    if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress > hlogBase.SafeReadOnlyAddress)
+                        srcLogRecord.InfoRef.Seal();              // The record was not elided, so do not Invalidate
+                }
+
                 stackCtx.ClearNewRecord();
                 operationState.logicalAddress = newLogicalAddress;
                 return status;

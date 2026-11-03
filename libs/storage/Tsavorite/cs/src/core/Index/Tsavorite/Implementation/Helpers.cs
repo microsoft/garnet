@@ -238,21 +238,22 @@ namespace Tsavorite.core
         /// <para>A deleted source's disposal runs the delete trigger and clears the record's heap fields and optionals, so it waits while the
         /// record is frozen, and is marked on the record to run later:</para>
         /// <list type="bullet">
-        /// <item><b>By a flush:</b> a ReadOnly flush is writing the record from the live page. The disposal waits until FlushedUntilAddress
-        /// passes the record. On a NullDevice main log, whose flush writes nothing, the record is frozen only while the OnFlush trigger and the
-        /// read-only observer may still read it, and eviction runs the disposal.</item>
+        /// <item><b>By a flush:</b> a ReadOnly flush is writing the record from the live page, or may start to. The disposal waits until
+        /// FlushedUntilAddress passes the record. On a NullDevice main log, whose flush writes nothing, the record is frozen only while the
+        /// OnFlush trigger and the read-only observer may still read it.</item>
         /// <item><b>By a checkpoint:</b> a Snapshot checkpoint captured the record, or the checkpoint still needs the record's <c>(v)</c> image,
         /// which includes its value and, for an application such as Garnet's RangeIndex, external state that the delete trigger would remove.
         /// On a real main-log device the disposal also waits only until FlushedUntilAddress passes the record: the Snapshot flush completes a
         /// page before that page's ReadOnly flush can, and below the Snapshot's range it reads nothing. So a record already below
         /// FlushedUntilAddress, whose <c>(v)</c> image is on disk, is disposed at once. On a NullDevice main log, FlushedUntilAddress advances
-        /// without anything being written, so the disposal waits for eviction.</item>
+        /// without anything being written, so the disposal waits until the checkpoint ends.</item>
         /// <item><b>By a streaming snapshot's scan:</b> the scan pushes the latest version of each key below the tail it sampled, so it pushes
         /// a record that an operation supersedes after the sample. While it runs, the disposal of a record at or above where it started waits,
-        /// durable or not, and the drain leaves the mark, so eviction, or a drain after the scan, runs it.</item>
+        /// durable or not, until the scan ends.</item>
         /// </list>
-        /// <para>The drain on flush completion runs a marked disposal once FlushedUntilAddress passes the record, except on a NullDevice main log,
-        /// and eviction runs any it reaches first. Marking a frozen record is safe although the flush writes the live page, <see cref="RecordInfo"/>
+        /// <para>The drain on flush completion runs a marked disposal once FlushedUntilAddress passes the record. It leaves one that a hold
+        /// covers: the streaming scan's, or a checkpoint's on a NullDevice main log. The drain at the end of the hold runs those, and eviction
+        /// runs any mark it reaches first. Marking a frozen record is safe although the flush writes the live page, <see cref="RecordInfo"/>
         /// included: the flush never changes <see cref="RecordInfo"/> in memory, it is one aligned word, so a device sees it with or without the
         /// mark, and every read from disk strips the mark. The freeze exists to prevent destructive changes: freeing heap, zeroing the
         /// object-log position a flush just stamped, or changing the record's layout.</para>
@@ -290,8 +291,7 @@ namespace Tsavorite.core
             }
 
             // The drain and eviction run the mark. If the drain has already passed the record, the allocator sees that and disposes the record
-            // itself. On a NullDevice main log the drain disposes nothing, and it leaves a mark a streaming snapshot's scan holds, so eviction
-            // runs those.
+            // itself, unless a hold covers it, whose end runs the mark.
             hlog.DeferDispose(ref source, address);
             return true;
         }
