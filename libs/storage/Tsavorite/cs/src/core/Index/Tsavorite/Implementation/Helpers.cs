@@ -265,13 +265,13 @@ namespace Tsavorite.core
             // delete trigger. Release only its value, through the read cache, which charged that value's heap at promotion.
             if (stackCtx.recSrc.HasReadCacheSrc)
             {
-                stackCtx.recSrc.AllocatorBase.ReleaseCopyUpdatedSourceValue(ref source);
+                readcache.ReleaseCopyUpdatedSourceValue(ref source);
                 return;
             }
 
             if (!deleted)
             {
-                hlogBase.ReleaseCopyUpdatedSourceInPlace(ref source, capturingSnapshot);
+                hlog.ReleaseCopyUpdatedSourceInPlace(ref source, capturingSnapshot);
                 return;
             }
 
@@ -287,14 +287,10 @@ namespace Tsavorite.core
                 return;
             }
 
-            source.InfoRef.DeferredDispose = true;
-
-            // Let the drain and eviction find the mark. The drain advances FlushedUntilAddress before it reads the marks, and this marks before it
-            // reads FlushedUntilAddress, so if the drain has already passed the record, this sees that and disposes the record itself. On a
-            // NullDevice main log the drain disposes nothing, and it leaves a mark a streaming snapshot's scan holds, so eviction runs those.
-            hlogBase.NoteDeferredDispose(address);
-            if (address < hlogBase.FlushedUntilAddress)
-                hlogBase.DrainDeferredDisposes(address, address + source.AllocatedSize);
+            // The drain and eviction run the mark. If the drain has already passed the record, the allocator sees that and disposes the record
+            // itself. On a NullDevice main log the drain disposes nothing, and it leaves a mark a streaming snapshot's scan holds, so eviction
+            // runs those.
+            hlog.DeferDispose(ref source, address);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]

@@ -22,11 +22,19 @@ namespace Tsavorite.core
         {
             internal readonly ObjectIdMap objectIdMap { get; init; }
 
+            /// <summary>The number of records on this page whose disposal is marked <see cref="RecordInfo.DeferredDispose"/> and not yet claimed.
+            /// The drain and eviction walk a page only when it is nonzero.</summary>
+            /// <remarks>A mark is counted before it is set, and the count is decremented when the mark is claimed, so the count is never below
+            /// the number of marks on the page. It can stay above it: a marked record that is elided and then reused through revivification
+            /// loses its mark unclaimed. That costs at most one walk of the page by the drain and one by eviction, because each range is drained
+            /// once, and the count is reset when the page is allocated or freed.</remarks>
+            internal int deferredDisposeCount;
+
             public ObjectPage() => objectIdMap = new();
 
             internal readonly void Clear() => objectIdMap?.Clear();       // TODO: Ensure we have already called the RecordDisposer
 
-            public override readonly string ToString() => $"oidMap {objectIdMap}";
+            public override readonly string ToString() => $"oidMap {objectIdMap}, deferred {deferredDisposeCount}";
         }
 
         /// <summary>The pages of the log, containing object storage. In parallel with AllocatorBase.pagePointers</summary>
@@ -249,7 +257,6 @@ namespace Tsavorite.core
             objectPages = new ObjectPage[BufferSize];
             for (var ii = 0; ii < BufferSize; ii++)
                 objectPages[ii] = new();
-            deferredDisposeCounts = new int[BufferSize];
         }
 
         /// <summary>Initialize allocator</summary>
@@ -293,7 +300,7 @@ namespace Tsavorite.core
                 objectPages[index] = new();
             }
             PageHeader.Initialize(pagePointers[index]);
-            deferredDisposeCounts[index] = 0;
+            objectPages[index].deferredDisposeCount = 0;
         }
 
         void ReturnPage(int index)
@@ -334,7 +341,7 @@ namespace Tsavorite.core
         internal void FreePage(int page)
         {
             // Nothing on a freed page is claimed later: eviction has claimed its marks, and a mark lost without a claim leaves a count to drop.
-            deferredDisposeCounts[page % BufferSize] = 0;
+            objectPages[page % BufferSize].deferredDisposeCount = 0;
 
             // If the logSizeTracker is not active, then all pages are used once allocated so there's nothing to add to the overflow pool.
             if (logSizeTracker is not null)
@@ -551,8 +558,73 @@ namespace Tsavorite.core
             storeFunctions.OnDisposeDiskRecord(ref logRecord, disposeReason);
         }
 
-        /// <inheritdoc/>
-        internal override void DrainDeferredDisposes(long fromAddress, long untilAddress)
+        /// <summary>
+        /// Mark the deleted source record at <paramref name="logicalAddress"/> for deferred disposal, because a flush or a checkpoint still reads
+        /// it; the drain on flush completion, or eviction, disposes it.
+        /// </summary>
+        /// <param name="source">The superseded record, which the caller's operation has just deleted</param>
+        /// <param name="logicalAddress">The record's address</param>
+        /// <remarks>The page's count is raised before the mark is set, and FlushedUntilAddress is read after both. The drain advances
+        /// FlushedUntilAddress before it reads the counts and the marks, and each of these steps is a full fence, so if the drain has already
+        /// passed the record, this sees that and disposes the record itself. The caller holds the epoch.</remarks>
+        internal void DeferDispose(ref LogRecord source, long logicalAddress)
+        {
+            _ = Interlocked.Increment(ref objectPages[GetPageIndexForAddress(logicalAddress)].deferredDisposeCount);
+            source.InfoRef.DeferredDispose = true;
+            if (logicalAddress < FlushedUntilAddress)
+                DrainDeferredDisposesProtected(logicalAddress, logicalAddress + source.AllocatedSize);
+        }
+
+        /// <summary>
+        /// Dispose the records marked <see cref="RecordInfo.DeferredDispose"/> in <paramref name="fromAddress"/> .. <paramref name="untilAddress"/>,
+        /// whose flushes have completed: the range a flush completion advanced FlushedUntilAddress over.
+        /// </summary>
+        /// <remarks>
+        /// <para>Returns at once, without the epoch, when no page in the range holds a mark; that is almost always. The counts live in an array
+        /// that is never reallocated, so reading them needs no epoch: a page evicted meanwhile has had its marks claimed by eviction, and a slot
+        /// that a later page now holds costs only a walk that finds nothing. A mark counted after this read is disposed by the operation that
+        /// made it; see <see cref="DeferDispose"/>.</para>
+        /// <para>Otherwise the walk takes epoch protection, not an epoch bump, if the caller does not hold it: flush completion runs on an IO
+        /// thread that holds none, and BumpCurrentEpoch requires one. The walk needs no barrier, because the flushes that froze these records
+        /// have completed and the records are superseded. What it needs is for the pages it walks to stay resident, which holding the epoch
+        /// guarantees for everything at or above the HeadAddress it reads inside the protected region.</para>
+        /// </remarks>
+        internal void DrainDeferredDisposes(long fromAddress, long untilAddress)
+        {
+            if (untilAddress <= fromAddress || IsNullDevice || !RangeHasDeferredDisposes(fromAddress, untilAddress))
+                return;
+
+            var resumed = epoch.ResumeIfNotProtected();
+            try
+            {
+                DrainDeferredDisposesProtected(fromAddress, untilAddress);
+            }
+            finally
+            {
+                if (resumed)
+                    epoch.Suspend();
+            }
+        }
+
+        /// <summary>Whether a page in <paramref name="fromAddress"/> .. <paramref name="untilAddress"/> may hold a record marked
+        /// <see cref="RecordInfo.DeferredDispose"/>.</summary>
+        private bool RangeHasDeferredDisposes(long fromAddress, long untilAddress)
+        {
+            long firstPage = GetPage(fromAddress), lastPage = GetPage(untilAddress - 1);
+
+            // Earlier pages of a longer range have been evicted, and their slots hold later pages.
+            if (lastPage - firstPage >= BufferSize)
+                firstPage = lastPage - BufferSize + 1;
+            for (var page = firstPage; page <= lastPage; page++)
+            {
+                if (Volatile.Read(ref objectPages[GetPageIndexForPage(page)].deferredDisposeCount) != 0)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>The walk of <see cref="DrainDeferredDisposes"/>; the caller holds the epoch.</summary>
+        private void DrainDeferredDisposesProtected(long fromAddress, long untilAddress)
         {
             // On a NullDevice main log the drain leaves every mark to eviction: FlushedUntilAddress advances without anything being
             // written, so passing a record does not mean a Snapshot checkpoint's flush has read it.
@@ -582,8 +654,8 @@ namespace Tsavorite.core
                 var pageIndex = GetPageIndexForAddress(address);
 
                 // A page with no outstanding mark is skipped whole. A mark made after this read on a record below FlushedUntilAddress is
-                // run by the operation that made it, which reads FlushedUntilAddress after counting the mark; see NoteDeferredDispose.
-                if (IsAllocated(pageIndex) && Volatile.Read(ref deferredDisposeCounts[pageIndex]) != 0)
+                // run by the operation that made it, which reads FlushedUntilAddress after counting the mark; see DeferDispose.
+                if (IsAllocated(pageIndex) && Volatile.Read(ref objectPages[pageIndex].deferredDisposeCount) != 0)
                 {
                     var objectIdMap = objectPages[pageIndex].objectIdMap;
                     while (address < stopAddress)
@@ -615,7 +687,7 @@ namespace Tsavorite.core
         {
             if (!logRecord.InfoRef.TryTakeDeferredDispose())
                 return false;
-            _ = Interlocked.Decrement(ref deferredDisposeCounts[pageIndex]);
+            _ = Interlocked.Decrement(ref objectPages[pageIndex].deferredDisposeCount);
             return true;
         }
 
@@ -640,6 +712,12 @@ namespace Tsavorite.core
         internal void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source, bool isRecovery)
         {
             var startPage = GetPage(startAddress);
+
+            // The walk accounts heap to the size tracker, calls the OnEvict trigger, and runs deferred disposals still marked on the page;
+            // without any of these it has nothing to do.
+            if (logSizeTracker is null && !storeFunctions.CallOnEvict && Volatile.Read(ref objectPages[GetPageIndexForPage(startPage)].deferredDisposeCount) == 0)
+                return;
+
             var firstValidAddress = GetFirstValidLogicalAddressOnPage(startPage);
             var address = startAddress < firstValidAddress ? firstValidAddress : startAddress;
             var pageEndAddress = GetLogicalAddressOfStartOfPage(startPage + 1);
@@ -1048,7 +1126,12 @@ namespace Tsavorite.core
             valueOverflow.ReleasePublicationClaim((int)SerializationPhase.REST, owner: 0);
         }
 
-        /// <inheritdoc/>
+        /// <summary>
+        /// Release the value of a main-log source record that a CopyUpdate has superseded, without changing the record's bytes, so that no flush
+        /// or checkpoint reading the record holds the release back.
+        /// </summary>
+        /// <param name="source">The superseded record</param>
+        /// <param name="capturingSnapshot">The Snapshot checkpoint that captured the source's object value into its object log, or null</param>
         /// <remarks>
         /// <para>Points the source's value slot at a placeholder and credits the value's heap. A flush or a checkpoint may still be reading the
         /// source, so its bytes do not change.</para>
@@ -1064,7 +1147,7 @@ namespace Tsavorite.core
         /// empty value, which nothing recovers. The sentinel's share of the heap is credited at eviction, as for a capture's sentinel.</item>
         /// </list>
         /// </remarks>
-        internal override void ReleaseCopyUpdatedSourceInPlace(ref LogRecord source, SnapshotObjectLogState capturingSnapshot)
+        internal void ReleaseCopyUpdatedSourceInPlace(ref LogRecord source, SnapshotObjectLogState capturingSnapshot)
         {
             var dataHeader = source.DataHeader;
             if (dataHeader.ValueIsObject)
@@ -1087,6 +1170,37 @@ namespace Tsavorite.core
                 if (credit != 0)
                     logSizeTracker?.IncrementSize(-credit);
             }
+        }
+
+        /// <summary>
+        /// Release the value of a read-cache source record that a CopyUpdate has superseded: credit its object's or overflow array's heap to the
+        /// tracker, dispose an object, and clear the value's heap field. The key, including an overflow key, stays for chain traversal and is
+        /// accounted at eviction.
+        /// </summary>
+        /// <remarks>No flush or checkpoint reads the read cache, so this may change the record's bytes. A main-log source is released by
+        /// <see cref="ReleaseCopyUpdatedSourceInPlace"/>, which does not. The trigger is not involved: a CopyUpdate is a partial clear (value
+        /// only), which trigger implementers should not have to distinguish from a Delete.</remarks>
+        internal void ReleaseCopyUpdatedSourceValue(ref LogRecord logRecord)
+        {
+            if (logRecord.DataHeader.ValueIsObject)
+            {
+                var valueObject = logRecord.ValueObject;
+                if (valueObject is not null)
+                {
+                    var valueHeap = valueObject.HeapMemorySize;
+                    if (valueHeap != 0)
+                        logSizeTracker?.IncrementSize(-valueHeap);
+                    valueObject.Dispose();
+                }
+            }
+            else if (logRecord.DataHeader.ValueIsOverflow)
+            {
+                var valueHeap = logRecord.GetValueHeapMemorySize();
+                if (valueHeap != 0)
+                    logSizeTracker?.IncrementSize(-valueHeap);
+            }
+
+            logRecord.ClearValueIfHeap();
         }
 
         /// <inheritdoc/>

@@ -153,5 +153,31 @@ namespace Tsavorite.core
         /// ObjectIdMap and per-record object/overflow slots that still hold raw on-disk values (not valid ObjectIdMap ids) and is skipped. False for
         /// normal eviction, where an empty map simply means an object-free page whose inline records must still be visited.</param>
         void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source, bool isRecovery);
+
+        /// <summary>
+        /// Release the value of a read-cache source record that a CopyUpdate has superseded. Only the object allocator has heap values to release.
+        /// </summary>
+        void ReleaseCopyUpdatedSourceValue(ref LogRecord logRecord);
+
+        /// <summary>
+        /// Release the value of a main-log source record that a CopyUpdate has superseded, without changing the record's bytes, so that no flush
+        /// or checkpoint reading the record holds the release back. Only the object allocator has heap values to release.
+        /// </summary>
+        /// <param name="source">The superseded record</param>
+        /// <param name="capturingSnapshot">The Snapshot checkpoint that captured the source's object value into its object log, or null</param>
+        /// <remarks>Internal because <see cref="SnapshotObjectLogState"/> is.</remarks>
+        internal void ReleaseCopyUpdatedSourceInPlace(ref LogRecord source, SnapshotObjectLogState capturingSnapshot);
+
+        /// <summary>
+        /// Mark the deleted source record at <paramref name="logicalAddress"/> for deferred disposal, because a flush or a checkpoint still reads
+        /// it. The caller holds the epoch.
+        /// </summary>
+        void DeferDispose(ref LogRecord source, long logicalAddress);
+
+        /// <summary>
+        /// Dispose the records marked for deferred disposal in <paramref name="fromAddress"/> .. <paramref name="untilAddress"/>, the range a flush
+        /// completion advanced FlushedUntilAddress over. Called on every flush completion, without the epoch.
+        /// </summary>
+        void DrainDeferredDisposes(long fromAddress, long untilAddress);
     }
 }

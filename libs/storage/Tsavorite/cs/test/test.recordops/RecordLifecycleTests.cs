@@ -492,21 +492,11 @@ namespace Tsavorite.test
                 return;
             }
 
-            // On a NullDevice the drain releases nothing, whatever range it walks, because FlushedUntilAddress passing a record does not mean a
-            // Snapshot checkpoint's flush has read it. So walk the record directly, as a drain would: the deletion must still wait for eviction.
+            // On a NullDevice the drain releases nothing, whatever range it is given, because FlushedUntilAddress passing a record does not mean a
+            // Snapshot checkpoint's flush has read it. So drain over the record directly: the deletion must still wait for eviction.
             Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.Zero, "On a NullDevice a deletion held back by a checkpoint must wait for eviction");
-            var epoch = store.hlogBase.epoch;
-            var resumed = epoch.ResumeIfNotProtected();
-            try
-            {
-                store.hlogBase.DrainDeferredDisposes(sourceAddress, store.Log.TailAddress);
-            }
-            finally
-            {
-                if (resumed)
-                    epoch.Suspend();
-            }
-            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.Zero, "A drain that walks the record on a NullDevice must leave the deletion to eviction");
+            store.hlog.DrainDeferredDisposes(sourceAddress, store.Log.TailAddress);
+            Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.Zero, "A drain over the record on a NullDevice must leave the deletion to eviction");
 
             store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
             Assert.That(tracker.DisposeCount(DisposeReason.Deleted), Is.EqualTo(1), "Eviction must run the deletion exactly once");
@@ -772,7 +762,6 @@ namespace Tsavorite.test
 
             using var deleteSession = NewSession();
             tracker.Reset();
-            var epoch = store.hlogBase.epoch;
             var scan = new DeleteDuringStreamingScan(() =>
             {
                 // The scan has suspended its epoch to push key 1, and has sampled the tail, so the tombstone lies above it.
@@ -781,18 +770,9 @@ namespace Tsavorite.test
                 _ = deleteSession.BasicContext.Delete(new TestObjectKey { key = 2 }, 0);
                 if (!durableBeforeDelete)
                 {
-                    // Make the record durable, then walk it as the drain on that flush's completion does.
+                    // Make the record durable, then drain over it as that flush's completion does.
                     store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
-                    var resumed = epoch.ResumeIfNotProtected();
-                    try
-                    {
-                        store.hlogBase.DrainDeferredDisposes(deletedAddress, deletedAddress + 1);
-                    }
-                    finally
-                    {
-                        if (resumed)
-                            epoch.Suspend();
-                    }
+                    store.hlog.DrainDeferredDisposes(deletedAddress, deletedAddress + 1);
                 }
                 if (store.Log.FlushedUntilAddress <= deletedAddress)
                     throw new InvalidOperationException("The record should be durable");

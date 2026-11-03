@@ -629,9 +629,10 @@ that start the Snapshot flush reads nothing. So a record already below
 NullDevice main log advances `FlushedUntilAddress` without writing anything, and
 without that ordering for the pages its ReadOnly flushes passed before the
 Snapshot flush began, so there the drain disposes nothing, and eviction runs
-every marked disposal. Each in-memory page slot counts the marks on its page, so
-the drain walks only pages that hold one, and eviction walks such a page even
-when no size tracker or `OnEvict` trigger needs the walk.
+every marked disposal. Each in-memory page holds a count of its marks, so the
+drain walks only pages that hold one, a flush completion whose range holds none
+returns without taking the epoch, and eviction walks such a page even when no
+size tracker or `OnEvict` trigger needs the walk.
 
 Only a Delete or an expiration is marked. Its disposal runs the application's
 delete trigger; a freeze left unmarked, to eviction alone, would skip the

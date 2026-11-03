@@ -152,5 +152,19 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source, bool isRecovery) { }
+
+        /// <inheritdoc/>
+        public readonly void ReleaseCopyUpdatedSourceValue(ref LogRecord logRecord) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
+
+        /// <inheritdoc/>
+        readonly void IAllocator<TsavoriteLogStoreFunctions>.ReleaseCopyUpdatedSourceInPlace(ref LogRecord source, SnapshotObjectLogState capturingSnapshot)
+            => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
+
+        /// <inheritdoc/>
+        public readonly void DeferDispose(ref LogRecord source, long logicalAddress) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
+
+        /// <summary>Nothing to drain: <see cref="TsavoriteLog"/> has no key-value operations to mark records. Called on every flush completion,
+        /// so it does not throw.</summary>
+        public readonly void DrainDeferredDisposes(long fromAddress, long untilAddress) { }
     }
 }

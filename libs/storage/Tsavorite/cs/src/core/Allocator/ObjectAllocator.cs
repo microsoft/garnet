@@ -151,5 +151,19 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public readonly void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source, bool isRecovery) => _this.EvictRecordsInRange(startAddress, endAddress, source, isRecovery);
+
+        /// <inheritdoc/>
+        public readonly void ReleaseCopyUpdatedSourceValue(ref LogRecord logRecord) => _this.ReleaseCopyUpdatedSourceValue(ref logRecord);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        readonly void IAllocator<TStoreFunctions>.ReleaseCopyUpdatedSourceInPlace(ref LogRecord source, SnapshotObjectLogState capturingSnapshot)
+            => _this.ReleaseCopyUpdatedSourceInPlace(ref source, capturingSnapshot);
+
+        /// <inheritdoc/>
+        public readonly void DeferDispose(ref LogRecord source, long logicalAddress) => _this.DeferDispose(ref source, logicalAddress);
+
+        /// <inheritdoc/>
+        public readonly void DrainDeferredDisposes(long fromAddress, long untilAddress) => _this.DrainDeferredDisposes(fromAddress, untilAddress);
     }
 }

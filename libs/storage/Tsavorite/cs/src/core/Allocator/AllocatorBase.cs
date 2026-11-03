@@ -132,29 +132,6 @@ namespace Tsavorite.core
         /// </remarks>
         internal virtual void ResetRecoveredResidentPageHeader(int page) { }
 
-        /// <summary>Highest logical address ever marked <see cref="RecordInfo.DeferredDispose"/>. Used only to skip the drain
-        /// entirely once FlushedUntilAddress has passed every mark, which is the overwhelmingly common case.</summary>
-        /// <remarks>A monotonic high-water mark, which cannot drift: marks only ever raise it, and it is self-clearing in effect because the
-        /// drain range advances with FlushedUntilAddress and stops matching once it is past. Which pages the drain and eviction then walk is
-        /// decided by <see cref="deferredDisposeCounts"/>.</remarks>
-        private protected long deferredDisposeMaxAddress;
-
-        /// <summary>For each in-memory page slot, the number of records on its page that are marked <see cref="RecordInfo.DeferredDispose"/>
-        /// and not yet claimed; null for an allocator that runs no deferred disposal. One int per page slot, allocated once.</summary>
-        /// <remarks>The drain and eviction walk only pages whose count is nonzero. The count can stay high: a marked record that is elided
-        /// and then reused through revivification loses its mark unclaimed. That costs at most one walk of the page by the drain and one by
-        /// eviction, because each range is drained once; the count is reset when the page is allocated or freed.</remarks>
-        private protected int[] deferredDisposeCounts;
-
-        /// <summary>High-water address the deferred-disposal drain has already covered.</summary>
-        /// <remarks>A flush completion claims [this, FlushedUntilAddress) by advancing it with MonotonicUpdate, so concurrent completions
-        /// drain disjoint ranges, and a range passed over while nothing was marked is carried into the next one.</remarks>
-        private protected long deferredDisposeDrainedUntilAddress;
-
-        /// <summary>Dispose records marked <see cref="RecordInfo.DeferredDispose"/> in <paramref name="fromAddress"/> ..
-        /// <paramref name="untilAddress"/>, whose flush has completed. Only implemented by ObjectAllocator.</summary>
-        internal virtual void DrainDeferredDisposes(long fromAddress, long untilAddress) { }
-
         /// <summary>While a streaming snapshot's second scan runs, the lowest address it may still push; <see cref="long.MaxValue"/>
         /// otherwise.</summary>
         /// <remarks>The scan pushes the latest version of each key below the tail it sampled, so it pushes a record that an operation
@@ -179,10 +156,9 @@ namespace Tsavorite.core
         /// <summary>Lowest source address whose <c>(v)</c> image was cached by CopyUpdate since the last post-checkpoint
         /// <c>ClearSerializedObjectData</c> sweep, or <see cref="long.MaxValue"/> when none.</summary>
         /// <remarks>This pair both gates and bounds the sweep: the empty sentinels mean nothing was cached and the walk can be
-        /// skipped outright. That works only because the pair is consumed and reset by each sweep - unlike
-        /// <see cref="deferredDisposeMaxAddress"/>, which is a never-reset high-water and could not gate here, since a
-        /// CopyUpdate source may sit at any address at or above HeadAddress and cached addresses are therefore not monotonic
-        /// in time. A never-reset high-water would be raised past a later cache at a lower address and strand it.</remarks>
+        /// skipped outright. That works only because the pair is consumed and reset by each sweep. A never-reset high-water could
+        /// not gate here: a CopyUpdate source may sit at any address at or above HeadAddress, so cached addresses are not monotonic
+        /// in time, and such a high-water would be raised past a later cache at a lower address and strand it.</remarks>
         private protected long serializedObjectCacheMinAddress = long.MaxValue;
 
         /// <summary>Highest source address whose <c>(v)</c> image was cached since the last sweep, or 0 when none.</summary>
@@ -490,45 +466,6 @@ namespace Tsavorite.core
         /// (e.g. copying to log tail or read cache, which do not call <see cref="ISessionFunctions{TInputOutput, TContext}"/>).
         /// May be the same object as <see cref="onEvictionObserver"/>.</summary>
         internal LogSizeTracker<TStoreFunctions, TAllocator> logSizeTracker;
-
-        /// <summary>
-        /// Release the value of a read-cache source record that a CopyUpdate has superseded: credit its object's or overflow array's heap to the
-        /// tracker, dispose an object, and clear the value's heap field. The key, including an overflow key, stays for chain traversal and is
-        /// accounted at eviction.
-        /// </summary>
-        /// <remarks>No flush or checkpoint reads the read cache, so this may change the record's bytes. A main-log source is released by
-        /// <see cref="ReleaseCopyUpdatedSourceInPlace"/>, which does not. The trigger is not involved: a CopyUpdate is a partial clear (value
-        /// only), which trigger implementers should not have to distinguish from a Delete.</remarks>
-        internal void ReleaseCopyUpdatedSourceValue(ref LogRecord logRecord)
-        {
-            if (logRecord.DataHeader.ValueIsObject)
-            {
-                var valueObject = logRecord.ValueObject;
-                if (valueObject is not null)
-                {
-                    var valueHeap = valueObject.HeapMemorySize;
-                    if (valueHeap != 0)
-                        logSizeTracker?.IncrementSize(-valueHeap);
-                    valueObject.Dispose();
-                }
-            }
-            else if (logRecord.DataHeader.ValueIsOverflow)
-            {
-                var valueHeap = logRecord.GetValueHeapMemorySize();
-                if (valueHeap != 0)
-                    logSizeTracker?.IncrementSize(-valueHeap);
-            }
-
-            logRecord.ClearValueIfHeap();
-        }
-
-        /// <summary>
-        /// Release the value of a main-log source record that a CopyUpdate has superseded, without changing the record's bytes, so that no flush
-        /// or checkpoint reading the record holds the release back. Only implemented by ObjectAllocator, whose records have heap values.
-        /// </summary>
-        /// <param name="source">The superseded record</param>
-        /// <param name="capturingSnapshot">The Snapshot checkpoint that captured the source's object value into its object log, or null</param>
-        internal virtual void ReleaseCopyUpdatedSourceInPlace(ref LogRecord source, SnapshotObjectLogState capturingSnapshot) { }
 
         /// <summary>The "event" to be waited on for flush completion by the initiator of an operation</summary>
         internal CompletionEvent flushEvent;
@@ -1447,23 +1384,6 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetPageIndexForAddress(long logicalAddress) => GetPageIndexForPage(_wrapper.GetPageOfAddress(logicalAddress, LogPageSizeBits));
 
-        /// <summary>Record that the deleted source at <paramref name="logicalAddress"/> was marked for deferred disposal because a flush or a
-        /// checkpoint still reads it, so the drain on flush completion, or eviction, disposes it.</summary>
-        /// <remarks>The caller marks the record first and reads FlushedUntilAddress after this; the count's increment is a full fence, so a
-        /// drain that advanced FlushedUntilAddress before that read sees the count.</remarks>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void NoteDeferredDispose(long logicalAddress)
-        {
-            if (deferredDisposeCounts is { } counts)
-                _ = Interlocked.Increment(ref counts[GetPageIndexForAddress(logicalAddress)]);
-            _ = MonotonicUpdate(ref deferredDisposeMaxAddress, logicalAddress, out _);
-        }
-
-        /// <summary>Whether the page holding <paramref name="logicalAddress"/> may hold a record marked <see cref="RecordInfo.DeferredDispose"/>.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private protected bool PageHasDeferredDisposes(long logicalAddress)
-            => deferredDisposeCounts is { } counts && Volatile.Read(ref counts[GetPageIndexForAddress(logicalAddress)]) != 0;
-
         /// <summary>Get page size</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetPageSize() => PageSize;
@@ -2181,12 +2101,9 @@ namespace Tsavorite.core
             var source = IsReadCache ? EvictionSource.ReadCache : EvictionSource.MainLog;
 
             // Per-record eviction walk handles internal heap accounting (key + value via
-            // logSizeTracker) and optionally notifies the application via OnEvict. isRecovery: true so that pages whose
-            // object load was deferred (empty ObjectIdMap, un-deserialized object/overflow slots) are skipped.
-            if (logSizeTracker is not null || storeFunctions.CallOnEvict)
-            {
-                _wrapper.EvictRecordsInRange(start, end, source, isRecovery: true);
-            }
+            // logSizeTracker) and optionally notifies the application via OnEvict; it returns at once when it has nothing to do. isRecovery: true
+            // so that pages whose object load was deferred (empty ObjectIdMap, un-deserialized object/overflow slots) are skipped.
+            _wrapper.EvictRecordsInRange(start, end, source, isRecovery: true);
             if (onEvictionObserver is not null)
             {
                 MemoryPageScan(start, end, onEvictionObserver);
@@ -2297,10 +2214,9 @@ namespace Tsavorite.core
                     // Per-record eviction walk: handles internal heap-size accounting (key overflow
                     // and value heap via logSizeTracker) and optionally notifies the application
                     // via OnEvict for app-level cleanup. It also runs any deferred disposal still marked
-                    // on the page, so it walks whenever the page holds a mark.
+                    // on the page. It returns at once when it has none of these to do.
                     var evictSource = IsReadCache ? EvictionSource.ReadCache : EvictionSource.MainLog;
-                    if (logSizeTracker is not null || storeFunctions.CallOnEvict || PageHasDeferredDisposes(start))
-                        _wrapper.EvictRecordsInRange(start, end, evictSource, isRecovery: false);
+                    _wrapper.EvictRecordsInRange(start, end, evictSource, isRecovery: false);
 
                     // If we are using a null storage device, we must also shift BeginAddress (leave it in-memory)
                     if (IsNullDevice)
@@ -2383,29 +2299,6 @@ namespace Tsavorite.core
             return newHeadAddress;
         }
 
-        /// <summary>Run DrainDeferredDisposes under epoch protection, if the range holds anything.</summary>
-        /// <remarks>Epoch protection, not an epoch bump: the drain needs no barrier, because the flush that froze these records has
-        /// completed, operations take RETRY_LATER on a sealed record, and scans skip it. What it does need is for the pages it walks
-        /// to stay resident, which holding the epoch guarantees for everything at or above the HeadAddress it reads inside the
-        /// protected region -- eviction of that range cannot run until this suspends. A bump would additionally be wrong here: flush
-        /// completion runs on an IO thread that holds no epoch, and BumpCurrentEpoch requires one.</remarks>
-        private protected void DrainDeferredDisposesProtected(long fromAddress, long untilAddress)
-        {
-            if (untilAddress <= fromAddress)
-                return;
-
-            var resumed = epoch.ResumeIfNotProtected();
-            try
-            {
-                DrainDeferredDisposes(fromAddress, untilAddress);
-            }
-            finally
-            {
-                if (resumed)
-                    epoch.Suspend();
-            }
-        }
-
         /// <summary>
         /// Every async flush callback tries to update the flushed until address to the latest value possible, draining any
         /// deferred disposals the shift makes eligible before returning.
@@ -2413,7 +2306,7 @@ namespace Tsavorite.core
         protected void ShiftFlushedUntilAddress()
         {
             ShiftFlushedUntilAddress(out var drainFromAddress, out var drainUntilAddress);
-            DrainDeferredDisposesProtected(drainFromAddress, drainUntilAddress);
+            _wrapper.DrainDeferredDisposes(drainFromAddress, drainUntilAddress);
         }
 
         /// <summary>
@@ -2465,19 +2358,11 @@ namespace Tsavorite.core
                     // anything page-scoped, which cannot be sound when a page is flushed in fragments that are neither tracked nor
                     // coalesced, so a callback cannot tell whether it holds the last one. A later flush that rewrites the sector holding
                     // FlushedUntilAddress takes the bytes below it from a copy, not the live page, so the range ends exactly here.
-                    // Claiming the range with MonotonicUpdate is what makes concurrent flush completions take disjoint ranges. The
-                    // caller performs the drain, so that it does not sit in front of the next chained flush.
-                    var maxDeferredAddress = Interlocked.Read(ref deferredDisposeMaxAddress);
-                    if (maxDeferredAddress > 0)
-                    {
-                        var candidateUntilAddress = currentFlushedUntilAddress;
-                        if (MonotonicUpdate(ref deferredDisposeDrainedUntilAddress, candidateUntilAddress, out var oldDrainedUntilAddress)
-                                && maxDeferredAddress >= oldDrainedUntilAddress)
-                        {
-                            drainFromAddress = oldDrainedUntilAddress;
-                            drainUntilAddress = candidateUntilAddress;
-                        }
-                    }
+                    // The successful MonotonicUpdate is what makes concurrent flush completions take disjoint ranges. A mark made below
+                    // FlushedUntilAddress after the drain has read its page is disposed by the operation that made it. The caller performs
+                    // the drain, so that it does not sit in front of the next chained flush.
+                    drainFromAddress = oldFlushedUntilAddress;
+                    drainUntilAddress = currentFlushedUntilAddress;
                 }
             }
 
@@ -3376,7 +3261,7 @@ namespace Tsavorite.core
 
                 // Deferred disposals last: the records are released once their flush is durable, and doing it here rather than inside
                 // the shift keeps this work off the path that issues the next chained flush.
-                DrainDeferredDisposesProtected(drainFromAddress, drainUntilAddress);
+                _wrapper.DrainDeferredDisposes(drainFromAddress, drainUntilAddress);
             }
             catch when (disposed) { }
         }
@@ -3396,7 +3281,7 @@ namespace Tsavorite.core
                     WriteAsync(GetPage(request.fromAddress), AsyncFlushPageCallback, request);  // Call the overridden WriteAsync for the derived allocator class
                 }
 
-                DrainDeferredDisposesProtected(drainFromAddress, drainUntilAddress);
+                _wrapper.DrainDeferredDisposes(drainFromAddress, drainUntilAddress);
             }
             catch when (disposed) { }
         }
