@@ -49,7 +49,7 @@ namespace Garnet.test
                     LogRecord record = new(recordPtr, state.transientObjectIdMap);
                     var metadata = new RecordInputMetadata(record.ETag, record.Expiration);
                     var metadataArgument = PinnedSpanByte.FromPinnedPointer((byte*)&metadata, sizeof(RecordInputMetadata));
-                    UnifiedInput input = new(RespCommand.SET, RespInputFlags.HasEtag)
+                    UnifiedInput input = new(RespCommand.SET, RespInputFlags.HasRecordMetadata)
                     {
                         parseState = SessionParseState.FromPinnedArguments(&metadataArgument, 1)
                     };
@@ -84,9 +84,9 @@ namespace Garnet.test
                 args[argumentCount] = PinnedSpanByte.FromPinnedPointer((byte*)&recordMetadata, sizeof(RecordInputMetadata));
                 var parseState = SessionParseState.FromPinnedArguments(args, argumentCount + 1);
                 var input = new StringInput(RespCommand.SET, ref parseState, arg1: -1,
-                    flags: RespInputFlags.HasEtag);
+                    flags: RespInputFlags.HasRecordMetadata);
                 var unifiedInput = new UnifiedInput(RespCommand.SET, ref parseState, arg1: -1,
-                    flags: RespInputFlags.HasEtag);
+                    flags: RespInputFlags.HasRecordMetadata);
                 int taggedLength = input.SerializedLength;
                 Assert.That(unifiedInput.SerializedLength, Is.EqualTo(taggedLength));
                 byte[] buffer = new byte[taggedLength];
@@ -112,11 +112,11 @@ namespace Garnet.test
                     UnifiedInput unifiedDecoded = default;
                     Assert.That(decoded.DeserializeFrom(pointer), Is.EqualTo(taggedLength));
                     Assert.That(unifiedDecoded.DeserializeFrom(pointer), Is.EqualTo(taggedLength));
-                    Assert.That(unifiedDecoded.HasEtag, Is.True);
+                    Assert.That(unifiedDecoded.HasRecordMetadata, Is.True);
                     Assert.That(unifiedDecoded.ETag, Is.EqualTo(etag));
                     Assert.That(unifiedDecoded.Expiration, Is.EqualTo(expiration));
                     Assert.That(unifiedDecoded.parseState.Count, Is.EqualTo(argumentCount + 1));
-                    Assert.That(decoded.HasEtag, Is.True);
+                    Assert.That(decoded.HasRecordMetadata, Is.True);
                     Assert.That(decoded.ETag, Is.EqualTo(etag));
                     Assert.That(decoded.Expiration, Is.EqualTo(expiration));
                     Assert.That(decoded.parseState.Count, Is.EqualTo(argumentCount + 1));
@@ -146,12 +146,12 @@ namespace Garnet.test
                         Is.EqualTo(input.SerializedLength));
                     Assert.That(decoded.DeserializeFrom(pointer), Is.EqualTo(input.SerializedLength));
                     Assert.That(unifiedDecoded.DeserializeFrom(pointer), Is.EqualTo(input.SerializedLength));
-                    Assert.That(unifiedDecoded.HasEtag, Is.False);
+                    Assert.That(unifiedDecoded.HasRecordMetadata, Is.False);
                     Assert.That(unifiedDecoded.ETag, Is.Zero);
                     Assert.That(unifiedDecoded.arg1, Is.EqualTo(expiration));
                     Assert.That(unifiedDecoded.Expiration, Is.EqualTo(expiration));
                     Assert.That(unifiedDecoded.parseState.Count, Is.EqualTo(argumentCount));
-                    Assert.That(decoded.HasEtag, Is.False);
+                    Assert.That(decoded.HasRecordMetadata, Is.False);
                     Assert.That(decoded.ETag, Is.Zero);
                     Assert.That(decoded.arg1, Is.EqualTo(expiration));
                     Assert.That(decoded.Expiration, Is.EqualTo(expiration));
@@ -299,7 +299,7 @@ namespace Garnet.test
                             {
                                 fixed (byte* inputPointer = completed.input)
                                     input.DeserializeFrom(inputPointer);
-                                if (input.header.cmd == RespCommand.SET && input.HasEtag)
+                                if (input.header.cmd == RespCommand.SET && input.HasRecordMetadata)
                                 {
                                     Assert.That(input.parseState.Count, Is.EqualTo(1));
                                     entries.AddRange(chunks);
@@ -317,7 +317,7 @@ namespace Garnet.test
                             inputPointer += PinnedSpanByte.FromLengthPrefixedPinnedPointer(inputPointer).TotalSize;
                             inputPointer += PinnedSpanByte.FromLengthPrefixedPinnedPointer(inputPointer).TotalSize;
                             input.DeserializeFrom(inputPointer);
-                            if (input.header.cmd == RespCommand.SET && input.HasEtag)
+                            if (input.header.cmd == RespCommand.SET && input.HasRecordMetadata)
                             {
                                 Assert.That(input.parseState.Count, Is.EqualTo(1));
                                 entries.Add(entry.AsSpan(0, length).ToArray());

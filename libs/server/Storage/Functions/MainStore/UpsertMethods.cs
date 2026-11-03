@@ -20,7 +20,7 @@ namespace Garnet.server
         {
             if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
-            if (input.HasEtag)
+            if (input.HasRecordMetadata)
             {
                 var etag = input.ETag;
                 if (etag != LogRecord.NoETag && !dstLogRecord.TrySetETag(etag))
@@ -81,7 +81,7 @@ namespace Garnet.server
                 return false;
             }
 
-            if (input.HasEtag)
+            if (input.HasRecordMetadata)
             {
                 var sizeInfo = new RecordSizeInfo { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
                 functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);

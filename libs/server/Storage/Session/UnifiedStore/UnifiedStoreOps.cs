@@ -84,7 +84,7 @@ namespace Garnet.server
                 // Zero explicitly clears an existing ETag during replay.
                 var metadata = new RecordInputMetadata(srcLogRecord.ETag, srcLogRecord.Expiration);
                 var metadataArgument = PinnedSpanByte.FromPinnedPointer((byte*)&metadata, sizeof(RecordInputMetadata));
-                var recordInput = new UnifiedInput(RespCommand.SET, RespInputFlags.HasEtag)
+                var recordInput = new UnifiedInput(RespCommand.SET, RespInputFlags.HasRecordMetadata)
                 {
                     parseState = SessionParseState.FromPinnedArguments(&metadataArgument, 1)
                 };

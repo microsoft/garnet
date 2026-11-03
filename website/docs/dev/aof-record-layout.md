@@ -119,7 +119,7 @@ value and/or the serialized input, laid out by `TsavoriteLog.Enqueue(header, key
 
 A plain string record imported by `RENAME`, migration or diskless sync is logged as a single
 `StoreUpsert` entry (chunked for large values) carrying the value separately and a `StringInput`
-with command `SET`. The `HasEtag` bit in the existing flags byte indicates exact replacement
+with command `SET`. The `HasRecordMetadata` bit in the existing flags byte indicates exact replacement
 metadata held in the final parse-state argument in memory: absolute expiration (0 when absent)
 and ETag. This metadata is authoritative; the general-purpose `arg1` field is unused for these
 inputs. Serialization explicitly writes expiration into the existing 8-byte `arg1` slot and
