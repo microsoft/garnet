@@ -394,7 +394,7 @@ namespace Garnet.server
             {
                 KeySize = key.KeyBytes.Length,
                 ValueSize = value.Length,
-                HasETag = input.HasEtag && input.arg2 != LogRecord.NoETag
+                HasETag = input.HasEtag && input.ETag != LogRecord.NoETag
             };
 
             switch (input.header.cmd)
@@ -402,7 +402,7 @@ namespace Garnet.server
                 case RespCommand.SET:
                 case RespCommand.SETEX:
                 case RespCommand.APPEND:
-                    fieldInfo.HasExpiration = input.arg1 != 0;
+                    fieldInfo.HasExpiration = input.Expiration != 0;
                     break;
             }
             return fieldInfo;

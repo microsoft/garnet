@@ -20,7 +20,7 @@ namespace Garnet.server
     public enum RespInputFlags : byte
     {
         /// <summary>
-        /// An explicit ETag, including zero to clear it, is supplied in StringInput.arg2 or UnifiedInput.arg2.
+        /// Exact replacement metadata, including a zero ETag to clear it, is supplied in the final parse-state argument.
         /// </summary>
         HasEtag = 16,
 
@@ -309,6 +309,23 @@ namespace Garnet.server
     }
 
     /// <summary>
+    /// Exact metadata for a record replacement.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal readonly struct RecordInputMetadata
+    {
+        // Match the adjacent AOF fields so replay can borrow their bytes without allocating.
+        public readonly long Expiration;
+        public readonly long ETag;
+
+        public RecordInputMetadata(long eTag, long expiration)
+        {
+            Expiration = expiration;
+            ETag = eTag;
+        }
+    }
+
+    /// <summary>
     /// Header for Garnet Main Store inputs
     /// </summary>
     public struct StringInput : IStoreInput
@@ -324,9 +341,14 @@ namespace Garnet.server
         public long arg1;
 
         /// <summary>
-        /// Explicit ETag, serialized only when HasEtag is set.
+        /// Explicit ETag in the final metadata argument, or zero when absent.
         /// </summary>
-        public long arg2;
+        public readonly long ETag => HasEtag ? Metadata.ETag : LogRecord.NoETag;
+
+        /// <summary>
+        /// Expiration for SET inputs, using exact replacement metadata when supplied.
+        /// </summary>
+        public readonly long Expiration => HasEtag ? Metadata.Expiration : arg1;
 
         /// <summary>
         /// Whether an explicit ETag is supplied, including zero to clear it.
@@ -337,6 +359,10 @@ namespace Garnet.server
         /// Session parse state
         /// </summary>
         public SessionParseState parseState;
+
+        readonly RecordInputMetadata Metadata => MemoryMarshal.Read<RecordInputMetadata>(parseState.Parameters[^1].ReadOnlySpan);
+
+        readonly SessionParseState SerializedArguments => HasEtag ? parseState.Slice(0, parseState.Count - 1) : parseState;
 
         /// <summary>
         /// Create a new instance of StringInput
@@ -396,7 +422,7 @@ namespace Garnet.server
         public int SerializedLength => header.SpanByte.TotalSize
                                        + sizeof(long) // arg1
                                        + (HasEtag ? sizeof(long) : 0)
-                                       + parseState.GetSerializedLength();
+                                       + SerializedArguments.GetSerializedLength();
 
         /// <inheritdoc />
         public unsafe int CopyTo(byte* dest, int length)
@@ -410,18 +436,18 @@ namespace Garnet.server
             curr += header.SpanByte.TotalSize;
 
             // Serialize arg1
-            *(long*)curr = arg1;
+            *(long*)curr = Expiration;
             curr += sizeof(long);
 
             if (HasEtag)
             {
-                *(long*)curr = arg2;
+                *(long*)curr = ETag;
                 curr += sizeof(long);
             }
 
             // Serialize parse state
             var remainingLength = length - (int)(curr - dest);
-            var len = parseState.SerializeTo(curr, remainingLength);
+            var len = SerializedArguments.SerializeTo(curr, remainingLength);
             curr += len;
 
             // Serialize length
@@ -439,19 +465,21 @@ namespace Garnet.server
             curr += header.TotalSize;
             this.header = h;
 
-            // Deserialize arg1
-            arg1 = *(long*)curr;
-            curr += sizeof(long);
-
-            arg2 = 0;
+            PinnedSpanByte metadataArgument = default;
             if (HasEtag)
             {
-                arg2 = *(long*)curr;
+                arg1 = 0;
+                metadataArgument = PinnedSpanByte.FromPinnedPointer(curr, sizeof(RecordInputMetadata));
+                curr += 2 * sizeof(long);
+            }
+            else
+            {
+                arg1 = *(long*)curr;
                 curr += sizeof(long);
             }
 
             // Deserialize parse state
-            var len = parseState.DeserializeFrom(curr);
+            var len = parseState.DeserializeFrom(curr, metadataArgument);
             curr += len;
 
             return (int)(curr - src);
@@ -474,9 +502,14 @@ namespace Garnet.server
         public long arg1;
 
         /// <summary>
-        /// Explicit ETag, serialized only when HasEtag is set.
+        /// Explicit ETag in the final metadata argument, or zero when absent.
         /// </summary>
-        public long arg2;
+        public readonly long ETag => HasEtag ? Metadata.ETag : LogRecord.NoETag;
+
+        /// <summary>
+        /// Expiration for SET inputs, using exact replacement metadata when supplied.
+        /// </summary>
+        public readonly long Expiration => HasEtag ? Metadata.Expiration : arg1;
 
         /// <summary>
         /// Whether an explicit ETag is supplied, including zero to clear it.
@@ -487,6 +520,10 @@ namespace Garnet.server
         /// Session parse state
         /// </summary>
         public SessionParseState parseState;
+
+        readonly RecordInputMetadata Metadata => MemoryMarshal.Read<RecordInputMetadata>(parseState.Parameters[^1].ReadOnlySpan);
+
+        readonly SessionParseState SerializedArguments => HasEtag ? parseState.Slice(0, parseState.Count - 1) : parseState;
 
         /// <summary>
         /// Create a new instance of UnifiedInput
@@ -541,7 +578,7 @@ namespace Garnet.server
         public int SerializedLength => header.SpanByte.TotalSize
                                        + sizeof(long) // arg1
                                        + (HasEtag ? sizeof(long) : 0)
-                                       + parseState.GetSerializedLength();
+                                       + SerializedArguments.GetSerializedLength();
 
         /// <inheritdoc />
         public unsafe int CopyTo(byte* dest, int length)
@@ -555,18 +592,18 @@ namespace Garnet.server
             curr += header.SpanByte.TotalSize;
 
             // Serialize arg1
-            *(long*)curr = arg1;
+            *(long*)curr = Expiration;
             curr += sizeof(long);
 
             if (HasEtag)
             {
-                *(long*)curr = arg2;
+                *(long*)curr = ETag;
                 curr += sizeof(long);
             }
 
             // Serialize parse state
             var remainingLength = length - (int)(curr - dest);
-            var len = parseState.SerializeTo(curr, remainingLength);
+            var len = SerializedArguments.SerializeTo(curr, remainingLength);
             curr += len;
 
             // Serialize length
@@ -584,19 +621,21 @@ namespace Garnet.server
             curr += header.TotalSize;
             this.header = h;
 
-            // Deserialize arg1
-            arg1 = *(long*)curr;
-            curr += sizeof(long);
-
-            arg2 = 0;
+            PinnedSpanByte metadataArgument = default;
             if (HasEtag)
             {
-                arg2 = *(long*)curr;
+                arg1 = 0;
+                metadataArgument = PinnedSpanByte.FromPinnedPointer(curr, sizeof(RecordInputMetadata));
+                curr += 2 * sizeof(long);
+            }
+            else
+            {
+                arg1 = *(long*)curr;
                 curr += sizeof(long);
             }
 
             // Deserialize parse state
-            var len = parseState.DeserializeFrom(curr);
+            var len = parseState.DeserializeFrom(curr, metadataArgument);
             curr += len;
 
             return (int)(curr - src);

@@ -22,11 +22,11 @@ namespace Garnet.server
                 return false;
             if (input.HasEtag)
             {
-                var etag = input.arg2;
+                var etag = input.ETag;
                 if (etag != LogRecord.NoETag && !dstLogRecord.TrySetETag(etag))
                     return false;
             }
-            if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
+            if (input.Expiration != 0 && !dstLogRecord.TrySetExpiration(input.Expiration))
                 return false;
             sizeInfo.AssertOptionalsIfSet(dstLogRecord.DataHeader);
             return true;

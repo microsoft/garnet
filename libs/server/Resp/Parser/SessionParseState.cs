@@ -32,7 +32,7 @@ namespace Garnet.server
         public readonly ReadOnlySpan<PinnedSpanByte> Parameters => new(bufferPtr, Count);
 
         /// <summary>
-        /// Pointer to the slice of <see cref="rootBuffer"/> (which is always pinned) that is accessible within the range of this instance's arguments.
+        /// Pointer to the accessible argument descriptors in a pinned root buffer or borrowed stable memory.
         /// </summary>
         PinnedSpanByte* bufferPtr;
 
@@ -59,6 +59,12 @@ namespace Garnet.server
             this.bufferPtr = bufferPtr;
             Count = count;
         }
+
+        /// <summary>
+        /// Creates a non-owning view. The descriptors and their backing bytes must remain valid while the view is used.
+        /// </summary>
+        internal static SessionParseState FromPinnedArguments(PinnedSpanByte* arguments, int count)
+            => new() { bufferPtr = arguments, rootCount = count, Count = count };
 
         /// <summary>
         /// Initialize the parse state at the start of a session
@@ -341,14 +347,19 @@ namespace Garnet.server
         /// </summary>
         /// <param name="src">Memory buffer to deserialize from</param>
         /// <returns>Number of deserialized bytes</returns>
-        public int DeserializeFrom(byte* src)
+        public int DeserializeFrom(byte* src) => DeserializeFrom(src, default);
+
+        /// <summary>
+        /// Deserializes arguments and appends an optional nonempty argument backed by the caller's memory.
+        /// </summary>
+        internal int DeserializeFrom(byte* src, PinnedSpanByte trailingArgument)
         {
             var curr = src;
 
             var argCount = *(int*)curr;
             curr += sizeof(int);
 
-            Initialize(argCount);
+            Initialize(argCount + (trailingArgument.IsEmpty ? 0 : 1));
 
             for (var i = 0; i < argCount; i++)
             {
@@ -356,6 +367,9 @@ namespace Garnet.server
                 *(bufferPtr + i) = argument;
                 curr += argument.TotalSize;
             }
+
+            if (!trailingArgument.IsEmpty)
+                *(bufferPtr + argCount) = trailingArgument;
 
             return (int)(curr - src);
         }

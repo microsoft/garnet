@@ -119,10 +119,15 @@ value and/or the serialized input, laid out by `TsavoriteLog.Enqueue(header, key
 
 A plain string record imported by `RENAME`, migration or diskless sync is logged as a single
 `StoreUpsert` entry (chunked for large values) carrying the value separately and a `StringInput`
-with command `SET`. Its `arg1` is the absolute expiration (0 when absent).
-The `HasEtag` bit in the existing flags byte indicates an explicit ETag in `StringInput.arg2`,
-serialized as an 8-byte integer between `arg1` and the parse state. Without this bit, `arg2`
-is omitted. Imported replacements set the bit even for ETag 0, which clears a destination's ETag.
+with command `SET`. The `HasEtag` bit in the existing flags byte indicates exact replacement
+metadata held in the final parse-state argument in memory: absolute expiration (0 when absent)
+and ETag. This metadata is authoritative; the general-purpose `arg1` field is unused for these
+inputs. Serialization explicitly writes expiration into the existing 8-byte `arg1` slot and
+ETag into the following 8-byte slot, excluding the metadata argument from the serialized
+argument count. The AOF byte layout is unchanged. Replay appends an argument referencing the
+two adjacent fields in the replay buffer. Without this bit, `arg1` retains its existing meaning
+and no ETag slot is written. Imported replacements set the bit even for ETag 0, which clears
+a destination's ETag.
 
 Replay upserts the value and sets exactly the entity tag and expiration carried by the entry,
 clearing any the destination already had, so no delete or transaction is needed. Plain-string

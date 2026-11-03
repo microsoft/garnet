@@ -75,16 +75,18 @@ namespace Garnet.server
         /// <param name="srcLogRecord">The log record</param>
         /// <param name="unifiedContext">Basic unifiedContext for the unified store.</param>
         /// <returns></returns>
-        public GarnetStatus SET<TUnifiedContext, TSourceLogRecord>(ReadOnlySpan<byte> key, ref UnifiedInput input, in TSourceLogRecord srcLogRecord, ref TUnifiedContext unifiedContext)
+        public unsafe GarnetStatus SET<TUnifiedContext, TSourceLogRecord>(ReadOnlySpan<byte> key, ref UnifiedInput input, in TSourceLogRecord srcLogRecord, ref TUnifiedContext unifiedContext)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
             if (!srcLogRecord.DataHeader.ValueIsObject && srcLogRecord.RecordType == 0)
             {
                 // Zero explicitly clears an existing ETag during replay.
-                var recordInput = new UnifiedInput(RespCommand.SET, RespInputFlags.HasEtag, srcLogRecord.Expiration)
+                var metadata = new RecordInputMetadata(srcLogRecord.ETag, srcLogRecord.Expiration);
+                var metadataArgument = PinnedSpanByte.FromPinnedPointer((byte*)&metadata, sizeof(RecordInputMetadata));
+                var recordInput = new UnifiedInput(RespCommand.SET, RespInputFlags.HasEtag)
                 {
-                    arg2 = srcLogRecord.ETag
+                    parseState = SessionParseState.FromPinnedArguments(&metadataArgument, 1)
                 };
                 _ = unifiedContext.Upsert((FixedSpanByteKey)key, ref recordInput, in srcLogRecord);
             }

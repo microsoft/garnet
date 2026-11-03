@@ -23,7 +23,7 @@ namespace Garnet.server
             // RENAMEs use arg1 for RecordType, not expiration
             if (input.header.cmd is not (RespCommand.RENAME or RespCommand.RENAMENX))
             {
-                if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
+                if (input.Expiration != 0 && !dstLogRecord.TrySetExpiration(input.Expiration))
                     return false;
             }
 
@@ -43,7 +43,7 @@ namespace Garnet.server
             // RENAMEs use arg1 for RecordType, not expiration
             if (input.header.cmd is not (RespCommand.RENAME or RespCommand.RENAMENX))
             {
-                if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
+                if (input.Expiration != 0 && !dstLogRecord.TrySetExpiration(input.Expiration))
                     return false;
             }
 
@@ -97,7 +97,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool InPlaceWriter(ref LogRecord logRecord, ref UnifiedInput input, ReadOnlySpan<byte> newValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
         {
-            if (!InPlaceWriterForSpanValue(ref logRecord, ref input, newValue, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.arg1))
+            if (!InPlaceWriterForSpanValue(ref logRecord, ref input, newValue, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.Expiration))
                 return false;
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
@@ -108,7 +108,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool InPlaceWriter(ref LogRecord logRecord, ref UnifiedInput input, IHeapObject newValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
         {
-            if (!InPlaceWriterForHeapObjectValue(ref logRecord, ref input, newValue, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.arg1))
+            if (!InPlaceWriterForHeapObjectValue(ref logRecord, ref input, newValue, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.Expiration))
                 return false;
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
