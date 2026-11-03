@@ -330,8 +330,6 @@ namespace Garnet.server
             var oldKey = oldKeySlice;
             var newKey = newKeySlice;
 
-            var abortTransaction = false;
-
             var output = new UnifiedOutput();
             try
             {
@@ -347,7 +345,6 @@ namespace Garnet.server
                 if (isNX && newExists)
                 {
                     result = 0;             // This is the "oldkey was found" return
-                    abortTransaction = true;
                     return GarnetStatus.OK;
                 }
 
@@ -370,7 +367,6 @@ namespace Garnet.server
                 status = GET(oldKey, ref input, ref output, ref context);
                 if (status != GarnetStatus.OK)
                 {
-                    abortTransaction = true;
                     return status;
                 }
 
@@ -418,6 +414,17 @@ namespace Garnet.server
                             functionsState.vectorManager.UpdateHashSlot(oldKey, newKey, logRecord.ValueSpan, ref vectorBasicContext);
                         }
 
+                        if (logRecord.DataHeader.HasExpiration)
+                        {
+                            _ = EXPIREAT(newKey, ConvertUtils.UnixTimeInMillisecondsFromTicks(logRecord.Expiration), out var timeoutSet, out _, ExpireOption.None, ref context, milliseconds: true);
+
+                            if (!timeoutSet)
+                            {
+                                // Record _expired_ during rename, so force a delete
+                                _ = DELETE(newKey, ref context);
+                            }
+                        }
+
                         // Delete the old key
                         _ = DELETE(oldKey, ref context);
                         return GarnetStatus.OK;
@@ -434,11 +441,9 @@ namespace Garnet.server
             {
                 if (createTransaction)
                 {
-                    if (abortTransaction)
-                        txnManager.Reset();
-                    else
-                        txnManager.Commit(true);
+                    txnManager.Commit(true);
                 }
+
                 output.Dispose();
             }
 
