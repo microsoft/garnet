@@ -1,4 +1,4 @@
-# Verified local sample — not deployment or disk-throughput results
+# Verified historical local sample — not deployment or disk-throughput results
 
 ## Context
 
@@ -31,17 +31,20 @@ two-machine, TLS, recovery, or cluster workload measurements were made.
 
 ## Commands
 
-From the repository root:
+These measurements predate checkpoint generation and the project rename.
+The original paths above document their provenance; the equivalent commands
+below use the current executable name. Their input was a random file, not a
+generated checkpoint. From the repository root:
 
 ```powershell
-dotnet build benchmark\Checkpoint.benchmark\Checkpoint.benchmark.csproj -c Release -f net10.0
-dotnet format Garnet.slnx --no-restore --include benchmark\Checkpoint.benchmark\Program.cs benchmark\Checkpoint.benchmark\Sender.cs benchmark\Checkpoint.benchmark\Receiver.cs benchmark\Checkpoint.benchmark\Protocol.cs --verbosity quiet
-dotnet build benchmark\Checkpoint.benchmark\Checkpoint.benchmark.csproj -c Release -f net10.0 --no-restore
+dotnet build benchmark\Replica-transfer.benchmark\Replica-transfer.benchmark.csproj -c Release -f net10.0
+dotnet format Garnet.slnx --no-restore --include benchmark\Replica-transfer.benchmark\Program.cs benchmark\Replica-transfer.benchmark\Sender.cs benchmark\Replica-transfer.benchmark\Receiver.cs benchmark\Replica-transfer.benchmark\Protocol.cs --verbosity quiet
+dotnet build benchmark\Replica-transfer.benchmark\Replica-transfer.benchmark.csproj -c Release -f net10.0 --no-restore
 
 # For each DELAY = 0, then 1, in separate terminals.
 # Replace PORT, SOURCE_PREFIX, OUTPUT and NEW_CSV with your dedicated values.
-dotnet benchmark\Checkpoint.benchmark\bin\Release\net10.0\Checkpoint.benchmark.dll receive --output OUTPUT --runs 27 --port PORT --ack-delay-ms DELAY --timeout-seconds 60
-dotnet benchmark\Checkpoint.benchmark\bin\Release\net10.0\Checkpoint.benchmark.dll send --source-prefix SOURCE_PREFIX --chunks 128k,1m,4m --depths 1,3,8 --repeats 3 --port PORT --timeout-seconds 60 --csv NEW_CSV
+dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll receive --output OUTPUT --runs 27 --port PORT --ack-delay-ms DELAY --timeout-seconds 60
+dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll send --source-prefix SOURCE_PREFIX --chunks 128k,1m,4m --depths 1,3,8 --repeats 3 --port PORT --timeout-seconds 60 --csv NEW_CSV
 ```
 
 Final Release build: zero warnings/errors. Repository formatting verification

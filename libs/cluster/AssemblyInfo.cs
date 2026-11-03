@@ -5,7 +5,7 @@ using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("BDN.benchmark" + ClusterAssemblyRef.GarnetPublicKey)]
 [assembly: InternalsVisibleTo("Resp.benchmark" + ClusterAssemblyRef.GarnetPublicKey)]
-[assembly: InternalsVisibleTo("Checkpoint.benchmark" + ClusterAssemblyRef.GarnetPublicKey)]
+[assembly: InternalsVisibleTo("Replica-transfer.benchmark" + ClusterAssemblyRef.GarnetPublicKey)]
 [assembly: InternalsVisibleTo("Garnet.test.cluster" + ClusterAssemblyRef.GarnetPublicKey)]
 
 /// <summary>

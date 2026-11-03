@@ -10,18 +10,19 @@ using Garnet.cluster;
 using Garnet.common;
 using Tsavorite.core;
 
-namespace Checkpoint.benchmark;
+namespace ReplicaTransfer.benchmark;
 
 internal static class Sender
 {
     internal static async Task RunAsync(Options options, CancellationToken token)
     {
-        var sourcePath = options.SourcePrefix + ".0";
-        // Keep an immutable source open throughout the sweep; never create or generate source files.
+        var sourcePrefix = options.SourcePrefix ?? await CheckpointGenerator.RunAsync(options, token);
+        var sourcePath = sourcePrefix + ".0";
+        // Generation is complete before opening the immutable source for the sweep.
         await using var sourceGuard = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
         var length = sourceGuard.Length;
         Receiver.Require(length > 0, "Source must be nonempty.");
-        Receiver.Require(!File.Exists(options.SourcePrefix + ".1"), "Only an unsegmented prefix.0 source is supported.");
+        Receiver.Require(!File.Exists(sourcePrefix + ".1"), "Only an unsegmented prefix.0 source is supported.");
         using var hashDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         hashDeadline.CancelAfter(options.Timeout);
         var hash = await Receiver.HashAsync(sourcePath, length, hashDeadline.Token);
@@ -41,7 +42,7 @@ internal static class Sender
                 {
                     token.ThrowIfCancellationRequested();
                     var id = Guid.NewGuid();
-                    var device = Devices.CreateLogDevice(options.SourcePrefix, deviceType: options.DeviceType,
+                    var device = Devices.CreateLogDevice(sourcePrefix, deviceType: options.DeviceType,
                         readOnly: true, deleteOnClose: false, disableFileBuffering: !options.Buffered);
                     var pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
                     using var completion = new SemaphoreSlim(0);

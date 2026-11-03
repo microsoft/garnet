@@ -94,7 +94,7 @@ Larger chunks and deeper windows increase memory costs. The primary's checkpoint
 
 Each chunk's `--repl-sync-timeout` deadline starts when submission begins, including time blocked by socket backpressure, and is not restarted when its response reaches the head of the window. Allow enough time for network transfer and queued replica writes. An error, disconnect, timeout or cancellation aborts the checkpoint connection rather than reusing it with outstanding replies.
 
-The [checkpoint-file transfer benchmark](https://github.com/microsoft/garnet/tree/main/benchmark/Checkpoint.benchmark) provides chunk/depth sweeps using the same device reads, network sender and acknowledged device writes, on one machine or two. Its README includes concrete commands and measurement caveats. It measures checkpoint-file shipping, not checkpoint creation, recovery or AOF catch-up.
+The [replica-transfer benchmark](https://github.com/microsoft/garnet/tree/main/benchmark/Replica-transfer.benchmark) provides chunk/depth sweeps using the same device reads, network sender and acknowledged device writes, on one machine or two. It can generate a real checkpoint before timing or use an existing offline file. Its README includes concrete commands, representative output and measurement caveats. It measures checkpoint-file shipping, not checkpoint creation, recovery or AOF catch-up.
 
 # Creating a Garnet Cluster with Replication
 

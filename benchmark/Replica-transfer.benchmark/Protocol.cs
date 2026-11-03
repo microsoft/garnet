@@ -6,7 +6,7 @@ using System.Net.Sockets;
 using System.Threading.Channels;
 using Garnet.common;
 
-namespace Checkpoint.benchmark;
+namespace ReplicaTransfer.benchmark;
 
 internal sealed class Protocol
 {

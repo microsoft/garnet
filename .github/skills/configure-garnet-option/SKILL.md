@@ -13,8 +13,9 @@ read live, captured per operation, or requires a lifecycle action.
    `GarnetServerOptions` member and the `Options.GetServerOptions()` mapping.
 2. Keep help text, defaults comments and XML documentation consistent about units,
    defaults, bounds, scope and when changes take effect. Share parsers and validators.
-3. For runtime support, register a `ServerConfigType` member and metadata in
-   `RuntimeServerConfig.BuildMeta`, seed it in `Init`, and use the declared typed
+3. For runtime support, register a member in `libs/server/Config/ServerConfigType.cs`
+   and metadata in `libs/server/Config/RuntimeServerConfig.cs`
+   (`RuntimeServerConfig.BuildMeta`), seed it in `Init`, and use the declared typed
    accessor at every consumer. Register startup-only values as read-only when needed.
    Do not mutate startup options to implement `CONFIG SET`.
 4. Use an update action when a live task or physical consumer must be changed.

@@ -9,7 +9,7 @@ using System.Text;
 using Garnet.cluster;
 using Tsavorite.core;
 
-namespace Checkpoint.benchmark;
+namespace ReplicaTransfer.benchmark;
 
 internal static class Receiver
 {
