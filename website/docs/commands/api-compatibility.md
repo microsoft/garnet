@@ -150,7 +150,7 @@ Legend: ➕ = supported, ➖ = not supported.
 |  | [SCAN](generic-commands.md#scan) | ➕ |  |
 |  | SORT | ➖ |  |
 |  | SORT_RO | ➖ |  |
-|  | TOUCH | ➖ |  |
+|  | [TOUCH](generic-commands.md#touch) | ➕ | No per-key access-time tracking. |
 |  | [TTL](generic-commands.md#ttl) | ➕ |  |
 |  | [TYPE](generic-commands.md#type) | ➕ |  |
 |  | [UNLINK](generic-commands.md#unlink) | ➕ |  |

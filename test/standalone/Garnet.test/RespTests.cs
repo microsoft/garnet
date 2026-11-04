@@ -2279,6 +2279,86 @@ namespace Garnet.test
             ClassicAssert.AreEqual(3, exists);
         }
 
+        [Test]
+        public void TouchKeys()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.IsFalse(db.KeyTouch("missing"));
+            db.StringSet("string", "value");
+            db.ListRightPush("list", ["a", "b"]);
+            db.HashSet("hash", "field", "value");
+            db.SetAdd("set", "member");
+            db.SortedSetAdd("sortedset", "member", 1);
+            db.StringSet("expiring", "value", TimeSpan.FromMinutes(5));
+            var expiration = (long)db.Execute("PEXPIRETIME", "expiring");
+
+            ClassicAssert.IsTrue(db.KeyTouch("string"));
+            ClassicAssert.AreEqual(7, db.KeyTouch(["string", "list", "hash", "set", "sortedset", "missing", "string", "expiring"]));
+            ClassicAssert.AreEqual(expiration, (long)db.Execute("PEXPIRETIME", "expiring"));
+            ClassicAssert.AreEqual("value", (string)db.StringGet("string"));
+            CollectionAssert.AreEqual(new RedisValue[] { "a", "b" }, db.ListRange("list"));
+            ClassicAssert.AreEqual("value", (string)db.HashGet("hash", "field"));
+            ClassicAssert.IsTrue(db.SetContains("set", "member"));
+            ClassicAssert.AreEqual(1, db.SortedSetScore("sortedset", "member"));
+            ClassicAssert.IsFalse(db.KeyExists("missing"));
+        }
+
+        [Test]
+        public void TouchExpiredKeys()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("string", "value");
+            db.ListRightPush("list", "value");
+            var expiration = DateTime.UtcNow.AddMilliseconds(100);
+            ClassicAssert.IsTrue(db.KeyExpire("string", expiration));
+            ClassicAssert.IsTrue(db.KeyExpire("list", expiration));
+            Thread.Sleep(150);
+
+            ClassicAssert.AreEqual(0, db.KeyTouch(["string", "list", "string", "missing"]));
+            ClassicAssert.AreEqual(0, db.KeyExists(["string", "list", "missing"]));
+        }
+
+        [Test]
+        public void TouchWrongNumberOfArguments()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("TOUCH"));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'TOUCH' command", ex.Message);
+        }
+
+        [Test]
+        public void TouchPipelinedCommands()
+        {
+            using var client = TestUtils.CreateRequest();
+            client.SendCommand("SET key value");
+
+            var response = client.SendCommands("tOuCh key missing key", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(":2\r\n+PONG\r\n", response);
+
+            response = client.SendCommands("TOUCH", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength("-ERR wrong number of arguments for 'TOUCH' command\r\n+PONG\r\n", response);
+        }
+
+        [Test]
+        public async Task TouchInTransaction()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.StringSet("string", "value");
+            db.ListRightPush("list", "value");
+
+            var transaction = db.CreateTransaction();
+            var result = transaction.KeyTouchAsync(["string", "list", "missing", "string"]);
+            ClassicAssert.IsTrue(await transaction.ExecuteAsync());
+            ClassicAssert.AreEqual(3, await result);
+        }
+
         #region ExpireTime
 
         [Test]
