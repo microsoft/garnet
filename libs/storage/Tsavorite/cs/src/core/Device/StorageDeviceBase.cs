@@ -514,8 +514,14 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        /// <remarks>
+        /// This forgets which segments have been truncated, since a log that is reset writes from segment 0 again and must be able
+        /// to truncate those segments. Overrides must call it.
+        /// </remarks>
         public virtual void Reset()
         {
+            startSegment = 0;
+            endSegment = -1;
         }
     }
 }

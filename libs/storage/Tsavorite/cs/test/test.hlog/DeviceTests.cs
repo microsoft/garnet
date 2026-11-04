@@ -1904,6 +1904,116 @@ namespace Tsavorite.test
             GC.KeepAlive(rbuf);
         }
 
+        /// <summary>Device kinds whose <see cref="IDevice.Reset"/> must forget the truncated segments, including composite devices</summary>
+        public enum ResettableDeviceKind { Native, RandomAccess, ManagedLocal, LocalStorage, LocalMemory, Tiered, Sharded }
+
+        /// <summary>
+        /// Create a device of the given kind, initialized with <paramref name="epoch"/> as truncation requires, and report the files
+        /// that hold a segment: none for <see cref="LocalMemoryDevice"/>, and one per child of a composite device
+        /// </summary>
+        static IDevice CreateResettableDeviceForTest(ResettableDeviceKind kind, string path, long segmentSize, LightEpoch epoch, out Func<int, string[]> segmentFiles)
+        {
+            segmentFiles = segment => [$"{path}.{segment}"];
+            IDevice device;
+            switch (kind)
+            {
+                case ResettableDeviceKind.Native:
+                    device = new NativeStorageDevice(path, deleteOnClose: true);
+                    break;
+                case ResettableDeviceKind.RandomAccess:
+                    device = new RandomAccessLocalStorageDevice(path, preallocateFile: false, deleteOnClose: true);
+                    break;
+                case ResettableDeviceKind.ManagedLocal:
+                    device = new ManagedLocalStorageDevice(path, preallocateFile: false, deleteOnClose: true);
+                    break;
+                case ResettableDeviceKind.LocalStorage when OperatingSystem.IsWindows():
+                    device = new LocalStorageDevice(path, false, true, true, Devices.CAPACITY_UNSPECIFIED, false, false);
+                    break;
+                case ResettableDeviceKind.LocalStorage:
+                    Assert.Ignore("LocalStorageDevice is Windows-only.");
+                    return null;
+                case ResettableDeviceKind.LocalMemory:
+                    device = new LocalMemoryDevice(capacity: 8 * segmentSize, segmentSize: segmentSize, parallelism: 1);
+                    segmentFiles = _ => [];
+                    break;
+                case ResettableDeviceKind.Tiered:
+                case ResettableDeviceKind.Sharded:
+                    string[] childPaths = [$"{path}.a", $"{path}.b"];
+                    segmentFiles = segment => childPaths.Select(childPath => $"{childPath}.{segment}").ToArray();
+
+                    // Only the last tier of a tiered device may have unspecified capacity
+                    IDevice first = new RandomAccessLocalStorageDevice(childPaths[0], preallocateFile: false, deleteOnClose: true, capacity: 1L << 30);
+                    IDevice second = new RandomAccessLocalStorageDevice(childPaths[1], preallocateFile: false, deleteOnClose: true);
+                    device = kind == ResettableDeviceKind.Tiered
+                        ? new TieredStorageDevice(1, first, second)
+                        : new ShardedStorageDevice(new UniformPartitionScheme(Math.Max(first.SectorSize, second.SectorSize), first, second));
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(kind));
+            }
+            device.Initialize(segmentSize, epoch);
+            return device;
+        }
+
+        [Test]
+        [Category("IDevice")]
+        public unsafe void IDevice_Reset_ForgetsTheTruncatedSegments([Values] ResettableDeviceKind kind)
+        {
+            // A log that is reset writes from segment 0 again, below the segments already truncated, and truncation must still be
+            // able to remove them
+            const long segmentSize = 1L << 16;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            Func<int, byte> written = i => (byte)(i * 3);
+            Func<int, byte> rewritten = i => (byte)(i * 5 + 1);
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, written);
+            var (rwbuf, rwptr) = AllocateAlignedBuffer(HardeningSectorSize, rewritten);
+            var (rbuf, rptr) = AllocateAlignedBuffer(HardeningSectorSize, _ => 0);
+            var epoch = new LightEpoch();
+            try
+            {
+                using var device = CreateResettableDeviceForTest(kind, path, segmentSize, epoch, out var segmentFiles);
+                for (var segment = 0; segment <= 2; segment++)
+                {
+                    device.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+                device.TruncateUntilSegment(2);
+                ClassicAssert.AreEqual(2, device.StartSegment);
+
+                device.Reset();
+                ClassicAssert.AreEqual(0, device.StartSegment, "Reset should forget the truncated segments");
+
+                foreach (var segment in new[] { 0, 1 })
+                {
+                    device.WriteAsync(rwptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+                device.TruncateUntilSegment(1);
+                ClassicAssert.AreEqual(1, device.StartSegment);
+
+                if (kind == ResettableDeviceKind.LocalMemory)
+                {
+                    uint readError = 0;
+                    device.ReadAsync(0, 0, rptr, HardeningSectorSize, (errorCode, _, _, _) => { readError = errorCode; semaphore.Release(); }, null);
+                    semaphore.Wait();
+                    ClassicAssert.AreNotEqual(0u, readError, "segment 0 should be truncated");
+                }
+                foreach (var file in segmentFiles(0))
+                    ClassicAssert.IsFalse(File.Exists(file), $"{file} should be truncated");
+
+                device.ReadAsync(1, 0, rptr, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+                AssertBufferContents(rptr, HardeningSectorSize, rewritten, $"{kind} segment 1");
+            }
+            finally
+            {
+                epoch.Dispose();
+            }
+            GC.KeepAlive(wbuf);
+            GC.KeepAlive(rwbuf);
+            GC.KeepAlive(rbuf);
+        }
+
         [Test]
         [Category("IDevice")]
         public unsafe void Native_TryRemoveSegmentsAbove_EmptiesTheFilesItHoldsOpen()

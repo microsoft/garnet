@@ -175,6 +175,7 @@ namespace Tsavorite.core
                     handle.Value.Dispose();
                 }
             }
+            base.Reset();
         }
 
         private void RecoverFiles()

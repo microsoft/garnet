@@ -158,6 +158,16 @@ namespace Tsavorite.core
             }
         }
 
+        /// <inheritdoc />
+        public override void Reset()
+        {
+            base.Reset();
+            foreach (IDevice device in partitions.Devices)
+            {
+                device.Reset();
+            }
+        }
+
         /// <summary>
         /// <see cref="IDevice.Initialize(long, LightEpoch, bool)"/>
         /// </summary>

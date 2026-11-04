@@ -75,6 +75,16 @@ namespace Tsavorite.core
             }
         }
 
+        /// <inheritdoc/>
+        public override void Reset()
+        {
+            base.Reset();
+            foreach (IDevice device in devices)
+            {
+                device.Reset();
+            }
+        }
+
         public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, object context)
         {
             // This device is epoch-protected and cannot be stale while the operation is in flight

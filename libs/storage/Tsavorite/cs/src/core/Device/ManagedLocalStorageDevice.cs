@@ -88,6 +88,7 @@ namespace Tsavorite.core
                     }
                 }
             }
+            base.Reset();
         }
 
         /// <inheritdoc />

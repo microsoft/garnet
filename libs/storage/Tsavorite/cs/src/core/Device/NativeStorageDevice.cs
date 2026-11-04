@@ -1651,6 +1651,8 @@ namespace Tsavorite.core
         /// </remarks>
         public override void Reset()
         {
+            base.Reset();
+
             // Lease the native handle (same protocol as ReadAsync/WriteAsync) so a concurrent
             // Dispose() cannot free it while we are inside the native call. A false result means
             // disposal has begun; no-op.
