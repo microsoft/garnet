@@ -7857,6 +7857,24 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task XVSCOPYACLsAsync()
+        {
+            await CheckCommandsAsync("XVSCOPY", [DoXVSCOPY]).ConfigureAwait(false);
+
+            static async Task DoXVSCOPY(GarnetClient client)
+            {
+                try
+                {
+                    _ = await client.ExecuteForStringResultAsync("XVSCOPY", ["a", "b"]).ConfigureAwait(false);
+                    ClassicAssert.Fail("Copying a non-existing Vector Set should fail");
+                }
+                catch (Exception exception) when (exception.Message.Equals("ERR vector set does not exist"))
+                {
+                }
+            }
+        }
+
+        [Test]
         public async Task VAddACLsAsync()
         {
             await CheckCommandsAsync(

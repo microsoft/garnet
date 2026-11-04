@@ -425,6 +425,10 @@ namespace Garnet.server
         => storageSession.VectorSetFinishImport(key, out result, out errorMsg);
 
         /// <inheritdoc />
+        public GarnetStatus VectorSetShallowCopy(PinnedSpanByte sourceKey, PinnedSpanByte destKey, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        => storageSession.VectorSetShallowCopy(sourceKey, destKey, out result, out errorMsg);
+
+        /// <inheritdoc />
         public GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte values, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         => storageSession.VectorSetAdd(key, reduceDims, valueType, values, element, quantizer, buildExplorationFactor, attributes, numLinks, distanceMetric, out result, out errorMsg);
 

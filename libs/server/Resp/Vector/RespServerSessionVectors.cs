@@ -326,13 +326,51 @@ namespace Garnet.server
             return true;
         }
 
+        private bool NetworkXVSCOPY<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            // XVSCOPY source dest
+
+            if (!storageSession.vectorManager.IsEnabled)
+            {
+                return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
+            }
+
+            if (parseState.Count < 2)
+            {
+                return AbortWithWrongNumberOfArguments("XVSCOPY");
+            }
+
+            var sourceKey = parseState.GetArgSliceByRef(0);
+            var destKey = parseState.GetArgSliceByRef(1);
+
+            if (sourceKey.ReadOnlySpan.SequenceEqual(destKey.ReadOnlySpan))
+            {
+                return AbortWithErrorMessage("circular shallow copy");
+            }
+
+            var status = storageApi.VectorSetShallowCopy(sourceKey, destKey, out var result, out var errorMsg);
+            if (status == GarnetStatus.WRONGTYPE)
+            {
+                return AbortVectorSetWrongType();
+            }
+            if (status == GarnetStatus.NOTFOUND)
+            {
+                return AbortWithErrorMessage("ERR vector set does not exist"u8);
+            }
+            if (status != GarnetStatus.OK || result != VectorManagerResult.OK)
+            {
+                return AbortWithErrorMessage(errorMsg.IsEmpty ? "ERR vector set shallow copy"u8 : errorMsg);
+            }
+
+            WriteDirect(CmdStrings.RESP_OK);
+            return true;
+        }
+
         private bool NetworkVADD<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // VADD key [REDUCE dim] (FP32 | XB8 | VALUES num) vector element [CAS] [NOQUANT | Q8 | BIN | XPREQ8] [EF build-exploration-factor] [SETATTR attributes] [M numlinks]
-            //
-            // XB8 is a non-Redis extension, stands for: eXtension Binary 8-bit values - encodes [0, 255] per dimension
-            // XPREQ8 is a non-Redis extension, stands for: eXtension PREcalculated Quantization 8-bit - requests no quantization on pre-calculated [0, 255] values
+            // VADD key [REDUCE dim] (FP32 | VALUES num | ...) vector element [CAS] [NOQUANT | Q8 | BIN | ...] [EF build-exploration-factor] [SETATTR attributes] [M numlinks]
 
             if (!storageSession.vectorManager.IsEnabled)
             {

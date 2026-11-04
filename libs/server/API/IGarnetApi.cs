@@ -1390,6 +1390,17 @@ namespace Garnet.server
         GarnetStatus VectorSetFinishImport(PinnedSpanByte key, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
 
         /// <summary>
+        /// Create a shallow copy of a Vector Set.
+        /// 
+        /// If succesful, <paramref name="sourceKey"/> is made read-only.
+        /// </summary>
+        /// <param name="sourceKey">Existing Vector Set (shallow copy or otherwise) to copy.</param>
+        /// <param name="destKey">Key to store the new shallow copy under.</param>
+        /// <param name="result">Copy result</param>
+        /// <param name="errorMsg">Custom error message, if any</param>
+        GarnetStatus VectorSetShallowCopy(PinnedSpanByte sourceKey, PinnedSpanByte destKey, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
+
+        /// <summary>
         /// Adds to (and may create) a vector set with the given parameters.
         /// </summary>
         GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte value, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);

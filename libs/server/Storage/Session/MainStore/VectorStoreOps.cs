@@ -262,7 +262,7 @@ namespace Garnet.server
                 (uint)buildExplorationFactor, (uint)numLinks, distanceMetric, quantState.HasValue, quantState.GetValueOrDefault().ReadOnlySpan, startPointId, out result, out errorMsg);
         }
 
-        /// <inheritdoc/>
+        /// <inheritdoc cref="IGarnetApi.VectorSetImport"/>
         public GarnetStatus VectorSetImport(PinnedSpanByte key, VectorImportTermType termType, PinnedSpanByte id, PinnedSpanByte value,
             out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
@@ -303,7 +303,7 @@ namespace Garnet.server
             }
         }
 
-        /// <inheritdoc/>
+        /// <inheritdoc cref="IGarnetApi.VectorSetVerifyImport"/>
         public GarnetStatus VectorSetVerifyImport(PinnedSpanByte key, int taskIndex, int taskCount, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
             if (taskCount < 0 || taskIndex < 0 || taskIndex >= taskCount)
@@ -338,7 +338,7 @@ namespace Garnet.server
             }
         }
 
-        /// <inheritdoc/>
+        /// <inheritdoc cref="IGarnetApi.VectorSetFinishImport"/>
         public GarnetStatus VectorSetFinishImport(PinnedSpanByte key, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
             parseState.InitializeWithArgument(key);
@@ -364,6 +364,23 @@ namespace Garnet.server
 
                 return GarnetStatus.OK;
             }
+        }
+
+        /// <inheritdoc cref="IGarnetApi.VectorSetShallowCopy"/>
+        public GarnetStatus VectorSetShallowCopy(PinnedSpanByte sourceKey, PinnedSpanByte destKey, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        {
+            // TODO: Implement properly
+
+            if (EXISTS(sourceKey, ref unifiedBasicContext) != GarnetStatus.OK)
+            {
+                errorMsg = "ERR vector set does not exist"u8;
+                result = VectorManagerResult.Invalid;
+                return GarnetStatus.NOTFOUND;
+            }
+
+            result = VectorManagerResult.OK;
+            errorMsg = default;
+            return GarnetStatus.OK;
         }
 
         /// <summary>
