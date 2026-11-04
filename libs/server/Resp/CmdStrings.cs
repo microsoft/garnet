@@ -252,6 +252,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_SORT_BY_CROSSSLOT => "ERR BY option of SORT denied in Cluster mode when keys formed by the pattern may be in different slots."u8;
         public static ReadOnlySpan<byte> RESP_ERR_SORT_GET_CROSSSLOT => "ERR GET option of SORT denied in Cluster mode when keys formed by the pattern may be in different slots."u8;
         public static ReadOnlySpan<byte> RESP_ERR_SORT_PATTERN_IN_TXN => "ERR SORT BY and GET patterns that read other keys are not supported inside a transaction"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_SORT_AMBIGUOUS_STORE => "ERR SORT STORE destination must follow the first STORE argument"u8;
         public static ReadOnlySpan<byte> RESP_ERR_HASH_VALUE_IS_NOT_INTEGER => "ERR hash value is not an integer."u8;
         public static ReadOnlySpan<byte> RESP_ERR_HASH_VALUE_IS_NOT_FLOAT => "ERR hash value is not a float."u8;
         public static ReadOnlySpan<byte> RESP_ERR_INCR_DECR_OVERFLOW => "ERR increment or decrement would overflow"u8;

@@ -25,6 +25,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var options = new SortOptions();
             var hasStore = false;
+            var destinationIndex = -1;
             PinnedSpanByte destination = default;
 
             // Options can appear in any order and repeat; later ones win, except GET which accumulates.
@@ -57,6 +58,7 @@ namespace Garnet.server
                 else if (!readOnly && option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STORE) && argsLeft >= 1)
                 {
                     hasStore = true;
+                    destinationIndex = i + 1;
                     destination = parseState.GetArgSliceByRef(i + 1);
                     i++;
                 }
@@ -84,6 +86,12 @@ namespace Garnet.server
                     return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                 }
             }
+
+            // The STORE key specification (used for transaction locks and cluster slot checks) takes the argument after
+            // the first STORE token, which could be another option's operand or an earlier STORE. Refuse to write to any
+            // other destination, so the key that is written is always the key that was locked and slot-checked.
+            if (hasStore && FirstSortStoreTokenIndex() + 1 != destinationIndex)
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_SORT_AMBIGUOUS_STORE);
 
             // Inside MULTI/EXEC the locks come from the command's key specifications, which cannot include keys
             // derived from the contents of the sorted key.
@@ -125,6 +133,19 @@ namespace Garnet.server
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Index of the first argument after the key that reads STORE (case-insensitive), as the key specification finds it.
+        /// </summary>
+        private int FirstSortStoreTokenIndex()
+        {
+            for (var i = 1; i < parseState.Count; i++)
+            {
+                if (parseState.GetArgSliceByRef(i).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STORE))
+                    return i;
+            }
+            return -1;
         }
 
         /// <summary>

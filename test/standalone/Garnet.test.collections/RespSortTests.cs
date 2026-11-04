@@ -134,6 +134,11 @@ namespace Garnet.test
 
             // The last LIMIT wins
             ClassicAssert.AreEqual(new[] { "1" }, Sort(db, "l", "LIMIT", "1", "2", "LIMIT", "0", "1"));
+
+            // A count near long.MaxValue does not overflow the end index
+            ClassicAssert.AreEqual(new[] { "3", "4", "5" }, Sort(db, "l", "LIMIT", "2", long.MaxValue.ToString()));
+            ClassicAssert.AreEqual(new[] { "5" }, Sort(db, "l", "LIMIT", "4", long.MaxValue.ToString()));
+            ClassicAssert.IsEmpty(Sort(db, "l", "LIMIT", long.MaxValue.ToString(), long.MaxValue.ToString()));
         }
 
         [Test]
@@ -232,6 +237,39 @@ namespace Garnet.test
             db.ListRightPush("bad", ["x"]);
             Assert.Throws<RedisServerException>(() => db.Execute("SORT", "bad", "STORE", "dst3"));
             ClassicAssert.IsFalse(db.KeyExists("dst3"));
+
+            // The destination must be the argument after the first STORE token (the one the key spec locks), so a
+            // repeated STORE or a STORE-named operand before it is refused instead of writing an unlocked key
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("SORT", "s", "STORE", "dst4", "STORE", "dst5"));
+            ClassicAssert.AreEqual("ERR SORT STORE destination must follow the first STORE argument", ex.Message);
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("SORT", "s", "GET", "store", "STORE", "dst5"));
+            ClassicAssert.AreEqual("ERR SORT STORE destination must follow the first STORE argument", ex.Message);
+            ClassicAssert.IsFalse(db.KeyExists("dst4"));
+            ClassicAssert.IsFalse(db.KeyExists("dst5"));
+        }
+
+        [Test]
+        public async Task SortStoreWakesBlockedListConsumers()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            using var blockedRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var blockedDb = blockedRedis.GetDatabase(0);
+
+            db.ListRightPush("src", ["2", "1"]);
+
+            var blpop = blockedDb.ExecuteAsync("BLPOP", "dst", "10");
+            await Task.Delay(300);
+            ClassicAssert.IsFalse(blpop.IsCompleted);
+
+            ClassicAssert.AreEqual(2, (long)db.Execute("SORT", "src", "STORE", "dst"));
+
+            var completed = await Task.WhenAny(blpop, Task.Delay(TimeSpan.FromSeconds(5)));
+            ClassicAssert.AreSame(blpop, completed, "BLPOP was not woken by SORT STORE");
+            var popped = (RedisResult[])await blpop;
+            ClassicAssert.AreEqual("dst", (string)popped[0]);
+            ClassicAssert.AreEqual("1", (string)popped[1]);
+            ClassicAssert.AreEqual(new[] { "2" }, db.ListRange("dst").Select(v => (string)v).ToArray());
         }
 
         [Test]
@@ -437,6 +475,12 @@ namespace Garnet.test
             ClassicAssert.AreEqual("ERR BY option of SORT denied in Cluster mode when keys formed by the pattern may be in different slots.", ex.Message);
             ex = Assert.Throws<RedisServerException>(() => Sort(db, "{u}:ids", "GET", "{other}:w_*"));
             ClassicAssert.AreEqual("ERR GET option of SORT denied in Cluster mode when keys formed by the pattern may be in different slots.", ex.Message);
+
+            // SORT substitutes literally, so a backslash does not hide a hash tag: keys from \{v}{u}:w_* hash on {v}
+            ex = Assert.Throws<RedisServerException>(() => Sort(db, "{u}:ids", "GET", "\\{v}{u}:w_*"));
+            ClassicAssert.AreEqual("ERR GET option of SORT denied in Cluster mode when keys formed by the pattern may be in different slots.", ex.Message);
+            ex = Assert.Throws<RedisServerException>(() => Sort(db, "{u}:ids", "BY", "\\{v}{u}:w_*"));
+            ClassicAssert.AreEqual("ERR BY option of SORT denied in Cluster mode when keys formed by the pattern may be in different slots.", ex.Message);
 
             // The STORE destination is a key of the command, so it is subject to the cross-slot check
             ClassicAssert.AreEqual(2, (long)db.Execute("SORT", "{u}:ids", "STORE", "{u}:dst"));

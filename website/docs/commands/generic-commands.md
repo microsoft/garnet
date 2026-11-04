@@ -448,9 +448,9 @@ Sorts by the values of other keys instead of the elements. The first `*` in the 
 Returns values read through a pattern instead of the elements, using the same substitution rules as BY. `GET #` returns the element itself. GET can be given several times, and each element then produces one reply entry per GET. Missing keys or fields return nil.
 
 **The STORE option**
-Stores the result as a list at destination, replacing any existing value, and returns the number of stored elements. An empty result deletes destination. When BY skips sorting on a set, the result is sorted lexicographically before it is stored so the stored order is well defined.
+Stores the result as a list at destination, replacing any existing value, and returns the number of stored elements. An empty result deletes destination. When BY skips sorting on a set, the result is sorted lexicographically before it is stored so the stored order is well defined. Unlike Redis, STORE must be the first argument named STORE after key (for example `GET store STORE dst` or a repeated STORE is rejected), so the key that is written is always the key that is locked and slot-checked.
 
-In cluster mode BY and GET patterns must contain a hash tag that maps to the slot of key, as in Redis. BY and GET patterns that read other keys are not supported inside MULTI/EXEC, because the keys they read are only known once the sorted key has been read.
+In cluster mode BY and GET patterns must contain a hash tag that maps to the slot of key, as in Redis. BY and GET patterns that read other keys are not supported inside MULTI/EXEC, because the keys they read are only known once the sorted key has been read. For the same reason they are rejected through the watch API of custom transactions.
 
 #### Resp Reply
 

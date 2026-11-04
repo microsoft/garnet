@@ -369,6 +369,11 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus Sort(PinnedSpanByte key, SortOptions options, out List<byte[]> result, out bool invalidScore)
         {
+            // The keys BY/GET patterns read depend on the source's contents, so they cannot be watched before they are
+            // read. Reject them here rather than let a transaction commit on stale values.
+            if (options.ReadsOtherKeys)
+                throw new GarnetException("SORT with BY/GET patterns that read other keys is not supported through the watch API");
+
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.Sort(key, options, out result, out invalidScore);
         }

@@ -63,6 +63,7 @@ namespace Garnet.server
             // Keys we need locked, beyond the source and destination. Grows until it covers every key the patterns
             // derive from the current contents of the source.
             HashSet<byte[]> patternKeys = null;
+            var storedList = false;
 
             for (var attempt = 0; ; attempt++)
             {
@@ -135,6 +136,7 @@ namespace Garnet.server
                                 listObject.UpdateSize(value);
                             }
                             _ = SET(destination, listObject, ref objectContext);
+                            storedList = true;
                         }
                         else
                         {
@@ -148,6 +150,11 @@ namespace Garnet.server
                 {
                     if (createTransaction)
                         txnManager.Commit(true);
+
+                    // Wake clients blocked on the destination (e.g. BLPOP), like the other list-writing commands. Inside
+                    // MULTI/EXEC this runs before the transaction commits, which matches LMOVE and the other STORE paths.
+                    if (storedList)
+                        itemBroker?.HandleCollectionUpdate(destination.ReadOnlySpan.ToArray());
                 }
             }
         }
@@ -286,15 +293,19 @@ namespace Garnet.server
             }
 
             // Apply LIMIT the way Redis does
+            // (clamping the count first, so a huge offset + count cannot overflow)
             long start = options.LimitOffset < 0 ? 0 : options.LimitOffset;
-            long end = options.LimitCount < 0 ? entries.Length - 1 : start + options.LimitCount - 1;
+            long end;
             if (start >= entries.Length)
             {
                 start = entries.Length - 1;
                 end = entries.Length - 2;
             }
-            if (end >= entries.Length)
-                end = entries.Length - 1;
+            else
+            {
+                var count = options.LimitCount < 0 ? entries.Length : Math.Min(options.LimitCount, entries.Length);
+                end = Math.Min(start + count - 1, entries.Length - 1);
+            }
 
             var outputCount = (int)Math.Max(0, end - start + 1);
             var getPatterns = options.GetPatterns;

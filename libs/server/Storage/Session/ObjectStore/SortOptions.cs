@@ -123,8 +123,8 @@ namespace Garnet.server
 
         /// <summary>
         /// Hash slot every key formed by <paramref name="pattern"/> is guaranteed to map to, or -1 if the keys can map
-        /// to different slots. Matches Redis's patternHashSlot: the pattern needs a non-empty hash tag that appears
-        /// before any glob character.
+        /// to different slots. Like Redis's patternHashSlot, the pattern needs a non-empty hash tag that appears
+        /// before any glob character, but backslashes are taken literally because SORT builds keys by plain substitution.
         /// </summary>
         public static int PatternHashSlot(ReadOnlySpan<byte> pattern)
         {
@@ -135,11 +135,9 @@ namespace Garnet.server
                 if (c is (byte)'*' or (byte)'?' or (byte)'[')
                     return -1;
 
-                if (c == (byte)'\\')
-                {
-                    i++;
-                }
-                else if (tagStart == -1 && c == (byte)'{')
+                // SORT substitutes into the pattern literally, so a backslash does not escape the next character: the
+                // generated keys hash on the first '{' even if a backslash precedes it.
+                if (tagStart == -1 && c == (byte)'{')
                 {
                     tagStart = i;
                 }
