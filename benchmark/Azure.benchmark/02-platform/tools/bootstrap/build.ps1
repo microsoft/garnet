@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Build and install a benchmark system: redis, valkey, garnet, resp-bench, or memtier.
+    Build and install a benchmark system: redis, valkey, garnet, resp-bench, memtier, or hiredis.
 
 .DESCRIPTION
     PowerShell port of build.sh. Targets Linux VMSS instances (invokes native
@@ -15,6 +15,7 @@
     build.ps1 garnet main
     build.ps1 resp-bench
     build.ps1 memtier
+    build.ps1 hiredis v1.5.0
 #>
 param(
     [Parameter(Position = 0, Mandatory = $true)][string]$System,
@@ -51,6 +52,7 @@ $garnetDir = Get-RepoPath 'garnet'
 $valkeyDir = Get-RepoPath 'valkey'
 $redisDir = Get-RepoPath 'redis'
 $memtierDir = Get-RepoPath 'memtier'
+$hiredisDir = Get-RepoPath 'hiredis'
 
 function Get-Rid {
     $arch = (& uname -m).Trim()
@@ -191,14 +193,45 @@ function Build-RespBench {
     Write-Host "Installed at $INSTALL_DIR/resp-bench/Resp.benchmark"
 }
 
+function Build-Hiredis {
+    if (-not (Test-Path $hiredisDir)) { throw "Hiredis repository not found at $hiredisDir. Clone the repo first." }
+    Push-Location $hiredisDir
+    try {
+        if ($Branch) {
+            Invoke-Git @('fetch', '--tags')
+            Invoke-Git @('checkout', $Branch, '--')
+        }
+
+        & sudo -u $DEPLOY_USER make "-j$cores" PREFIX=/usr/local
+        if ($LASTEXITCODE -ne 0) { throw 'Hiredis build failed.' }
+        & sudo make install PREFIX=/usr/local
+        if ($LASTEXITCODE -ne 0) { throw 'Hiredis installation failed.' }
+
+        # Azure Linux's default pkg-config path excludes /usr/local/lib/pkgconfig.
+        $pkgConfigPath = & pkg-config --variable=pc_path pkg-config
+        if ($LASTEXITCODE -ne 0 -or -not $pkgConfigPath) { throw 'Cannot determine the pkg-config search path.' }
+        $pkgConfigDir = ($pkgConfigPath.Trim() -split ':')[0]
+        & sudo install -D -m 0644 hiredis.pc "$pkgConfigDir/hiredis.pc"
+        if ($LASTEXITCODE -ne 0) { throw 'Hiredis pkg-config metadata installation failed.' }
+        & sudo ldconfig
+        if ($LASTEXITCODE -ne 0) { throw 'Hiredis linker cache update failed.' }
+
+        & pkg-config --modversion hiredis
+        if ($LASTEXITCODE -ne 0) { throw 'Hiredis is not discoverable through pkg-config.' }
+    } finally {
+        Pop-Location
+    }
+}
+
 switch ($System) {
     'redis' { Build-ValkeyRedis $redisDir }
     'valkey' { Build-ValkeyRedis $valkeyDir }
     'garnet' { Build-Garnet }
     'resp-bench' { Build-RespBench }
     'memtier' { Build-Memtier }
+    'hiredis' { Build-Hiredis }
     default {
-        Write-Host "Unknown system: $System (use redis, valkey, garnet, resp-bench, or memtier)"
+        Write-Host "Unknown system: $System (use redis, valkey, garnet, resp-bench, memtier, or hiredis)"
         exit 1
     }
 }

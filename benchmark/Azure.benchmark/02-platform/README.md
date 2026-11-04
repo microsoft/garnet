@@ -62,6 +62,24 @@ az deployment group create `
 
 VMs are provisioned via cloud-init with .NET SDKs, repos, and tooling pre-installed.
 
+### Native storage dependencies
+
+The tools deployment manifest runs `bootstrap/install-native-dependencies.ps1`
+before builds. It installs liburing, libaio, and libevent development libraries,
+fio (including its packaged runtime dependencies), and the hiredis build tools
+through `apt-get` (Ubuntu/Debian) or `tdnf`/`dnf` (Azure Linux), then refreshes the
+linker cache. The manifest also clones and builds hiredis at the pinned release
+`v1.5.0`, installing its shared/static libraries and headers under `/usr/local`
+and registering metadata in pkg-config's default search path. Re-running these
+steps is safe; failures stop deployment.
+
+For existing VMs, publish the updated tools and use `-Action install` to fetch and
+copy them. Then run `sudo pwsh /opt/deploy-actions/install-native-dependencies.ps1`
+on each VM to install the packaged dependencies. Run
+`pwsh /opt/deploy-actions/clone-repos.ps1` to clone missing repositories, then
+`sudo pwsh /opt/deploy-actions/build.ps1 hiredis v1.5.0` to install hiredis without
+re-running the full deployment workflow or rebuilding Garnet.
+
 ## Manage VMSS (`manage-vmss.ps1`)
 
 SSH into VMSS instances to refresh repositories, rebuild systems, or re-run initialization workflows, or perform Azure power operations (start/stop) on entire VMSS. Run with `--help` for the full option list:

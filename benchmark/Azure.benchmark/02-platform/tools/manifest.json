@@ -1,6 +1,12 @@
 {
   "repos": [
     {
+      "name": "hiredis",
+      "url": "https://github.com/redis/hiredis.git",
+      "path": "/home/guser/hiredis",
+      "branch": "v1.5.0"
+    },
+    {
       "name": "garnet",
       "url": "https://github.com/microsoft/garnet.git",
       "path": "/home/guser/garnet",
@@ -43,6 +49,11 @@
     {
       "src": "bootstrap/install-dotnet.ps1",
       "dst": "/opt/deploy-actions/install-dotnet.ps1",
+      "mode": "755"
+    },
+    {
+      "src": "bootstrap/install-native-dependencies.ps1",
+      "dst": "/opt/deploy-actions/install-native-dependencies.ps1",
       "mode": "755"
     },
     {
@@ -113,6 +124,11 @@
   ],
   "runcmd": [
     {
+      "run": "install-native-dependencies.ps1",
+      "sudo": true,
+      "args": ""
+    },
+    {
       "run": "install-dotnet.ps1",
       "sudo": true,
       "args": ""
@@ -121,6 +137,11 @@
       "run": "clone-repos.ps1",
       "sudo": false,
       "args": ""
+    },
+    {
+      "run": "build.ps1",
+      "sudo": true,
+      "args": "hiredis"
     },
     {
       "run": "build.ps1",
