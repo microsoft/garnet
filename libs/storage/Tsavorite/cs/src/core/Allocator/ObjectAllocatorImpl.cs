@@ -532,11 +532,14 @@ namespace Tsavorite.core
             if (objectLogDevice.TryRemoveSegmentsAbove(lastValidObjectLogSegment, out _))
                 return;
 
-            // The device cannot list its segments, so remove those up to the highest known to hold data, highest first
+            // The device cannot list its segments, so remove them one at a time, highest first, from the highest known to hold
+            // data: the device's EndSegment, or the segment this store's object-log tail has reached
             var lastAvailObjectLogSegment = Math.Max(objectLogDevice.EndSegment, IsRecorded(objectLogTail) ? objectLogTail.SegmentId : -1);
             for (var segment = lastAvailObjectLogSegment; segment > lastValidObjectLogSegment; segment--)
                 objectLogDevice.RemoveSegment(segment);
 
+            // A position is recorded once assigned: IsSet, and not NotSet. HasData is not used, because it also rejects position
+            // 0, which a store records before it writes any object; then every object-log segment above segment 0 is removed.
             static bool IsRecorded(in ObjectLogFilePositionInfo position) => position.IsSet && position.word != ObjectLogFilePositionInfo.NotSet;
         }
 
