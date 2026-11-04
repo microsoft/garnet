@@ -390,7 +390,7 @@ namespace Garnet.server
                 keySpecMethod = default;
 
                 if (!RespReadUtils.TryReadUnsignedArrayLength(out var ksSpecElemCount, ref ptr, end)
-                    || ksSpecElemCount == 0) return false;
+                    || ksSpecElemCount != 0) return false;
 
                 keySpecMethod = new BeginSearchUnknown();
 
@@ -517,7 +517,7 @@ namespace Garnet.server
                 keySpecMethod = default;
 
                 if (!RespReadUtils.TryReadUnsignedArrayLength(out var ksSpecElemCount, ref ptr, end)
-                    || ksSpecElemCount == 0) return false;
+                    || ksSpecElemCount != 0) return false;
 
                 keySpecMethod = new FindKeysUnknown();
 

@@ -366,6 +366,13 @@ namespace Garnet.server
             return garnetApi.SetDiff(keys, out output);
         }
 
+        /// <inheritdoc />
+        public GarnetStatus Sort(PinnedSpanByte key, SortOptions options, out List<byte[]> result, out bool invalidScore)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.Sort(key, options, out result, out invalidScore);
+        }
+
         public GarnetStatus SetIntersectLength(ReadOnlySpan<PinnedSpanByte> keys, int? limit, out int count)
         {
             foreach (var key in keys)

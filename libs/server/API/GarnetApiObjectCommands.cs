@@ -422,6 +422,14 @@ namespace Garnet.server
             => storageSession.SetDiffStore(key, keys, out count);
 
         /// <inheritdoc />
+        public GarnetStatus Sort(PinnedSpanByte key, SortOptions options, out List<byte[]> result, out bool invalidScore)
+            => storageSession.Sort(key, options, out result, out invalidScore);
+
+        /// <inheritdoc />
+        public GarnetStatus SortStore(PinnedSpanByte key, PinnedSpanByte destination, SortOptions options, out int count, out bool invalidScore)
+            => storageSession.SortStore(key, destination, options, out count, out invalidScore);
+
+        /// <inheritdoc />
         public GarnetStatus SetIntersect(PinnedSpanByte[] keys, out HashSet<byte[]> output)
             => storageSession.SetIntersect(keys, out output);
 

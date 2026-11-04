@@ -431,6 +431,52 @@ Array reply: specifically, an array with two elements.
 
 ---
 
+### SORT
+
+#### Syntax
+
+```bash
+    SORT key [BY pattern] [LIMIT offset count] [GET pattern [GET pattern ...]] [ASC | DESC] [ALPHA] [STORE destination]
+```
+
+Returns or stores the elements of the list, set or sorted set at key, sorted. By default elements are compared as double-precision numbers; ALPHA compares them as binary strings. DESC reverses the order and LIMIT returns `count` elements starting at `offset`.
+
+**The BY option**
+Sorts by the values of other keys instead of the elements. The first `*` in the pattern is replaced by each element, and a `->field` suffix reads a hash field instead of a string key (for example `BY weight_*` or `BY object_*->weight`). Missing keys sort as 0 (or first, with ALPHA). A pattern without `*` (such as `BY nosort`) skips sorting: lists keep their order, sets are returned in no particular order, sorted sets are returned in score order, and DESC reverses that order.
+
+**The GET option**
+Returns values read through a pattern instead of the elements, using the same substitution rules as BY. `GET #` returns the element itself. GET can be given several times, and each element then produces one reply entry per GET. Missing keys or fields return nil.
+
+**The STORE option**
+Stores the result as a list at destination, replacing any existing value, and returns the number of stored elements. An empty result deletes destination. When BY skips sorting on a set, the result is sorted lexicographically before it is stored so the stored order is well defined.
+
+In cluster mode BY and GET patterns must contain a hash tag that maps to the slot of key, as in Redis. BY and GET patterns that read other keys are not supported inside MULTI/EXEC, because the keys they read are only known once the sorted key has been read.
+
+#### Resp Reply
+
+One of the following:
+
+* Array reply: the sorted elements, or the GET values (nil for missing keys).
+* Integer reply: the number of elements stored at destination, when STORE is used.
+
+---
+
+### SORT_RO
+
+#### Syntax
+
+```bash
+    SORT_RO key [BY pattern] [LIMIT offset count] [GET pattern [GET pattern ...]] [ASC | DESC] [ALPHA]
+```
+
+Read-only variant of [SORT](#sort) without the STORE option. It can run on replicas.
+
+#### Resp Reply
+
+Array reply: the sorted elements, or the GET values (nil for missing keys).
+
+---
+
 ### TTL
 
 #### Syntax

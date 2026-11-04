@@ -150,6 +150,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> BYLEX => "BYLEX"u8;
         public static ReadOnlySpan<byte> REV => "REV"u8;
         public static ReadOnlySpan<byte> LIMIT => "LIMIT"u8;
+        public static ReadOnlySpan<byte> BY => "BY"u8;
+        public static ReadOnlySpan<byte> ALPHA => "ALPHA"u8;
+        public static ReadOnlySpan<byte> ASC => "ASC"u8;
+        public static ReadOnlySpan<byte> DESC => "DESC"u8;
         public static ReadOnlySpan<byte> MIN => "MIN"u8;
         public static ReadOnlySpan<byte> MAX => "MAX"u8;
         public static ReadOnlySpan<byte> WEIGHTS => "WEIGHTS"u8;
@@ -244,6 +248,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INSTANTIATING_CLASS => "ERR unable to instantiate one or more classes from given assemblies."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_REGISTERCS_UNSUPPORTED_CLASS => "ERR unable to register one or more unsupported classes."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER => "ERR value is not an integer or out of range."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_SORT_SCORE_NOT_DOUBLE => "ERR One or more scores can't be converted into double"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_SORT_BY_CROSSSLOT => "ERR BY option of SORT denied in Cluster mode when keys formed by the pattern may be in different slots."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_SORT_GET_CROSSSLOT => "ERR GET option of SORT denied in Cluster mode when keys formed by the pattern may be in different slots."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_SORT_PATTERN_IN_TXN => "ERR SORT BY and GET patterns that read other keys are not supported inside a transaction"u8;
         public static ReadOnlySpan<byte> RESP_ERR_HASH_VALUE_IS_NOT_INTEGER => "ERR hash value is not an integer."u8;
         public static ReadOnlySpan<byte> RESP_ERR_HASH_VALUE_IS_NOT_FLOAT => "ERR hash value is not a float."u8;
         public static ReadOnlySpan<byte> RESP_ERR_INCR_DECR_OVERFLOW => "ERR increment or decrement would overflow"u8;

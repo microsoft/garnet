@@ -5080,6 +5080,93 @@
     "StoreType": "Object"
   },
   {
+    "Command": "SORT",
+    "Name": "SORT",
+    "Arity": -2,
+    "Flags": "DenyOom, MovableKeys, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Dangerous, List, Set, SortedSet, Slow, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchUnknown"
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysUnknown"
+        },
+        "Notes": "For the optional BY/GET keyword. It is marked 'unknown' because the key names derive from the content of the key we sort",
+        "Flags": "RO, Access"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchKeyword",
+          "Keyword": "STORE",
+          "StartFrom": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": "For the optional STORE keyword. Garnet searches for the keyword so that the destination is locked in transactions and checked against the served slots in cluster mode",
+        "Flags": "OW, Update"
+      }
+    ],
+    "StoreType": "Object"
+  },
+  {
+    "Command": "SORT_RO",
+    "Name": "SORT_RO",
+    "Arity": -2,
+    "Flags": "MovableKeys, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Dangerous, List, Read, Set, SortedSet, Slow",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchUnknown"
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysUnknown"
+        },
+        "Notes": "For the optional BY/GET keyword. It is marked 'unknown' because the key names derive from the content of the key we sort",
+        "Flags": "RO, Access"
+      }
+    ],
+    "StoreType": "Object"
+  },
+  {
     "Command": "SPOP",
     "Name": "SPOP",
     "Arity": -2,

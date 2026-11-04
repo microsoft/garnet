@@ -305,6 +305,8 @@ namespace CommandInfoUpdater
             ]),
             new("SMEMBERS", RespCommand.SMEMBERS, StoreType.Object),
             new("SMISMEMBER", RespCommand.SMISMEMBER, StoreType.Object),
+            new("SORT", RespCommand.SORT, StoreType.Object),
+            new("SORT_RO", RespCommand.SORT_RO, StoreType.Object),
             new("SMOVE", RespCommand.SMOVE, StoreType.Object),
             new("SPOP", RespCommand.SPOP, StoreType.Object),
             new("SPUBLISH", RespCommand.SPUBLISH),
