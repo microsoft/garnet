@@ -28,10 +28,10 @@ namespace Garnet.test
         public void DefaultDiskBasedSyncChunkSize()
         {
             Assert.That(ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true), Is.True);
-            Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(128 << 10));
-            Assert.That(new GarnetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(128 << 10));
-            Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncPipelineDepth(), Is.EqualTo(1));
-            Assert.That(new GarnetServerOptions().GetReplicaDiskBasedSyncPipelineDepth(), Is.EqualTo(1));
+            Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(4 << 20));
+            Assert.That(new GarnetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(4 << 20));
+            Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncPipelineDepth(), Is.EqualTo(4));
+            Assert.That(new GarnetServerOptions().GetReplicaDiskBasedSyncPipelineDepth(), Is.EqualTo(4));
         }
 
         [TestCase("512", false)]
@@ -116,15 +116,29 @@ namespace Garnet.test
         [TestCase("512m", 512 << 20)]
         public void DiskBasedSyncChunkSizeConfiguration(string size, int expected)
         {
+            // Depth 1 keeps every size within the outstanding-payload budget, isolating chunk-size parsing.
             Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
-                ["--repl-disk-based-sync-chunk-size", size], out var options, out _, out _, out _, silentMode: true), Is.True);
+                ["--repl-disk-based-sync-chunk-size", size, "--repl-disk-based-sync-pipeline-depth", "1"], out var options, out _, out _, out _, silentMode: true), Is.True);
             Assert.That(options.ReplicaDiskBasedSyncChunkSize, Is.EqualTo(size));
             Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(expected));
             Assert.That(new GarnetServerOptions { ReplicaDiskBasedSyncChunkSize = size }.GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(expected));
 
-            var json = JsonSerializer.Serialize(new { ReplicaDiskBasedSyncChunkSize = size });
+            var json = JsonSerializer.Serialize(new { ReplicaDiskBasedSyncChunkSize = size, ReplicaDiskBasedSyncPipelineDepth = 1 });
             Assert.That(TryParseGarnetConfOptions(json, out options, out _, out _), Is.True);
             Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void LargeChunkSizeRequiresLowerThanDefaultDepth()
+        {
+            // 256 MiB at the default depth of 4 exceeds the 512 MiB outstanding-payload budget; depth 2 fits.
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-disk-based-sync-chunk-size", "256m"], out _, out _, out _, out _, silentMode: true), Is.False);
+            var exception = Assert.Throws<ArgumentException>(() =>
+                new GarnetServerOptions { ReplicaDiskBasedSyncChunkSize = "256m" }.GetReplicaDiskBasedSyncPipelineDepth());
+            Assert.That(exception.Message, Does.Contain("depth 4, chunk size 268435456 bytes"));
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-disk-based-sync-chunk-size", "256m", "--repl-disk-based-sync-pipeline-depth", "2"], out _, out _, out _, out _, silentMode: true), Is.True);
         }
 
         [TestCase(null)]

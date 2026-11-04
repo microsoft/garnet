@@ -887,9 +887,10 @@ namespace Garnet.test
         public void RuntimeCheckpointChunkRespectsTheConfiguredDeviceSector()
         {
             var runtimeConfig = new RuntimeServerConfig(new GarnetServerOptions { ReplicaDiskBasedSyncSectorSize = 4096 });
+            var original = runtimeConfig.GetReplicaDiskBasedSyncSettings().ChunkSize;
             Assert.That(runtimeConfig.TrySet(ServerConfigType.REPL_DISK_BASED_SYNC_CHUNK_SIZE, "512", out var error), Is.False);
             Assert.That(error, Does.Contain("4096"));
-            Assert.That(runtimeConfig.GetReplicaDiskBasedSyncSettings().ChunkSize, Is.EqualTo(128 << 10));
+            Assert.That(runtimeConfig.GetReplicaDiskBasedSyncSettings().ChunkSize, Is.EqualTo(original), "A rejected chunk size must leave the setting unchanged");
         }
 
         /// <summary>

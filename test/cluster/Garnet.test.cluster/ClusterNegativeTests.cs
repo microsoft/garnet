@@ -429,7 +429,9 @@ namespace Garnet.test.cluster
             var primaryIndex = 0;
             var replicaIndex = 1;
             var nodes_count = 2;
-            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout, replicaSyncTimeout: 1);
+            // Stop-and-wait 128 KiB transfer keeps one chunk in flight, so the timed-out chunk in the message is deterministic.
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout, replicaSyncTimeout: 1,
+                replicaDiskBasedSyncChunkSize: "128k", replicaDiskBasedSyncPipelineDepth: 1);
             context.CreateConnection();
 
             _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);

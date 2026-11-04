@@ -827,8 +827,8 @@ namespace Garnet.test
             int threadPoolMinIOCompletionThreads = 0,
             bool enableRangeIndexPreview = false,
             TimeSpan? networkSendTimeout = null,
-            string replicaDiskBasedSyncChunkSize = "128k",
-            int replicaDiskBasedSyncPipelineDepth = 1)
+            string replicaDiskBasedSyncChunkSize = "4m",
+            int replicaDiskBasedSyncPipelineDepth = 4)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -988,8 +988,8 @@ namespace Garnet.test
             int vectorSetQuantizationTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
             TimeSpan? networkSendTimeout = null,
-            string replicaDiskBasedSyncChunkSize = "128k",
-            int replicaDiskBasedSyncPipelineDepth = 1)
+            string replicaDiskBasedSyncChunkSize = "4m",
+            int replicaDiskBasedSyncPipelineDepth = 4)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();

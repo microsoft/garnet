@@ -659,10 +659,10 @@ namespace Garnet.server
 
         /// <summary>
         /// Maximum disk-based Tsavorite checkpoint transfer chunk, rounded down to a power of two.
-        /// Accepts sizes from 512 bytes through 512 MiB, subject to device-sector alignment.
+        /// Accepts sizes from 512 bytes through 512 MiB, subject to device-sector alignment; default 4 MiB.
         /// Configured on the primary; CONFIG SET changes apply to new transfers.
         /// </summary>
-        public string ReplicaDiskBasedSyncChunkSize = "128k";
+        public string ReplicaDiskBasedSyncChunkSize = "4m";
 
         /// <summary>
         /// Maximum supported number of unacknowledged checkpoint chunks per replica.
@@ -683,11 +683,11 @@ namespace Garnet.server
 
         /// <summary>
         /// Maximum unacknowledged disk-based Tsavorite checkpoint chunks per replica on the primary.
-        /// Accepts 1 through 64; default 1 disables pipelining.
+        /// Accepts 1 through 64; default 4, and 1 disables pipelining.
         /// Depth times effective chunk size must not exceed 512 MiB.
         /// CONFIG SET changes apply to new transfers.
         /// </summary>
-        public int ReplicaDiskBasedSyncPipelineDepth = 1;
+        public int ReplicaDiskBasedSyncPipelineDepth = 4;
 
         /// <summary>
         /// Validate the pipeline depth and its maximum outstanding payload budget.
@@ -701,9 +701,10 @@ namespace Garnet.server
 
         internal static void ValidateReplicaDiskBasedSyncPipelineDepth(int chunkSize, int pipelineDepth)
         {
+            // Name both values: either may be the default, so a chunk-size-only setting can still exceed the budget.
             if (pipelineDepth is < 1 or > ReplicaDiskBasedSyncPipelineDepthMax ||
                 (long)pipelineDepth * chunkSize > ReplicaDiskBasedSyncOutstandingPayloadBytesMax)
-                throw new ArgumentException($"{nameof(ReplicaDiskBasedSyncPipelineDepth)} must be from 1 through {ReplicaDiskBasedSyncPipelineDepthMax}, with depth times effective chunk size at most {ReplicaDiskBasedSyncOutstandingPayloadBytesMax >> 20} MiB.",
+                throw new ArgumentException($"{nameof(ReplicaDiskBasedSyncPipelineDepth)} must be from 1 through {ReplicaDiskBasedSyncPipelineDepthMax}, with depth times effective chunk size at most {ReplicaDiskBasedSyncOutstandingPayloadBytesMax >> 20} MiB (depth {pipelineDepth}, chunk size {chunkSize} bytes).",
                     nameof(ReplicaDiskBasedSyncPipelineDepth));
         }
 
