@@ -124,6 +124,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> KEEPTTL => "KEEPTTL"u8;
         public static ReadOnlySpan<byte> NX => "NX"u8;
         public static ReadOnlySpan<byte> XX => "XX"u8;
+        public static ReadOnlySpan<byte> IFEQ => "IFEQ"u8;
         public static ReadOnlySpan<byte> CH => "CH"u8;
         public static ReadOnlySpan<byte> UNSAFETRUNCATELOG => "UNSAFETRUNCATELOG"u8;
         public static ReadOnlySpan<byte> SAMPLES => "SAMPLES"u8;

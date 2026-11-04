@@ -43,6 +43,186 @@ namespace Garnet.test
             TestUtils.OnTearDown();
         }
 
+        [Test]
+        public void SetIfEqualComparesBinaryValues([Values(0, 1, 2)] int storageRegion, [Values] bool get)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            byte[] original = [0, 255, 13, 10, (byte)'a'];
+            byte[] mismatch = [0, 255, 13, 10, (byte)'A'];
+            var replacement = new string('x', 10000);
+            db.StringSet("key", original);
+            PrepareSetIfEqualRecord(storageRegion);
+
+            var result = db.Execute("SET", get
+                ? ["key", replacement, "ifeq", mismatch, "get"]
+                : ["key", replacement, "ifeq", mismatch]);
+            if (get)
+                CollectionAssert.AreEqual(original, (byte[])result);
+            else
+                ClassicAssert.IsTrue(result.IsNull);
+            CollectionAssert.AreEqual(original, (byte[])db.StringGet("key"));
+
+            result = db.Execute("SET", get
+                ? ["key", replacement, "GET", "IfEq", original]
+                : ["key", replacement, "IfEq", original]);
+            if (get)
+                CollectionAssert.AreEqual(original, (byte[])result);
+            else
+                ClassicAssert.AreEqual("OK", (string)result);
+            ClassicAssert.AreEqual(replacement, (string)db.StringGet("key"));
+
+            db.StringSet("empty", "");
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "empty", "value", "IFEQ", ""));
+            ClassicAssert.AreEqual("value", (string)db.Execute("SET", "empty", "", "GET", "IFEQ", "value"));
+            ClassicAssert.AreEqual("", (string)db.StringGet("empty"));
+        }
+
+        [Test]
+        public void SetIfEqualExpiry([Values(0, 1, 2)] int storageRegion, [Values("", "EX", "PX", "KEEPTTL")] string expiryOption)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            db.Execute("SET", "key", "old", "PX", 60000);
+            long originalExpiry = (long)db.Execute("PEXPIRETIME", "key");
+            PrepareSetIfEqualRecord(storageRegion);
+
+            object[] options = expiryOption switch
+            {
+                "EX" => ["EX", 120],
+                "PX" => ["PX", 120000],
+                "KEEPTTL" => ["KEEPTTL"],
+                _ => []
+            };
+            ClassicAssert.IsTrue(db.Execute("SET", ["key", "rejected", .. options, "IFEQ", "different"]).IsNull);
+            ClassicAssert.AreEqual(originalExpiry, (long)db.Execute("PEXPIRETIME", "key"));
+            ClassicAssert.AreEqual("old", (string)db.StringGet("key"));
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SET", ["key", "new", .. options, "IFEQ", "old"]));
+            ClassicAssert.AreEqual("new", (string)db.StringGet("key"));
+            long expiration = (long)db.Execute("PEXPIRETIME", "key");
+            if (expiryOption == "")
+                ClassicAssert.AreEqual(-1, expiration);
+            else if (expiryOption == "KEEPTTL")
+                ClassicAssert.AreEqual(originalExpiry, expiration);
+            else
+                ClassicAssert.GreaterOrEqual(expiration, originalExpiry + 60000);
+        }
+
+        [Test]
+        public void SetIfEqualDoesNotCreateMissingOrExpiredKeys([Values(0, 1, 2)] int storageRegion, [Values] bool objectValue)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            ClassicAssert.IsTrue(db.Execute("SET", "missing", "new", "IFEQ", "").IsNull);
+            ClassicAssert.IsTrue(db.Execute("SET", "missing", "new", "IFEQ", "", "GET").IsNull);
+            ClassicAssert.IsFalse(db.KeyExists("missing"));
+
+            if (objectValue)
+                db.ListRightPush("expired", "old");
+            else
+                db.StringSet("expired", "old");
+            db.KeyExpire("expired", TimeSpan.FromMilliseconds(20));
+            PrepareSetIfEqualRecord(storageRegion);
+            Thread.Sleep(50);
+            ClassicAssert.IsTrue(db.Execute("SET", "expired", "new", "IFEQ", "old", "GET", "KEEPTTL").IsNull);
+            ClassicAssert.IsFalse(db.KeyExists("expired"));
+        }
+
+        [Test]
+        public void SetIfEqualRejectsWrongType([Values(0, 1, 2)] int storageRegion, [Values] bool get)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            db.ListRightPush("key", "old");
+            PrepareSetIfEqualRecord(storageRegion);
+            var exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SET", get
+                ? ["key", "new", "IFEQ", "old", "GET"]
+                : ["key", "new", "IFEQ", "old"]));
+            ClassicAssert.AreEqual("WRONGTYPE Operation against a key holding the wrong kind of value.", exception.Message);
+            ClassicAssert.AreEqual("old", (string)db.ListGetByIndex("key", 0));
+        }
+
+        [Test]
+        public void SetIfEqualRejectsInvalidOptions()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            db.StringSet("key", "old");
+            string[][] invalidOptions =
+            [
+                ["IFEQ"],
+                ["NX", "IFEQ", "old"],
+                ["IFEQ", "old", "NX"],
+                ["XX", "IFEQ", "old"],
+                ["IFEQ", "old", "XX"],
+                ["IFEQ", "old", "IFEQ", "old"],
+                ["IFEQ", "old", "EX"],
+                ["IFEQ", "old", "PX"],
+                ["IFEQ", "old", "EX", "1", "KEEPTTL"]
+            ];
+            foreach (var options in invalidOptions)
+            {
+                var exception = ClassicAssert.Throws<RedisServerException>(() =>
+                    db.Execute("SET", ["key", "new", .. options]));
+                ClassicAssert.AreEqual("ERR syntax error", exception.Message);
+                ClassicAssert.AreEqual("old", (string)db.StringGet("key"));
+            }
+        }
+
+        [Test]
+        public async Task SetIfEqualHasOneWinner([Values(0, 1, 2)] int storageRegion)
+        {
+            using var first = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var second = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            first.GetDatabase().StringSet("key", "old");
+            PrepareSetIfEqualRecord(storageRegion);
+            using var start = new Barrier(2);
+            var results = await Task.WhenAll(Update(first, "first"), Update(second, "second"));
+            ClassicAssert.AreEqual(1, results.Count(result => (string)result == "OK"));
+            ClassicAssert.AreEqual(1, results.Count(result => result.IsNull));
+            ClassicAssert.AreEqual(results[0].IsNull ? "second" : "first", (string)first.GetDatabase().StringGet("key"));
+
+            Task<RedisResult> Update(ConnectionMultiplexer client, string value) => Task.Run(() =>
+            {
+                start.SignalAndWait();
+                return client.GetDatabase().Execute("SET", "key", value, "IFEQ", "old");
+            });
+        }
+
+        [Test]
+        public void SetIfEqualTransactionsAndWatch()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var writer = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            db.StringSet("key", "old");
+            db.Execute("WATCH", "key");
+            ClassicAssert.IsTrue(writer.GetDatabase().Execute("SET", "key", "rejected", "IFEQ", "different").IsNull);
+            db.Execute("MULTI");
+            db.Execute("SET", "key", "new", "IFEQ", "old", "KEEPTTL");
+            db.Execute("SET", "key", "final", "IFEQ", "new", "GET");
+            var results = (RedisResult[])db.Execute("EXEC");
+            ClassicAssert.AreEqual("OK", (string)results[0]);
+            ClassicAssert.AreEqual("new", (string)results[1]);
+            ClassicAssert.AreEqual("final", (string)db.StringGet("key"));
+
+            db.Execute("WATCH", "key");
+            ClassicAssert.AreEqual("OK", (string)writer.GetDatabase().Execute("SET", "key", "changed", "IFEQ", "final"));
+            db.Execute("MULTI");
+            db.Execute("GET", "key");
+            ClassicAssert.IsTrue(db.Execute("EXEC").IsNull);
+        }
+
+        private void PrepareSetIfEqualRecord(int storageRegion)
+        {
+            var store = server.Provider.StoreWrapper.store;
+            if (storageRegion == 1)
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            else if (storageRegion == 2)
+                store.Log.FlushAndEvict(wait: true);
+        }
+
         /// <summary>
         /// Ensure that all RespCommand IDs are unique.
         /// </summary>

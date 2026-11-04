@@ -316,7 +316,7 @@ Simple string reply: OK.
 #### Syntax
 
 ```bash
-    SET key value [NX | XX] [GET] [EX seconds | PX milliseconds] [KEEPTTL]
+    SET key value [NX | XX | IFEQ comparison-value] [GET] [EX seconds | PX milliseconds | KEEPTTL]
 ```
 
 Set **key** to hold the string value. If key already holds a value, it is overwritten, regardless of its type. Any previous time to live associated with the **key** is discarded on successful SET operation.
@@ -327,13 +327,15 @@ Set **key** to hold the string value. If key already holds a value, it is overwr
 * PX milliseconds -- Set the specified expire time, in milliseconds (a positive integer).
 * NX -- Only set the key if it does not already exist.
 * XX -- Only set the key if it already exists.
+* IFEQ comparison-value -- Atomically set an existing string only if its bytes equal comparison-value. A missing or expired key is not created. A non-string value returns WRONGTYPE. A failed comparison leaves the value and expiration unchanged. Cannot be combined with NX or XX.
+* GET -- Return the previous string value, including when an IFEQ comparison fails, or nil if the key does not exist.
 * KEEPTTL -- Retain the time to live associated with the key.
 
 #### Resp Reply
 
 Any of the following:
 
-* Nil reply: GET not given: Operation was aborted (conflict with one of the XX/NX options).
+* Nil reply: GET not given: Operation was aborted (the NX, XX, or IFEQ condition was not met).
 * Simple string reply: OK. GET not given: The key was set.
 * Nil reply: GET given: The key didn't exist before the SET.
 * Bulk string reply: GET given: The previous value of the key.

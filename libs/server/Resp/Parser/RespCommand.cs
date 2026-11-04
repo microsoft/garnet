@@ -152,7 +152,9 @@ namespace Garnet.server
         BITOP_NOT = 119,
         BITOP_DIFF = 120,
         XVCREATE = 121,
-        XVIMPORT = 122, // Note: LastWriteCommand -- append new write commands after this with the next value
+        XVIMPORT = 122,
+        SETIFEQ = 123,
+        SETKEEPTTLIFEQ = 124, // Note: LastWriteCommand -- append new write commands after this with the next value
 
         // Read-only commands. NEVER persisted (reads never enter the AOF), so these are
         // auto-numbered and may be renumbered/reordered freely across versions. They follow the
@@ -449,7 +451,7 @@ namespace Garnet.server
     /// </summary>
     public static class RespCommandExtensions
     {
-        private static readonly RespCommand[] ExpandedSET = [RespCommand.SETEXNX, RespCommand.SETEXXX, RespCommand.SETKEEPTTL, RespCommand.SETKEEPTTLXX];
+        private static readonly RespCommand[] ExpandedSET = [RespCommand.SETEXNX, RespCommand.SETEXXX, RespCommand.SETKEEPTTL, RespCommand.SETKEEPTTLXX, RespCommand.SETIFEQ, RespCommand.SETKEEPTTLIFEQ];
         private static readonly RespCommand[] ExpandedBITOP = [RespCommand.BITOP_AND, RespCommand.BITOP_NOT, RespCommand.BITOP_OR, RespCommand.BITOP_XOR, RespCommand.BITOP_DIFF];
 
         // Commands that are either returning static data or commands that cannot have issues from concurrent AOF interaction in another session
@@ -565,6 +567,7 @@ namespace Garnet.server
                     RespCommand.SETEXXX => RespCommand.SET,
                     RespCommand.SETKEEPTTL => RespCommand.SET,
                     RespCommand.SETKEEPTTLXX => RespCommand.SET,
+                    RespCommand.SETIFEQ or RespCommand.SETKEEPTTLIFEQ => RespCommand.SET,
                     RespCommand.BITOP_AND or RespCommand.BITOP_NOT or RespCommand.BITOP_OR or RespCommand.BITOP_XOR or RespCommand.BITOP_DIFF => RespCommand.BITOP,
                     _ => cmd
                 };
@@ -591,7 +594,7 @@ namespace Garnet.server
         // appended.
         internal const RespCommand FirstWriteCommand = RespCommand.APPEND;
 
-        internal const RespCommand LastWriteCommand = RespCommand.XVIMPORT;
+        internal const RespCommand LastWriteCommand = RespCommand.SETKEEPTTLIFEQ;
 
         // Data commands span writes + reads + scripts contiguously: [FirstDataCommand, LastDataCommand].
         internal const RespCommand FirstDataCommand = FirstWriteCommand;

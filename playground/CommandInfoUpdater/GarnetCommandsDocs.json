@@ -1512,6 +1512,13 @@
             "DisplayText": "xx",
             "Type": "PureToken",
             "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "IFEQ",
+            "DisplayText": "comparison-value",
+            "Type": "String",
+            "Token": "IFEQ"
           }
         ]
       },

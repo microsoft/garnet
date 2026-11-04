@@ -27,6 +27,8 @@ namespace Garnet.server
                 case RespCommand.GETDEL:
                 case RespCommand.GETEX:
                 case RespCommand.DELIFGREATER:
+                case RespCommand.SETIFEQ:
+                case RespCommand.SETKEEPTTLIFEQ:
                     return false;
                 case RespCommand.SETEXXX:
                     return false;
@@ -492,6 +494,9 @@ namespace Garnet.server
 
                     // Nothing is set because being in this block means NX was already violated
                     return IPUResult.NotUpdated;
+                case RespCommand.SETIFEQ:
+                case RespCommand.SETKEEPTTLIFEQ:
+                    return SetIfEqualInPlaceUpdate(ref logRecord, ref input, ref output, ref rmwInfo);
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
                     // Note: SETEXXX may or may not actually have an expiration.
@@ -999,6 +1004,74 @@ namespace Garnet.server
             return IPUResult.Succeeded;
         }
 
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private readonly bool CheckSetIfEqual(ReadOnlySpan<byte> value, ref StringInput input, ref StringOutput output)
+        {
+            if (value.SequenceEqual(input.parseState.GetArgSliceByRef(1).ReadOnlySpan))
+                return true;
+
+            if (input.header.CheckSetGetFlag())
+                CopyRespTo(value, ref output);
+            else
+                functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
+            return false;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private readonly IPUResult SetIfEqualInPlaceUpdate(ref LogRecord logRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
+        {
+            if (!CheckSetIfEqual(logRecord.ValueSpan, ref input, ref output))
+                return IPUResult.NotUpdated;
+
+            var updateInput = input;
+            updateInput.header.cmd = input.header.cmd == RespCommand.SETIFEQ ? RespCommand.SETEXXX : RespCommand.SETKEEPTTLXX;
+            var originalOutput = output;
+            var result = InPlaceUpdaterWorker(ref logRecord, ref updateInput, ref output, ref rmwInfo);
+            if (result == IPUResult.Failed)
+            {
+                if (output.SpanByteAndMemory.Memory != originalOutput.SpanByteAndMemory.Memory)
+                    output.SpanByteAndMemory.Memory?.Dispose();
+                output = originalOutput;
+            }
+            else if (!input.header.CheckSetGetFlag())
+                functionsState.CopyDefaultResp(CmdStrings.RESP_OK, ref output.SpanByteAndMemory);
+            return result;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private readonly bool NeedSetIfEqualCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+            {
+                functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
+                rmwInfo.Action = RMWAction.ExpireAndStop;
+                return false;
+            }
+
+            if (srcLogRecord.DataHeader.ValueIsObject || srcLogRecord.RecordType != 0)
+            {
+                rmwInfo.Action = RMWAction.WrongType;
+                return false;
+            }
+
+            return CheckSetIfEqual(srcLogRecord.ValueSpan, ref input, ref output);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private readonly bool SetIfEqualCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            var updateInput = input;
+            updateInput.header.cmd = input.header.cmd == RespCommand.SETIFEQ ? RespCommand.SETEXXX : RespCommand.SETKEEPTTLXX;
+            if (!CopyUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref updateInput, ref output, ref rmwInfo))
+                return false;
+
+            if (!input.header.CheckSetGetFlag())
+                functionsState.CopyDefaultResp(CmdStrings.RESP_OK, ref output.SpanByteAndMemory);
+            return true;
+        }
+
         /// <inheritdoc />
         public readonly bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
@@ -1037,6 +1110,9 @@ namespace Garnet.server
                         return false;
                     }
                     return true;
+                case RespCommand.SETIFEQ:
+                case RespCommand.SETKEEPTTLIFEQ:
+                    return NeedSetIfEqualCopyUpdate(in srcLogRecord, ref input, ref output, ref rmwInfo);
                 case RespCommand.RICREATE:
                     // Index already exists — never copy-update, reject in caller
                     return false;
@@ -1113,6 +1189,9 @@ namespace Garnet.server
 
             switch (cmd)
             {
+                case RespCommand.SETIFEQ:
+                case RespCommand.SETKEEPTTLIFEQ:
+                    return SetIfEqualCopyUpdate(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
                 case RespCommand.SETIFMATCH:
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETWITHETAG:

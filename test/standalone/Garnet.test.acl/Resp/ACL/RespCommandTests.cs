@@ -5879,7 +5879,7 @@ namespace Garnet.test.Resp.ACL
 
             await CheckCommandsAsync(
                 "SET",
-                [DoSetAsync, DoSetExNxAsync, DoSetXxNxAsync, DoSetKeepTtlAsync, DoSetKeepTtlXxAsync]
+                [DoSetAsync, DoSetExNxAsync, DoSetXxNxAsync, DoSetKeepTtlAsync, DoSetKeepTtlXxAsync, DoSetIfEqualAsync, DoSetKeepTtlIfEqualAsync]
             ).ConfigureAwait(false);
 
             static async Task DoSetAsync(GarnetClient client)
@@ -5909,6 +5909,18 @@ namespace Garnet.test.Resp.ACL
             static async Task DoSetKeepTtlXxAsync(GarnetClient client)
             {
                 string val = await client.ExecuteForStringResultAsync("SET", ["foo", "bar", "XX", "KEEPTTL"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", val);
+            }
+
+            static async Task DoSetIfEqualAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("SET", ["foo", "bar", "IFEQ", "bar"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", val);
+            }
+
+            static async Task DoSetKeepTtlIfEqualAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("SET", ["foo", "bar", "KEEPTTL", "IFEQ", "bar"]).ConfigureAwait(false);
                 ClassicAssert.AreEqual("OK", val);
             }
         }
