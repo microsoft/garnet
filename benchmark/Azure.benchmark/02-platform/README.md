@@ -105,6 +105,23 @@ not written to `/etc/fstab`; rerun the setup step after a reboot if needed.
 **Local NVMe is ephemeral: deallocation loses the data. RAID0 provides no disk
 redundancy and is not equivalent to the investigation's production RAID10.**
 
+### NVMe investigation profile
+
+`tools/config/garnet/garnet-nvme.conf` selects the native io_uring backend with
+a 4 GiB storage log, 8 GiB index, no read cache, and no read-copy-to-tail.
+`LogDir`, `CheckpointDir` (including AOF and persisted cluster metadata), and the
+file logger all use `$nvme/garnet-cluster/$port`. `mcluster.ps1` also puts
+the server working directory and stdout/stderr there, refusing to launch onto
+an unmounted NVMe path. Generated launch configs remain under
+`$HOME/garnet-cluster/$port`; Garnet only reads them.
+
+The AOF uses the defaults' 128 MiB memory, 32 MiB pages, and 1 GiB segments;
+the page size is twice the 16 MiB storage-log page size. Periodic checkpoints
+and compaction are disabled, but the 64 GiB AOF limit can still trigger
+checkpoints. Debug logging is enabled to match the investigation and adds NVMe
+traffic. A workload larger than the 4 GiB log is not necessarily larger than
+the VM's RAM; measure device reads to distinguish storage I/O from cache hits.
+
 ## Manage VMSS (`manage-vmss.ps1`)
 
 SSH into VMSS instances to refresh repositories, rebuild systems, or re-run initialization workflows, or perform Azure power operations (start/stop) on entire VMSS. Run with `--help` for the full option list:

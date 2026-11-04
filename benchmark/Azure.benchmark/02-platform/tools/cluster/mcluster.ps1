@@ -258,6 +258,17 @@ function Start-Valkey {
     }
 }
 
+function Get-GarnetRuntimeDirectory {
+    param([string]$ConfigPath, [string]$DefaultDirectory)
+    $settings = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
+    if ($settings.LogDir -and ([string]$settings.LogDir).StartsWith("$($NVME_DIR.TrimEnd('/'))/", [StringComparison]::Ordinal)) {
+        & mountpoint -q $NVME_DIR
+        if ($LASTEXITCODE -ne 0) { throw "NVMe mount $NVME_DIR is unavailable; refusing to write to the OS disk." }
+        return [string]$settings.LogDir
+    }
+    return $DefaultDirectory
+}
+
 function Start-Garnet {
     param([int]$Count)
     $clusterDir = "$HOME/garnet-cluster"
@@ -275,8 +286,10 @@ function Start-Garnet {
         $running = bash -c "pgrep -f 'GarnetServer.*/${port}/garnet.conf'" 2>$null
         if ($running) { Write-Host "  Port ${port}: already running (skipped)" -ForegroundColor DarkGray; continue }
 
-        Set-Location $dir
-        bash -c "nohup GarnetServer --config-import-path=$conf > $dir/garnet.log 2> $dir/garnet.err &"
+        $runtimeDir = Get-GarnetRuntimeDirectory -ConfigPath $conf -DefaultDirectory $dir
+        New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
+        Set-Location $runtimeDir
+        bash -c "nohup GarnetServer --config-import-path='$conf' > '$runtimeDir/garnet.log' 2> '$runtimeDir/garnet.err' &"
         Write-Host "  Port ${port}: started" -ForegroundColor Cyan
     }
 }
@@ -509,7 +522,8 @@ switch ($Action) {
             $dir = "$clusterDir/$port"
             if ($System -eq "garnet") {
                 $conf = "$dir/garnet.conf"
-                Write-Host "  cd $dir && GarnetServer --config-import-path=$conf" -ForegroundColor Yellow
+                $runtimeDir = Get-GarnetRuntimeDirectory -ConfigPath $conf -DefaultDirectory $dir
+                Write-Host "  cd $runtimeDir && GarnetServer --config-import-path=$conf" -ForegroundColor Yellow
             } else {
                 $conf = "$dir/valkey.conf"
                 Write-Host "  cd $dir && valkey-server $conf" -ForegroundColor Yellow
