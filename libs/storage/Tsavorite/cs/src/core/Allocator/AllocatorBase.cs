@@ -940,13 +940,17 @@ namespace Tsavorite.core
         /// <param name="recoveredHLCInfo">The checkpoint being recovered</param>
         /// <param name="lastValidSegment">The highest segment that recovery needs</param>
         /// <param name="lastAvailSegment">The highest segment the device is known to hold. Segments are removed one at a time up
-        /// to it only if the device cannot remove every segment above a given one.</param>
+        /// to it only if the device cannot list its segments.</param>
         private protected virtual void TrimSegmentsAbove(in HybridLogCheckpointInfo recoveredHLCInfo, int lastValidSegment, int lastAvailSegment)
         {
             if (device.TryRemoveSegmentsAbove(lastValidSegment, out _))
                 return;
 
-            // Highest first, so that an interruption leaves the remaining segments contiguous
+            // TryRemoveSegmentsAbove returns false only when the device cannot list its segments. So remove the segments known to
+            // exist, up to lastAvailSegment, one at a time. This relies on RemoveSegment removing only the segment named, as IDevice
+            // requires. A NativeStorageDevice with an older native library removes every open segment through the one named, valid
+            // ones included; it lists its own segments, so it gets here only as a tier or shard of a composite device. Highest
+            // first, so that an interruption leaves the remaining segments contiguous.
             for (var segment = lastAvailSegment; segment > lastValidSegment; segment--)
             {
                 logger?.LogInformation("Trimming tail segment {s} on disk", segment);

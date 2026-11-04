@@ -532,8 +532,9 @@ namespace Tsavorite.core
             if (objectLogDevice.TryRemoveSegmentsAbove(lastValidObjectLogSegment, out _))
                 return;
 
-            // The device cannot list its segments, so remove them one at a time, highest first, from the highest known to hold
-            // data: the device's EndSegment, or the segment this store's object-log tail has reached
+            // As in the base class: the device cannot list its segments, so remove those known to exist one at a time, relying on
+            // RemoveSegment to remove only the segment named. Highest first, from the highest of the device's EndSegment and the
+            // segment this store's object-log tail has reached.
             var lastAvailObjectLogSegment = Math.Max(objectLogDevice.EndSegment, IsRecorded(objectLogTail) ? objectLogTail.SegmentId : -1);
             for (var segment = lastAvailObjectLogSegment; segment > lastValidObjectLogSegment; segment--)
                 objectLogDevice.RemoveSegment(segment);
