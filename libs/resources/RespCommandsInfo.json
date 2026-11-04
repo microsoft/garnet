@@ -5864,7 +5864,7 @@
     "Command": "XVCREATE",
     "Name": "XVCREATE",
     "Arity": -4,
-    "Flags": "DenyOom, Write, Module",
+    "Flags": "DenyOom, Fast, Write, Module",
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
@@ -5890,9 +5890,35 @@
     "Command": "XVIMPORT",
     "Name": "XVIMPORT",
     "Arity": -3,
-    "Flags": "DenyOom, Write, Module",
+    "Flags": "DenyOom, Fast, Write, Module",
     "FirstKey": 1,
     "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Write, Garnet, Vector",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Update"
+      }
+    ],
+    "StoreType": "Main"
+  },
+  {
+    "Command": "XVSCOPY",
+    "Name": "XVSCOPY",
+    "Arity": 3,
+    "Flags": "DenyOom, Fast, Write, Module",
+    "FirstKey": 1,
+    "LastKey": 2,
     "Step": 1,
     "AclCategories": "Fast, Write, Garnet, Vector",
     "KeySpecifications": [

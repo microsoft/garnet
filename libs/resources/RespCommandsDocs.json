@@ -8376,7 +8376,7 @@
     "Command": "XVCREATE",
     "Name": "XVCREATE",
     "Summary": "Creates an empty vector set with explicit parameters and optional quantizer state.",
-    "Group": "Generic",
+    "Group": "Vector",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -8496,7 +8496,7 @@
     "Command": "XVIMPORT",
     "Name": "XVIMPORT",
     "Summary": "Imports an opaque index term or explicitly finishes a vector set import.",
-    "Group": "Generic",
+    "Group": "Vector",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -8579,6 +8579,28 @@
             ]
           }
         ]
+      }
+    ]
+  },
+  {
+    "Command": "XVSCOPY",
+    "Name": "XVSCOPY",
+    "Summary": "Creates a shallow copy of an existing Vector Set.  The source Vector Set becomes readonly.",
+    "Group": "Vector",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "SOURCE",
+        "DisplayText": "source",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DEST",
+        "DisplayText": "dest",
+        "Type": "Key",
+        "KeySpecIndex": 1
       }
     ]
   },

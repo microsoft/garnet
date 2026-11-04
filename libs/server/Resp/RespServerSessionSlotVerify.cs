@@ -54,7 +54,7 @@ namespace Garnet.server
             csvi.isSubCommand = cmdInfo.IsSubCommand || cmd == RespCommand.BITOP;
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
-            csvi.waitForStableSlot = cmd is RespCommand.VADD or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.XVCREATE or RespCommand.XVIMPORT;
+            csvi.waitForStableSlot = cmd is RespCommand.VADD or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.XVCREATE or RespCommand.XVIMPORT or RespCommand.XVSCOPY;
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
 
