@@ -129,7 +129,9 @@ namespace Tsavorite.core
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
             int startTier = FindClosestDeviceContaining(segment);
-            var countdown = new CountdownEvent(devices.Count);
+
+            // A tier before startTier has already evicted the segment, so only the tiers from startTier on are called
+            var countdown = new CountdownEvent(devices.Count - startTier);
             for (int i = startTier; i < devices.Count; i++)
             {
                 devices[i].RemoveSegmentAsync(segment, r =>

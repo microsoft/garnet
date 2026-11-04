@@ -2016,6 +2016,41 @@ namespace Tsavorite.test
 
         [Test]
         [Category("IDevice")]
+        public unsafe void TieredDevice_RemoveSegmentAsync_CompletesWhenAFasterTierEvictedTheSegment()
+        {
+            // A faster tier holds only recent segments, so it can have evicted a segment that the slower tiers still hold. Removing
+            // that segment calls only the slower tiers, and must still complete.
+            const long segmentSize = 1L << 16;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var epoch = new LightEpoch();
+            try
+            {
+                var fast = new RandomAccessLocalStorageDevice($"{path}.fast", preallocateFile: false, deleteOnClose: true, capacity: 1L << 30);
+                var slow = new RandomAccessLocalStorageDevice($"{path}.slow", preallocateFile: false, deleteOnClose: true);
+                using var tiered = new TieredStorageDevice(1, fast, slow);
+                tiered.Initialize(segmentSize, epoch);
+                for (var segment = 0; segment <= 1; segment++)
+                {
+                    tiered.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+                fast.TruncateUntilSegment(1);
+
+                using var removed = new ManualResetEventSlim(false);
+                tiered.RemoveSegmentAsync(0, _ => removed.Set(), null);
+                ClassicAssert.IsTrue(removed.Wait(TimeSpan.FromSeconds(10)), "removing a segment that a faster tier evicted should complete");
+                ClassicAssert.IsFalse(File.Exists($"{path}.slow.0"), "the slower tier should remove the segment");
+            }
+            finally
+            {
+                epoch.Dispose();
+            }
+            GC.KeepAlive(wbuf);
+        }
+
+        [Test]
+        [Category("IDevice")]
         public unsafe void Native_TryRemoveSegmentsAbove_EmptiesTheFilesItHoldsOpen()
         {
             // Deleting a segment file the native device holds open would lose later writes to it on Linux, and Windows refuses, so
