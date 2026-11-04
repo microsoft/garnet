@@ -39,6 +39,9 @@ namespace Garnet.test.cluster
         [TestCase("receive --output . --timeout-seconds 1 --ack-delay-us 1000000")]
         [TestCase("receive --output . --ack-delay-us 20_000_")]
         [TestCase("receive --output . --ack-delay-us 20,000")]
+        [TestCase("receive --output . --write-buffers 9")]
+        [TestCase("receive --output . --write-buffers -1")]
+        [TestCase("send --source-prefix x --write-buffers 1")]
         public void InvalidOptions(string command)
             => Assert.Catch<ArgumentException>(() => BenchmarkOptions.Parse(command.Split(' ')));
 
@@ -47,6 +50,12 @@ namespace Garnet.test.cluster
         [TestCase("receive --output . --ack-delay-us 20_000", 20000L)]
         public void AckDelayOptions(string command, long delayUs)
             => Assert.That(BenchmarkOptions.Parse(command.Split(' ')).AckDelayUs, Is.EqualTo(delayUs));
+
+        [TestCase("receive --output .", 1)]
+        [TestCase("receive --output . --write-buffers 0", 0)]
+        [TestCase("receive --output . --write-buffers 8", 8)]
+        public void WriteBufferOptions(string command, int writeBuffers)
+            => Assert.That(BenchmarkOptions.Parse(command.Split(' ')).WriteBuffers, Is.EqualTo(writeBuffers));
 
         [Test]
         public async Task AckDelayIsReleasedPrecisely()

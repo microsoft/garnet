@@ -187,7 +187,8 @@ namespace Garnet.cluster
             byte* d = networkSender.GetResponseObjectHead();
             if ((int)(dcurr - d) > 0)
             {
-                Send(d);
+                // Send up to this caller's position. The dcurr field belongs to ProcessClusterCommands and is stale here.
+                Send(d, dcurr);
                 networkSender.GetResponseObject();
                 dcurr = networkSender.GetResponseObjectHead();
                 dend = networkSender.GetResponseObjectTail();
@@ -200,21 +201,27 @@ namespace Garnet.cluster
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        unsafe void Send(byte* d)
+        unsafe void Send(byte* d) => Send(d, dcurr);
+
+        /// <summary>
+        /// Sends the response bytes from <paramref name="d"/> up to <paramref name="end"/>.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        unsafe void Send(byte* d, byte* end)
         {
             // #if DEBUG
-            // logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", ""));
+            // logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(end - d))).Replace("\n", "|").Replace("\r", ""));
             // #endif
 
-            if ((int)(dcurr - d) > 0)
+            if ((int)(end - d) > 0)
             {
-                // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
+                // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(end - d))).Replace("\n", "|").Replace("\r", "!") + "]");
                 if (clusterProvider.storeWrapper.appendOnlyFile != null && clusterProvider.storeWrapper.serverOptions.WaitForCommit)
                 {
                     var task = clusterProvider.storeWrapper.appendOnlyFile.Log.WaitForCommitAsync();
                     if (!task.IsCompletedSuccessfully) AsyncUtils.BlockingWait(task);
                 }
-                int sendBytes = (int)(dcurr - d);
+                int sendBytes = (int)(end - d);
                 networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), sendBytes);
                 sessionMetrics?.incr_total_net_output_bytes((ulong)sendBytes);
             }
@@ -274,6 +281,8 @@ namespace Garnet.cluster
 
         public void Dispose()
         {
+            DisposeDeferredReplies();
+
             rangeIndexMigrationState?.Dispose();
 
             // A record whose chunks were still arriving when the connection went away holds pooled buffers that no Reset

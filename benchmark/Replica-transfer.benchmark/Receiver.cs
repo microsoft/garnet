@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading.Channels;
 using Garnet.cluster;
 using Tsavorite.core;
 
@@ -24,7 +25,7 @@ internal static class Receiver
         listener.Start(1);
         try
         {
-            Console.WriteLine($"Listening on {endpoint}; expecting {options.Runs} verified runs; device={options.DeviceType}, buffered={options.Buffered}, ACK delay={options.AckDelayUs} us.");
+            Console.WriteLine($"Listening on {endpoint}; expecting {options.Runs} verified runs; device={options.DeviceType}, buffered={options.Buffered}, ACK delay={options.AckDelayUs} us, write buffers={options.WriteBuffers}.");
             for (var run = 1; run <= options.Runs; run++)
             {
                 using var acceptDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -48,12 +49,14 @@ internal static class Receiver
         var protocol = new Protocol(stream, options.Timeout, options.MaxChunk);
         var replies = new Acknowledgements(options.AckDelayUs);
         var writer = replies.WriteAsync(stream, abort, options.Timeout);
+        using var responder = new Responder(replies);
+        var responding = responder.RunAsync(abort);
         Transfer transfer = null;
         try
         {
             var hello = await protocol.ReadAsync(abort.Token);
             Require(hello.Length == 1 && Text(hello[0]) == Protocol.Magic, "Expected benchmark-only handshake.");
-            await replies.EnqueueAsync($"{Protocol.Magic}|{options.AckDelayUs}|{options.MaxChunk}", false, abort.Token);
+            responder.Reply($"{Protocol.Magic}|{options.AckDelayUs}|{options.MaxChunk}|{options.WriteBuffers}");
 
             var begin = await protocol.ReadAsync(abort.Token);
             Require(begin.Length == 6 && Text(begin[0]) == "BEGIN", "Expected BEGIN token bytes chunk depth sha256.");
@@ -73,7 +76,7 @@ internal static class Receiver
             Require(hash.Length == 64 && Convert.FromHexString(hash).Length == 32, "Expected a SHA-256 hash.");
             transfer = Transfer.Create(options, id, length, chunk, hash, abort.Token);
             Console.WriteLine($"Receiving run {run}: token={id}, bytes={length}, chunk={chunk}, depth={depth}, destination={transfer.Path}");
-            await replies.EnqueueAsync("OK", false, abort.Token);
+            responder.Reply("OK");
 
             while (true)
             {
@@ -85,7 +88,9 @@ internal static class Receiver
                     verifyDeadline.CancelAfter(options.Timeout);
                     var verifiedHash = await HashAsync(transfer.Path, transfer.Length, verifyDeadline.Token);
                     Require(verifiedHash == transfer.Hash, "Destination SHA-256 differs from the source; this run has no valid throughput result.");
-                    await replies.EnqueueAsync($"VERIFIED|{transfer.NextAddress}|{transfer.Chunks}|{verifiedHash}", false, abort.Token);
+                    responder.Reply($"VERIFIED|{transfer.NextAddress}|{transfer.Chunks}|{verifiedHash}");
+                    responder.Complete();
+                    await responding;
                     replies.Complete();
                     await writer;
                     Console.WriteLine($"VERIFIED run {run}: {transfer.NextAddress} completed bytes, {transfer.Chunks} chunks, SHA256={verifiedHash}; {replies.Report()}");
@@ -94,32 +99,40 @@ internal static class Receiver
 
                 Require(command.Length == 6 && command[0].AsSpan().SequenceEqual("CLUSTER"u8) &&
                     command[1].AsSpan().SequenceEqual("SNAPSHOT_DATA"u8), "Expected CLUSTER SNAPSHOT_DATA.");
-                Require(!transfer.Completed, "Data or duplicate EOF after completion.");
+                Require(!transfer.EndReceived, "Data or duplicate EOF after completion.");
                 Require(command[2].AsSpan().SequenceEqual(transfer.TokenBytes), "Checkpoint token changed.");
                 Require(Text(command[3]) == ((int)CheckpointFileType.STORE_HLOG).ToString(CultureInfo.InvariantCulture), "Unexpected checkpoint file type.");
                 var address = long.Parse(Text(command[4]), CultureInfo.InvariantCulture);
                 Require(address == transfer.NextAddress, "Chunk address is out of order, repeated, or missing.");
-                var payload = command[5].AsSpan();
-                if (payload.Length == 0)
-                {
+                var payload = command[5];
+                if (payload.Count == 0)
                     Require(address == transfer.Length, "EOF before all expected bytes were written.");
-                    transfer.Complete();
-                }
                 else
+                    Require(payload.Count == Math.Min(transfer.Chunk, transfer.Length - address), "Incorrect chunk size or bytes beyond declared EOF.");
+
+                // Garnet's receiving thread holds the session's network sender while it processes received commands, so
+                // no reply can be sent meanwhile. Hold the stand-in for the copy, and for any wait for a write buffer.
+                await responder.Sender.WaitAsync(abort.Token);
+                try
                 {
-                    Require(payload.Length == Math.Min(transfer.Chunk, transfer.Length - address), "Incorrect chunk size or bytes beyond declared EOF.");
-                    transfer.Write(payload);
+                    // The ACK waits for the write (or, at EOF, for completion and close), then for the ACK delay.
+                    responder.Acknowledge(payload.Count == 0 ? transfer.CompleteAsync() : transfer.Write(payload));
                 }
-                // ACK availability is delayed independently of the next read/write, after WriteChunk completes.
-                await replies.EnqueueAsync("OK", true, abort.Token);
+                finally
+                {
+                    _ = responder.Sender.Release();
+                }
             }
         }
         catch
         {
             await abort.CancelAsync();
+            responder.Complete();
             replies.Complete();
-            try { await writer; }
+            try { await responding; }
             catch { /* The connection is already failing; preserve the receive/write/verification error. */ }
+            try { await writer; }
+            catch { /* As above. */ }
             throw;
         }
         finally
@@ -144,6 +157,62 @@ internal static class Receiver
             throw new InvalidDataException(message);
     }
 
+    /// <summary>
+    /// Sends replies in command order, each once its write completes, as Garnet's <c>ClusterSession</c> defers CLUSTER
+    /// SNAPSHOT_DATA replies. Garnet's receiving thread holds the session's network sender for as long as it processes
+    /// received commands, so a reply can only be sent between commands; <see cref="Sender"/> stands in for that network
+    /// sender. The ACK delay starts when the reply is sent, as a network round trip would.
+    /// </summary>
+    private sealed class Responder(Acknowledgements replies) : IDisposable
+    {
+        private readonly Channel<(string Reply, Task Written, bool Delayed)> pending =
+            Channel.CreateUnbounded<(string, Task, bool)>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+
+        internal SemaphoreSlim Sender { get; } = new(1, 1);
+
+        /// <summary>Replies to a control command without delay.</summary>
+        internal void Reply(string reply) => Enqueue(reply, Task.CompletedTask, delayed: false);
+
+        /// <summary>Acknowledges a chunk or EOF once <paramref name="written"/> completes, after the ACK delay.</summary>
+        internal void Acknowledge(Task written) => Enqueue("OK", written, delayed: true);
+
+        internal void Complete() => pending.Writer.TryComplete();
+
+        internal async Task RunAsync(CancellationTokenSource abort)
+        {
+            try
+            {
+                await foreach (var (reply, written, delayed) in pending.Reader.ReadAllAsync(abort.Token))
+                {
+                    // A failed write fails the run: the sender sees the connection close, never a success-shaped ACK.
+                    await written.WaitAsync(abort.Token);
+                    await Sender.WaitAsync(abort.Token);
+                    try
+                    {
+                        await replies.EnqueueAsync(reply, delayed, abort.Token);
+                    }
+                    finally
+                    {
+                        _ = Sender.Release();
+                    }
+                }
+            }
+            catch
+            {
+                await abort.CancelAsync();
+                throw;
+            }
+        }
+
+        public void Dispose() => Sender.Dispose();
+
+        private void Enqueue(string reply, Task written, bool delayed)
+        {
+            if (!pending.Writer.TryWrite((reply, written, delayed)))
+                throw new InvalidOperationException("The run's replies are already complete.");
+        }
+    }
+
     private sealed class Transfer : IDisposable
     {
         internal string Path { get; private init; }
@@ -153,10 +222,12 @@ internal static class Receiver
         internal byte[] TokenBytes { get; private init; }
         internal long NextAddress { get; private set; }
         internal long Chunks { get; private set; }
-        internal bool Completed { get; private set; }
-        private FileDataSink sink;
+        internal bool EndReceived => completion != null;
+        internal bool Completed => completion?.IsCompletedSuccessfully == true;
+        private ISnapshotDataSink sink;
         private SectorAlignedBufferPool pool;
-        private SemaphoreSlim completion;
+        private SemaphoreSlim writeCompletion;
+        private Task completion;
 
         internal static Transfer Create(Options options, Guid id, long length, int chunk, string hash, CancellationToken token)
         {
@@ -170,14 +241,18 @@ internal static class Receiver
             var device = Devices.CreateLogDevice(prefix, deviceType: options.DeviceType,
                 deleteOnClose: false, disableFileBuffering: !options.Buffered);
             SectorAlignedBufferPool pool = null;
-            SemaphoreSlim completion = null;
+            SemaphoreSlim writeCompletion = null;
             try
             {
                 device.Initialize(-1);
                 Require(length % device.SectorSize == 0 && chunk % device.SectorSize == 0,
                     $"Source length and chunk must be multiples of destination sector size {device.SectorSize}.");
                 pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
-                completion = new SemaphoreSlim(0);
+                writeCompletion = new SemaphoreSlim(0);
+                // The same sinks, chosen the same way, as Garnet's ReceiveCheckpointHandler.
+                ISnapshotDataSink sink = options.WriteBuffers > 0
+                    ? new OverlappedFileDataSink(CheckpointFileType.STORE_HLOG, id, device, pool, options.WriteBuffers, options.Timeout, token)
+                    : new FileDataSink(CheckpointFileType.STORE_HLOG, id, device, pool, writeCompletion, options.Timeout, token);
                 return new Transfer
                 {
                     Path = path,
@@ -186,31 +261,45 @@ internal static class Receiver
                     Hash = hash,
                     TokenBytes = id.ToByteArray(),
                     pool = pool,
-                    completion = completion,
-                    sink = new FileDataSink(CheckpointFileType.STORE_HLOG, id, device, pool, completion,
-                        options.Timeout, token)
+                    writeCompletion = writeCompletion,
+                    sink = sink
                 };
             }
             catch
             {
                 device.Dispose();
                 pool?.Free();
-                completion?.Dispose();
+                writeCompletion?.Dispose();
                 throw;
             }
         }
 
-        internal void Write(ReadOnlySpan<byte> payload)
+        /// <summary>Consumes (copies) <paramref name="payload"/>; the task completes once it is written.</summary>
+        internal Task Write(ReadOnlySpan<byte> payload)
         {
-            sink.WriteChunk(NextAddress, payload);
+            var written = Task.CompletedTask;
+            if (sink is OverlappedFileDataSink overlapped)
+                written = overlapped.WriteChunkAsync(NextAddress, payload);
+            else
+                sink.WriteChunk(NextAddress, payload);
             NextAddress += payload.Length;
             Chunks++;
+            return written;
         }
 
-        internal void Complete()
+        /// <summary>Completes once every write has completed and the device is closed.</summary>
+        internal Task CompleteAsync()
         {
-            sink.Complete();
-            Completed = true;
+            if (sink is OverlappedFileDataSink overlapped)
+            {
+                completion = overlapped.CompleteAsync();
+            }
+            else
+            {
+                sink.Complete();
+                completion = Task.CompletedTask;
+            }
+            return completion;
         }
 
         public void Dispose()
@@ -218,7 +307,7 @@ internal static class Receiver
             if (!Completed)
                 sink.Dispose();
             pool.Free();
-            completion.Dispose();
+            writeCompletion.Dispose();
         }
     }
 }

@@ -193,6 +193,10 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.NoInlining)]
         static void OnACLOrNoScriptFailure(RespServerSession self, RespCommand cmd)
         {
+            // The caller writes the rejection next, after any replies the cluster session deferred (see CanServeSlot).
+            if (self.clusterRepliesMayBeDeferred)
+                self.DrainDeferredClusterReplies();
+
             // If we're rejecting a command, we may need to cleanup some ambient state too
             if (cmd == RespCommand.CustomRawStringCmd)
             {
@@ -729,6 +733,7 @@ namespace Garnet.server
             }
 
             clusterSession.ProcessClusterCommands(command, storageSession.vectorManager, ref parseState, ref dcurr, ref dend);
+            clusterRepliesMayBeDeferred = clusterSession.HasDeferredReplies;
             return true;
         }
 

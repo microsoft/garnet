@@ -87,6 +87,19 @@ namespace Garnet.server
         unsafe void ProcessClusterCommands(RespCommand command, VectorManager vectorManager, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend);
 
         /// <summary>
+        /// Whether replies to earlier commands on this session are still waiting to be written, as a disk-based sync
+        /// chunk's acknowledgement waits for its write. See <see cref="DrainDeferredReplies"/>.
+        /// </summary>
+        bool HasDeferredReplies { get; }
+
+        /// <summary>
+        /// Waits for the work behind each deferred reply and writes those replies, so that the next reply follows them
+        /// in command order. Call while processing a command and before writing its reply, when
+        /// <see cref="HasDeferredReplies"/> is true.
+        /// </summary>
+        unsafe void DrainDeferredReplies(ref byte* dcurr, ref byte* dend);
+
+        /// <summary>
         /// Reset cached slot verification result
         /// </summary>
         void ResetCachedSlotVerificationResult();

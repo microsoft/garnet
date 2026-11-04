@@ -24,6 +24,7 @@ namespace Garnet.cluster
         private readonly SemaphoreSlim signalCompletion;
         private readonly IOCallbackContext ioContext = new();
         private volatile uint lastIOErrorCode;
+        private volatile uint lastIOBytes;
 
         public CheckpointFileType Type { get; }
         public Guid Token { get; }
@@ -114,7 +115,10 @@ namespace Garnet.cluster
             long numBytesToRead = size;
             numBytesToRead = (numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1);
 
-            var buffer = bufferPool.Get((int)numBytesToRead);
+            // The read fills the buffer, so skip the pool zeroing the whole buffer when it is returned: that runs on
+            // every chunk, inside the serial read-then-send loop. A read that ends early, at the end of the file, gets
+            // its unread tail zeroed below instead, as the pool's zeroing used to leave it.
+            var buffer = bufferPool.Get((int)numBytesToRead, clearOnReturn: false);
             ioContext.Buffer = buffer;
 
             unsafe
@@ -147,12 +151,18 @@ namespace Garnet.cluster
                     $"I/O error {errorCode} reading {Type} checkpoint file at address {address} (requested {numBytesToRead} bytes)"));
             }
 
+            // The whole requested length is sent, so zero whatever a short read left unread (see ReadIntoAsync).
+            var bytesFilled = Math.Min(lastIOBytes, (uint)numBytesToRead);
+            if (bytesFilled < numBytesToRead)
+                buffer.GetSlice((int)numBytesToRead)[(int)bytesFilled..].Clear();
+
             return (buffer, (int)numBytesToRead);
         }
 
         private void IOCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             lastIOErrorCode = errorCode;
+            lastIOBytes = numBytes;
             if (errorCode != 0)
             {
                 var errorMessage = Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
