@@ -147,7 +147,8 @@ namespace Tsavorite.core
         /// every one it holds, however far above the tail. That includes the old segments that a replica keeps when a full sync
         /// positions its log far below them, which no search from the tail can find. The search for data below then stays within
         /// the tail's segment, so it cannot create segments above it by reading them. <see cref="IDevice.RemoveSegment(int)"/> is
-        /// not used: on some devices it removes every segment up to the one named, which here would include the tail's.
+        /// not used: it removes only the segment named, so each would have to be found first, and older native libraries for
+        /// <see cref="NativeStorageDevice"/> remove every segment up to the one named, which here would include the tail's.
         /// </para>
         /// <para>
         /// <b>Finding the data.</b> The device cannot report how far its data extends: <see cref="IDevice.GetFileSize(int)"/> may

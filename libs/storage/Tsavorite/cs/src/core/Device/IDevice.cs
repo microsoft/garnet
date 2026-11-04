@@ -203,19 +203,19 @@ namespace Tsavorite.core
         void TruncateUntilSegment(int toSegment);
 
         /// <summary>
-        /// Removes a single segment from the device. This function should not normally be called.
-        /// Instead, use <see cref="TruncateUntilAddressAsync(long, AsyncCallback, IAsyncResult)"/>
+        /// Removes a single segment from the device; the segments around it are unchanged. This function should not normally be called.
+        /// To remove every segment below a point, use <see cref="TruncateUntilAddressAsync(long, AsyncCallback, IAsyncResult)"/>
         /// </summary>
-        /// <param name="segment">index of the segment to remov</param>
+        /// <param name="segment">index of the segment to remove</param>
         /// <param name="callback">callback to invoke when removal is complete</param>
         /// <param name="result">result to be passed to the callback</param>
         void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result);
 
         /// <summary>
-        /// Removes a single segment from the device. This function should not normally be called.
-        /// Instead, use <see cref="TruncateUntilAddressAsync(long, AsyncCallback, IAsyncResult)"/>
+        /// Removes a single segment from the device; the segments around it are unchanged. This function should not normally be called.
+        /// To remove every segment below a point, use <see cref="TruncateUntilAddressAsync(long, AsyncCallback, IAsyncResult)"/>
         /// </summary>
-        /// <param name="segment">index of the segment to remov</param>
+        /// <param name="segment">index of the segment to remove</param>
         void RemoveSegment(int segment);
 
         /// <summary>
@@ -227,10 +227,9 @@ namespace Tsavorite.core
         /// which segments it holds, or cannot remove one without affecting others</returns>
         /// <remarks>
         /// <para>
-        /// Unlike <see cref="RemoveSegment(int)"/>, which some devices implement by truncating every segment up to the one named,
-        /// this leaves every segment at or below <paramref name="segment"/> unchanged. It reflects the device when called,
-        /// including segments far above <paramref name="segment"/> with gaps between them. The caller must ensure no IO to the
-        /// segments above is in flight.
+        /// This leaves every segment at or below <paramref name="segment"/> unchanged. It reflects the device when called,
+        /// including segments far above <paramref name="segment"/> with gaps between them, which <see cref="RemoveSegment(int)"/>
+        /// would have to be given one at a time. The caller must ensure no IO to the segments above is in flight.
         /// </para>
         /// <para>
         /// Provided as a default interface method that reports the device cannot do this, so that existing external

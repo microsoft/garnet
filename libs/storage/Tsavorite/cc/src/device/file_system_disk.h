@@ -62,6 +62,9 @@ class FileSystemFile {
   core::Status Delete() {
     return file_.Delete();
   }
+  core::Status Empty() {
+    return file_.Empty();
+  }
 
   uint64_t size() const {
 	return file_.size();
@@ -374,27 +377,43 @@ class FileSystemSegmentedFile {
       if (!files) return core::Status::Ok;
       return files->Delete();
   }
-  /// Removes `segment` and, since segments are removed from the head of the log, every segment below it that this holds
-  /// open. Open segments are closed and deleted once no thread can be using them. If this does not hold `segment` open, as
-  /// when no IO has reached it since this was created or reset, its file is deleted now.
-  void RemoveSegment(uint64_t segment) {
-      {
-        // Holding the mutex keeps OpenSegment from opening the segment between the check and the deletion
-        std::lock_guard<std::mutex> lock{ mutex_ };
-        bundle_t* files = files_.load();
-        if(!files || !files->exists(segment)) {
-          // There is no handle to close. The file may not exist; any failure is ignored, as when an open segment is deleted.
-          (void)file_t{ bundle_t::segment_path(filename_, omit_segment_id_, segment), file_options_ }.Delete();
-        }
-      }
-      auto truncate_callback = [](uint64_t offset) {
-          };
-      TruncateSegments(segment + 1, truncate_callback);
+  /// Removes `segment` alone; the segments around it are unchanged. `*done` is set once its file is deleted or emptied:
+  /// - If this does not hold it open, as when no IO has reached it since this was created or reset, its file is deleted now.
+  /// - If it is the lowest segment this holds open, it is dropped from the open segments, and its file is closed and deleted
+  ///   once no thread can still be using it, from the epoch drain list. `*done` is set there, possibly after this returns.
+  /// - If it is open above the lowest, its file is emptied now, through its handle. The open segments must stay contiguous,
+  ///   so the handle and the empty file stay until truncation passes the segment.
+  void RemoveSegment(uint64_t segment, std::atomic<bool>* done) {
+    // Holding the mutex keeps OpenSegment from opening the segment, and TruncateSegments from closing it, while it is removed
+    ReleasableLockGuard lock{ &mutex_ };
+    bundle_t* files = files_.load();
+    if(!files || !files->exists(segment)) {
+      // There is no handle to close. The file may not exist; any failure is ignored, as when an open segment is deleted.
+      (void)file_t{ bundle_t::segment_path(filename_, omit_segment_id_, segment), file_options_ }.Delete();
+      done->store(true);
+      return;
+    }
+    if(segment > files->begin_segment) {
+      // Any failure is ignored, as when a file is deleted
+      (void)files->file(segment).Empty();
+      done->store(true);
+      return;
+    }
+    TruncateSegmentsLocked(lock, segment + 1, segment + 1, nullptr, done);
+  }
+  /// Removes every segment below `new_begin_segment`. The segments this holds open below it are dropped from the open
+  /// segments, and their files are closed and deleted once no thread can still be using them, from the epoch drain list;
+  /// `*done` is set after that, possibly after this returns. The files of the segments in [lower_segment, new_begin_segment)
+  /// that this does not hold open are deleted now.
+  void TruncateSegments(uint64_t lower_segment, uint64_t new_begin_segment, std::atomic<bool>* done) {
+    ReleasableLockGuard lock{ &mutex_ };
+    TruncateSegmentsLocked(lock, lower_segment, new_begin_segment, nullptr, done);
   }
   void Truncate(uint64_t new_begin_offset, core::GcState::truncate_callback_t callback) {
     uint64_t new_begin_segment = new_begin_offset >> segment_shift_;
     begin_segment_ = new_begin_segment;
-    TruncateSegments(new_begin_segment, callback);
+    ReleasableLockGuard lock{ &mutex_ };
+    TruncateSegmentsLocked(lock, new_begin_segment, new_begin_segment, callback, nullptr);
   }
 
   core::Status ReadAsync(uint64_t source, void* dest, uint32_t length, core::AsyncIOCallback callback,
@@ -560,23 +579,28 @@ class FileSystemSegmentedFile {
     return core::Status::Ok;
   }
 
-  void TruncateSegments(uint64_t new_begin_segment, core::GcState::truncate_callback_t caller_callback) {
+  /// TruncateSegments, under mutex_, which `lock` holds; this releases it. `caller_callback`, if given, is called with the new
+  /// begin address once the open segments' files are deleted, before `*done`, if given, is set.
+  void TruncateSegmentsLocked(ReleasableLockGuard& lock, uint64_t lower_segment, uint64_t new_begin_segment,
+                              core::GcState::truncate_callback_t caller_callback, std::atomic<bool>* done) {
     class Context : public core::IAsyncContext {
      public:
       Context(bundle_t* files_, uint64_t new_begin_segment_,
               core::GcState::truncate_callback_t caller_callback_,
-              uint64_t segment_size_bytes_)
+              uint64_t segment_size_bytes_, std::atomic<bool>* done_)
         : files{ files_ }
         , new_begin_segment{ new_begin_segment_ }
         , caller_callback{ caller_callback_ }
-        , segment_size_bytes{ segment_size_bytes_ } {
+        , segment_size_bytes{ segment_size_bytes_ }
+        , done{ done_ } {
       }
       /// The deep-copy constructor.
       Context(const Context& other)
         : files{ other.files }
         , new_begin_segment{ other.new_begin_segment }
         , caller_callback{ other.caller_callback }
-        , segment_size_bytes{ other.segment_size_bytes } {
+        , segment_size_bytes{ other.segment_size_bytes }
+        , done{ other.done } {
       }
      protected:
       core::Status DeepCopy_Internal(core::IAsyncContext*& context_copy) final {
@@ -589,6 +613,7 @@ class FileSystemSegmentedFile {
       // Captured at TruncateSegments() entry so the deferred drain-list callback (which fires
       // on an arbitrary thread after BumpCurrentEpoch) doesn't need to dereference `this`.
       uint64_t segment_size_bytes;
+      std::atomic<bool>* done;
     };
 
     auto callback = [](core::IAsyncContext* ctxt) {
@@ -604,30 +629,47 @@ class FileSystemSegmentedFile {
       if(context->caller_callback) {
         context->caller_callback(context->new_begin_segment * context->segment_size_bytes);
       }
+      if(context->done) {
+        // Last: the waiter can return as soon as this is set, ending the flag's lifetime
+        context->done->store(true);
+      }
     };
 
-    // Only one thread can modify the list of files at a given time.
-    ReleasableLockGuard lock{ &mutex_ };
     bundle_t* files = files_.load();
+
+    // Delete the files of the segments to remove that this does not hold open. Holding the mutex keeps OpenSegment from
+    // opening one between the check and the deletion. The file may not exist; any failure is ignored, as when an open
+    // segment is deleted.
+    for(uint64_t idx = lower_segment; idx < new_begin_segment; ++idx) {
+      if(!files || !files->exists(idx)) {
+        (void)file_t{ bundle_t::segment_path(filename_, omit_segment_id_, idx), file_options_ }.Delete();
+      }
+    }
+
     if(!files || files->begin_segment >= new_begin_segment) {
       // No open segment lies below the new begin: segments have already been truncated, or none is open.
+      uint64_t begin_address = (files ? files->begin_segment : new_begin_segment) * segment_size_;
+      lock.Unlock();
       if(caller_callback) {
-        caller_callback((files ? files->begin_segment : new_begin_segment) * segment_size_);
+        caller_callback(begin_address);
+      }
+      if(done) {
+        done->store(true);
       }
       return;
     }
 
-    // Make a copy of the list, excluding the files to be truncated. If the new begin is past every open segment, none stays
-    // open, and the next segment opened starts a new list.
+    // Make a copy of the list, excluding the files to be truncated. If none stays open, the next segment opened starts a new
+    // list, rather than extending this one and reopening every segment between them.
     bundle_t* new_files = nullptr;
-    if(new_begin_segment <= files->end_segment) {
+    if(new_begin_segment < files->end_segment) {
       void* buffer = std::malloc(bundle_t::size(files->end_segment - new_begin_segment));
       new_files = new(buffer) bundle_t{ handler_, new_begin_segment, files->end_segment,
           *files };
     }
     files_.store(new_files);
     // Delete the old list only after all threads have finished looking at it.
-    Context context{ files, new_begin_segment, caller_callback, segment_size_ };
+    Context context{ files, new_begin_segment, caller_callback, segment_size_, done };
     core::IAsyncContext* context_copy;
     core::Status result = context.DeepCopy(context_copy);
     assert(result == core::Status::Ok);

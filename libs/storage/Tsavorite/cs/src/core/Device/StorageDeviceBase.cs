@@ -342,34 +342,47 @@ namespace Tsavorite.core
                 return;
             }
 
-            // We will delete segments in parallel; create a countdown event that will signal when all are completed.
-            CountdownEvent countdown = new(toSegment - oldStart);
-
             // This action needs to be epoch-protected because readers may be issuing reads to the deleted segment, unaware of the delete.
             // Because of earlier compare-and-swap, the caller has exclusive access to the range [oldStartSegment, newStartSegment), and there will
             // be no double deletes.
             var suspendEpochWhenDone = epoch.ResumeIfNotProtected();
             try
             {
-                epoch.BumpCurrentEpoch(() =>
-                {
-                    for (int i = oldStart; i < toSegment; i++)
-                    {
-                        RemoveSegmentAsync(i, r =>
-                        {
-                            if (countdown.Signal())
-                            {
-                                callback(r);
-                                countdown.Dispose();
-                            }
-                        }, result);
-                    }
-                });
+                epoch.BumpCurrentEpoch(() => RemoveSegmentsThroughAsync(oldStart, toSegment - 1, callback, result));
             }
             finally
             {
                 if (suspendEpochWhenDone)
                     epoch.Suspend();
+            }
+        }
+
+        /// <summary>
+        /// Remove the segments from <paramref name="fromSegment"/> through <paramref name="throughSegment"/> for truncation, once no
+        /// reader can still be using them
+        /// </summary>
+        /// <param name="fromSegment">The lowest segment to remove</param>
+        /// <param name="throughSegment">The highest segment to remove</param>
+        /// <param name="callback">Called once every segment is removed</param>
+        /// <param name="result">Passed to <paramref name="callback"/></param>
+        /// <remarks>
+        /// The default calls <see cref="RemoveSegmentAsync(int, AsyncCallback, IAsyncResult)"/> for each segment, lowest first,
+        /// without waiting for one to finish before starting the next. A device can override this to remove the range in one operation.
+        /// </remarks>
+        protected virtual void RemoveSegmentsThroughAsync(int fromSegment, int throughSegment, AsyncCallback callback, IAsyncResult result)
+        {
+            // We will delete segments in parallel; create a countdown event that will signal when all are completed.
+            CountdownEvent countdown = new(throughSegment - fromSegment + 1);
+            for (int i = fromSegment; i <= throughSegment; i++)
+            {
+                RemoveSegmentAsync(i, r =>
+                {
+                    if (countdown.Signal())
+                    {
+                        callback(r);
+                        countdown.Dispose();
+                    }
+                }, result);
             }
         }
 

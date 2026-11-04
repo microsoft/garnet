@@ -104,7 +104,9 @@ page is followed by older data on the same page.
      deleting an open file could lose later writes through it. `Initialize` resets the device, so after it every file
      above the tail's segment is deleted; after recovery, a segment past the tail's that the recovery scan read can stay
      as an empty file.
-   - `IDevice.RemoveSegment` is not used, because on `NativeStorageDevice` it would remove the tail's segment too.
+   - `IDevice.RemoveSegment` is not used: it removes only the segment named, so each would have to be found first, and
+     older native libraries for `NativeStorageDevice` remove every segment up to the one named, which here would
+     include the tail's.
 3. **Find the rest of the data:** the device cannot report how far its data extends, so clearing reads forward from the
    page after the tail's until it encounters a run of consecutive empty pages as long as the page buffer (the pages the
    log holds in memory), or until the end of the tail's segment if the segments above were removed. A page is empty if

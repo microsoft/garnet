@@ -815,6 +815,9 @@ namespace Tsavorite.core
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_RemoveSegment", CallingConvention = CallingConvention.Cdecl)]
         static extern void NativeDevice_RemoveSegment(IntPtr device, ulong segment);
 
+        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_TruncateSegments", CallingConvention = CallingConvention.Cdecl)]
+        static extern int NativeDevice_TruncateSegments(IntPtr device, ulong lowerSegment, ulong newBeginSegment);
+
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_GetOpenSegments", CallingConvention = CallingConvention.Cdecl)]
         static extern int NativeDevice_GetOpenSegments(IntPtr device, out ulong begin, out ulong end);
 
@@ -1868,10 +1871,20 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="segment"></param>
         /// <remarks>
-        /// The native device removes every segment from the first it holds open through <paramref name="segment"/>, not only
-        /// <paramref name="segment"/>; this suits truncation from the head of the log. It deletes the file of <paramref name="segment"/>
-        /// even if it does not hold it open, as when no IO has reached it since the device was created or reset. Use
-        /// <see cref="TryRemoveSegmentsAbove"/> to remove the segments above a given one.
+        /// <para>
+        /// The native device removes only <paramref name="segment"/>, and returns once its file is deleted or emptied:
+        /// <list type="bullet">
+        /// <item>If the device does not hold it open, as when no IO has reached it since the device was created or reset, its file is
+        /// deleted.</item>
+        /// <item>If it is the lowest segment the device holds open, its file is closed and deleted.</item>
+        /// <item>If it is open above the lowest, its file is emptied in place: the device keeps the segments it holds open
+        /// contiguous, so the file is deleted when truncation passes it.</item>
+        /// </list>
+        /// </para>
+        /// <para>
+        /// Older native libraries remove every segment from the lowest they hold open through <paramref name="segment"/>. To remove
+        /// the segments above a given one, use <see cref="TryRemoveSegmentsAbove"/>, which works with either.
+        /// </para>
         /// </remarks>
         public override void RemoveSegment(int segment)
         {
@@ -1884,8 +1897,6 @@ namespace Tsavorite.core
                     var dev = Volatile.Read(ref nativeDevice);
                     if (dev != IntPtr.Zero)
                     {
-                        // Native closes and deletes the open segments through this one, and deletes this one's file if it
-                        // does not hold it open.
                         NativeDevice_RemoveSegment(dev, (ulong)segment);
                         return;
                     }
@@ -1910,9 +1921,9 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         /// <remarks>
         /// <para>
-        /// The native device's RemoveSegment removes every segment from the first it holds open through the one named, so it cannot
-        /// remove only the segments above <paramref name="segment"/>. Instead, from the highest down, each segment file above it is
-        /// deleted if the native device does not hold it open, and truncated to zero length if it does.
+        /// This does not use <see cref="RemoveSegment"/>, because older native libraries remove every segment from the lowest they
+        /// hold open through the one named, not only that one. Instead, from the highest down, each segment file above
+        /// <paramref name="segment"/> is deleted if the native device does not hold it open, and truncated to zero length if it does.
         /// </para>
         /// <para>
         /// The native device keeps open every segment from the lowest to the highest it has accessed since it was created or
@@ -2004,6 +2015,54 @@ namespace Tsavorite.core
         {
             RemoveSegment(segment);
             callback(result);
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// One native call removes the range and returns once the files are deleted. It also closes and deletes any segment below
+        /// <paramref name="fromSegment"/> that the native device holds open, as when a read reopened a segment truncated earlier;
+        /// <see cref="RemoveSegment"/> would only empty such a segment's file, since the device keeps the segments it holds open
+        /// contiguous. If the native device has not been created yet, or the native library is too old to remove a range, the
+        /// segments are removed one at a time.
+        /// </remarks>
+        protected override void RemoveSegmentsThroughAsync(int fromSegment, int throughSegment, AsyncCallback callback, IAsyncResult result)
+        {
+            if (!TryTruncateSegments(fromSegment, throughSegment + 1))
+            {
+                base.RemoveSegmentsThroughAsync(fromSegment, throughSegment, callback, result);
+                return;
+            }
+            callback(result);
+        }
+
+        /// <summary>
+        /// Remove every segment below <paramref name="newBeginSegment"/> with one native call, also deleting the files from
+        /// <paramref name="lowerSegment"/> up that the native device does not hold open
+        /// </summary>
+        /// <returns>False if the segments must be removed one at a time instead: the native device has not been created yet, or the
+        /// native library is too old to remove a range</returns>
+        bool TryTruncateSegments(int lowerSegment, int newBeginSegment)
+        {
+            // Once disposal begins, removal is a no-op, as in RemoveSegment
+            if (Volatile.Read(ref disposedFlag) != 0 || !TryLease(out int shard))
+                return true;
+            try
+            {
+                var dev = Volatile.Read(ref nativeDevice);
+                if (dev == IntPtr.Zero)
+                    return false;
+                if (NativeDevice_TruncateSegments(dev, (ulong)lowerSegment, (ulong)newBeginSegment) == 0)
+                    logger?.LogError("NativeStorageDevice failed to remove the segments below {newBeginSegment}{error}", newBeginSegment, FormatNativeError());
+                return true;
+            }
+            catch (EntryPointNotFoundException)
+            {
+                return false;
+            }
+            finally
+            {
+                ReleaseLease(shard);
+            }
         }
 
         /// <summary>

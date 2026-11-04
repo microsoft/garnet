@@ -97,6 +97,8 @@ class File {
  public:
   core::Status Close();
   core::Status Delete();
+  /// Truncates the file to zero length through its open handle, which stays valid.
+  core::Status Empty();
 
   /// True iff the file is currently open (CreateFileA succeeded and Close has not run).
   /// Mirror of the Linux File::is_open() accessor; consumed by FileSystemSegmentBundle /

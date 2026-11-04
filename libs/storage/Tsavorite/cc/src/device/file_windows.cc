@@ -85,6 +85,15 @@ Status File::Delete() {
   return Status::Ok;
 }
 
+Status File::Empty() {
+  FILE_END_OF_FILE_INFO end_of_file{};
+  end_of_file.EndOfFile.QuadPart = 0;
+  if(!::SetFileInformationByHandle(file_handle_, FileEndOfFileInfo, &end_of_file, sizeof(end_of_file))) {
+    return Status::IOError;
+  }
+  return Status::Ok;
+}
+
 Status File::GetDeviceAlignment() {
   FILE_STORAGE_INFO info;
   bool result = ::GetFileInformationByHandleEx(file_handle_,

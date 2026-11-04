@@ -280,8 +280,19 @@ extern "C" {
 		return CABIGuard("NativeDevice_NumIoContexts", [&]() { return device->num_io_contexts(); }, 0);
 	}
 
+	/// Removes only `segment`. The device deletes its file if it does not hold it open, closes and deletes it if it is the lowest
+	/// it holds open, and otherwise empties it in place, since the segments it holds open must stay contiguous. Returns once the
+	/// file is deleted or emptied.
 	EXPORTED_SYMBOL void NativeDevice_RemoveSegment(INativeDevice* device, uint64_t segment) {
 		CABIGuardVoid("NativeDevice_RemoveSegment", [&]() { device->RemoveSegment(segment); });
+	}
+
+	/// Removes every segment below `new_begin_segment`: the device closes and deletes the ones it holds open, and deletes the
+	/// files of the others in [lower_segment, new_begin_segment). Returns once the files are deleted: 1, or 0 if the removal
+	/// failed (see NativeDevice_GetLastError).
+	EXPORTED_SYMBOL int32_t NativeDevice_TruncateSegments(INativeDevice* device, uint64_t lower_segment, uint64_t new_begin_segment) {
+		return CABIGuard("NativeDevice_TruncateSegments",
+			[&]() { device->TruncateSegments(lower_segment, new_begin_segment); return int32_t{ 1 }; }, int32_t{ 0 });
 	}
 
 	/// Reports the segments whose files the device holds open, [*begin, *end); both are 0 when it holds none. The file of a
