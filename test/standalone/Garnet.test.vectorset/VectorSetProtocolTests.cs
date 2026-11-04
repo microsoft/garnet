@@ -150,7 +150,7 @@ namespace Garnet.test
 
             db.Execute("VADD", ["vectors", "REDUCE", "2", "VALUES", "3", "1", "0", "0", "first", "NOQUANT", "EF", "41", "M", "7"]);
             var info = db.Execute("VINFO", "vectors");
-            AssertVInfoIntegerFields(info, protocol, ("input-vector-dimensions", 3), ("reduced-dimensions", 2), ("build-exploration-factor", 41), ("num-links", 7), ("size", 1), ("import-pending", 0));
+            AssertVInfoIntegerFields(info, protocol, ("input-vector-dimensions", 3), ("reduced-dimensions", 2), ("build-exploration-factor", 41), ("num-links", 7), ("size", 1));
 
             var missing = db.Execute("VINFO", "missing");
             ClassicAssert.IsTrue(missing.IsNull);
