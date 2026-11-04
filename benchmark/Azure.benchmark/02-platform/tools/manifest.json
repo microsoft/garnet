@@ -129,6 +129,11 @@
       "args": ""
     },
     {
+      "run": "setup-nvme.ps1",
+      "sudo": true,
+      "args": "--if-present"
+    },
+    {
       "run": "install-dotnet.ps1",
       "sudo": true,
       "args": ""

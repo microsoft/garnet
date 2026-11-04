@@ -80,6 +80,31 @@ on each VM to install the packaged dependencies. Run
 `sudo pwsh /opt/deploy-actions/build.ps1 hiredis v1.5.0` to install hiredis without
 re-running the full deployment workflow or rebuilding Garnet.
 
+### Local NVMe mounting
+
+Deployment installs `mdadm`, `xfsprogs`, `e2fsprogs`, and `util-linux`, then runs
+`setup-nvme.ps1 --if-present`. VMs without Azure local NVMe explicitly skip this
+step. Blank `Microsoft NVMe Direct Disk` devices are formatted as XFS, with
+multiple disks combined into RAID0, and mounted at `NVME_DIR` (`/mnt/nvme`).
+The OS disk is excluded.
+
+Existing supported filesystems are remounted without formatting, existing RAID0
+arrays are assembled only from the discovered local disks, and already-mounted
+volumes are left unchanged. Mixed signatures, unrelated arrays, and disks mounted
+elsewhere cause an error rather than overwriting data. `--force` explicitly
+reformats a known, unmounted volume; it does not automatically unmount it.
+
+For existing VMs, publish and install the tools as above, then run:
+
+```powershell
+sudo pwsh /opt/deploy-actions/setup-nvme.ps1
+```
+
+Use `--fs=ext4` to initialize blank storage as ext4 instead of XFS. The mount is
+not written to `/etc/fstab`; rerun the setup step after a reboot if needed.
+**Local NVMe is ephemeral: deallocation loses the data. RAID0 provides no disk
+redundancy and is not equivalent to the investigation's production RAID10.**
+
 ## Manage VMSS (`manage-vmss.ps1`)
 
 SSH into VMSS instances to refresh repositories, rebuild systems, or re-run initialization workflows, or perform Azure power operations (start/stop) on entire VMSS. Run with `--help` for the full option list:
