@@ -548,9 +548,6 @@ namespace Tsavorite.core
         /// <summary>Synchronously (blocking) wraps <see cref="IDevice.TruncateUntilAddress(long)"/>; overridden when an allocator potentially has to interact with multiple devices</summary>
         protected virtual void TruncateUntilAddressBlocking(long toAddress) => device.TruncateUntilAddress(toAddress);
 
-        /// <summary>Remove disk segment</summary>
-        protected virtual void RemoveSegment(int segment) => device.RemoveSegment(segment);
-
         internal virtual bool TryComplete() => device.TryComplete();
 
         /// <summary>Drain only the calling thread's affine device completion context (see <see cref="IDevice.TryCompleteMine"/>).</summary>
@@ -931,11 +928,29 @@ namespace Tsavorite.core
                 if (storeFunctions.CallOnTruncate)
                     storeFunctions.OnTruncate(toAddress);
 
-                for (int s = lastValidSegment + 1; s <= lastAvailSegment; s++)
-                {
-                    logger?.LogInformation("Trimming tail segment {s} on disk", s);
-                    RemoveSegment(s);
-                }
+                logger?.LogInformation("Trimming disk segments above {lastSegment}", lastValidSegment);
+                TrimSegmentsAbove(recoveredHLCInfo, lastValidSegment, lastAvailSegment);
+            }
+        }
+
+        /// <summary>
+        /// Remove the log's segments above <paramref name="lastValidSegment"/>, which hold only data written after the checkpoint
+        /// being recovered
+        /// </summary>
+        /// <param name="recoveredHLCInfo">The checkpoint being recovered</param>
+        /// <param name="lastValidSegment">The highest segment that recovery needs</param>
+        /// <param name="lastAvailSegment">The highest segment the device is known to hold. Segments are removed one at a time up
+        /// to it only if the device cannot remove every segment above a given one.</param>
+        private protected virtual void TrimSegmentsAbove(in HybridLogCheckpointInfo recoveredHLCInfo, int lastValidSegment, int lastAvailSegment)
+        {
+            if (device.TryRemoveSegmentsAbove(lastValidSegment, out _))
+                return;
+
+            // Highest first, so that an interruption leaves the remaining segments contiguous
+            for (var segment = lastAvailSegment; segment > lastValidSegment; segment--)
+            {
+                logger?.LogInformation("Trimming tail segment {s} on disk", segment);
+                device.RemoveSegment(segment);
             }
         }
 

@@ -515,27 +515,29 @@ namespace Tsavorite.core
             }
         }
 
-        protected override void RemoveSegment(int segment)
+        /// <inheritdoc/>
+        /// <remarks>
+        /// This also removes the object-log segments above the one that holds the object-log tail recorded with the checkpoint, which
+        /// the objects of every page that recovery reads lie below. If the checkpoint records no object-log tail, the object log is
+        /// left as it is: object-log data above those objects is never read.
+        /// </remarks>
+        private protected override void TrimSegmentsAbove(in HybridLogCheckpointInfo recoveredHLCInfo, int lastValidSegment, int lastAvailSegment)
         {
-            // if segment is not the last segment (which should be the case), we can use the page header of the start of the segment to get
-            // the highest object log segment to remove because we know its PageHeader has been written. Otherwise, we have to use the previous
-            // page's PageHeader to get the object log segment to remove.
-            var objectLogSegment = -1;
-            if (objectLogDevice is not null)
-            {
-                var addressOfStartOfMainLogPage = GetStartLogicalAddressOfSegment(segment);
-                if (segment >= device.EndSegment)
-                    addressOfStartOfMainLogPage -= PageSize;
-                objectLogSegment = GetLowestObjectLogSegmentInUse(addressOfStartOfMainLogPage);
-            }
+            base.TrimSegmentsAbove(recoveredHLCInfo, lastValidSegment, lastAvailSegment);
 
-            // Now do the actual truncations; TruncateUntilSegment does not remove the passed segment.
-            base.RemoveSegment(segment);
-            if (objectLogSegment >= 0)
-            {
-                objectLogDevice.TruncateUntilSegment(objectLogSegment);
-                _ = MonotonicUpdate(ref lowestObjectLogSegmentInUse, objectLogSegment, out _);
-            }
+            var recoveredObjectLogTail = recoveredHLCInfo.info.hlogEndObjectLogTail;
+            if (objectLogDevice is null || !IsRecorded(recoveredObjectLogTail))
+                return;
+            var lastValidObjectLogSegment = recoveredObjectLogTail.SegmentId;
+            if (objectLogDevice.TryRemoveSegmentsAbove(lastValidObjectLogSegment, out _))
+                return;
+
+            // The device cannot list its segments, so remove those up to the highest known to hold data, highest first
+            var lastAvailObjectLogSegment = Math.Max(objectLogDevice.EndSegment, IsRecorded(objectLogTail) ? objectLogTail.SegmentId : -1);
+            for (var segment = lastAvailObjectLogSegment; segment > lastValidObjectLogSegment; segment--)
+                objectLogDevice.RemoveSegment(segment);
+
+            static bool IsRecorded(in ObjectLogFilePositionInfo position) => position.IsSet && position.word != ObjectLogFilePositionInfo.NotSet;
         }
 
         private int GetLowestObjectLogSegmentInUse(long addressOfStartOfMainLogPage)
