@@ -6204,6 +6204,53 @@ namespace Garnet.test
             Assert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "UNBLOCK", 123, "INVALID"));
         }
 
+        [TestCase("DELEX", "DELEX", int.MaxValue)]
+        [TestCase("DELIFEQ", "DELIFEQ", 1)]
+        [TestCase("delex", "DELEX", 1)]
+        [TestCase("", "", int.MaxValue)]
+        [TestCase("BAD\r\nCOMMAND", "BAD  COMMAND", int.MaxValue)]
+        public void UnknownCommandErrorIncludesQuotedName(string command, string expectedName, int bytesPerSend)
+        {
+            using var request = TestUtils.CreateRequest(countResponseType: CountResponseType.Newlines);
+
+            var response = request.SendCommandChunks($"{command} key value", bytesPerSend, returnAccumulatedBuffer: true);
+            TestUtils.AssertEqualUpToExpectedLength($"-ERR unknown command '{expectedName}'\r\n", response);
+
+            response = request.SendCommand("PING");
+            TestUtils.AssertEqualUpToExpectedLength("+PONG\r\n", response);
+        }
+
+        [Test]
+        public void UnknownCommandErrorKeepsPipelineSynchronized()
+        {
+            using var request = TestUtils.CreateRequest(countResponseType: CountResponseType.Newlines);
+
+            var response = request.SendCommands("DELEX key value", "PING");
+            TestUtils.AssertEqualUpToExpectedLength("-ERR unknown command 'DELEX'\r\n+PONG\r\n", response);
+        }
+
+        [TestCase("COMMAND UNKNOWN key value", "-ERR unknown subcommand 'UNKNOWN'.\r\n")]
+        [TestCase("CONFIG", "-ERR wrong number of arguments for 'CONFIG' command\r\n")]
+        public void InvalidCommandErrorKeepsSessionSynchronized(string command, string expectedResponse)
+        {
+            using var request = TestUtils.CreateRequest(countResponseType: CountResponseType.Newlines);
+
+            var response = request.SendCommandChunks(command, 1, returnAccumulatedBuffer: true);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = request.SendCommand("PING");
+            TestUtils.AssertEqualUpToExpectedLength("+PONG\r\n", response);
+        }
+
+        [Test]
+        public void UnknownCommandErrorTruncatesLongName()
+        {
+            using var request = TestUtils.CreateRequest(countResponseType: CountResponseType.Newlines);
+
+            var response = request.SendCommands(new string('A', 4096), "PING");
+            TestUtils.AssertEqualUpToExpectedLength($"-ERR unknown command '{new string('A', 128)}'\r\n+PONG\r\n", response);
+        }
+
         [Test]
         public void ExcessiveArgumentCountRejected()
         {
@@ -6241,7 +6288,6 @@ namespace Garnet.test
 
             var response = Encoding.ASCII.GetString(buffer, 0, totalRead);
             var expectedResponse =
-                "-ERR unknown command\r\n" +
                 "-ERR Protocol Error: RESP array argument count '1999999' exceeds maximum allowed count of '1048576'.\r\n";
             ClassicAssert.AreEqual(expectedResponse, response);
 

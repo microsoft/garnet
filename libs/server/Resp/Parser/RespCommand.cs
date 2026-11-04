@@ -1168,7 +1168,7 @@ namespace Garnet.server
             {
                 var cmdStartOffset = readHead; // Save position before ArrayParseCommand advances it
                 cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success);
-                if (!success) return cmd;
+                if (!success || cmd == RespCommand.INVALID) return cmd;
 
                 // Update MRU cache for commands resolved by hash table.
                 // Exclude custom commands — they have runtime-registered names.
@@ -1318,22 +1318,38 @@ namespace Garnet.server
             // Extract command name via HashLookupCommand (reads $len\r\n header via GetCommand, relies on prior MakeUpperCase() pass, and advances readHead)
             cmd = HashLookupCommand(ref count, ref specificErrorMessage, out success);
 
-            // Parsing for command name was successful, but the command is unknown
-            if (writeErrorOnFailure && success && cmd == RespCommand.INVALID)
-            {
-                if (!specificErrorMessage.IsEmpty)
-                {
-                    while (!RespWriteUtils.TryWriteError(specificErrorMessage, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    // Return "Unknown RESP Command" message
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
-                        SendAndReset();
-                }
-            }
+            if (success && cmd == RespCommand.INVALID)
+                success = TryHandleInvalidCommand(count, specificErrorMessage, writeErrorOnFailure);
+
             return cmd;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private bool TryHandleInvalidCommand(int count, ReadOnlySpan<byte> errorMessage, bool writeErrorOnFailure)
+        {
+            if (count > RespLimits.MaxRequestArrayLength)
+                RespParsingException.ThrowExcessiveArgumentCount(count, RespLimits.MaxRequestArrayLength);
+
+            // Consume the full request before replying so fragmented requests receive only one error.
+            parseState.Initialize(count);
+            var ptr = recvBufferPtr + readHead;
+            for (int i = 0; i < count; i++)
+            {
+                if (!parseState.Read(i, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+            }
+            endReadHead = (int)(ptr - recvBufferPtr);
+
+            if (writeErrorOnFailure && !errorMessage.IsEmpty)
+            {
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            if (storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.WaitForCommit)
+                HandleAofCommitMode(RespCommand.INVALID);
+
+            return true;
         }
 
         /// <summary>
@@ -1373,6 +1389,9 @@ namespace Garnet.server
                     }
 
                     // Not a built-in or custom command
+                    var commandName = Encoding.UTF8.GetString(command[..Math.Min(command.Length, 128)])
+                        .Replace('\r', ' ').Replace('\n', ' ');
+                    specificErrorMessage = Encoding.UTF8.GetBytes(string.Format(CmdStrings.GenericErrUnknownCommand, commandName));
                     return RespCommand.INVALID;
                 }
 

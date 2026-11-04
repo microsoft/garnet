@@ -326,6 +326,7 @@ namespace Garnet.server
         /// Response string templates
         /// </summary>
         public const string GenericErrWrongNumArgs = "ERR wrong number of arguments for '{0}' command";
+        public const string GenericErrUnknownCommand = "ERR unknown command '{0}'";
         public const string GenericErrInvalidClientAttr = "ERR {0} cannot contain spaces, newlines or special characters.";
         public const string GenericErrUnknownOptionConfigSet = "ERR Unknown option or number of arguments for CONFIG SET - '{0}'";
         public const string GenericErrUnknownOption = "ERR Unknown option or number of arguments for '{0}' command";
