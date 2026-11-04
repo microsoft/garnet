@@ -369,18 +369,42 @@ namespace Garnet.server
         /// <inheritdoc cref="IGarnetApi.VectorSetShallowCopy"/>
         public GarnetStatus VectorSetShallowCopy(PinnedSpanByte sourceKey, PinnedSpanByte destKey, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
-            // TODO: Implement properly
-
-            if (EXISTS(sourceKey, ref unifiedBasicContext) != GarnetStatus.OK)
+            parseState.InitializeWithArgument(sourceKey);
+            var input = new StringInput(RespCommand.XVSCOPY, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadForCopyVectorSetIndexes(this, sourceKey, destKey, ref input, indexSpan, out var importPending, out var res))
             {
-                errorMsg = "ERR vector set does not exist"u8;
-                result = VectorManagerResult.Invalid;
-                return GarnetStatus.NOTFOUND;
-            }
+                if (res != GarnetStatus.OK)
+                {
+                    result = importPending ? VectorManagerResult.ImportingPending : VectorManagerResult.Invalid;
+                    errorMsg = default;
+                    return res;
+                }
 
-            result = VectorManagerResult.OK;
-            errorMsg = default;
-            return GarnetStatus.OK;
+                if (txnManager?.state == TxnState.Running)
+                {
+                    if (EXISTS(destKey, ref unifiedTransactionalContext) == GarnetStatus.OK)
+                    {
+                        result = VectorManagerResult.Duplicate;
+                        errorMsg = "destination already exists, must create shallow copy into empty key"u8;
+                        return GarnetStatus.OK;
+                    }
+                }
+                else
+                {
+                    if (EXISTS(destKey, ref unifiedBasicContext) == GarnetStatus.OK)
+                    {
+                        result = VectorManagerResult.Duplicate;
+                        errorMsg = "destination already exists, must create shallow copy into empty key"u8;
+                        return GarnetStatus.OK;
+                    }
+                }
+
+                // TODO: Implement properly
+                result = VectorManagerResult.OK;
+                errorMsg = default;
+                return GarnetStatus.OK;
+            }
         }
 
         /// <summary>

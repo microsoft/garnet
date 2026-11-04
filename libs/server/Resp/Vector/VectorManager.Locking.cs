@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using Garnet.common;
 using Tsavorite.core;
+using static Garnet.common.ReadOptimizedLock;
 
 namespace Garnet.server
 {
@@ -52,12 +53,32 @@ namespace Garnet.server
                 return new(in lockableCtx, lockToken, ref elementLock);
             }
 
+            /// <summary>
+            /// Combine two <see cref="VectorSetLock"/>s.
+            /// 
+            /// The original <see cref="VectorSetLock"/>s should not be used (including disposed) after this call.
+            /// </summary>
+            internal VectorSetPairLock PairWith(VectorSetLock otherLock)
+            {
+                Debug.Assert(Unsafe.IsNullRef(in otherLock.lockableCtx) || Unsafe.AreSame(in otherLock.lockableCtx, in lockableCtx), "Should never split lockable contexts");
+
+                return new(in lockableCtx, lockToken, ref elementLock, otherLock.lockToken, ref otherLock.elementLock);
+            }
+
             /// <inheritdoc/>
             public void Dispose()
             {
                 Debug.Assert(ActiveThreadSession != null, "Shouldn't exit context when not in one");
                 ActiveThreadSession = null;
 
+                ReleaseLockImpl(in lockableCtx, lockToken, ref elementLock);
+            }
+
+            /// <summary>
+            /// Common implemenation for releasing a <see cref="VectorSetLock"/> or <see cref="VectorSetPairLock"/>.
+            /// </summary>
+            internal static void ReleaseLockImpl(ref readonly ReadOptimizedLock lockableCtx, ReadOptimizedLock.LockToken lockToken, ref int elementLock)
+            {
                 if (Unsafe.IsNullRef(in lockableCtx))
                 {
                     return;
@@ -70,6 +91,41 @@ namespace Garnet.server
                     var oldVal = Interlocked.Exchange(ref elementLock, 0);
                     Debug.Assert(oldVal == int.MinValue, "Unlock failed");
                 }
+            }
+        }
+
+        /// <summary>
+        /// Used to scope a pair of <see cref="VectorSetLock"/>s.
+        /// </summary>
+        internal readonly ref struct VectorSetPairLock : IDisposable
+        {
+            private readonly ref readonly ReadOptimizedLock lockableCtx;
+
+            private readonly LockToken lockToken0;
+            private readonly ref int elementLock0;
+
+            private readonly LockToken lockToken1;
+            private readonly ref int elementLock1;
+
+            internal VectorSetPairLock(ref readonly ReadOptimizedLock lockableCtx, LockToken lockToken0, ref int elementLock0, LockToken lockToken1, ref int elementLock1)
+            {
+                this.lockableCtx = ref lockableCtx;
+
+                this.lockToken0 = lockToken0;
+                this.elementLock0 = ref elementLock0;
+
+                this.lockToken1 = lockToken1;
+                this.elementLock1 = ref elementLock1;
+            }
+
+            /// <inheritdoc/>
+            public void Dispose()
+            {
+                Debug.Assert(ActiveThreadSession != null, "Shouldn't exit context when not in one");
+                ActiveThreadSession = null;
+
+                VectorSetLock.ReleaseLockImpl(in lockableCtx, lockToken0, ref elementLock0);
+                VectorSetLock.ReleaseLockImpl(in lockableCtx, lockToken1, ref elementLock1);
             }
         }
 
@@ -688,9 +744,9 @@ namespace Garnet.server
         /// <summary>
         /// Acquire exclusive lock over a given key.
         /// </summary>
-        private VectorSetLock AcquireExclusiveLocks(StorageSession storageSession, ReadOnlySpan<byte> key)
+        private VectorSetLock AcquireExclusiveLocks(StorageSession storageSession, ReadOnlySpan<byte> key, long? keyHashPrecalc = null)
         {
-            var keyHash = storageSession.stringTransactionalContext.GetKeyHash((FixedSpanByteKey)key);
+            var keyHash = keyHashPrecalc ?? storageSession.stringTransactionalContext.GetKeyHash((FixedSpanByteKey)key);
 
             vectorSetLocks.AcquireExclusiveLock(keyHash, out var exclusiveLockToken);
 
@@ -698,32 +754,73 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Utility method that will read vector set index out, and acquire exclusive locks to allow it to be deleted.
+        /// Utility method that will read a Vector Set index out, and acquire TWO sets of exclusive locks to allow a shallow copy.
         /// </summary>
-        internal VectorSetLock ReadForDeleteVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
+        internal VectorSetPairLock ReadForCopyVectorSetIndexes(StorageSession storageSession, ReadOnlySpan<byte> sourceKey, ReadOnlySpan<byte> destKey, ref StringInput input, scoped Span<byte> sourceIndexSpan, out bool importPending, out GarnetStatus status)
         {
-            Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
+            Debug.Assert(sourceIndexSpan.Length == IndexSizeBytes, "Insufficient space for index");
+            Debug.Assert(!sourceKey.SequenceEqual(destKey), "Cannot copy source into itself");
 
             Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
 
-            var indexConfigOutput = StringOutput.FromPinnedSpan(indexSpan);
+            var indexConfigOutput = StringOutput.FromPinnedSpan(sourceIndexSpan);
 
-            // Get the index
-            var acquiredLock = AcquireExclusiveLocks(storageSession, key);
+            var sourceKeyHash = storageSession.stringTransactionalContext.GetKeyHash((FixedSpanByteKey)sourceKey);
+            var destKeyHash = storageSession.stringTransactionalContext.GetKeyHash((FixedSpanByteKey)destKey);
+
+            var sourceKeyAcquisitonIx = vectorSetLocks.CalculateIndex(sourceKeyHash, 0);
+            var destKeyAcquisitonIx = vectorSetLocks.CalculateIndex(destKeyHash, 0);
+
+            VectorSetPairLock acquiredLockPair;
+
+            // Ordering of lock acquisition and release matters
+            if (sourceKeyAcquisitonIx < destKeyAcquisitonIx)
+            {
+                // Source key preceeds dest key
+                var sourceLock = AcquireExclusiveLocks(storageSession, sourceKey, sourceKeyHash);
+                var destLock = AcquireExclusiveLocks(storageSession, destKey, destKeyHash);
+
+                acquiredLockPair = sourceLock.PairWith(destLock);
+            }
+            else if (sourceKeyAcquisitonIx > destKeyAcquisitonIx)
+            {
+                // Dest key preceeds source key
+                var destLock = AcquireExclusiveLocks(storageSession, destKey, destKeyHash);
+                var sourceLock = AcquireExclusiveLocks(storageSession, sourceKey, sourceKeyHash);
+
+                acquiredLockPair = destLock.PairWith(sourceLock);
+            }
+            else
+            {
+                // Both keys are acquiring the same "slot" in lock set, so just acquire one
+                var bothLock = AcquireExclusiveLocks(storageSession, sourceKey, sourceKeyHash);
+
+                acquiredLockPair = bothLock.PairWith(default);
+            }
+
             try
             {
-                status = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+                status = storageSession.Read_MainStore(sourceKey, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
                 Debug.Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
             }
             catch
             {
-                acquiredLock.Dispose();
+                acquiredLockPair.Dispose();
 
                 throw;
             }
 
-            return acquiredLock;
+            if (status == GarnetStatus.OK && IsImportPending(sourceIndexSpan))
+            {
+                acquiredLockPair.Dispose();
+                importPending = true;
+
+                return default;
+            }
+
+            importPending = false;
+            return acquiredLockPair;
         }
     }
 }
