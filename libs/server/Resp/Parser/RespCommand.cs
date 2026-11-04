@@ -769,11 +769,6 @@ namespace Garnet.server
         private Vector128<byte> _cachedPattern1, _cachedMask1;
         private RespCommand _cachedCmd1;
         private byte _cachedLen1, _cachedCount1;
-        /// <summary>
-        /// Maximum number of arguments (excluding the command name) allowed in a single RESP command.
-        /// Prevents pre-auth memory exhaustion from oversized RESP array headers.
-        /// </summary>
-        const int MaxRespArrayLength = 1 << 20; // 1,048,576
 
         /// <summary>
         /// Fast-parses command type for inline RESP commands, starting at the current read head in the receive buffer
@@ -1188,9 +1183,9 @@ namespace Garnet.server
 
             Debug.Assert(cmd != RespCommand.NONE, "ParseCommand should never return NONE - expected INVALID for unrecognized commands");
             Debug.Assert(count >= 0 || cmd == RespCommand.INVALID, "Argument count must be non-negative for valid commands");
-            if (count > MaxRespArrayLength)
+            if (count > RespLimits.MaxRequestArrayLength)
             {
-                RespParsingException.ThrowExcessiveArgumentCount(count, MaxRespArrayLength);
+                RespParsingException.ThrowExcessiveArgumentCount(count, RespLimits.MaxRequestArrayLength);
             }
 
             // Set up parse state

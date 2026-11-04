@@ -1214,7 +1214,12 @@ namespace Garnet.test
             return configOptions;
         }
 
-        public static GarnetClient GetGarnetClient(EndPoint endpoint = null, bool useTLS = false, bool recordLatency = false, client.LightEpoch epoch = null)
+        public static GarnetClient GetGarnetClient(
+            EndPoint endpoint = null,
+            bool useTLS = false,
+            bool recordLatency = false,
+            client.LightEpoch epoch = null,
+            NetworkWriterOptions? networkWriterOptions = null)
         {
             SslClientAuthenticationOptions sslOptions = null;
             if (useTLS)
@@ -1227,7 +1232,7 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new GarnetClient(endpoint ?? EndPoint, sslOptions, recordLatency: recordLatency, epoch: epoch);
+            return new GarnetClient(endpoint ?? EndPoint, sslOptions, networkWriterOptions: networkWriterOptions, recordLatency: recordLatency, epoch: epoch);
         }
 
         public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool raw = false, EndPoint endPoint = null)

@@ -36,7 +36,7 @@ namespace GarnetClientStress
                     new IPEndPoint(IPAddress.Parse(opts.Address), opts.Port),
                     opts.EnableTLS ? StressTestUtils.GetTlsOptions("GarnetTest") : null,
                     timeoutMilliseconds: (int)timeout.TotalMilliseconds,
-                    maxOutstandingTasks: opts.ClientMaxOutstandingTasks,
+                    networkWriterOptions: StressTestUtils.GetNetworkWriterOptions(opts.ClientMaxOutstandingTasks),
                     recordLatency: true);
                 Console.WriteLine($"Connecting to {opts.Address}:{opts.Port}");
                 try

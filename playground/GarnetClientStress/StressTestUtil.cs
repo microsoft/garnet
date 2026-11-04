@@ -5,6 +5,7 @@ using System;
 using System.Linq;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
+using Garnet.client;
 
 namespace GarnetClientStress
 {
@@ -24,6 +25,16 @@ namespace GarnetClientStress
         }
 
         public static T NotNull<T>(T argument, string parameterName) where T : class => argument ?? throw new ArgumentNullException(parameterName);
+
+        /// <summary>
+        /// Client options that allow <paramref name="maxOutstandingTasks"/> requests in flight.
+        /// </summary>
+        public static NetworkWriterOptions GetNetworkWriterOptions(int maxOutstandingTasks)
+            => NetworkWriterOptions.Default with
+            {
+                MaxOutstandingRequests = NetworkWriterOptions.ValidateMaxOutstandingRequests(maxOutstandingTasks),
+                MaxOutstandingCompletions = NetworkWriterOptions.ValidateMaxOutstandingCompletions(maxOutstandingTasks),
+            };
 
         private static X509Certificate2 GetClientCertificate(string filename, string password)
         {
