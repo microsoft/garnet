@@ -363,7 +363,8 @@ namespace Garnet.test.cluster
             int vectorSetReplayTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
             bool enableRangeIndexPreview = false,
-            TimeSpan? networkSendTimeout = null)
+            TimeSpan? networkSendTimeout = null,
+            bool enableVectorSetPreview = true)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, Port);
@@ -425,7 +426,8 @@ namespace Garnet.test.cluster
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                 threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
                 enableRangeIndexPreview: enableRangeIndexPreview,
-                networkSendTimeout: networkSendTimeout);
+                networkSendTimeout: networkSendTimeout,
+                enableVectorSetPreview: enableVectorSetPreview);
 
             foreach (var node in nodes)
                 node.Start();
