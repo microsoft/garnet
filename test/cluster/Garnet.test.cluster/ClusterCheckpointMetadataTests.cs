@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 using System;
 using System.IO;
+using System.Linq;
 using Garnet.cluster;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -96,6 +97,25 @@ namespace Garnet.test.cluster
             byte[] roundTripped = null;
             Assert.DoesNotThrow(() => roundTripped = manager.GetLogCheckpointMetadata(token));
             CollectionAssert.IsNotEmpty(roundTripped, "valid metadata must survive the length validation");
+        }
+
+        [Test]
+        [Category("ClusterCheckpoint")]
+        public void ClusterLogCheckpointInspectionDoesNotRecreateDeletedDirectory()
+        {
+            using var manager = CreateManager(directory);
+            var token = Guid.NewGuid();
+            var info = new HybridLogRecoveryInfo();
+            info.Initialize(token, _version: 1);
+            manager.CommitLogCheckpointMetadata(token, info.ToByteArray());
+            CollectionAssert.Contains(manager.GetLogCheckpointTokens().ToArray(), token);
+
+            manager.Purge(token);
+            _ = Assert.Throws<FileNotFoundException>(() => manager.ReadLogCheckpointMetadata(token));
+
+            var scheme = new DefaultCheckpointNamingScheme(directory);
+            ClassicAssert.IsFalse(Directory.Exists(Path.Combine(directory, scheme.LogCheckpointBase(token).directoryName)),
+                "Reading stale cluster checkpoint metadata must not recreate its deleted directory");
         }
     }
 }
