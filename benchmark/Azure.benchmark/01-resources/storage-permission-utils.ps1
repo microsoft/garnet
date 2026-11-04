@@ -69,7 +69,6 @@ function Get-ResourceGroupOwnerContext {
         ))
         Write-Host "  Roles        : $(($assignments.roleDefinitionName | Sort-Object -Unique) -join ', ')"
         $owners = @($assignments | Where-Object {
-            ($_.scope -eq $scope -or $scope.StartsWith("$($_.scope)/", [StringComparison]::OrdinalIgnoreCase)) -and
             -not $_.condition -and
             ($_.roleDefinitionId -split '/')[-1] -eq '8e3af657-a8ff-443c-a75c-2fe8c4bcb635'
         })

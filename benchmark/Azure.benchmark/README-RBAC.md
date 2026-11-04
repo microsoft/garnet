@@ -5,6 +5,27 @@ local users are disabled; account keys and account-key-signed SAS cannot be used
 The deployment workflow separates resource creation, publisher access, and VMSS
 access. No script activates PIM or signs you in automatically.
 
+## Migrating an existing deployment
+
+**Breaking change:** tools delivery uses Entra ID instead of account keys or
+account-key-signed SAS. Shared-resource deployment disables Shared Key and local
+users on existing storage accounts as well as new ones. The `refresh-sas` action
+and tools-SAS provisioning are removed; existing SAS URLs no longer authorize
+downloads once Shared Key is disabled.
+
+Before hardening an existing account, grant the publisher a blob data role and
+grant each existing VMSS system-assigned identity **Storage Blob Data Reader** on
+the storage account. An administrator can make these assignments separately;
+`grant-perms.ps1` provides the publisher grant with the Owner check described below.
+Allow the assignments to propagate before switching authentication.
+
+Publish the updated tools bundle using `-Action publish-tools`, then run
+`manage-vmss.ps1 -Action install` (copy only) or `-Action deploy` (full deployment)
+against each existing VMSS. Both actions download with the VM identity and persist
+`TOOLS_BLOB_URL` in `/opt/deploy-actions/storage.env`, enabling subsequent
+guest-side `update.ps1 -Fetch` without recreating the VM. New instances receive
+the same configuration from cloud-init.
+
 ## Identities and roles
 
 | Operation | Identity | Required access |

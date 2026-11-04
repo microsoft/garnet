@@ -1264,6 +1264,15 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path $updateScript)) {
     throw 'Tools bundle extraction did not restore update.ps1'
 }
 
+$envFile = [IO.Path]::GetTempFileName()
+try {
+    Set-Content -LiteralPath $envFile -Value 'TOOLS_BLOB_URL=__TOOLS_BLOB_URL__' -Encoding utf8NoBOM
+    sudo install -D -m 0644 $envFile /opt/deploy-actions/storage.env
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to persist tools blob URL in /opt/deploy-actions/storage.env' }
+} finally {
+    Remove-Item -LiteralPath $envFile -Force
+}
+
 if ('__MODE__' -eq 'Run') { & $updateScript -Run }
 else { & $updateScript -Copy }
 exit $LASTEXITCODE

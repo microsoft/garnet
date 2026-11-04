@@ -175,7 +175,7 @@ az deployment group create `
                operatingSystem=linux `
                vmSKU=Standard_F64s_v2 `
                osDiskType=Premium_LRS `
-               keyVaultName=<owner>-garnet-kv ``
+               keyVaultName=<owner>-garnet-kv `
                storageAccountName=<storage> `
                linuxImage="{'publisher':'Canonical','offer':'ubuntu-24_04-lts','sku':'server','version':'latest'}"
 ```
@@ -193,7 +193,7 @@ az deployment group create `
                operatingSystem=linux `
                vmSKU=Standard_F64s_v2 `
                osDiskType=Premium_LRS `
-               keyVaultName=<owner>-garnet-kv ``
+               keyVaultName=<owner>-garnet-kv `
                storageAccountName=<storage> `
                linuxImage="{'publisher':'microsoftcblmariner','offer':'azure-linux-3','sku':'azure-linux-3-gen2','version':'latest'}"
 ```
@@ -211,7 +211,7 @@ az deployment group create `
                operatingSystem=linux `
                vmSKU=Standard_B16ps_v2 `
                osDiskType=Premium_LRS `
-               keyVaultName=<owner>-garnet-kv ``
+               keyVaultName=<owner>-garnet-kv `
                storageAccountName=<storage> `
                linuxImage="{'publisher':'microsoftcblmariner','offer':'azure-linux-3','sku':'azure-linux-3-arm64','version':'latest'}"
 ```
@@ -230,7 +230,7 @@ az deployment group create `
                vmSKU=Standard_D4s_v3 `
                osDiskType=Premium_LRS `
                adminPassword='YourSecurePass123!' `
-               keyVaultName=<owner>-garnet-kv ``
+               keyVaultName=<owner>-garnet-kv `
                storageAccountName=<storage>
 ```
 
