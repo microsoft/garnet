@@ -147,11 +147,15 @@ paths.
 | receive | `--bind` | `127.0.0.1` | Listener IP |
 | receive | `--runs` | `1` | Number of verified transfers before exit |
 | receive | `--max-chunk` | `16m` | Bounded receive-frame allocation limit |
-| receive | `--ack-delay-ms` | `0` | Fixed additional ACK availability delay after each completed data write and EOF |
+| receive | `--ack-delay-us` | `0` | Fixed additional ACK availability delay, in microseconds, after each completed data write and EOF; e.g. `1000` models a 1 ms RTT |
 | send / receive | `--port` | `7010` | Dedicated benchmark port |
 | send / receive | `--timeout-seconds` | `30` | Connect, command, I/O, verification, and receiver accept/read timeout (1–3600 seconds) |
 | all | `--device` | `RandomAccess` | Real Tsavorite local device: `RandomAccess`, `Native`, or `FileStream` |
 | all | `--buffered` | `false` | Request OS-buffered device I/O; backend/platform support varies |
+
+Integer options (`--port`, `--runs`, `--repeats`, `--timeout-seconds` and
+`--ack-delay-us`) accept C#-style digit separators, for example
+`--ack-delay-us 20_000`.
 
 Chunk/depth validation reuses `GarnetServerOptions`: memory sizes use binary
 units, chunks normalize down to powers of two, and pipeline depth is bounded
@@ -172,9 +176,9 @@ These are individual illustrative observations, **not medians, cold-cache disk
 measurements, network bandwidth, or recommended settings**:
 
 ```text
-VERIFIED token=2fe2482e-dfdf-46d9-a36a-3797cd2a16fa repeat=1 chunk=131072 depth=1 bytes=68177920 seconds=0.497949 MB/s=136.917 ACK-delay-ms=0
-VERIFIED token=054d4dfd-4fdf-4629-999e-8ac1decb65eb repeat=1 chunk=1048576 depth=3 bytes=68177920 seconds=0.157220 MB/s=433.647 ACK-delay-ms=0
-VERIFIED token=0e180310-dae9-49a4-ba32-2af422cb2850 repeat=1 chunk=4194304 depth=8 bytes=68177920 seconds=0.132065 MB/s=516.247 ACK-delay-ms=0
+VERIFIED token=2fe2482e-dfdf-46d9-a36a-3797cd2a16fa repeat=1 chunk=131072 depth=1 bytes=68177920 seconds=0.497949 MB/s=136.917 ACK-delay-us=0
+VERIFIED token=054d4dfd-4fdf-4629-999e-8ac1decb65eb repeat=1 chunk=1048576 depth=3 bytes=68177920 seconds=0.157220 MB/s=433.647 ACK-delay-us=0
+VERIFIED token=0e180310-dae9-49a4-ba32-2af422cb2850 repeat=1 chunk=4194304 depth=8 bytes=68177920 seconds=0.132065 MB/s=516.247 ACK-delay-us=0
 ```
 
 The 64-MiB value payload produced a 68,177,920-byte checkpoint HLOG, including
@@ -196,11 +200,15 @@ and buffering choices on **both machines**.
 
 ## Delayed-ACK experiment
 
-To observe the benefit of depth under latency without a second machine:
+Loopback round trips take tens of microseconds, so a single machine hides the
+acknowledgement latency that limits a real primary-to-replica link. To observe
+the benefit of depth under latency without a second machine, make the receiver
+hold each ACK for a fixed delay, for example a 1 ms RTT, typical between
+availability zones in one region:
 
 ```powershell
-# Terminal 1: eight runs, 10 ms additional delay, same retained-file rules.
-dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll receive --output F:\checkpoint-output --runs 8 --ack-delay-ms 10 --timeout-seconds 120
+# Terminal 1: eight runs, 1 ms additional delay, same retained-file rules.
+dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll receive --output F:\checkpoint-output --runs 8 --ack-delay-us 1000 --timeout-seconds 120
 
 # Terminal 2: one chunk size, four depths, two repeats.
 dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll send --generate E:\checkpoint-input --data-size 64m --chunks 128k --depths 1,2,4,8 --repeats 2 --csv .\replica-transfer-delayed-ack.csv --timeout-seconds 120
@@ -209,15 +217,26 @@ dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer
 An independent FIFO response writer releases each ACK no earlier than
 `completed-write-time + delay`. The receiver **continues reading and writing
 subsequent chunks while earlier ACKs are delayed**; it does not sleep in the
-write loop or add a serial service-time delay per chunk. Its response queue is
-bounded above the maximum supported pipeline depth. Scheduler granularity can
-add jitter, especially at sub-millisecond delays. This models delayed ACK
-availability, not bandwidth limits, packet loss, TCP retransmission, or every
-property of a real WAN. Validate final settings on the real network.
-Requested delay is a minimum target, not a measured RTT: the implementation
-rounds the remaining wait up to whole milliseconds, and host timer scheduling
-can make a requested 1-ms wait substantially longer. See [RESULTS.md](RESULTS.md)
-for one host's short, warm-cache loopback validation and this caveat in practice.
+write loop or add a serial service-time delay per chunk. A depth-1 sender
+therefore waits the full delay for every chunk, while a deeper window overlaps
+it, as it would overlap a network round trip. Its response queue is bounded
+above the maximum supported pipeline depth.
+
+The writer waits for each release time by spinning on the high-resolution
+`Stopwatch`; only waits longer than 40 ms sleep first, until 20 ms before the
+target. Timer-based waits alone are too coarse: Windows timers fire on
+~15.6 ms ticks, so a 1 ms `Task.Delay` can last a full tick. The receiver's
+`VERIFIED` line reports the measured release lateness (mean and maximum); expect
+microseconds, with rare millisecond outliers when the OS preempts the spinning
+thread. While ACKs are pending, the spin keeps one receiver core busy.
+
+This models delayed ACK availability, not bandwidth limits, packet loss, TCP
+retransmission, or every property of a real WAN. The data itself still crosses
+loopback immediately; the whole delay is applied to the ACK. For throughput that
+is equivalent to an RTT of the same length: the sender must keep
+`delay × throughput` bytes unacknowledged to stay busy. Validate final settings
+on the real network. The delayed samples in [RESULTS.md](RESULTS.md) predate this
+precise wait: a requested 1 ms there lasted about one 15.6 ms timer tick.
 
 ## What the results mean
 

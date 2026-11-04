@@ -18,7 +18,7 @@ internal static class Program
                 Console.WriteLine("""
                     Standalone checkpoint-file transfer benchmark (NOT a Garnet server).
                     receive --output <existing directory> [--bind 127.0.0.1] [--port 7010]
-                            [--runs 1] [--max-chunk 16m] [--ack-delay-ms 0]
+                            [--runs 1] [--max-chunk 16m] [--ack-delay-us 0]
                     send    --source-prefix <prefix for existing prefix.0> [--host 127.0.0.1]
                             [--port 7010] [--chunks 128k,512k,1m,4m] [--depths 1,2,4,8]
                             [--repeats 3] [--csv <new file>]
@@ -78,7 +78,7 @@ internal sealed class Options
     internal int Runs { get; private init; }
     internal int Repeats { get; private init; }
     internal int MaxChunk { get; private init; }
-    internal int AckDelayMs { get; private init; }
+    internal long AckDelayUs { get; private init; }
     internal TimeSpan Timeout { get; private init; }
     internal DeviceType DeviceType { get; private init; }
     internal bool Buffered { get; private init; }
@@ -93,7 +93,7 @@ internal sealed class Options
         string[] specific = mode switch
         {
             "send" => ["--source-prefix", "--generate", "--data-size", "--host", "--port", "--timeout-seconds", "--chunks", "--depths", "--repeats", "--csv"],
-            "receive" => ["--output", "--bind", "--port", "--timeout-seconds", "--runs", "--max-chunk", "--ack-delay-ms"],
+            "receive" => ["--output", "--bind", "--port", "--timeout-seconds", "--runs", "--max-chunk", "--ack-delay-us"],
             _ => ["--output", "--data-size"]
         };
         var allowed = common.Concat(specific).ToHashSet(StringComparer.Ordinal);
@@ -108,9 +108,12 @@ internal sealed class Options
         string Required(string key) => Get(key) ?? throw new ArgumentException($"{key} is required.");
         int Number(string key, int fallback, int min, int max)
         {
-            var result = int.Parse(Get(key, fallback.ToString(CultureInfo.InvariantCulture)), CultureInfo.InvariantCulture);
-            if (result < min || result > max)
-                throw new ArgumentOutOfRangeException(key, $"Expected {min} through {max}.");
+            // Accept C#-style digit separators between digits (e.g. 20_000); no sign, other separators or edge underscores.
+            var text = Get(key, fallback.ToString(CultureInfo.InvariantCulture));
+            if (text.Length == 0 || !char.IsAsciiDigit(text[0]) || !char.IsAsciiDigit(text[^1]) ||
+                !int.TryParse(text.Replace("_", ""), NumberStyles.None, CultureInfo.InvariantCulture, out var result) ||
+                result < min || result > max)
+                throw new ArgumentOutOfRangeException(key, $"Expected an integer from {min} through {max}; underscores may separate digits, e.g. 20_000.");
             return result;
         }
 
@@ -129,9 +132,9 @@ internal sealed class Options
             throw new ArgumentOutOfRangeException("--data-size", "Expected 16 KiB through 64 GiB of generated value payload.");
 
         var timeout = TimeSpan.FromSeconds(Number("--timeout-seconds", 30, 1, 3600));
-        var ackDelay = Number("--ack-delay-ms", 0, 0, 60000);
-        if (ackDelay >= timeout.TotalMilliseconds)
-            throw new ArgumentException("--ack-delay-ms must be below --timeout-seconds.");
+        long ackDelayUs = Number("--ack-delay-us", 0, 0, 60_000_000);
+        if (ackDelayUs >= timeout.TotalMilliseconds * 1000)
+            throw new ArgumentException("--ack-delay-us must be below --timeout-seconds.");
         var cases = new List<(int, int)>();
         if (mode == "send")
         {
@@ -162,7 +165,7 @@ internal sealed class Options
             Runs = Number("--runs", 1, 1, 1000000),
             Repeats = Number("--repeats", 3, 1, 1000000),
             MaxChunk = new GarnetServerOptions { ReplicaDiskBasedSyncChunkSize = Get("--max-chunk", "16m") }.GetReplicaDiskBasedSyncChunkSizeBytes(),
-            AckDelayMs = ackDelay,
+            AckDelayUs = ackDelayUs,
             Timeout = timeout,
             DeviceType = device,
             Buffered = bool.Parse(Get("--buffered", "false")),

@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -34,8 +36,39 @@ namespace Garnet.test.cluster
         [TestCase("send --generate . --data-size 65g")]
         [TestCase("generate --output . --data-size invalid")]
         [TestCase("generate --source-prefix x")]
+        [TestCase("receive --output . --timeout-seconds 1 --ack-delay-us 1000000")]
+        [TestCase("receive --output . --ack-delay-us 20_000_")]
+        [TestCase("receive --output . --ack-delay-us 20,000")]
         public void InvalidOptions(string command)
             => Assert.Catch<ArgumentException>(() => BenchmarkOptions.Parse(command.Split(' ')));
+
+        [TestCase("receive --output .", 0L)]
+        [TestCase("receive --output . --ack-delay-us 1050", 1050L)]
+        [TestCase("receive --output . --ack-delay-us 20_000", 20000L)]
+        public void AckDelayOptions(string command, long delayUs)
+            => Assert.That(BenchmarkOptions.Parse(command.Split(' ')).AckDelayUs, Is.EqualTo(delayUs));
+
+        [Test]
+        public async Task AckDelayIsReleasedPrecisely()
+        {
+            // A timer-based wait rounds a 1 ms delay up to the next ~15.6 ms Windows timer tick; the spin-wait must not.
+            var lateness = new List<double>();
+            for (var i = 0; i < 50; i++)
+            {
+                var readyAt = Stopwatch.GetTimestamp() + Stopwatch.Frequency / 1000;
+                await Acknowledgements.WaitUntilAsync(readyAt, CancellationToken.None);
+                var releasedAt = Stopwatch.GetTimestamp();
+                Assert.That(releasedAt, Is.GreaterThanOrEqualTo(readyAt), "An ACK must never be released early");
+                lateness.Add((releasedAt - readyAt) * 1000.0 / Stopwatch.Frequency);
+            }
+            lateness.Sort();
+            Assert.That(lateness[lateness.Count / 2], Is.LessThan(1.0), "Median lateness in milliseconds");
+
+            // Long waits sleep first, then spin; they must still not return early.
+            var longReadyAt = Stopwatch.GetTimestamp() + Stopwatch.Frequency / 20;
+            await Acknowledgements.WaitUntilAsync(longReadyAt, CancellationToken.None);
+            Assert.That(Stopwatch.GetTimestamp(), Is.GreaterThanOrEqualTo(longReadyAt));
+        }
 
         [Test]
         public void GeneratedSweepOptions()

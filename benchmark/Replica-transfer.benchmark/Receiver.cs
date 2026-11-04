@@ -24,7 +24,7 @@ internal static class Receiver
         listener.Start(1);
         try
         {
-            Console.WriteLine($"Listening on {endpoint}; expecting {options.Runs} verified runs; device={options.DeviceType}, buffered={options.Buffered}, ACK delay={options.AckDelayMs} ms.");
+            Console.WriteLine($"Listening on {endpoint}; expecting {options.Runs} verified runs; device={options.DeviceType}, buffered={options.Buffered}, ACK delay={options.AckDelayUs} us.");
             for (var run = 1; run <= options.Runs; run++)
             {
                 using var acceptDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -46,14 +46,14 @@ internal static class Receiver
         using var close = abort.Token.Register(client.Dispose);
         var stream = client.GetStream();
         var protocol = new Protocol(stream, options.Timeout, options.MaxChunk);
-        var replies = new Acknowledgements(options.AckDelayMs);
+        var replies = new Acknowledgements(options.AckDelayUs);
         var writer = replies.WriteAsync(stream, abort, options.Timeout);
         Transfer transfer = null;
         try
         {
             var hello = await protocol.ReadAsync(abort.Token);
             Require(hello.Length == 1 && Text(hello[0]) == Protocol.Magic, "Expected benchmark-only handshake.");
-            await replies.EnqueueAsync($"{Protocol.Magic}|{options.AckDelayMs}|{options.MaxChunk}", false, abort.Token);
+            await replies.EnqueueAsync($"{Protocol.Magic}|{options.AckDelayUs}|{options.MaxChunk}", false, abort.Token);
 
             var begin = await protocol.ReadAsync(abort.Token);
             Require(begin.Length == 6 && Text(begin[0]) == "BEGIN", "Expected BEGIN token bytes chunk depth sha256.");
@@ -88,7 +88,7 @@ internal static class Receiver
                     await replies.EnqueueAsync($"VERIFIED|{transfer.NextAddress}|{transfer.Chunks}|{verifiedHash}", false, abort.Token);
                     replies.Complete();
                     await writer;
-                    Console.WriteLine($"VERIFIED run {run}: {transfer.NextAddress} completed bytes, {transfer.Chunks} chunks, SHA256={verifiedHash}");
+                    Console.WriteLine($"VERIFIED run {run}: {transfer.NextAddress} completed bytes, {transfer.Chunks} chunks, SHA256={verifiedHash}; {replies.Report()}");
                     return;
                 }
 

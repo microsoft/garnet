@@ -10,7 +10,8 @@ namespace ReplicaTransfer.benchmark;
 
 internal sealed class Protocol
 {
-    internal const string Magic = "CHECKPOINT_BENCH_V1";
+    // V2: the handshake reports the ACK delay in microseconds; a V1 peer fails the handshake instead of misreading it.
+    internal const string Magic = "CHECKPOINT_BENCH_V2";
     private readonly NetworkStream stream;
     private readonly TimeSpan timeout;
     private readonly int maxFrame;
@@ -102,24 +103,53 @@ internal sealed class Protocol
 
 internal sealed class Acknowledgements
 {
-    private readonly Channel<(byte[] Reply, long ReadyAt)> queue =
-        Channel.CreateBounded<(byte[], long)>(new BoundedChannelOptions(68)
+    // Waits longer than this sleep first and spin only for the remainder; it exceeds one ~15.6 ms Windows timer tick.
+    private static readonly long CoarseSleepMarginTicks = Stopwatch.Frequency / 50;
+
+    private readonly Channel<(byte[] Reply, long ReadyAt, bool Delayed)> queue =
+        Channel.CreateBounded<(byte[], long, bool)>(new BoundedChannelOptions(68)
         {
             SingleReader = true,
             SingleWriter = true,
             FullMode = BoundedChannelFullMode.Wait
         });
-    private readonly int delayMs;
+    private readonly long delayTicks;
+    private long delayedCount, lateTicksSum, lateTicksMax;
 
-    internal Acknowledgements(int delayMs) => this.delayMs = delayMs;
+    internal Acknowledgements(long delayUs) => delayTicks = (long)(delayUs * (double)Stopwatch.Frequency / 1_000_000);
 
     internal ValueTask EnqueueAsync(string reply, bool delayed, CancellationToken token)
     {
-        var readyAt = Stopwatch.GetTimestamp() + (delayed ? (long)(delayMs * (double)Stopwatch.Frequency / 1000) : 0);
-        return queue.Writer.WriteAsync((Protocol.Reply(reply), readyAt), token);
+        var readyAt = Stopwatch.GetTimestamp() + (delayed ? delayTicks : 0);
+        return queue.Writer.WriteAsync((Protocol.Reply(reply), readyAt, delayed && delayTicks > 0), token);
     }
 
     internal void Complete() => queue.Writer.TryComplete();
+
+    /// <summary>
+    /// Measured release lateness of delayed ACKs beyond their targets; read only after <see cref="WriteAsync"/> completes.
+    /// </summary>
+    internal string Report() => delayedCount == 0 ? "no delayed ACKs" : FormattableString.Invariant(
+        $"ACK lateness mean={lateTicksSum * 1e6 / Stopwatch.Frequency / delayedCount:F1}us max={lateTicksMax * 1e6 / Stopwatch.Frequency:F1}us over {delayedCount} ACKs");
+
+    /// <summary>
+    /// Return no earlier than <paramref name="readyAt"/> (a <see cref="Stopwatch"/> timestamp), and within microseconds of it.
+    /// Timer-based waits alone are too coarse: Windows timers fire on ~15.6 ms ticks, so a 1 ms Task.Delay can take a full tick.
+    /// Long waits therefore sleep until shortly before the target and spin only for the remainder, keeping a core busy briefly.
+    /// </summary>
+    internal static async ValueTask WaitUntilAsync(long readyAt, CancellationToken token)
+    {
+        var remaining = readyAt - Stopwatch.GetTimestamp();
+        if (remaining > 2 * CoarseSleepMarginTicks)
+            await Task.Delay(TimeSpan.FromSeconds((remaining - CoarseSleepMarginTicks) / (double)Stopwatch.Frequency), token);
+        var spinner = new SpinWait();
+        while (Stopwatch.GetTimestamp() < readyAt)
+        {
+            token.ThrowIfCancellationRequested();
+            // Never Sleep(1): that would reintroduce the timer tick this wait exists to avoid.
+            spinner.SpinOnce(sleep1Threshold: -1);
+        }
+    }
 
     internal async Task WriteAsync(NetworkStream stream, CancellationTokenSource abort, TimeSpan timeout)
     {
@@ -127,9 +157,15 @@ internal sealed class Acknowledgements
         {
             await foreach (var item in queue.Reader.ReadAllAsync(abort.Token))
             {
-                var delay = TimeSpan.FromSeconds((item.ReadyAt - Stopwatch.GetTimestamp()) / (double)Stopwatch.Frequency);
-                if (delay > TimeSpan.Zero)
-                    await Task.Delay(TimeSpan.FromMilliseconds(Math.Ceiling(delay.TotalMilliseconds)), abort.Token);
+                await WaitUntilAsync(item.ReadyAt, abort.Token);
+                if (item.Delayed)
+                {
+                    // Only this single reader updates the statistics.
+                    var late = Stopwatch.GetTimestamp() - item.ReadyAt;
+                    delayedCount++;
+                    lateTicksSum += late;
+                    lateTicksMax = Math.Max(lateTicksMax, late);
+                }
                 using var deadline = CancellationTokenSource.CreateLinkedTokenSource(abort.Token);
                 deadline.CancelAfter(timeout);
                 await stream.WriteAsync(item.Reply, deadline.Token);

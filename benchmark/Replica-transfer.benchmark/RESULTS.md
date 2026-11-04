@@ -41,9 +41,9 @@ dotnet build benchmark\Replica-transfer.benchmark\Replica-transfer.benchmark.csp
 dotnet format Garnet.slnx --no-restore --include benchmark\Replica-transfer.benchmark\Program.cs benchmark\Replica-transfer.benchmark\Sender.cs benchmark\Replica-transfer.benchmark\Receiver.cs benchmark\Replica-transfer.benchmark\Protocol.cs --verbosity quiet
 dotnet build benchmark\Replica-transfer.benchmark\Replica-transfer.benchmark.csproj -c Release -f net10.0 --no-restore
 
-# For each DELAY = 0, then 1, in separate terminals.
+# For each DELAY = 0, then 1000 (microseconds), in separate terminals.
 # Replace PORT, SOURCE_PREFIX, OUTPUT and NEW_CSV with your dedicated values.
-dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll receive --output OUTPUT --runs 27 --port PORT --ack-delay-ms DELAY --timeout-seconds 60
+dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll receive --output OUTPUT --runs 27 --port PORT --ack-delay-us DELAY --timeout-seconds 60
 dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll send --source-prefix SOURCE_PREFIX --chunks 128k,1m,4m --depths 1,3,8 --repeats 3 --port PORT --timeout-seconds 60 --csv NEW_CSV
 ```
 
@@ -70,6 +70,9 @@ these samples.
 | 4 MiB | 8 | 0.140950 | 476.148 | 0.171824 | 390.592 |
 
 ### Requested versus observed timer delay
+
+These samples predate the receiver's precise spin-wait; the current benchmark
+releases a requested delay to within microseconds and reports the lateness.
 
 **1 ms was requested, not a measured 1-ms network RTT.** A separate 100-sample
 PowerShell-hosted `Task.Delay(1)` stopwatch probe on this machine measured
