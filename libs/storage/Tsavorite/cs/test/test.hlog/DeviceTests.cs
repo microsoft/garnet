@@ -1642,6 +1642,67 @@ namespace Tsavorite.test
             GC.KeepAlive(wbuf);
         }
 
+        [Test]
+        [Category("IDevice")]
+        public unsafe void Native_RemoveSegment_DeletesSegmentsItDoesNotHoldOpen()
+        {
+            // Truncation removes each segment below the new begin in turn. The native device closes and deletes the segments it
+            // holds open, and must also delete those it does not, such as segments an earlier process wrote that this one never
+            // read.
+            const long segmentSize = 1L << 16;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            string SegmentFile(int segment) => $"{path}.{segment}";
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var (rbuf, rptr) = AllocateAlignedBuffer(HardeningSectorSize, _ => 0);
+            using (var writer = CreateDeviceForTest(DeviceKind.Native, path, segmentSize, deleteOnClose: false))
+            {
+                for (var segment = 0; segment <= 7; segment++)
+                {
+                    writer.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+            }
+
+            var epoch = new LightEpoch();
+            try
+            {
+                using var device = new NativeStorageDevice(path, deleteOnClose: false);
+                device.Initialize(segmentSize, epoch);
+
+                // Below the segments the device holds open, which are only segment 3, truncating as the log does. These are
+                // checked first: a native library without the fix leaves them, and crashes in the cases after them.
+                device.ReadAsync(3, 0, rptr, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+                device.TruncateUntilSegment(3);
+                for (var segment = 0; segment < 3; segment++)
+                    ClassicAssert.IsFalse(File.Exists(SegmentFile(segment)), $"segment {segment}, below the open segment, should be deleted");
+
+                // Above them: segment 4, not open, is deleted, and segment 3, open and below it, is closed and deleted
+                device.RemoveSegment(4);
+                foreach (var segment in new[] { 3, 4 })
+                    ClassicAssert.IsFalse(File.Exists(SegmentFile(segment)), $"segment {segment} should be deleted");
+
+                // With no segment open, as after Reset
+                device.Reset();
+                device.RemoveSegment(5);
+                ClassicAssert.IsFalse(File.Exists(SegmentFile(5)), "segment 5, with no segment open, should be deleted");
+
+                // The segments above are intact, and the device still works
+                foreach (var segment in new[] { 6, 7 })
+                {
+                    device.ReadAsync(segment, 0, rptr, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                    AssertBufferContents(rptr, HardeningSectorSize, i => (byte)(i * 3), $"segment {segment}");
+                }
+            }
+            finally
+            {
+                epoch.Dispose();
+            }
+            GC.KeepAlive(wbuf);
+            GC.KeepAlive(rbuf);
+        }
+
         // ----- Removing the segments above a segment ---------------------------------
 
         /// <summary>Device kinds that implement <see cref="IDevice.TryRemoveSegmentsAbove"/></summary>

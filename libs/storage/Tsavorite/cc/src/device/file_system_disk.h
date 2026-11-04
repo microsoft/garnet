@@ -301,7 +301,12 @@ class FileSystemSegmentBundle {
   /// `omit_segment_id_` true, all writes go to the bare `<base>` filename — only meaningful
   /// in single-segment / unbounded mode (the upstream wrapper enforces that constraint).
   std::string segment_path(uint64_t idx) const {
-    return omit_segment_id_ ? filename_ : (filename_ + "." + std::to_string(idx));
+    return segment_path(filename_, omit_segment_id_, idx);
+  }
+
+  /// The on-disk filename for segment `idx` of the file `filename`; see the overload above.
+  static std::string segment_path(const std::string& filename, bool omit_segment_id, uint64_t idx) {
+    return omit_segment_id ? filename : (filename + "." + std::to_string(idx));
   }
 
  public:
@@ -369,7 +374,19 @@ class FileSystemSegmentedFile {
       if (!files) return core::Status::Ok;
       return files->Delete();
   }
+  /// Removes `segment` and, since segments are removed from the head of the log, every segment below it that this holds
+  /// open. Open segments are closed and deleted once no thread can be using them. If this does not hold `segment` open, as
+  /// when no IO has reached it since this was created or reset, its file is deleted now.
   void RemoveSegment(uint64_t segment) {
+      {
+        // Holding the mutex keeps OpenSegment from opening the segment between the check and the deletion
+        std::lock_guard<std::mutex> lock{ mutex_ };
+        bundle_t* files = files_.load();
+        if(!files || !files->exists(segment)) {
+          // There is no handle to close. The file may not exist; any failure is ignored, as when an open segment is deleted.
+          (void)file_t{ bundle_t::segment_path(filename_, omit_segment_id_, segment), file_options_ }.Delete();
+        }
+      }
       auto truncate_callback = [](uint64_t offset) {
           };
       TruncateSegments(segment + 1, truncate_callback);
@@ -576,7 +593,9 @@ class FileSystemSegmentedFile {
 
     auto callback = [](core::IAsyncContext* ctxt) {
       core::CallbackContext<Context> context{ ctxt };
-      for(uint64_t idx = context->files->begin_segment; idx < context->new_begin_segment; ++idx) {
+      // A new begin past the bundle's end truncates every segment in it
+      uint64_t truncate_end = std::min(context->new_begin_segment, context->files->end_segment);
+      for(uint64_t idx = context->files->begin_segment; idx < truncate_end; ++idx) {
         file_t& file = context->files->file(idx);
         file.Close();
         file.Delete();
@@ -590,19 +609,22 @@ class FileSystemSegmentedFile {
     // Only one thread can modify the list of files at a given time.
     ReleasableLockGuard lock{ &mutex_ };
     bundle_t* files = files_.load();
-    assert(files);
-    if(files->begin_segment >= new_begin_segment) {
-      // Segments have already been truncated.
+    if(!files || files->begin_segment >= new_begin_segment) {
+      // No open segment lies below the new begin: segments have already been truncated, or none is open.
       if(caller_callback) {
-        caller_callback(files->begin_segment * segment_size_);
+        caller_callback((files ? files->begin_segment : new_begin_segment) * segment_size_);
       }
       return;
     }
 
-    // Make a copy of the list, excluding the files to be truncated.
-    void* buffer = std::malloc(bundle_t::size(files->end_segment - new_begin_segment));
-    bundle_t* new_files = new(buffer) bundle_t{ handler_, new_begin_segment, files->end_segment,
-        *files };
+    // Make a copy of the list, excluding the files to be truncated. If the new begin is past every open segment, none stays
+    // open, and the next segment opened starts a new list.
+    bundle_t* new_files = nullptr;
+    if(new_begin_segment <= files->end_segment) {
+      void* buffer = std::malloc(bundle_t::size(files->end_segment - new_begin_segment));
+      new_files = new(buffer) bundle_t{ handler_, new_begin_segment, files->end_segment,
+          *files };
+    }
     files_.store(new_files);
     // Delete the old list only after all threads have finished looking at it.
     Context context{ files, new_begin_segment, caller_callback, segment_size_ };

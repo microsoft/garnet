@@ -1869,8 +1869,9 @@ namespace Tsavorite.core
         /// <param name="segment"></param>
         /// <remarks>
         /// The native device removes every segment from the first it holds open through <paramref name="segment"/>, not only
-        /// <paramref name="segment"/>; this suits truncation from the head of the log. Use <see cref="TryRemoveSegmentsAbove"/> to
-        /// remove the segments above a given one.
+        /// <paramref name="segment"/>; this suits truncation from the head of the log. It deletes the file of <paramref name="segment"/>
+        /// even if it does not hold it open, as when no IO has reached it since the device was created or reset. Use
+        /// <see cref="TryRemoveSegmentsAbove"/> to remove the segments above a given one.
         /// </remarks>
         public override void RemoveSegment(int segment)
         {
@@ -1883,7 +1884,8 @@ namespace Tsavorite.core
                     var dev = Volatile.Read(ref nativeDevice);
                     if (dev != IntPtr.Zero)
                     {
-                        // Native owns the open handle; let it close+unlink.
+                        // Native closes and deletes the open segments through this one, and deletes this one's file if it
+                        // does not hold it open.
                         NativeDevice_RemoveSegment(dev, (ulong)segment);
                         return;
                     }
