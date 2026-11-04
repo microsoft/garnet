@@ -58,6 +58,7 @@ namespace Garnet.server
         internal const long CreateIndexArg = VADDSetFlagsArg + 1; // New stub record creation. AOF: NO. InitialUpdater: YES.
         internal const long VSETATTRAppendLogArg = CreateIndexArg + 1; // User VSETATTR update, replayed on replicas. AOF: Yes. InitialUpdater: NO.
         internal const long SetImportStateArg = VSETATTRAppendLogArg + 1; // Import lifecycle flags. AOF: NO. InitialUpdater: NO (record must exist).
+        internal const long XVImportFailedArg = SetImportStateArg + 1; // Replication / replay for failed imports.  AOF: Yes.  InitialUpdater: No.
 
         /// <summary>
         /// Byte stored on log records to distinguish the INDEX key as a Vector Set
@@ -255,21 +256,15 @@ namespace Garnet.server
             recoveredIndexes = new();
             recoveredMetadata = new();
 
-            quantizationOrImportChannel = VectorSetCleanupWorkChannel<QuantizationOrImportState>.CreateMultiReaderMultiWriter();
+            quantizationChannel = VectorSetCleanupWorkChannel<QuantizationState>.CreateMultiReaderMultiWriter();
 
             if (serverOptions.VectorSetQuantizationTaskCount < 0 || serverOptions.VectorSetQuantizationTaskCount > Environment.ProcessorCount)
                 throw new GarnetException($"VectorSetQuantizationTaskCount should be in range [0,{Environment.ProcessorCount}]!");
-            quantizationAndImportTaskCount = serverOptions.VectorSetQuantizationTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetQuantizationTaskCount;
-            quantizationAndImportTasks = new Task[quantizationAndImportTaskCount];
+            quantizationTaskCount = serverOptions.VectorSetQuantizationTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetQuantizationTaskCount;
+            quantizationTasks = new Task[quantizationTaskCount];
 
             // So Dispose's Task.WhenAll is safe even if StartQuantizationTasks never ran.
-            Array.Fill(quantizationAndImportTasks, Task.CompletedTask);
-
-            // Tracking information for active XVIMPORT ... FINISH during replication
-            activeImportFinalizations = new(ByteArrayComparer.Instance);
-#if NET9_0_OR_GREATER
-            activeImportFinalizationsLookup = activeImportFinalizations.GetAlternateLookup<ReadOnlySpan<byte>>();
-#endif
+            Array.Fill(quantizationTasks, Task.CompletedTask);
 
             // Exclusive locks for potential updates to Vector Set data
             var unroundedElementSetSize = Math.Min(Environment.ProcessorCount, 192) * 2; // 192 cores is a reasonable maximum number of cores to expect - so impose as an upper bound for now
@@ -306,7 +301,7 @@ namespace Garnet.server
             }
 
             // Spin up quantization and import handling tasks
-            StartQuantizationAndImportTasks();
+            StartQuantizationTasks();
         }
 
         /// <summary>
@@ -644,7 +639,7 @@ namespace Garnet.server
             requestDropTaskChannel.CompleteAndWaitForConsumerTask(requestDropTask);
 
             // Complete all quantization or import tasks - this MIGHT queue something into requestCleanupTaskChannel, so wait for it first
-            quantizationOrImportChannel.CompleteAndWaitForConsumerTask(Task.WhenAll(quantizationAndImportTasks));
+            quantizationChannel.CompleteAndWaitForConsumerTask(Task.WhenAll(quantizationTasks));
 
             // Wait for any _marking_ of cleanup state to finish. PauseCleanupAsync callers MUST
             // have called ResumeCleanup before reaching here, otherwise the cleanup task
@@ -793,7 +788,7 @@ namespace Garnet.server
             {
                 if (needsQuantization)
                 {
-                    EnqueueQuantization(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, 0, 0, null));
+                    EnqueueQuantization(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
                 }
 
                 return VectorManagerResult.OK;
@@ -850,15 +845,6 @@ namespace Garnet.server
             // This typically indicates a rename is in progress
             if (flags.HasFlag(VectorSetFlags.SuppressCleanup))
             {
-                return;
-            }
-
-            // If an import is in progress, we need to coordinate delete so we don't drop the index out from under a finalize step
-            if (flags.HasFlag(VectorSetFlags.ImportPending) && !flags.HasFlag(VectorSetFlags.ImportCompleted))
-            {
-                // If we fail to enqueue, that implies we are shutting down - so we'll pick it up on recovery
-                _ = quantizationOrImportChannel.TryPublish(new(key.ToArray(), QuantizationOrImportStep.DeleteDuringImport, 0, context, indexPtr, null));
-
                 return;
             }
 
