@@ -8,8 +8,17 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+#if GARNET_CLIENT_EPOCH
+using Tsavorite.core;
+#endif
 
+// Garnet.client compiles this file as a linked source under its own namespace, so client epochs
+// share this implementation but keep instance tracking and epoch tables separate from Tsavorite's.
+#if GARNET_CLIENT_EPOCH
+namespace Garnet.client
+#else
 namespace Tsavorite.core
+#endif
 {
     /// <summary>
     /// Epoch protection
@@ -210,14 +219,14 @@ namespace Tsavorite.core
             p = (long)Unsafe.AsPointer(ref tableRaw[0]);
 
             // Force the pointer to align to 64-byte boundaries
-            long p2 = (p + (kCacheLineBytes - 1)) & ~(kCacheLineBytes - 1);
+            var p2 = (p + (kCacheLineBytes - 1)) & ~(kCacheLineBytes - 1);
             tableAligned = (Entry*)p2;
 
             CurrentEpoch = 1;
             SafeToReclaimEpoch = 0;
 
             // Mark all epoch table entries as "available"
-            for (int i = 0; i < kDrainListSize; i++)
+            for (var i = 0; i < kDrainListSize; i++)
                 drainList[i].epoch = long.MaxValue;
             drainCount = 0;
         }
@@ -565,10 +574,13 @@ namespace Tsavorite.core
             (*(tableAligned + entry)).threadId = 0;
 
             // Zeroing localCurrentEpoch is what publishes the slot as free, so it must be the last store
-            // of the two. A release store guarantees that the threadId clear cannot be reordered after
-            // it. Were the order to flip, another thread could claim the slot and write its own threadId
-            // in the gap, and this thread's clear would then land on top and wipe it.
-            Volatile.Write(ref (*(tableAligned + entry)).localCurrentEpoch, 0);
+            // of the two; the exchange keeps the threadId clear ahead of it. Were the order to flip, another
+            // thread could claim the slot and write its own threadId in the gap, and this thread's clear would
+            // then land on top and wipe it. The exchange is also a full fence, which orders the clear before the
+            // caller's later drainCount and waiterCount reads: either this thread sees a pending drain action, or
+            // the thread that queued it scans this slot as free. A release store alone would let those reads
+            // pass the clear, and both threads could skip the drain.
+            _ = Interlocked.Exchange(ref (*(tableAligned + entry)).localCurrentEpoch, 0);
 
             entry = kInvalidIndex;
             if (waiterCount > 0)
@@ -607,7 +619,7 @@ namespace Tsavorite.core
                 var prev = Interlocked.CompareExchange(ref pendingWaiterSignals, pending + 1, pending);
                 if (prev == pending)
                 {
-                    waiterSemaphore.Release();
+                    _ = waiterSemaphore.Release();
                     return;
                 }
                 pending = prev;
@@ -634,11 +646,15 @@ namespace Tsavorite.core
             if (TryClaimEntry(entry))
                 return true;
 
-            // Try alternate offset
-            var tmp = Metadata.startOffset1;
-            Metadata.startOffset1 = Metadata.startOffset2;
-            Metadata.startOffset2 = tmp;
+            return TryAcquireEntrySlow(ref entry);
+        }
 
+        // Keep alternate probing outside the preferred-slot hot path.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        bool TryAcquireEntrySlow(ref int entry)
+        {
+            // Try alternate offset
+            (Metadata.startOffset2, Metadata.startOffset1) = (Metadata.startOffset1, Metadata.startOffset2);
             entry = Metadata.startOffset1;
             if (TryClaimEntry(entry))
                 return true;
@@ -687,7 +703,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.NoInlining)]
         void ReserveEntryWait(ref int entry)
         {
-            int newCount = Interlocked.Increment(ref waiterCount);
+            var newCount = Interlocked.Increment(ref waiterCount);
             try
             {
                 // If the MSB (disposed flag) is set, the epoch is being disposed.
@@ -770,7 +786,7 @@ namespace Tsavorite.core
             // Drain list entries
             sb.Append("DrainList: [");
             first = true;
-            for (int i = 0; i < kDrainListSize; i++)
+            for (var i = 0; i < kDrainListSize; i++)
             {
                 var d = drainList[i];
                 if (d.epoch != long.MaxValue)
@@ -790,7 +806,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Number of entries in the epoch table.
         /// </summary>
-        public int EntryCount => kTableSize;
+        public static int EntryCount => kTableSize;
 
         /// <summary>
         /// Claim a per-thread user-word slot. Returns the word index to pass to
@@ -807,7 +823,7 @@ namespace Tsavorite.core
             while (true)
             {
                 var mask = Volatile.Read(ref userWordMask);
-                int idx = BitOperations.TrailingZeroCount(~mask);
+                var idx = BitOperations.TrailingZeroCount(~mask);
                 if (idx >= MaxUserWords)
                     throw new InvalidOperationException($"All {MaxUserWords} LightEpoch user-word slots are claimed.");
 
@@ -817,7 +833,7 @@ namespace Tsavorite.core
                     continue; // another thread modified the mask; retry
 
                 // We exclusively own this slot — initialize the column across all entries.
-                for (int i = 1; i <= kTableSize; i++)
+                for (var i = 1; i <= kTableSize; i++)
                     Volatile.Write(ref UserWordRef(i, idx), initialValue);
 
                 return idx;
@@ -852,7 +868,7 @@ namespace Tsavorite.core
         {
             Debug.Assert((uint)wordIndex < MaxUserWords, "Invalid user-word index");
             Debug.Assert(ThisInstanceProtected(), "ThisThreadUserWord must be called while epoch is protected");
-            int entryIndex = Metadata.Entries.GetRef(instanceId);
+            var entryIndex = Metadata.Entries.GetRef(instanceId);
             return ref UserWordRef(entryIndex, wordIndex);
         }
 
@@ -870,14 +886,14 @@ namespace Tsavorite.core
             // Derive the base address from the actual Entry field layout via UserWordRef,
             // rather than hardcoding byte offsets. Entries occupy indices 1..kTableSize
             // (index 0 is kInvalidIndex and unused). Stride between entries is kCacheLineBytes.
-            long min = long.MaxValue;
-            byte* basePtr = (byte*)Unsafe.AsPointer(ref UserWordRef(1, wordIndex));
-            int stride = kCacheLineBytes;
+            var min = long.MaxValue;
+            var basePtr = (byte*)Unsafe.AsPointer(ref UserWordRef(1, wordIndex));
+            var stride = kCacheLineBytes;
             int count = kTableSize;
 
-            for (int i = 0; i < count; i++)
+            for (var i = 0; i < count; i++)
             {
-                long v = Volatile.Read(ref Unsafe.AsRef<long>(basePtr + (long)i * stride));
+                var v = Volatile.Read(ref Unsafe.AsRef<long>(basePtr + (long)i * stride));
                 if (v < min) min = v;
             }
             return min;

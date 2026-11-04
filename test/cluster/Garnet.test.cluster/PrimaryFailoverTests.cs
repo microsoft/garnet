@@ -354,10 +354,7 @@ namespace Garnet.test.cluster
 
             Assert.That(primary.failoverManager.IsWritePaused, Is.False);
             Assert.That(primary.clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.REPLICA));
-            // Ending failover does not imply that the reattached old primary has finished AOF catch-up.
-            using var syncDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            context.clusterTestUtils.WaitForReplicaAofSync(1, 0, context.logger, syncDeadline.Token);
-            Assert.That(primary.replicationManager.ReplicationOffset.EqualsAll(tail), Is.True,
+            Assert.That(() => primary.replicationManager.ReplicationOffset.EqualsAll(tail), Is.True.After(10_000, 10),
                 "The reattached old primary must synchronize to the handoff offset.");
             Assert.That(Provider(1).clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.PRIMARY),
                 "The synchronized replica must be promoted using the final log tail, not the stale replica-tracking offset.");

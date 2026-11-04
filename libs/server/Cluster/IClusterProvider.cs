@@ -143,6 +143,14 @@ namespace Garnet.server
         void UpdateClusterAuth(string clusterUsername, string clusterPassword);
 
         /// <summary>
+        /// Notifies the cluster provider that the gossip-client configuration group changed at runtime so the
+        /// live gossip clients can be swapped for new instances built from the updated configuration. The swap
+        /// is best-effort: new work observes the replacement immediately and the previous clients are retired
+        /// gracefully in the background so their in-flight requests can drain.
+        /// </summary>
+        void OnGossipClientConfigChanged();
+
+        /// <summary>
         /// Get checkpoint info
         /// </summary>
         MetricsItem[] GetCheckpointInfo();
