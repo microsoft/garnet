@@ -52,6 +52,46 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task AofSetIfEqualRecoverTestAsync([Values] bool evict)
+        {
+            long expiration;
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase();
+                db.Execute("SET", "clear", "old", "EX", 60);
+                db.Execute("SET", "keep", "old", "EX", 60);
+                expiration = (long)db.Execute("PEXPIRETIME", "keep");
+                if (evict)
+                    server.Provider.StoreWrapper.store.Log.FlushAndEvict(wait: true);
+
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "clear", "new", "IFEQ", "old"));
+                ClassicAssert.AreEqual("old", (string)db.Execute("SET", "keep", "new", "KEEPTTL", "IFEQ", "old", "GET"));
+                ClassicAssert.IsTrue(db.Execute("SET", "clear", "rejected", "IFEQ", "old", "EX", 120).IsNull);
+                ClassicAssert.IsTrue(db.Execute("SET", "missing", "new", "IFEQ", "").IsNull);
+
+                db.Execute("SET", "deterministic", "old", "PX", 200);
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "deterministic", "new", "IFEQ", "old"));
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+            await Task.Delay(250);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase();
+                ClassicAssert.AreEqual("new", (string)db.StringGet("clear"));
+                ClassicAssert.AreEqual(-1, (long)db.Execute("PTTL", "clear"));
+                ClassicAssert.AreEqual("new", (string)db.StringGet("keep"));
+                ClassicAssert.AreEqual(expiration, (long)db.Execute("PEXPIRETIME", "keep"));
+                ClassicAssert.AreEqual("new", (string)db.StringGet("deterministic"));
+                ClassicAssert.IsFalse(db.KeyExists("missing"));
+            }
+        }
+
+        [Test]
         public async Task AofUpsertStoreRecoverTestAsync()
         {
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))

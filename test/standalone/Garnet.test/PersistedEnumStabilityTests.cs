@@ -146,6 +146,8 @@ namespace Garnet.test
             [RespCommand.BITOP_DIFF] = 120,
             [RespCommand.XVCREATE] = 121,
             [RespCommand.XVIMPORT] = 122,
+            [RespCommand.SETIFEQ] = 123,
+            [RespCommand.SETKEEPTTLIFEQ] = 124,
         };
 
         private static readonly Dictionary<HashOperation, int> ExpectedHashOps = new()

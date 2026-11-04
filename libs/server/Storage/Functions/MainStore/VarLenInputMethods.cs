@@ -286,6 +286,7 @@ namespace Garnet.server
 
                     case RespCommand.SETKEEPTTLXX:
                     case RespCommand.SETKEEPTTL:
+                    case RespCommand.SETKEEPTTLIFEQ:
                         fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                         fieldInfo.HasExpiration = srcLogRecord.DataHeader.HasExpiration;
                         return fieldInfo;
@@ -293,6 +294,7 @@ namespace Garnet.server
                     case RespCommand.SET:
                     case RespCommand.SETEXXX:
                     case RespCommand.SETEXNX:
+                    case RespCommand.SETIFEQ:
                         fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                         fieldInfo.HasExpiration = input.arg1 != 0;
                         return fieldInfo;

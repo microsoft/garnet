@@ -613,6 +613,7 @@ namespace Garnet.server
             var existOptions = ExistOptions.None;
             var expOption = ExpirationOption.None;
             var getValue = false;
+            var comparison = default(PinnedSpanByte);
 
             var tokenIdx = 2;
             Span<byte> nextOpt = default;
@@ -683,6 +684,17 @@ namespace Garnet.server
 
                     existOptions = ExistOptions.XX;
                 }
+                else if (nextOpt.SequenceEqual(CmdStrings.IFEQ))
+                {
+                    if (existOptions != ExistOptions.None || tokenIdx >= parseState.Count)
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
+                        break;
+                    }
+
+                    existOptions = ExistOptions.IFEQ;
+                    comparison = parseState.GetArgSliceByRef(tokenIdx++);
+                }
                 else if (nextOpt.SequenceEqual(CmdStrings.GET))
                 {
                     getValue = true;
@@ -710,7 +722,7 @@ namespace Garnet.server
                 return true;
             }
 
-            bool isHighPrecision = expOption == ExpirationOption.PX;
+            var isHighPrecision = expOption == ExpirationOption.PX;
 
             switch (expOption)
             {
@@ -727,6 +739,8 @@ namespace Garnet.server
                             return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, key, getValue, isHighPrecision, ref storageApi);
                         case ExistOptions.NX:
                             return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, isHighPrecision, ref storageApi);
+                        case ExistOptions.IFEQ:
+                            return NetworkSETIFEQ(key, comparison, expiry, expOption, getValue, ref storageApi);
                     }
                     break;
                 case ExpirationOption.KEEPTTL:
@@ -740,12 +754,57 @@ namespace Garnet.server
                             return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, key, getValue, highPrecision: false, ref storageApi);
                         case ExistOptions.NX:
                             return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, highPrecision: false, ref storageApi);
+                        case ExistOptions.IFEQ:
+                            return NetworkSETIFEQ(key, comparison, expiry, expOption, getValue, ref storageApi);
                     }
                     break;
             }
 
             while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                 SendAndReset();
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private bool NetworkSETIFEQ<TGarnetApi>(PinnedSpanByte key, PinnedSpanByte comparison, long expiry, ExpirationOption expOption, bool getValue, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            long expirationTicks = 0;
+            if (expiry != 0 && !TryGetAbsoluteExpiryTicks(expiry, expOption == ExpirationOption.PX, out expirationTicks))
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET);
+
+            // Pending operations and AOF replay use only the new and comparison values.
+            var args = parseState.Slice(1, 2);
+            var originalOption = args.GetArgSliceByRef(1);
+            args.SetArgument(1, comparison);
+            var cmd = expOption == ExpirationOption.KEEPTTL ? RespCommand.SETKEEPTTLIFEQ : RespCommand.SETIFEQ;
+            var input = new StringInput(cmd, ref args, arg1: expirationTicks);
+            if (getValue)
+                input.header.SetSetGetFlag();
+
+            var output = GetStringOutput();
+            GarnetStatus status;
+            try
+            {
+                status = storageApi.SET_Conditional(key, ref input, ref output);
+            }
+            finally
+            {
+                args.SetArgument(1, originalOption);
+            }
+            if (status == GarnetStatus.WRONGTYPE)
+            {
+                output.SpanByteAndMemory.Memory?.Dispose();
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+            }
+            else if (status == GarnetStatus.NOTFOUND)
+            {
+                output.SpanByteAndMemory.Memory?.Dispose();
+                WriteNull();
+            }
+            else
+                ProcessOutput(output.SpanByteAndMemory);
+
             return true;
         }
 
