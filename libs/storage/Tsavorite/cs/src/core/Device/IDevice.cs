@@ -224,7 +224,7 @@ namespace Tsavorite.core
         /// <param name="segment">The highest segment to keep</param>
         /// <param name="removed">The number of segments removed, not counting any that the device could tell held nothing</param>
         /// <returns>Whether the device removed every segment it holds above <paramref name="segment"/>; false if it cannot tell
-        /// which segments it holds, or cannot remove one without affecting others</returns>
+        /// which segments it holds</returns>
         /// <remarks>
         /// <para>
         /// This leaves every segment at or below <paramref name="segment"/> unchanged. It reflects the device when called,
