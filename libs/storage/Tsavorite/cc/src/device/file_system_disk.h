@@ -399,6 +399,8 @@ class FileSystemSegmentedFile {
       done->store(true);
       return;
     }
+    // The lowest open segment: truncating below segment + 1 drops it alone. It is open, so no unopened file needs deleting, and
+    // the range of those, [lower, new begin), is empty.
     TruncateSegmentsLocked(lock, segment + 1, segment + 1, nullptr, done);
   }
   /// Removes every segment below `new_begin_segment`. The segments this holds open below it are dropped from the open
@@ -412,6 +414,8 @@ class FileSystemSegmentedFile {
   void Truncate(uint64_t new_begin_offset, core::GcState::truncate_callback_t callback) {
     uint64_t new_begin_segment = new_begin_offset >> segment_shift_;
     begin_segment_ = new_begin_segment;
+    // Truncate removes only the segments this holds open, so the range of unopened files to delete, [lower, new begin), is
+    // empty. NativeDeviceImpl does not call it.
     ReleasableLockGuard lock{ &mutex_ };
     TruncateSegmentsLocked(lock, new_begin_segment, new_begin_segment, callback, nullptr);
   }
@@ -649,6 +653,8 @@ class FileSystemSegmentedFile {
     if(!files || files->begin_segment >= new_begin_segment) {
       // No open segment lies below the new begin: segments have already been truncated, or none is open.
       uint64_t begin_address = (files ? files->begin_segment : new_begin_segment) * segment_size_;
+      // Signal after releasing mutex_, as the deferred path below does, so the callback can call into this object: mutex_ is
+      // not recursive
       lock.Unlock();
       if(caller_callback) {
         caller_callback(begin_address);

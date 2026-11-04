@@ -2024,28 +2024,38 @@ namespace Tsavorite.core
         /// One native call removes the range and returns once the files are deleted. It also closes and deletes any segment below
         /// <paramref name="fromSegment"/> that the native device holds open, as when a read reopened a segment truncated earlier;
         /// <see cref="RemoveSegment"/> would only empty such a segment's file, since the device keeps the segments it holds open
-        /// contiguous. If the native device has not been created yet, or the native library is too old to remove a range, the
-        /// segments are removed one at a time.
+        /// contiguous. When that call is unavailable, the base class removes the segments one at a time.
         /// </remarks>
         protected override void RemoveSegmentsThroughAsync(int fromSegment, int throughSegment, AsyncCallback callback, IAsyncResult result)
         {
-            if (!TryTruncateSegments(fromSegment, throughSegment + 1))
+            if (TryTruncateInOneNativeCall(fromSegment, throughSegment + 1))
             {
-                base.RemoveSegmentsThroughAsync(fromSegment, throughSegment, callback, result);
+                callback(result);
                 return;
             }
-            callback(result);
+
+            // This is not a retry of a failed call: the call is unavailable. That happens in two cases, and in both, removing the
+            // segments one at a time, lowest first, through RemoveSegment is correct:
+            // - No native device exists yet, as it is created on the first IO. So no segment file is open, and RemoveSegment
+            //   deletes each file by name.
+            // - The native library is older and lacks NativeDevice_TruncateSegments. A library has that export exactly when its
+            //   RemoveSegment removes only the segment named; an older one's removes every open segment through the one named. So
+            //   removing the segments lowest first removes every open segment below the new begin, reopened ones included.
+            base.RemoveSegmentsThroughAsync(fromSegment, throughSegment, callback, result);
         }
 
         /// <summary>
         /// Remove every segment below <paramref name="newBeginSegment"/> with one native call, also deleting the files from
         /// <paramref name="lowerSegment"/> up that the native device does not hold open
         /// </summary>
-        /// <returns>False if the segments must be removed one at a time instead: the native device has not been created yet, or the
-        /// native library is too old to remove a range</returns>
-        bool TryTruncateSegments(int lowerSegment, int newBeginSegment)
+        /// <returns>
+        /// False only when that call is unavailable: no native device exists yet, or the native library is older and lacks it. True
+        /// once the call has run, even if it failed: a failure is an exception in native code, such as running out of memory, which
+        /// removing the segments one at a time would meet as well, so it is logged and not retried. True also once disposal has
+        /// begun, when removal does nothing, as in <see cref="RemoveSegment"/>.
+        /// </returns>
+        bool TryTruncateInOneNativeCall(int lowerSegment, int newBeginSegment)
         {
-            // Once disposal begins, removal is a no-op, as in RemoveSegment
             if (Volatile.Read(ref disposedFlag) != 0 || !TryLease(out int shard))
                 return true;
             try
