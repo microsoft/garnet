@@ -8052,6 +8052,23 @@
     "Complexity": "O(1)"
   },
   {
+    "Command": "TOUCH",
+    "Name": "TOUCH",
+    "Summary": "Returns the number of existing keys out of those specified using the normal read path. Garnet does not track per-key last-access times.",
+    "Group": "Generic",
+    "Complexity": "O(N) where N is the number of keys that will be touched.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
     "Command": "TTL",
     "Name": "TTL",
     "Summary": "Returns the expiration time in seconds of a key.",

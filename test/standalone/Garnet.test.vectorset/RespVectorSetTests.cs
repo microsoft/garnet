@@ -2302,6 +2302,24 @@ namespace Garnet.test
         }
 
         [Test]
+        public void TouchVectorSet()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", "vectors", "VALUES", 3, 1, 2, 3, "member", "NOQUANT"));
+            ClassicAssert.IsTrue(db.KeyExpire("vectors", TimeSpan.FromMinutes(5)));
+            var expiration = (long)db.Execute("PEXPIRETIME", "vectors");
+
+            ClassicAssert.IsTrue(db.KeyTouch("vectors"));
+            ClassicAssert.AreEqual(2, db.KeyTouch(["vectors", "missing", "vectors"]));
+            ClassicAssert.AreEqual(expiration, (long)db.Execute("PEXPIRETIME", "vectors"));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VCARD", "vectors"));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VISMEMBER", "vectors", "member"));
+            ClassicAssert.IsFalse(db.KeyExists("missing"));
+        }
+
+        [Test]
         public async Task ExpirationAsync()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
