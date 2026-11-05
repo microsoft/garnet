@@ -369,6 +369,7 @@ namespace Garnet.test.cluster
             int threadPoolMinIOCompletionThreads = 0,
             bool enableRangeIndexPreview = false,
             TimeSpan? networkSendTimeout = null,
+            bool enableVectorSetPreview = true,
             string replicaDiskBasedSyncChunkSize = "4m",
             int replicaDiskBasedSyncPipelineDepth = 4)
         {
@@ -433,6 +434,7 @@ namespace Garnet.test.cluster
                 threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
                 enableRangeIndexPreview: enableRangeIndexPreview,
                 networkSendTimeout: networkSendTimeout,
+                enableVectorSetPreview: enableVectorSetPreview,
                 replicaDiskBasedSyncChunkSize: replicaDiskBasedSyncChunkSize,
                 replicaDiskBasedSyncPipelineDepth: replicaDiskBasedSyncPipelineDepth);
 
