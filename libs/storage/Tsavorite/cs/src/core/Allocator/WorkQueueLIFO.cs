@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Tsavorite.core
@@ -17,7 +18,10 @@ namespace Tsavorite.core
         readonly Action<T> work;
         readonly SingleWaiterAutoResetEvent onWork;
         readonly Task processQueue;
-        private bool disposed;
+        private int disposed;
+
+        // Managed thread id of the thread running a work item, or 0
+        private int workingThreadId;
 
         public WorkQueueLIFO(Action<T> work)
         {
@@ -30,10 +34,24 @@ namespace Tsavorite.core
             processQueue = Task.Run(ProcessQueue);
         }
 
+        /// <summary>
+        /// Stops processing work. A work item that is running finishes before this returns, unless this is called
+        /// from that work item.
+        /// </summary>
         public void Dispose()
         {
-            disposed = true;
+            _ = Interlocked.Exchange(ref disposed, 1);
             onWork.Signal();
+
+            // A work item can run for as long as a device write, so the wait yields and sleeps rather than spinning.
+            var spinner = new SpinWait();
+            while (true)
+            {
+                var working = Volatile.Read(ref workingThreadId);
+                if (working == 0 || working == Environment.CurrentManagedThreadId)
+                    return;
+                spinner.SpinOnce();
+            }
         }
 
         /// <summary>
@@ -52,16 +70,24 @@ namespace Tsavorite.core
         private async Task ProcessQueue()
         {
             // Process items in work queue
-            while (!disposed)
+            while (Volatile.Read(ref disposed) == 0)
             {
                 while (stack.TryPop(out var workItem))
                 {
+                    // Publishing the thread before checking for dispose means either Dispose sees the item running and
+                    // waits for it, or the item sees Dispose and does not run.
+                    _ = Interlocked.Exchange(ref workingThreadId, Environment.CurrentManagedThreadId);
                     try
                     {
+                        if (Volatile.Read(ref disposed) != 0)
+                            return;
                         work(workItem);
                     }
                     catch { }
-                    if (disposed) return;
+                    finally
+                    {
+                        Volatile.Write(ref workingThreadId, 0);
+                    }
                 }
                 await onWork.WaitAsync().ConfigureAwait(false);
             }

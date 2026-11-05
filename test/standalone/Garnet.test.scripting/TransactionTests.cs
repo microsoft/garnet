@@ -628,5 +628,34 @@ namespace Garnet.test
             expectedResponse = "*-1";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
+
+        /// <summary>
+        /// An in-place command that leaves a watched key unchanged does not abort the transaction, and does not hide
+        /// a later in-place update of that key from WATCH either.
+        /// </summary>
+        [Test]
+        public void NoOpUpdateNeitherAbortsNorHidesALaterUpdateFromWatch([Values("SET NX", "EXPIRE XX")] string noOpCommand, [Values] bool hash)
+        {
+            using var client = TestUtils.CreateRequest();
+            const string key = "watched";
+            var (noOp, noOpResponse) = noOpCommand == "SET NX" ? ($"SET {key} v NX", "$-1\r\n") : ($"EXPIRE {key} 100 XX", ":0\r\n");
+            var (create, createResponse) = hash ? ($"HSET {key} f v", ":1\r\n") : ($"SET {key} 1", "+OK\r\n");
+            var (update, updateResponse) = hash ? ($"HSET {key} f2 v2", ":1\r\n") : ($"INCR {key}", ":2\r\n");
+
+            TestUtils.AssertEqualUpToExpectedLength(createResponse, client.SendCommand(create));
+
+            TestUtils.AssertEqualUpToExpectedLength("+OK\r\n", client.SendCommand($"WATCH {key}"));
+            TestUtils.AssertEqualUpToExpectedLength(noOpResponse, client.SendCommand(noOp));
+            TestUtils.AssertEqualUpToExpectedLength("+OK\r\n", client.SendCommand("MULTI"));
+            TestUtils.AssertEqualUpToExpectedLength("+QUEUED\r\n", client.SendCommand($"EXISTS {key}"));
+            TestUtils.AssertEqualUpToExpectedLength("*1\r\n:1\r\n", client.SendCommand("EXEC", numTokens: 2));
+
+            TestUtils.AssertEqualUpToExpectedLength("+OK\r\n", client.SendCommand($"WATCH {key}"));
+            TestUtils.AssertEqualUpToExpectedLength(noOpResponse, client.SendCommand(noOp));
+            TestUtils.AssertEqualUpToExpectedLength(updateResponse, client.SendCommand(update));
+            TestUtils.AssertEqualUpToExpectedLength("+OK\r\n", client.SendCommand("MULTI"));
+            TestUtils.AssertEqualUpToExpectedLength("+QUEUED\r\n", client.SendCommand($"EXISTS {key}"));
+            TestUtils.AssertEqualUpToExpectedLength("*-1", client.SendCommand("EXEC"));
+        }
     }
 }
