@@ -600,6 +600,21 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Gets the live (non-expired) members in score order.
+        /// </summary>
+        /// <remarks>Does not mutate the object, so it is safe to call while holding only a shared lock.</remarks>
+        internal IEnumerable<byte[]> GetMembersInScoreOrder()
+        {
+            foreach (var item in sortedSet)
+            {
+                if (IsExpired(item.Element))
+                    continue;
+
+                yield return item.Element;
+            }
+        }
+
+        /// <summary>
         /// Gets the count of elements in the sorted set.
         /// </summary>
         /// <returns>The count of elements in the sorted set.</returns>

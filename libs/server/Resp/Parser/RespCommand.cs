@@ -152,7 +152,8 @@ namespace Garnet.server
         BITOP_NOT = 119,
         BITOP_DIFF = 120,
         XVCREATE = 121,
-        XVIMPORT = 122, // Note: LastWriteCommand -- append new write commands after this with the next value
+        XVIMPORT = 122,
+        SORT = 123, // Note: LastWriteCommand -- append new write commands after this with the next value
 
         // Read-only commands. NEVER persisted (reads never enter the AOF), so these are
         // auto-numbered and may be renumbered/reordered freely across versions. They follow the
@@ -213,6 +214,7 @@ namespace Garnet.server
         SISMEMBER,
         SMEMBERS,
         SMISMEMBER,
+        SORT_RO,
         SPUBLISH,
         SRANDMEMBER,
         SSCAN,
@@ -591,7 +593,7 @@ namespace Garnet.server
         // appended.
         internal const RespCommand FirstWriteCommand = RespCommand.APPEND;
 
-        internal const RespCommand LastWriteCommand = RespCommand.XVIMPORT;
+        internal const RespCommand LastWriteCommand = RespCommand.SORT;
 
         // Data commands span writes + reads + scripts contiguously: [FirstDataCommand, LastDataCommand].
         internal const RespCommand FirstDataCommand = FirstWriteCommand;

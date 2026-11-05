@@ -6494,6 +6494,42 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task SortACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SORT",
+                [DoSortAsync, DoSortStoreAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoSortAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("SORT", ["foo"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual(0, val.Length);
+            }
+
+            static async Task DoSortStoreAsync(GarnetClient client)
+            {
+                long val = await client.ExecuteForLongResultAsync("SORT", ["foo", "STORE", "dest"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
+        public async Task SortROACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SORT_RO",
+                [DoSortROAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoSortROAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("SORT_RO", ["foo", "ALPHA"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual(0, val.Length);
+            }
+        }
+
+        [Test]
         public async Task SInterACLsAsync()
         {
             await CheckCommandsAsync(

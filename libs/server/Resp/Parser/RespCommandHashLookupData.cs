@@ -162,6 +162,8 @@ namespace Garnet.server
             Add("SINTERSTORE", RespCommand.SINTERSTORE);
             Add("SUNION", RespCommand.SUNION);
             Add("SUNIONSTORE", RespCommand.SUNIONSTORE);
+            Add("SORT", RespCommand.SORT);
+            Add("SORT_RO", RespCommand.SORT_RO);
 
             // Sorted set commands
             Add("ZADD", RespCommand.ZADD);

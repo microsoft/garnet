@@ -148,8 +148,8 @@ Legend: ➕ = supported, ➖ = not supported.
 |  | [RENAMENX](generic-commands.md#renamenx) | ➕ |  |
 |  | [RESTORE](generic-commands.md#restore) | ➕ |
 |  | [SCAN](generic-commands.md#scan) | ➕ |  |
-|  | SORT | ➖ |  |
-|  | SORT_RO | ➖ |  |
+|  | [SORT](generic-commands.md#sort) | ➕ | BY/GET patterns that read other keys are not supported inside MULTI/EXEC. |
+|  | [SORT_RO](generic-commands.md#sort_ro) | ➕ | BY/GET patterns that read other keys are not supported inside MULTI/EXEC. |
 |  | TOUCH | ➖ |  |
 |  | [TTL](generic-commands.md#ttl) | ➕ |  |
 |  | [TYPE](generic-commands.md#type) | ➕ |  |
