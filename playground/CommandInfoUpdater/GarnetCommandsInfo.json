@@ -508,6 +508,32 @@
     ]
   },
   {
+    "Command": "DIGEST",
+    "Name": "DIGEST",
+    "Arity": 2,
+    "Flags": "ReadOnly, Fast",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, String, Fast",
+    "StoreType": "Main",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
     "Command": "DELIFGREATER",
     "Name": "DELIFGREATER",
     "Arity": 2,

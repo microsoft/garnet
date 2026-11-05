@@ -126,6 +126,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> XX => "XX"u8;
         public static ReadOnlySpan<byte> IFEQ => "IFEQ"u8;
         public static ReadOnlySpan<byte> IFNE => "IFNE"u8;
+        public static ReadOnlySpan<byte> IFDEQ => "IFDEQ"u8;
+        public static ReadOnlySpan<byte> IFDNE => "IFDNE"u8;
+        public static ReadOnlySpan<byte> DIGEST => "DIGEST"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_DIGEST => "-ERR must be exactly 16 hexadecimal characters\r\n"u8;
         public static ReadOnlySpan<byte> DELIFEQ => "DELIFEQ"u8;
         public static ReadOnlySpan<byte> DELEX => "DELEX"u8;
         public static ReadOnlySpan<byte> CH => "CH"u8;

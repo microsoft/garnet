@@ -152,6 +152,10 @@ namespace Garnet.test
             [RespCommand.SETKEEPTTLIFNE] = 126,
             [RespCommand.DELIFEQ] = 127,
             [RespCommand.DELEX] = 128,
+            [RespCommand.SETIFDEQ] = 129,
+            [RespCommand.SETKEEPTTLIFDEQ] = 130,
+            [RespCommand.SETIFDNE] = 131,
+            [RespCommand.SETKEEPTTLIFDNE] = 132,
         };
 
         private static readonly Dictionary<HashOperation, int> ExpectedHashOps = new()

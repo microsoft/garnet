@@ -29,6 +29,7 @@ namespace Garnet.server
             Add("DEL", RespCommand.DEL);
             Add("DELIFEQ", RespCommand.DELIFEQ);
             Add("DELEX", RespCommand.DELEX);
+            Add("DIGEST", RespCommand.DIGEST);
             Add("INCR", RespCommand.INCR);
             Add("DECR", RespCommand.DECR);
             Add("INCRBY", RespCommand.INCRBY);

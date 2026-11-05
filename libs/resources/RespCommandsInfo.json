@@ -1323,6 +1323,32 @@
     "StoreType": "Main"
   },
   {
+    "Command": "DIGEST",
+    "Name": "DIGEST",
+    "Arity": 2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, String",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ],
+    "StoreType": "Main"
+  },
+  {
     "Command": "DISCARD",
     "Name": "DISCARD",
     "Arity": 1,
