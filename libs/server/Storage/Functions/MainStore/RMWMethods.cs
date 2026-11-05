@@ -1498,6 +1498,11 @@ namespace Garnet.server
                     oldValue.CopyTo(dstLogRecord.ValueSpan);
                     break;
 
+                case RespCommand.XVSCOPY:
+                    // XVSCOPY should never update an existing value, should always be creating new
+                    rmwInfo.Action = RMWAction.CancelOperation;
+                    return false;
+
                 case RespCommand.VADD:
                     // NeedCopyUpdate cancels when the record is no longer an index, so CopyUpdater is only reached for a genuine index record.
                     Debug.Assert(srcLogRecord.RecordType == VectorManager.RecordType, "CopyUpdater reached for VADD on a non-index record");

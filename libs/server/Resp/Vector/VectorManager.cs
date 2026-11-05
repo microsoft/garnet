@@ -1959,14 +1959,15 @@ namespace Garnet.server
                 CompletePending(ref status, ref session.stringBasicContext);
             }
 
-            if (!status.IsCompletedSuccessfully)
+            // Canceled indicates we tried to copy over some existing value
+            if (status.IsCanceled)
             {
-                if (status.IsCanceled)
-                {
-                    result = VectorManagerResult.Duplicate;
-                    errorMessage = "ERR Cannot copy over existing key"u8;
-                    return GarnetStatus.NOTFOUND;
-                }
+                result = VectorManagerResult.Duplicate;
+                errorMessage = "ERR Cannot copy over existing key"u8;
+                return GarnetStatus.OK;
+            }
+            else if (!status.IsCompletedSuccessfully)
+            {
 
                 result = VectorManagerResult.BadParams;
                 errorMessage = ""u8;

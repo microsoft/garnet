@@ -813,10 +813,11 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK && IsImportPending(sourceIndexSpan))
             {
-                acquiredLockPair.Dispose();
                 importPending = true;
 
-                return default;
+                status = GarnetStatus.WRONGTYPE;
+
+                return acquiredLockPair;
             }
 
             importPending = false;

@@ -336,7 +336,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
             }
 
-            if (parseState.Count < 2)
+            if (parseState.Count != 2)
             {
                 return AbortWithWrongNumberOfArguments("XVSCOPY");
             }
@@ -346,12 +346,17 @@ namespace Garnet.server
 
             if (sourceKey.ReadOnlySpan.SequenceEqual(destKey.ReadOnlySpan))
             {
-                return AbortWithErrorMessage("circular shallow copy");
+                return AbortWithErrorMessage("ERR circular shallow copies are not allowed");
             }
 
             var status = storageApi.VectorSetShallowCopy(sourceKey, destKey, out var result, out var errorMsg);
             if (status == GarnetStatus.WRONGTYPE)
             {
+                if (result == VectorManagerResult.ImportingPending)
+                {
+                    return AbortVectorSetNotReady();
+                }
+
                 return AbortVectorSetWrongType();
             }
             else if (status == GarnetStatus.NOTFOUND)

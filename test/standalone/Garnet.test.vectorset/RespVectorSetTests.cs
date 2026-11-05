@@ -136,6 +136,9 @@ namespace Garnet.test
                         case RespCommand.VSIM:
                             exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "75", "110.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "COUNT", "5", "EPSILON", "1.0", "EF", "40"]));
                             break;
+                        case RespCommand.XVSCOPY:
+                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVSCOPY", "foo", "bar"));
+                            break;
                         default:
                             throw new InvalidOperationException($"Unexpected Vector Set command: {cmd}");
                     }
@@ -2518,6 +2521,9 @@ namespace Garnet.test
                                 }
                                 break;
                             case RespCommand.XVIMPORT:
+                                // TODO: Implement later
+                                break;
+                            case RespCommand.XVSCOPY:
                                 // TODO: Implement later
                                 break;
                             default:
@@ -5757,6 +5763,56 @@ namespace Garnet.test
             // Task count and index mismatch
             var exc7 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", [NotImportingKey, "VERIFY", "1", "1"]));
             ClassicAssert.AreEqual("ERR Task configuration invalid", exc7.Message);
+        }
+
+        [Test]
+        public async Task XVSCOPYValidationAsync()
+        {
+            const string MissingKey = nameof(XVSCOPYValidationAsync) + "_Missing";
+            const string NotVectorSetKey = nameof(XVSCOPYValidationAsync) + "_NotVectorSet";
+            const string VectorSetKey = nameof(XVSCOPYValidationAsync) + "_VectorSet";
+            const string ImportingVectorSetKey = nameof(XVSCOPYValidationAsync) + "_ImportingVectorSet";
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            ClassicAssert.IsTrue(await db.StringSetAsync(NotVectorSetKey, "hello").ConfigureAwait(false));
+
+            ClassicAssert.IsTrue(await db.VectorSetAddAsync(VectorSetKey, VectorSetAddRequest.Member("foo", new[] { 1f, 2f, 3f })).ConfigureAwait(false));
+
+            ClassicAssert.AreEqual("OK", (string)await db.ExecuteAsync("XVCREATE", ImportingVectorSetKey, "DIM", 3, "NOQUANT").ConfigureAwait(false));
+            ClassicAssert.AreEqual("OK", (string)await db.ExecuteAsync("XVIMPORT", ImportingVectorSetKey, "VECTOR", new byte[] { 1, 0, 0, 0 }, MemoryMarshal.AsBytes(new float[] { 1, 2, 3 }).ToArray()).ConfigureAwait(false));
+
+            // Too few keys
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVSCOPY"));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'XVSCOPY' command", exc0.Message);
+
+            var exc1 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVSCOPY", ["foo"]));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'XVSCOPY' command", exc1.Message);
+
+            // Too many keys
+            var exc2 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVSCOPY", ["foo", "bar", "fizz"]));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'XVSCOPY' command", exc2.Message);
+
+            // Copying key that does not exist
+            var exc3 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVSCOPY", [MissingKey, "foo"]));
+            ClassicAssert.AreEqual("ERR vector set does not exist", exc3.Message);
+
+            // Copying key that is not Vector Set
+            var exc4 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVSCOPY", [NotVectorSetKey, "foo"]));
+            ClassicAssert.AreEqual("WRONGTYPE Operation against a key holding the wrong kind of value", exc4.Message);
+
+            // Copying key into itself
+            var exc5 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVSCOPY", [VectorSetKey, VectorSetKey]));
+            ClassicAssert.AreEqual("ERR circular shallow copies are not allowed", exc5.Message);
+
+            // Copying key into key that already exists
+            var exc6 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVSCOPY", [VectorSetKey, NotVectorSetKey]));
+            ClassicAssert.AreEqual("ERR Cannot copy over existing key", exc6.Message);
+
+            // Copying Vector Set which is importing
+            var exc7 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVSCOPY", [ImportingVectorSetKey, "foo"]));
+            ClassicAssert.AreEqual("ERR Vector Set import is not finished", exc7.Message);
         }
 
         /// <summary>
