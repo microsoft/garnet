@@ -6,6 +6,10 @@
 [![BDN Charts](https://img.shields.io/badge/BDN%20Charts-8A2BE2)](https://microsoft.github.io/garnet/charts/)
 [![Discord Shield](https://discordapp.com/api/guilds/1213937452272582676/widget.png?style=shield)](https://aka.ms/garnet-discord)
 
+<p align="center">
+  <b>English</b> · <a href="https://github.com/microsoft/garnet/blob/main/README.zh.md">简体中文</a>
+</p>
+
 Garnet is a remote cache-store that offers several unique benefits:
 * Garnet adopts the popular [RESP](https://redis.io/docs/latest/develop/reference/protocol-spec/) wire protocol as a starting point, which makes it possible to use Garnet from unmodified Redis clients available in
   most programming languages of today, such as [StackExchange.Redis](https://github.com/StackExchange/StackExchange.Redis) in C#.
@@ -31,10 +35,10 @@ Garnet implements a wide range of APIs including raw strings (e.g., gets, sets, 
 operations. It can handle multi-key transactions in the form of client-side RESP transactions and our own server-side stored procedures and modules in C#. It allows users to define custom
 operations on both raw strings and custom object types, all in the convenience and safety of C#, leading to a lower bar for developing custom extensions. Garnet also supports Lua scripts.
 
-Garnet uses a fast and pluggable network layer, enabling future extensions such as leveraging kernel-bypass stacks. It supports secure transport layer security (TLS) communications using 
+Garnet uses a fast and pluggable network layer, enabling future extensions such as leveraging kernel-bypass stacks. It supports secure transport layer security (TLS) communications using
 the robust [SslStream](https://learn.microsoft.com/en-us/dotnet/api/system.net.security.sslstream) library of .NET, as well as basic access control. Garnet’s storage layer, called Tsavorite,
-is built for high performance and includes strong database features such as thread scalability, tiered storage support (memory, SSD, and cloud storage), fast non-blocking checkpointing, 
-recovery, operation logging for durability, multi-key transaction support, and better memory management and reuse. Finally, Garnet supports a cluster mode of operation with support for 
+is built for high performance and includes strong database features such as thread scalability, tiered storage support (memory, SSD, and cloud storage), fast non-blocking checkpointing,
+recovery, operation logging for durability, multi-key transaction support, and better memory management and reuse. Finally, Garnet supports a cluster mode of operation with support for
 sharding, replication, and dynamic key migration.
 
 <p align="center">
@@ -47,19 +51,19 @@ We illustrate a few key results on our [website](https://microsoft.github.io/gar
 
 ## Design Highlights
 
-Garnet’s design re-thinks the entire cache-store stack – from receiving packets on the network, to parsing and processing database operations, to performing storage interactions. We build on 
+Garnet’s design re-thinks the entire cache-store stack – from receiving packets on the network, to parsing and processing database operations, to performing storage interactions. We build on
 top of years of our [prior research](https://microsoft.github.io/garnet/docs/research/papers). Below is Garnet’s overall architecture.
 
 <p align="center">
   <img src="https://github.com/microsoft/garnet/assets/18355833/8d89f719-f86b-4b1f-81d1-1ae7bd450001" width=400 />
 </p>
 
-Garnet’s network layer is based on a shared memory design, with TLS processing and storage interactions performed on the network IO completion thread, avoiding thread switching overheads in the common 
+Garnet’s network layer is based on a shared memory design, with TLS processing and storage interactions performed on the network IO completion thread, avoiding thread switching overheads in the common
 case. This approach allows CPU cache coherence to bring the data to the processing logic, instead of traditional shuffle-based network designs, which require data movement to the appropriate shard on
 the server.
 
-Garnet’s storage design consists of two Tsavorite key-value stores whose fates are bound by a unified operation log. The first store, called the “main store,” is optimized for raw string operations and manages memory carefully to 
-avoid garbage collection. The second, and optional, “object store” is optimized for complex objects and custom data types, including popular types such as Sorted Set, Set, Hash, List, and Geo. Data types in the object store 
+Garnet’s storage design consists of two Tsavorite key-value stores whose fates are bound by a unified operation log. The first store, called the “main store,” is optimized for raw string operations and manages memory carefully to
+avoid garbage collection. The second, and optional, “object store” is optimized for complex objects and custom data types, including popular types such as Sorted Set, Set, Hash, List, and Geo. Data types in the object store
 leverage the .NET library ecosystem for their current implementations. They are stored on the heap in memory (which makes updates very efficient) and in a serialized form on disk. In the future, we plan to investigate using a
 unified index and log to ease maintenance.
 
@@ -69,13 +73,13 @@ processing concerns from storage details such as concurrency, storage tiering, a
 
 ### Cluster Mode
 
-In addition to single-node execution, Garnet has a fully-featured cluster mode, which allows users to create and manage a sharded and replicated deployment. Garnet also supports an efficient and dynamic key migration scheme 
+In addition to single-node execution, Garnet has a fully-featured cluster mode, which allows users to create and manage a sharded and replicated deployment. Garnet also supports an efficient and dynamic key migration scheme
 to rebalance shards. Users can use standard Redis cluster commands to create and manage Garnet clusters, and nodes perform gossip to share and evolve cluster state. Garnet's cluster mode design is currently _passive_: this means
 that it does not implement leader election, and simply responds to cluster commands issued by a user-provided _control plane_; see [this link](https://microsoft.github.io/garnet/docs/cluster/overview#control-plane) for details.
 
 ## Next Steps
 
-Head over to our [documentation](https://microsoft.github.io/garnet) site, or jump directly to the [getting started](https://microsoft.github.io/garnet/docs/getting-started) or 
+Head over to our [documentation](https://microsoft.github.io/garnet) site, or jump directly to the [getting started](https://microsoft.github.io/garnet/docs/getting-started) or
 [releases](https://microsoft.github.io/garnet/docs/welcome/releases) section.
 
 ## License
@@ -102,11 +106,11 @@ contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additio
 
 ## Trademarks
 
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft 
-trademarks or logos is subject to and must follow 
+This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft
+trademarks or logos is subject to and must follow
 [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
 Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
 Any use of third-party trademarks or logos are subject to those third-party's policies.
 
-Redis is a registered trademark of Redis Ltd. Any rights therein are reserved to Redis Ltd. Any use by Microsoft is for referential 
+Redis is a registered trademark of Redis Ltd. Any rights therein are reserved to Redis Ltd. Any use by Microsoft is for referential
 purposes only and does not indicate any sponsorship, endorsement or affiliation between Redis and Microsoft.
