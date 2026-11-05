@@ -324,7 +324,7 @@ namespace Garnet.server
         {
             if (db.AppendOnlyFile == null) return;
 
-            await db.AppendOnlyFile.Log.RecoverAsync().ConfigureAwait(false);
+            await db.AppendOnlyFile.Log.RecoverAsync(clearAboveTail: StoreWrapper.serverOptions.AofReplayClearAboveTail).ConfigureAwait(false);
             Logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}, DB ID: {id}",
                 db.AppendOnlyFile.Log.BeginAddress, db.AppendOnlyFile.Log.TailAddress, db.Id);
         }

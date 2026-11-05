@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -15,7 +17,8 @@ namespace Garnet.test
     /// Recovery tests for the tail of the AOF. A "torn tail" - an ungraceful shutdown that leaves the final commit
     /// record half-written - must be reported, and recovery must not crash (FailOnRecoveryError is set so a bad
     /// recovery surfaces as a startup exception) and must replay every committed operation up to the last valid
-    /// commit. An intact tail must recover without reporting anything.
+    /// commit. An intact tail must recover without reporting anything. What the AOF holds above the recovered tail
+    /// must be cleared before anything is appended, unless clearing is turned off.
     /// </summary>
     [TestFixture]
     public class RespAofTornTailTests : TestBase
@@ -137,6 +140,95 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Recovery that stops short of the end of the AOF leaves intact commits above the recovered tail. Here a corrupted
+        /// record stops it, and a segment file above the tail's segment stands for a history that a replica sync replaced.
+        /// With clearing on, both are erased before anything is appended. With clearing off, the records appended at the
+        /// tail are laid out exactly as the old ones were and end in a page's padding, while the next page still holds old
+        /// records. The next recovery then passes the padding into the old commits and adopts them, restoring keys that the
+        /// first recovery did not. The test asserts that too, which shows that it reaches them.
+        /// </summary>
+        [Test]
+        public void RecoveryClearsAofAboveTail([Values] bool clearAboveTail)
+        {
+            const int numKeys = 400;
+            const string aofPageSize = "8k";
+            const int aofPageBytes = 8 << 10;
+
+            // Each SET is committed before the next one is issued (a commit per operation, and commitWait), so the AOF holds a
+            // SET record and then its commit record for each key. Keys and values all have the same length, so all SET records
+            // are the same size, as are all commit records. Small AOF pages spread them over several pages.
+            server = CreateServer(tryRecover: false);
+            server.Start();
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                for (var i = 0; i < numKeys; i++)
+                    db.StringSet(Key(i), Value(i));
+            }
+            server.Dispose(false);
+            server = null;
+
+            var aofDir = Path.Combine(TestUtils.MethodTestDir, "AOF");
+            var tailSegment = Path.Combine(aofDir, "aof.log.0");
+            var staleSegment = Path.Combine(aofDir, "aof.log.5");
+            var records = ReadRecords(tailSegment, aofPageBytes);
+
+            // Zero the length of the first record on page 1, a SET record, so that recovery ends the log there. Its tail is then
+            // at the start of page 0's padding, so the new keys' records start on page 1 too, at the same offsets as the old.
+            var firstLostKey = records.Find(r => r.Offset == aofPageBytes).Key;
+            Assert.That(firstLostKey, Is.GreaterThan(0), "page 1 must start with a SET record");
+            ZeroLength(tailSegment, aofPageBytes);
+
+            // The new keys' records end with the commit record before the first later page that starts with a SET record.
+            // Padding follows that commit record, since the SET record did not fit on its page, so recovery passes from it to
+            // the old records on the next page. Old records later on the same page as the tail would not be reached: a flush
+            // writes whole sectors, which zeroes the rest of the tail's sector, and recovery stops at data after zeros on a page.
+            var firstStaleKey = records.Find(r => r.Offset > aofPageBytes && r.Offset % aofPageBytes == 0 && r.Key >= 0).Key;
+            Assert.That(firstStaleKey, Is.GreaterThan(firstLostKey).And.LessThan(numKeys - 1), "a later page must start with a SET record that old records follow");
+            var numNewKeys = firstStaleKey - firstLostKey;
+
+            File.WriteAllBytes(staleSegment, Enumerable.Repeat((byte)0x5A, 4096).ToArray());
+
+            server = CreateServer(tryRecover: true);
+            server.Start();
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                for (var i = 0; i < numKeys; i++)
+                    ClassicAssert.AreEqual(i < firstLostKey ? Value(i) : null, (string)db.StringGet(Key(i)), $"first recovery, {Key(i)}");
+                for (var i = 0; i < numNewKeys; i++)
+                    db.StringSet(NewKey(i), Value(i));
+            }
+            server.Dispose(false);
+            server = null;
+
+            ClassicAssert.AreEqual(!clearAboveTail, HoldsData(staleSegment), "the segment file above the tail's segment must be removed or emptied only when clearing");
+            ClassicAssert.AreEqual(!clearAboveTail, FileContains(tailSegment, Key(numKeys - 1)), "the records above the tail must be zeroed only when clearing");
+
+            server = CreateServer(tryRecover: true);
+            server.Start();
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                for (var i = 0; i < numNewKeys; i++)
+                    ClassicAssert.AreEqual(Value(i), (string)db.StringGet(NewKey(i)), $"second recovery, {NewKey(i)}");
+                for (var i = 0; i < numKeys; i++)
+                {
+                    var restored = i < firstLostKey || (!clearAboveTail && i >= firstStaleKey);
+                    ClassicAssert.AreEqual(restored ? Value(i) : null, (string)db.StringGet(Key(i)), $"second recovery, {Key(i)}");
+                }
+            }
+
+            GarnetServer CreateServer(bool tryRecover)
+                => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: tryRecover, enableAOF: true, commitWait: true, lowMemory: true,
+                    aofPageSize: aofPageSize, aofMemorySize: "32k", failOnRecoveryError: true, aofReplayClearAboveTail: clearAboveTail);
+
+            static string Key(int i) => $"key{i:D4}";
+            static string NewKey(int i) => $"new{i:D4}";
+            static string Value(int i) => $"value{i:D4}";
+        }
+
+        /// <summary>
         /// The warning, error, and critical entries the AOF logger wrote to a <see cref="NUnitLoggerProvider"/> log,
         /// each from its category through its message.
         /// </summary>
@@ -180,6 +272,65 @@ namespace Garnet.test
                 }
             }
         }
+
+        /// <summary>
+        /// The records in AOF segment 0, in order: each one's offset in the segment, and for a SET record the index of its key,
+        /// formatted "key" and four digits, or -1 for a commit record
+        /// </summary>
+        private static List<(long Offset, int Key)> ReadRecords(string segmentFile, int pageBytes)
+        {
+            const int headerSize = 4;   // LogChecksumType.None => 4-byte length-only record header
+            var data = File.ReadAllBytes(segmentFile);
+            var keyPrefix = Encoding.ASCII.GetBytes("key");
+            var records = new List<(long Offset, int Key)>();
+            for (long offset = Tsavorite.core.LogAddress.FirstValidAddress; offset + headerSize <= data.Length;)
+            {
+                // Commit records have negative lengths. A zero length is padding to the end of the page, or at a page start,
+                // the end of the written data.
+                var length = BitConverter.ToInt32(data, (int)offset);
+                if (length == 0)
+                {
+                    if (offset % pageBytes == 0)
+                        break;
+                    offset = (offset / pageBytes + 1) * pageBytes;
+                    continue;
+                }
+
+                var payload = data.AsSpan((int)offset + headerSize, Math.Abs(length));
+                var key = -1;
+                if (length > 0)
+                {
+                    var keyStart = payload.IndexOf(keyPrefix) + keyPrefix.Length;
+                    key = int.Parse(Encoding.ASCII.GetString(payload.Slice(keyStart, 4)));
+                }
+                records.Add((offset, key));
+                offset += headerSize + ((payload.Length + 3) & ~3);
+            }
+            return records;
+        }
+
+        /// <summary>
+        /// Zero the length field of the record at <paramref name="offset"/> in <paramref name="segmentFile"/>
+        /// </summary>
+        private static void ZeroLength(string segmentFile, long offset)
+        {
+            using var fs = new FileStream(segmentFile, FileMode.Open, FileAccess.Write, FileShare.None);
+            fs.Position = offset;
+            fs.Write(new byte[4]);
+        }
+
+        /// <summary>
+        /// Whether <paramref name="path"/> holds the ASCII bytes of <paramref name="text"/>
+        /// </summary>
+        private static bool FileContains(string path, string text)
+            => File.ReadAllBytes(path).AsSpan().IndexOf(Encoding.ASCII.GetBytes(text)) >= 0;
+
+        /// <summary>
+        /// Whether the file at <paramref name="path"/> exists and is not empty. Clearing deletes a segment file above the tail,
+        /// or empties it if the device holds it open, as <see cref="Tsavorite.core.NativeStorageDevice"/> can.
+        /// </summary>
+        private static bool HoldsData(string path)
+            => File.Exists(path) && new FileInfo(path).Length > 0;
 
         /// <summary>
         /// Corrupts the AOF to look like an ungraceful shutdown mid commit-record write:

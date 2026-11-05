@@ -331,6 +331,11 @@ namespace Garnet.cluster
                 logger?.LogInformation("Initializing AOF");
                 storeWrapper.appendOnlyFile.Log.Initialize(beginAddress, recoveredReplicationOffset);
 
+                // The primary streams to the new tail. Clear what this replica's AOF holds above it first, so that a later
+                // recovery cannot continue from the streamed records into the history they replace.
+                if (clusterProvider.serverOptions.AofReplayClearAboveTail)
+                    storeWrapper.appendOnlyFile.Log.PrepareToAppend();
+
                 // Before we can use the replication offset, we must wait for queued Vector Set ops to complete
                 storeWrapper.DefaultDatabase.VectorManager?.WaitForVectorOperationsToComplete();
 

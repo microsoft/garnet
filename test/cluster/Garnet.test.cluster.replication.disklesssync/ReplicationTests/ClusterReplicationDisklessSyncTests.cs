@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -548,6 +549,48 @@ namespace Garnet.test.cluster
             // Validate all replicas
             for (var replica = 1; replica < nodes_count; replica++)
                 Validate(nOffsets[primary], nOffsets[replica], disableObjects);
+        }
+
+        /// <summary>
+        /// A replica keeps its AOF files until a sync moves its AOF tail, and diskless sync does not recover them first. The
+        /// sync must then remove or empty the AOF segment files above the new tail's segment, which a history it replaces can
+        /// leave.
+        /// </summary>
+        [Test, Order(7)]
+        [Category("REPLICATION")]
+        public void ClusterDisklessSyncRemovesAofSegmentsAboveTail()
+        {
+            var nodes_count = 2;
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout, sublogCount: sublogCount);
+            context.CreateConnection(useTLS: useTLS);
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+            PopulatePrimary(primaryIndex, disableObjects: true, performRMW: false);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
+
+            // Detach the replica, and plant a segment file in each of its sublogs far above the AOF tail
+            ResetAndReAttach(replicaIndex, primaryIndex, soft: true);
+            var aofDir = context.nodeOptions[replicaIndex].GetAppendOnlyFileDirectory(0);
+            var staleSegments = Enumerable.Range(0, sublogCount).Select(i => Path.Combine(aofDir, sublogCount == 1 ? "aof.log.7" : $"aof.{i}.log.7")).ToArray();
+            foreach (var staleSegment in staleSegments)
+                File.WriteAllBytes(staleSegment, Enumerable.Repeat((byte)0x5A, 4096).ToArray());
+
+            PopulatePrimary(primaryIndex, disableObjects: true, performRMW: false);
+            _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
+            Validate(primaryIndex, replicaIndex, disableObjects: true);
+
+            // Clearing deletes a segment file above the tail, or empties it if the device holds it open, as NativeStorageDevice can
+            foreach (var staleSegment in staleSegments)
+                ClassicAssert.IsFalse(File.Exists(staleSegment) && new FileInfo(staleSegment).Length > 0, $"{staleSegment} must be removed or emptied when the sync moves the AOF tail");
         }
 
 #if DEBUG

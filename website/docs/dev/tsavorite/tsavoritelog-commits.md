@@ -87,6 +87,9 @@ Either way, every record above the tail is lost, including later commits that `R
 Appending without clearing keeps the earlier behavior; the padding check above then still stops a scan whose new tail
 page is followed by older data on the same page.
 
+Garnet clears its AOF this way unless `--aof-replay-clear-above-tail` is turned off; see
+[Clearing the AOF above its tail](../../getting-started/configuration.md#clearing-the-aof-above-its-tail).
+
 ### What clearing does
 
 1. **Commit metadata:** removes each commit-metadata file numbered above the current commit. Its commit is above the

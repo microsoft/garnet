@@ -1963,6 +1963,69 @@ namespace Garnet.test
         }
 
         [Test]
+        public void AofReplayClearAboveTail()
+        {
+            // A host that builds GarnetServerOptions directly gets the same default as the command line
+            ClassicAssert.IsTrue(new GarnetServerOptions().AofReplayClearAboveTail);
+
+            // Command line args
+            {
+                // Option unset: clearing is on by default
+                {
+                    var args = Array.Empty<string>();
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.GetServerOptions().AofReplayClearAboveTail);
+                }
+
+                {
+                    var args = new[] { "--aof-replay-clear-above-tail", "true" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.GetServerOptions().AofReplayClearAboveTail);
+                }
+
+                {
+                    var args = new[] { "--aof-replay-clear-above-tail", "false" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.GetServerOptions().AofReplayClearAboveTail);
+                }
+            }
+
+            // JSON args
+            {
+                // Key omitted: clearing is on by default
+                {
+                    const string JSON = @"{ }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.GetServerOptions().AofReplayClearAboveTail);
+                }
+
+                {
+                    const string JSON = @"{ ""AofReplayClearAboveTail"": true }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.GetServerOptions().AofReplayClearAboveTail);
+                }
+
+                {
+                    const string JSON = @"{ ""AofReplayClearAboveTail"": false }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.GetServerOptions().AofReplayClearAboveTail);
+                }
+
+                {
+                    const string JSON = @"{ ""AofReplayClearAboveTail"": ""foo"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+        }
+
+        [Test]
         public void AofSizeLimitWithoutAofEnabled()
         {
             // Setting --aof-size-limit without --aof should throw

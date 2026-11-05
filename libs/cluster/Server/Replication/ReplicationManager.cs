@@ -555,6 +555,12 @@ namespace Garnet.cluster
                 // If recovered checkpoint corresponds to an unavailable AOF address, we initialize AOF to that address
                 var recoveredSafeAofAddress = GetRecoveredSafeAofAddress();
                 storeWrapper.appendOnlyFile.Log.InitializeIf(ref recoveredSafeAofAddress);
+
+                // Recovery has already cleared above the recovered tail, so this clears only a sublog whose tail InitializeIf
+                // moved. That move restarts commit numbering, so it also removes the commit metadata of the recovered
+                // position, from which a later recovery would otherwise start and miss the commits appended at the new tail.
+                if (clusterProvider.serverOptions.AofReplayClearAboveTail)
+                    storeWrapper.appendOnlyFile.Log.PrepareToAppend();
                 logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", storeWrapper.appendOnlyFile.Log.BeginAddress, storeWrapper.appendOnlyFile.Log.TailAddress);
                 var replayedUntil = storeWrapper.ReplayAOF(AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, -1));
 
