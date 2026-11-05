@@ -59,11 +59,35 @@ containers:
   # -- Containers port
   port: 6379
 
-# -- Containers livenessProbe
-livenessProbe: {}
+# -- Startup probe (tcpSocket on the garnet port).
+# Garnet only starts answering once checkpoint/AOF recovery finishes, which can
+# take minutes for large datasets; this probe allows 5 minutes (periodSeconds 5
+# x failureThreshold 60) before liveness takes over.
+# Set to null to disable (for example `--set startupProbe=null`, or `startupProbe: null` in a values file).
+startupProbe:
+  tcpSocket:
+    port: garnet
+  periodSeconds: 5
+  failureThreshold: 60
 
-# -- Containers livenessProbe
-readinessProbe: {}
+# -- Containers livenessProbe (tcpSocket on the garnet port); only takes over
+# after startupProbe succeeds.
+# Set to null to disable (for example `--set livenessProbe=null`, or `livenessProbe: null` in a values file).
+livenessProbe:
+  tcpSocket:
+    port: garnet
+  periodSeconds: 15
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+# -- Containers readinessProbe (tcpSocket on the garnet port).
+# Set to null to disable (for example `--set readinessProbe=null`, or `readinessProbe: null` in a values file).
+readinessProbe:
+  tcpSocket:
+    port: garnet
+  periodSeconds: 10
+  timeoutSeconds: 2
+  failureThreshold: 3
 
 # -- Init containers
 initContainers: []
@@ -94,6 +118,18 @@ volumeClaimTemplates:
 
 # -- Pod annotations
 podAnnotations: {}
+
+# -- Pod Disruption Budget; disabled by default (a PDB with minAvailable 1 on a
+# single replica would block node drains). Rendered only when enabled is true.
+podDisruptionBudget:
+  # -- Create a PodDisruptionBudget
+  enabled: false
+  # -- Minimum number/percentage of pods that must be available (used when
+  # maxUnavailable is empty)
+  minAvailable: 1
+  # -- Maximum number/percentage of pods that may be unavailable; when set,
+  # it is rendered instead of minAvailable
+  maxUnavailable: ""
 
 # -- Pod Security Context
 podSecurityContext: {}
