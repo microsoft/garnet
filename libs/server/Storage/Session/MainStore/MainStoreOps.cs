@@ -317,6 +317,13 @@ namespace Garnet.server
             }
         }
 
+        public GarnetStatus DELETE_Conditional<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            Debug.Assert(input.header.cmd is RespCommand.DELIFEQ or RespCommand.DELEX);
+            return SET_Conditional(key, ref input, ref output, ref context);
+        }
+
         public unsafe GarnetStatus SET_Conditional<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {

@@ -684,7 +684,7 @@ namespace Garnet.server
 
                     existOptions = ExistOptions.XX;
                 }
-                else if (nextOpt.SequenceEqual(CmdStrings.IFEQ))
+                else if (nextOpt.SequenceEqual(CmdStrings.IFEQ) || nextOpt.SequenceEqual(CmdStrings.IFNE))
                 {
                     if (existOptions != ExistOptions.None || tokenIdx >= parseState.Count)
                     {
@@ -692,7 +692,7 @@ namespace Garnet.server
                         break;
                     }
 
-                    existOptions = ExistOptions.IFEQ;
+                    existOptions = nextOpt.SequenceEqual(CmdStrings.IFEQ) ? ExistOptions.IFEQ : ExistOptions.IFNE;
                     comparison = parseState.GetArgSliceByRef(tokenIdx++);
                 }
                 else if (nextOpt.SequenceEqual(CmdStrings.GET))
@@ -740,7 +740,8 @@ namespace Garnet.server
                         case ExistOptions.NX:
                             return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, isHighPrecision, ref storageApi);
                         case ExistOptions.IFEQ:
-                            return NetworkSETIFEQ(key, comparison, expiry, expOption, getValue, ref storageApi);
+                        case ExistOptions.IFNE:
+                            return NetworkSETValueConditional(key, comparison, expiry, expOption, existOptions, getValue, ref storageApi);
                     }
                     break;
                 case ExpirationOption.KEEPTTL:
@@ -755,7 +756,8 @@ namespace Garnet.server
                         case ExistOptions.NX:
                             return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, highPrecision: false, ref storageApi);
                         case ExistOptions.IFEQ:
-                            return NetworkSETIFEQ(key, comparison, expiry, expOption, getValue, ref storageApi);
+                        case ExistOptions.IFNE:
+                            return NetworkSETValueConditional(key, comparison, expiry, expOption, existOptions, getValue, ref storageApi);
                     }
                     break;
             }
@@ -765,8 +767,7 @@ namespace Garnet.server
             return true;
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private bool NetworkSETIFEQ<TGarnetApi>(PinnedSpanByte key, PinnedSpanByte comparison, long expiry, ExpirationOption expOption, bool getValue, ref TGarnetApi storageApi)
+        private bool NetworkSETValueConditional<TGarnetApi>(PinnedSpanByte key, PinnedSpanByte comparison, long expiry, ExpirationOption expOption, ExistOptions condition, bool getValue, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             long expirationTicks = 0;
@@ -777,7 +778,13 @@ namespace Garnet.server
             var args = parseState.Slice(1, 2);
             var originalOption = args.GetArgSliceByRef(1);
             args.SetArgument(1, comparison);
-            var cmd = expOption == ExpirationOption.KEEPTTL ? RespCommand.SETKEEPTTLIFEQ : RespCommand.SETIFEQ;
+            var cmd = (condition, expOption == ExpirationOption.KEEPTTL) switch
+            {
+                (ExistOptions.IFNE, true) => RespCommand.SETKEEPTTLIFNE,
+                (ExistOptions.IFNE, false) => RespCommand.SETIFNE,
+                (_, true) => RespCommand.SETKEEPTTLIFEQ,
+                _ => RespCommand.SETIFEQ
+            };
             var input = new StringInput(cmd, ref args, arg1: expirationTicks);
             if (getValue)
                 input.header.SetSetGetFlag();
@@ -797,7 +804,7 @@ namespace Garnet.server
                 output.SpanByteAndMemory.Memory?.Dispose();
                 WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
             }
-            else if (status == GarnetStatus.NOTFOUND)
+            else if (status == GarnetStatus.NOTFOUND && condition != ExistOptions.IFNE)
             {
                 output.SpanByteAndMemory.Memory?.Dispose();
                 WriteNull();

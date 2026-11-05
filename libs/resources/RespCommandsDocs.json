@@ -1926,6 +1926,66 @@
     ]
   },
   {
+    "Command": "DELEX",
+    "Name": "DELEX",
+    "Summary": "Deletes a key, optionally requiring its string value to equal or differ from the comparison value.",
+    "Group": "String",
+    "Complexity": "O(N) where N is the length of the compared string.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "IFEQ",
+            "DisplayText": "comparison-value",
+            "Type": "String",
+            "Token": "IFEQ"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "IFNE",
+            "DisplayText": "comparison-value",
+            "Type": "String",
+            "Token": "IFNE"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "DELIFEQ",
+    "Name": "DELIFEQ",
+    "Summary": "Deletes a string key only if its value equals the comparison value.",
+    "Group": "String",
+    "Complexity": "O(N) where N is the length of the compared string.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "comparison-value",
+        "Type": "String"
+      }
+    ]
+  },
+  {
     "Command": "DELIFGREATER",
     "Name": "DELIFGREATER",
     "Summary": "Deletes a key only if the provided Etag is strictly greater than the existing Etag for the key.",
@@ -7183,6 +7243,13 @@
             "DisplayText": "comparison-value",
             "Type": "String",
             "Token": "IFEQ"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "IFNE",
+            "DisplayText": "comparison-value",
+            "Type": "String",
+            "Token": "IFNE"
           }
         ]
       },

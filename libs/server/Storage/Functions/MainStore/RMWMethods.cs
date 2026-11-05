@@ -23,6 +23,10 @@ namespace Garnet.server
         {
             switch (input.header.cmd)
             {
+                case RespCommand.DELIFEQ:
+                case RespCommand.DELEX:
+                    functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
+                    return false;
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.GETDEL:
                 case RespCommand.GETEX:
@@ -49,6 +53,8 @@ namespace Garnet.server
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
                 case RespCommand.SETKEEPTTL:
+                case RespCommand.SETIFNE:
+                case RespCommand.SETKEEPTTLIFNE:
                     return true;
                 case RespCommand.RICREATE:
                     return true;
@@ -95,6 +101,14 @@ namespace Garnet.server
             var cmd = input.header.cmd;
             switch (cmd)
             {
+                case RespCommand.SETIFNE:
+                case RespCommand.SETKEEPTTLIFNE:
+                    var updateInput = input;
+                    updateInput.header.cmd = cmd == RespCommand.SETIFNE ? RespCommand.SET : RespCommand.SETKEEPTTL;
+                    if (!InitialUpdater(ref logRecord, in sizeInfo, ref updateInput, ref output, ref rmwInfo))
+                        return false;
+                    functionsState.CopyDefaultResp(input.header.CheckSetGetFlag() ? functionsState.nilResp : CmdStrings.RESP_OK, ref output.SpanByteAndMemory);
+                    return true;
                 case RespCommand.PFADD:
                     RecordSizeInfo.AssertValueDataLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input), in sizeInfo);
                     if (!logRecord.TrySetContentLengths(in sizeInfo))
@@ -496,7 +510,12 @@ namespace Garnet.server
                     return IPUResult.NotUpdated;
                 case RespCommand.SETIFEQ:
                 case RespCommand.SETKEEPTTLIFEQ:
-                    return SetIfEqualInPlaceUpdate(ref logRecord, ref input, ref output, ref rmwInfo);
+                case RespCommand.SETIFNE:
+                case RespCommand.SETKEEPTTLIFNE:
+                    return SetValueConditionalInPlaceUpdate(ref logRecord, ref input, ref output, ref rmwInfo);
+                case RespCommand.DELIFEQ:
+                case RespCommand.DELEX:
+                    return DeleteValueConditional(in logRecord, ref input, ref output, ref rmwInfo) ? IPUResult.Failed : IPUResult.NotUpdated;
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
                     // Note: SETEXXX may or may not actually have an expiration.
@@ -1004,10 +1023,10 @@ namespace Garnet.server
             return IPUResult.Succeeded;
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private readonly bool CheckSetIfEqual(ReadOnlySpan<byte> value, ref StringInput input, ref StringOutput output)
+        private readonly bool CheckSetValueCondition(ReadOnlySpan<byte> value, ref StringInput input, ref StringOutput output)
         {
-            if (value.SequenceEqual(input.parseState.GetArgSliceByRef(1).ReadOnlySpan))
+            var notEqual = input.header.cmd is RespCommand.SETIFNE or RespCommand.SETKEEPTTLIFNE;
+            if (value.SequenceEqual(input.parseState.GetArgSliceByRef(1).ReadOnlySpan) != notEqual)
                 return true;
 
             if (input.header.CheckSetGetFlag())
@@ -1017,14 +1036,14 @@ namespace Garnet.server
             return false;
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private readonly IPUResult SetIfEqualInPlaceUpdate(ref LogRecord logRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
+        private readonly IPUResult SetValueConditionalInPlaceUpdate(ref LogRecord logRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
-            if (!CheckSetIfEqual(logRecord.ValueSpan, ref input, ref output))
+            if (!CheckSetValueCondition(logRecord.ValueSpan, ref input, ref output))
                 return IPUResult.NotUpdated;
 
             var updateInput = input;
-            updateInput.header.cmd = input.header.cmd == RespCommand.SETIFEQ ? RespCommand.SETEXXX : RespCommand.SETKEEPTTLXX;
+            updateInput.header.cmd = input.header.cmd is RespCommand.SETKEEPTTLIFEQ or RespCommand.SETKEEPTTLIFNE
+                ? RespCommand.SETKEEPTTLXX : RespCommand.SETEXXX;
             var originalOutput = output;
             var result = InPlaceUpdaterWorker(ref logRecord, ref updateInput, ref output, ref rmwInfo);
             if (result == IPUResult.Failed)
@@ -1038,14 +1057,18 @@ namespace Garnet.server
             return result;
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private readonly bool NeedSetIfEqualCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
+        private readonly bool NeedSetValueConditionalCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
             {
-                functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
-                rmwInfo.Action = RMWAction.ExpireAndStop;
+                if (input.header.cmd is RespCommand.SETIFNE or RespCommand.SETKEEPTTLIFNE)
+                    rmwInfo.Action = RMWAction.ExpireAndResume;
+                else
+                {
+                    functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
+                }
                 return false;
             }
 
@@ -1055,20 +1078,50 @@ namespace Garnet.server
                 return false;
             }
 
-            return CheckSetIfEqual(srcLogRecord.ValueSpan, ref input, ref output);
+            return CheckSetValueCondition(srcLogRecord.ValueSpan, ref input, ref output);
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private readonly bool SetIfEqualCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
+        private readonly bool SetValueConditionalCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             var updateInput = input;
-            updateInput.header.cmd = input.header.cmd == RespCommand.SETIFEQ ? RespCommand.SETEXXX : RespCommand.SETKEEPTTLXX;
+            updateInput.header.cmd = input.header.cmd is RespCommand.SETKEEPTTLIFEQ or RespCommand.SETKEEPTTLIFNE
+                ? RespCommand.SETKEEPTTLXX : RespCommand.SETEXXX;
             if (!CopyUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref updateInput, ref output, ref rmwInfo))
                 return false;
 
             if (!input.header.CheckSetGetFlag())
                 functionsState.CopyDefaultResp(CmdStrings.RESP_OK, ref output.SpanByteAndMemory);
+            return true;
+        }
+
+        private readonly bool DeleteValueConditional<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+            {
+                functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
+                return false;
+            }
+
+            if (srcLogRecord.DataHeader.ValueIsObject || srcLogRecord.RecordType != 0)
+            {
+                rmwInfo.Action = RMWAction.WrongType;
+                return false;
+            }
+
+            var matches = srcLogRecord.ValueSpan.SequenceEqual(input.parseState.GetArgSliceByRef(0).ReadOnlySpan);
+            if (matches == (input.arg1 == (long)ExistOptions.IFNE))
+            {
+                functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
+                return false;
+            }
+
+            functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
+            functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+            if (functionsState.appendOnlyFile != null)
+                rmwInfo.UserData |= NeedAofLog;
+            rmwInfo.Action = RMWAction.ExpireAndStop;
             return true;
         }
 
@@ -1112,7 +1165,13 @@ namespace Garnet.server
                     return true;
                 case RespCommand.SETIFEQ:
                 case RespCommand.SETKEEPTTLIFEQ:
-                    return NeedSetIfEqualCopyUpdate(in srcLogRecord, ref input, ref output, ref rmwInfo);
+                case RespCommand.SETIFNE:
+                case RespCommand.SETKEEPTTLIFNE:
+                    return NeedSetValueConditionalCopyUpdate(in srcLogRecord, ref input, ref output, ref rmwInfo);
+                case RespCommand.DELIFEQ:
+                case RespCommand.DELEX:
+                    _ = DeleteValueConditional(in srcLogRecord, ref input, ref output, ref rmwInfo);
+                    return false;
                 case RespCommand.RICREATE:
                     // Index already exists — never copy-update, reject in caller
                     return false;
@@ -1191,7 +1250,9 @@ namespace Garnet.server
             {
                 case RespCommand.SETIFEQ:
                 case RespCommand.SETKEEPTTLIFEQ:
-                    return SetIfEqualCopyUpdate(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+                case RespCommand.SETIFNE:
+                case RespCommand.SETKEEPTTLIFNE:
+                    return SetValueConditionalCopyUpdate(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
                 case RespCommand.SETIFMATCH:
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETWITHETAG:

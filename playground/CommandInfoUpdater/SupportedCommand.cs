@@ -132,6 +132,8 @@ namespace CommandInfoUpdater
             new("DECRBY", RespCommand.DECRBY, StoreType.Main),
             new("DEL", RespCommand.DEL, StoreType.All),
             new("DELIFGREATER", RespCommand.DELIFGREATER, StoreType.Main),
+            new("DELIFEQ", RespCommand.DELIFEQ, StoreType.Main),
+            new("DELEX", RespCommand.DELEX, StoreType.All),
             new("DISCARD", RespCommand.DISCARD),
             new("DUMP", RespCommand.DUMP, StoreType.All),
             new("ECHO", RespCommand.ECHO),

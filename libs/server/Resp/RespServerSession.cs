@@ -913,6 +913,7 @@ namespace Garnet.server
                 RespCommand.PSETEX => NetworkSETEX(true, ref storageApi),
                 RespCommand.SETEXNX => NetworkSETEXNX(ref storageApi),
                 RespCommand.DEL => NetworkDEL(ref storageApi),
+                RespCommand.DELIFEQ or RespCommand.DELEX => NetworkDELValueConditional(cmd, ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(ref storageApi),
                 RespCommand.RENAMENX => NetworkRENAMENX(ref storageApi),
                 RespCommand.EXISTS => NetworkEXISTS(ref storageApi),

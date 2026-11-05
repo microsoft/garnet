@@ -45,6 +45,8 @@ namespace Garnet.test
             RespCommand.SETKEEPTTLXX,
             RespCommand.SETIFEQ,
             RespCommand.SETKEEPTTLIFEQ,
+            RespCommand.SETIFNE,
+            RespCommand.SETKEEPTTLIFNE,
             RespCommand.BITOP_AND,
             RespCommand.BITOP_OR,
             RespCommand.BITOP_XOR,

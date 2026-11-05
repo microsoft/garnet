@@ -90,6 +90,44 @@ namespace Garnet.server
             return true;
         }
 
+        private bool NetworkDELValueConditional<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            var condition = ExistOptions.IFEQ;
+            var comparisonIndex = 1;
+            if (cmd == RespCommand.DELIFEQ)
+            {
+                if (parseState.Count != 2)
+                    return AbortWithWrongNumberOfArguments(nameof(RespCommand.DELIFEQ));
+            }
+            else
+            {
+                if (parseState.Count == 0)
+                    return AbortWithWrongNumberOfArguments(nameof(RespCommand.DELEX));
+                if (parseState.Count == 1)
+                    return NetworkDEL(ref storageApi);
+                if (parseState.Count != 3)
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+
+                var option = parseState.GetArgSliceByRef(1).Span;
+                if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.IFNE))
+                    condition = ExistOptions.IFNE;
+                else if (!option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.IFEQ))
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                comparisonIndex = 2;
+            }
+
+            var args = parseState.Slice(comparisonIndex, 1);
+            var input = new StringInput(cmd, ref args, arg1: (long)condition);
+            var output = GetStringOutput();
+            var status = storageApi.DELETE_Conditional(parseState.GetArgSliceByRef(0), ref input, ref output);
+            if (status == GarnetStatus.WRONGTYPE)
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+            else
+                ProcessOutput(output.SpanByteAndMemory);
+            return true;
+        }
+
         private bool NetworkDEL<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
