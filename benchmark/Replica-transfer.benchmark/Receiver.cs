@@ -24,7 +24,7 @@ internal static class Receiver
         listener.Start(1);
         try
         {
-            Console.WriteLine($"Listening on {endpoint}; expecting {options.Runs} verified runs; device={options.DeviceType}, buffered={options.Buffered}, ACK delay={options.AckDelayUs} us.");
+            Console.WriteLine($"Listening on {endpoint}; expecting {options.Runs} verified runs; device={options.DeviceType}, buffered={options.Buffered}, ACK delay={options.AckDelayUs} us, write buffers={options.WriteBuffers}.");
             for (var run = 1; run <= options.Runs; run++)
             {
                 using var acceptDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -53,7 +53,7 @@ internal static class Receiver
         {
             var hello = await protocol.ReadAsync(abort.Token);
             Require(hello.Length == 1 && Text(hello[0]) == Protocol.Magic, "Expected benchmark-only handshake.");
-            await replies.EnqueueAsync($"{Protocol.Magic}|{options.AckDelayUs}|{options.MaxChunk}", false, abort.Token);
+            await replies.EnqueueAsync($"{Protocol.Magic}|{options.AckDelayUs}|{options.MaxChunk}|{options.WriteBuffers}", false, abort.Token);
 
             var begin = await protocol.ReadAsync(abort.Token);
             Require(begin.Length == 6 && Text(begin[0]) == "BEGIN", "Expected BEGIN token bytes chunk depth sha256.");
@@ -94,23 +94,22 @@ internal static class Receiver
 
                 Require(command.Length == 6 && command[0].AsSpan().SequenceEqual("CLUSTER"u8) &&
                     command[1].AsSpan().SequenceEqual("SNAPSHOT_DATA"u8), "Expected CLUSTER SNAPSHOT_DATA.");
-                Require(!transfer.Completed, "Data or duplicate EOF after completion.");
+                Require(!transfer.EndReceived, "Data or duplicate EOF after completion.");
                 Require(command[2].AsSpan().SequenceEqual(transfer.TokenBytes), "Checkpoint token changed.");
                 Require(Text(command[3]) == ((int)CheckpointFileType.STORE_HLOG).ToString(CultureInfo.InvariantCulture), "Unexpected checkpoint file type.");
                 var address = long.Parse(Text(command[4]), CultureInfo.InvariantCulture);
                 Require(address == transfer.NextAddress, "Chunk address is out of order, repeated, or missing.");
-                var payload = command[5].AsSpan();
-                if (payload.Length == 0)
-                {
+                var payload = command[5];
+                if (payload.Count == 0)
                     Require(address == transfer.Length, "EOF before all expected bytes were written.");
-                    transfer.Complete();
-                }
                 else
-                {
-                    Require(payload.Length == Math.Min(transfer.Chunk, transfer.Length - address), "Incorrect chunk size or bytes beyond declared EOF.");
+                    Require(payload.Count == Math.Min(transfer.Chunk, transfer.Length - address), "Incorrect chunk size or bytes beyond declared EOF.");
+
+                // Chunk OKs confirm queue acceptance. EOF confirms all device writes and close.
+                if (payload.Count == 0)
+                    await transfer.CompleteAsync();
+                else
                     transfer.Write(payload);
-                }
-                // ACK availability is delayed independently of the next read/write, after WriteChunk completes.
                 await replies.EnqueueAsync("OK", true, abort.Token);
             }
         }
@@ -153,10 +152,12 @@ internal static class Receiver
         internal byte[] TokenBytes { get; private init; }
         internal long NextAddress { get; private set; }
         internal long Chunks { get; private set; }
-        internal bool Completed { get; private set; }
-        private FileDataSink sink;
+        internal bool EndReceived => completion != null;
+        internal bool Completed => completion?.IsCompletedSuccessfully == true;
+        private ISnapshotDataSink sink;
         private SectorAlignedBufferPool pool;
-        private SemaphoreSlim completion;
+        private SemaphoreSlim writeCompletion;
+        private Task completion;
 
         internal static Transfer Create(Options options, Guid id, long length, int chunk, string hash, CancellationToken token)
         {
@@ -170,14 +171,18 @@ internal static class Receiver
             var device = Devices.CreateLogDevice(prefix, deviceType: options.DeviceType,
                 deleteOnClose: false, disableFileBuffering: !options.Buffered);
             SectorAlignedBufferPool pool = null;
-            SemaphoreSlim completion = null;
+            SemaphoreSlim writeCompletion = null;
             try
             {
                 device.Initialize(-1);
                 Require(length % device.SectorSize == 0 && chunk % device.SectorSize == 0,
                     $"Source length and chunk must be multiples of destination sector size {device.SectorSize}.");
                 pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
-                completion = new SemaphoreSlim(0);
+                writeCompletion = new SemaphoreSlim(0);
+                // The same sinks, chosen the same way, as Garnet's ReceiveCheckpointHandler.
+                ISnapshotDataSink sink = options.WriteBuffers > 0
+                    ? new OverlappedFileDataSink(CheckpointFileType.STORE_HLOG, id, device, pool, options.WriteBuffers, options.Timeout, token)
+                    : new FileDataSink(CheckpointFileType.STORE_HLOG, id, device, pool, writeCompletion, options.Timeout, token);
                 return new Transfer
                 {
                     Path = path,
@@ -186,20 +191,20 @@ internal static class Receiver
                     Hash = hash,
                     TokenBytes = id.ToByteArray(),
                     pool = pool,
-                    completion = completion,
-                    sink = new FileDataSink(CheckpointFileType.STORE_HLOG, id, device, pool, completion,
-                        options.Timeout, token)
+                    writeCompletion = writeCompletion,
+                    sink = sink
                 };
             }
             catch
             {
                 device.Dispose();
                 pool?.Free();
-                completion?.Dispose();
+                writeCompletion?.Dispose();
                 throw;
             }
         }
 
+        /// <summary>Consumes (copies) and accepts <paramref name="payload"/> for writing.</summary>
         internal void Write(ReadOnlySpan<byte> payload)
         {
             sink.WriteChunk(NextAddress, payload);
@@ -207,10 +212,19 @@ internal static class Receiver
             Chunks++;
         }
 
-        internal void Complete()
+        /// <summary>Completes once every write has completed and the device is closed.</summary>
+        internal Task CompleteAsync()
         {
-            sink.Complete();
-            Completed = true;
+            if (sink is OverlappedFileDataSink overlapped)
+            {
+                completion = overlapped.CompleteAsync();
+            }
+            else
+            {
+                sink.Complete();
+                completion = Task.CompletedTask;
+            }
+            return completion;
         }
 
         public void Dispose()
@@ -218,7 +232,7 @@ internal static class Receiver
             if (!Completed)
                 sink.Dispose();
             pool.Free();
-            completion.Dispose();
+            writeCompletion.Dispose();
         }
     }
 }

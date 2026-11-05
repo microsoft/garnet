@@ -39,6 +39,9 @@ namespace Garnet.test.cluster
         [TestCase("receive --output . --timeout-seconds 1 --ack-delay-us 1000000")]
         [TestCase("receive --output . --ack-delay-us 20_000_")]
         [TestCase("receive --output . --ack-delay-us 20,000")]
+        [TestCase("receive --output . --write-buffers 9")]
+        [TestCase("receive --output . --write-buffers -1")]
+        [TestCase("send --source-prefix x --write-buffers 1")]
         public void InvalidOptions(string command)
             => Assert.Catch<ArgumentException>(() => BenchmarkOptions.Parse(command.Split(' ')));
 
@@ -47,6 +50,12 @@ namespace Garnet.test.cluster
         [TestCase("receive --output . --ack-delay-us 20_000", 20000L)]
         public void AckDelayOptions(string command, long delayUs)
             => Assert.That(BenchmarkOptions.Parse(command.Split(' ')).AckDelayUs, Is.EqualTo(delayUs));
+
+        [TestCase("receive --output .", 1)]
+        [TestCase("receive --output . --write-buffers 0", 0)]
+        [TestCase("receive --output . --write-buffers 8", 8)]
+        public void WriteBufferOptions(string command, int writeBuffers)
+            => Assert.That(BenchmarkOptions.Parse(command.Split(' ')).WriteBuffers, Is.EqualTo(writeBuffers));
 
         [Test]
         public async Task AckDelayIsReleasedPrecisely()
@@ -138,6 +147,42 @@ namespace Garnet.test.cluster
             finally
             {
                 output.Dispose();
+            }
+        }
+
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(2)]
+        public async Task TransfersAndVerifiesFileWithAcceptanceReplies(int writeBuffers)
+        {
+            var sourcePrefix = Path.Combine(TestUtils.MethodTestDir, "source");
+            var destination = Path.Combine(TestUtils.MethodTestDir, "destination");
+            Directory.CreateDirectory(destination);
+            var data = new byte[64 << 10];
+            new Random(42).NextBytes(data);
+            await File.WriteAllBytesAsync(sourcePrefix + ".0", data);
+
+            var port = ClusterTestContext.Port.ToString();
+            var receiverOptions = BenchmarkOptions.Parse(["receive", "--output", destination, "--bind", "127.0.0.1",
+                "--port", port, "--runs", "2", "--write-buffers", writeBuffers.ToString(), "--timeout-seconds", "20",
+                "--ack-delay-us", "1000"]);
+            var senderOptions = BenchmarkOptions.Parse(["send", "--source-prefix", sourcePrefix, "--host", "127.0.0.1",
+                "--port", port, "--chunks", "4k", "--depths", "1,3", "--repeats", "1", "--timeout-seconds", "20"]);
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var receiver = Receiver.RunAsync(receiverOptions, cancellation.Token);
+            try
+            {
+                await Sender.RunAsync(senderOptions, cancellation.Token);
+                await receiver;
+                var files = Directory.GetFiles(destination, "payload.0", SearchOption.AllDirectories);
+                Assert.That(files, Has.Length.EqualTo(2));
+                foreach (var file in files)
+                    Assert.That(await File.ReadAllBytesAsync(file), Is.EqualTo(data));
+            }
+            finally
+            {
+                await cancellation.CancelAsync();
+                await receiver.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             }
         }
 

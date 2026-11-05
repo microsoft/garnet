@@ -500,11 +500,19 @@ namespace Garnet.test.cluster
         public void DiskBasedSyncWithRuntimeConfiguredChunks(string chunkSize, int pipelineDepth)
             => RunDiskBasedSyncWithConfiguredChunks(chunkSize, pipelineDepth, runtime: true);
 
-        void RunDiskBasedSyncWithConfiguredChunks(string chunkSize, int pipelineDepth, bool runtime)
+        // The cases above use the replica's default single write buffer; also cover synchronous writes and two buffers.
+        [Category("REPLICATION")]
+        [TestCase(0)]
+        [TestCase(2)]
+        public void DiskBasedSyncWithReplicaWriteBuffers(int writeBuffers)
+            => RunDiskBasedSyncWithConfiguredChunks("1m", 3, runtime: false, writeBuffers);
+
+        void RunDiskBasedSyncWithConfiguredChunks(string chunkSize, int pipelineDepth, bool runtime, int writeBuffers = 1)
         {
             context.CreateInstances(2, enableAOF: true, lowMemory: true, memorySize: "4m", pageSize: "1m", segmentSize: "4m",
                 useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount,
-                replicaDiskBasedSyncChunkSize: runtime ? "128k" : chunkSize, replicaDiskBasedSyncPipelineDepth: runtime ? 1 : pipelineDepth);
+                replicaDiskBasedSyncChunkSize: runtime ? "128k" : chunkSize, replicaDiskBasedSyncPipelineDepth: runtime ? 1 : pipelineDepth,
+                replicaDiskBasedSyncWriteBuffers: writeBuffers);
             context.CreateConnection(useTLS: useTLS);
             Assert.That(context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger), Is.EqualTo("OK"));
             context.clusterTestUtils.BumpEpoch(0, logger: context.logger);

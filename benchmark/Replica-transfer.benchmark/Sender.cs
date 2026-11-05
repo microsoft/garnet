@@ -32,7 +32,7 @@ internal static class Sender
             if (options.Csv != null)
             {
                 csv = new StreamWriter(new FileStream(options.Csv, FileMode.CreateNew, FileAccess.Write, FileShare.Read), Encoding.UTF8);
-                await csv.WriteLineAsync("utc,token,repeat,chunk_bytes,pipeline_depth,completed_bytes,completed_chunks,elapsed_seconds,MB_per_second,ack_delay_us,send_buffer_bytes,source_device,source_buffered,sha256");
+                await csv.WriteLineAsync("utc,token,repeat,chunk_bytes,pipeline_depth,completed_bytes,completed_chunks,elapsed_seconds,MB_per_second,ack_delay_us,receiver_write_buffers,send_buffer_bytes,source_device,source_buffered,sha256");
                 await csv.FlushAsync(token);
             }
             Console.WriteLine($"Source={sourcePath}; bytes={length}; SHA256={hash}; {options.Cases.Length * (long)options.Repeats} runs; device={options.DeviceType}, buffered={options.Buffered}.");
@@ -61,10 +61,11 @@ internal static class Sender
                         using var close = token.Register(client.CloseConnection);
                         await client.ConnectAsync(checked((int)options.Timeout.TotalMilliseconds), token);
                         var hello = (await ExecuteAsync(client, options.Timeout, token, Protocol.Magic)).Split('|');
-                        Receiver.Require(hello.Length == 3 && hello[0] == Protocol.Magic,
+                        Receiver.Require(hello.Length == 4 && hello[0] == Protocol.Magic,
                             "Peer is not the standalone benchmark receiver. Do not use a Garnet server port.");
                         var ackDelayUs = long.Parse(hello[1], CultureInfo.InvariantCulture);
                         var maxChunk = int.Parse(hello[2], CultureInfo.InvariantCulture);
+                        var writeBuffers = int.Parse(hello[3], CultureInfo.InvariantCulture);
                         Receiver.Require(chunk <= maxChunk, "Chunk exceeds receiver --max-chunk.");
                         Receiver.Require(ackDelayUs < options.Timeout.TotalMilliseconds * 1000, "Receiver ACK delay exceeds sender timeout.");
                         var begin = await ExecuteAsync(client, options.Timeout, token, "BEGIN", id.ToString(),
@@ -85,11 +86,11 @@ internal static class Sender
                         var seconds = timer.Elapsed.TotalSeconds;
                         var rate = length / seconds / 1000000d;
                         Console.WriteLine(FormattableString.Invariant(
-                            $"VERIFIED token={id} repeat={repeat} chunk={chunk} depth={depth} bytes={length} seconds={seconds:F6} MB/s={rate:F3} ACK-delay-us={ackDelayUs}"));
+                            $"VERIFIED token={id} repeat={repeat} chunk={chunk} depth={depth} bytes={length} seconds={seconds:F6} MB/s={rate:F3} ACK-delay-us={ackDelayUs} write-buffers={writeBuffers}"));
                         if (csv != null)
                         {
                             await csv.WriteLineAsync(FormattableString.Invariant(
-                                $"{DateTimeOffset.UtcNow:O},{id},{repeat},{chunk},{depth},{length},{verified[2]},{seconds:F9},{rate:F6},{ackDelayUs},{sendBufferSize},{options.DeviceType},{options.Buffered},{hash}"));
+                                $"{DateTimeOffset.UtcNow:O},{id},{repeat},{chunk},{depth},{length},{verified[2]},{seconds:F9},{rate:F6},{ackDelayUs},{writeBuffers},{sendBufferSize},{options.DeviceType},{options.Buffered},{hash}"));
                             await csv.FlushAsync(token);
                         }
                     }

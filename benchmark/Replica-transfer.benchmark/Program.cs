@@ -18,9 +18,9 @@ internal static class Program
                 Console.WriteLine("""
                     Standalone checkpoint-file transfer benchmark (NOT a Garnet server).
                     receive --output <existing directory> [--bind 127.0.0.1] [--port 7010]
-                            [--runs 1] [--max-chunk 16m] [--ack-delay-us 0]
+                            [--runs 1] [--max-chunk 16m] [--ack-delay-us 0] [--write-buffers 1]
                     send    --source-prefix <prefix for existing prefix.0> [--host 127.0.0.1]
-                            [--port 7010] [--chunks 128k,512k,1m,4m] [--depths 1,2,4,8]
+                            [--port 7010] [--chunks 128k,1m,4m,16m] [--depths 1,2,4,8]
                             [--repeats 3] [--csv <new file>]
                     Or:     send --generate <existing directory> [--data-size 512m] ...
                     Prepare only:
@@ -79,6 +79,7 @@ internal sealed class Options
     internal int Repeats { get; private init; }
     internal int MaxChunk { get; private init; }
     internal long AckDelayUs { get; private init; }
+    internal int WriteBuffers { get; private init; }
     internal TimeSpan Timeout { get; private init; }
     internal DeviceType DeviceType { get; private init; }
     internal bool Buffered { get; private init; }
@@ -93,7 +94,7 @@ internal sealed class Options
         string[] specific = mode switch
         {
             "send" => ["--source-prefix", "--generate", "--data-size", "--host", "--port", "--timeout-seconds", "--chunks", "--depths", "--repeats", "--csv"],
-            "receive" => ["--output", "--bind", "--port", "--timeout-seconds", "--runs", "--max-chunk", "--ack-delay-us"],
+            "receive" => ["--output", "--bind", "--port", "--timeout-seconds", "--runs", "--max-chunk", "--ack-delay-us", "--write-buffers"],
             _ => ["--output", "--data-size"]
         };
         var allowed = common.Concat(specific).ToHashSet(StringComparer.Ordinal);
@@ -138,7 +139,7 @@ internal sealed class Options
         var cases = new List<(int, int)>();
         if (mode == "send")
         {
-            foreach (var size in Get("--chunks", "128k,512k,1m,4m").Split(','))
+            foreach (var size in Get("--chunks", "128k,1m,4m,16m").Split(','))
             {
                 foreach (var depth in Get("--depths", "1,2,4,8").Split(','))
                 {
@@ -166,6 +167,7 @@ internal sealed class Options
             Repeats = Number("--repeats", 3, 1, 1000000),
             MaxChunk = new GarnetServerOptions { ReplicaDiskBasedSyncChunkSize = Get("--max-chunk", "16m") }.GetReplicaDiskBasedSyncChunkSizeBytes(),
             AckDelayUs = ackDelayUs,
+            WriteBuffers = Number("--write-buffers", 1, 0, GarnetServerOptions.ReplicaDiskBasedSyncWriteBuffersMax),
             Timeout = timeout,
             DeviceType = device,
             Buffered = bool.Parse(Get("--buffered", "false")),

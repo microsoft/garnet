@@ -665,10 +665,10 @@ namespace Garnet.server
 
         /// <summary>
         /// Maximum disk-based Tsavorite checkpoint transfer chunk, rounded down to a power of two.
-        /// Accepts sizes from 512 bytes through 512 MiB, subject to device-sector alignment; default 4 MiB.
+        /// Accepts sizes from 512 bytes through 512 MiB, subject to device-sector alignment; default 16 MiB.
         /// Configured on the primary; CONFIG SET changes apply to new transfers.
         /// </summary>
-        public string ReplicaDiskBasedSyncChunkSize = "4m";
+        public string ReplicaDiskBasedSyncChunkSize = "16m";
 
         /// <summary>
         /// Maximum supported number of unacknowledged checkpoint chunks per replica.
@@ -694,6 +694,18 @@ namespace Garnet.server
         /// CONFIG SET changes apply to new transfers.
         /// </summary>
         public int ReplicaDiskBasedSyncPipelineDepth = 4;
+
+        /// <summary>
+        /// Maximum <see cref="ReplicaDiskBasedSyncWriteBuffers"/>.
+        /// </summary>
+        public const int ReplicaDiskBasedSyncWriteBuffersMax = 8;
+
+        /// <summary>
+        /// Received disk-based Tsavorite checkpoint chunks the replica may hold for its file writer, queued or being
+        /// written, so it can receive the next chunk while writing. Each uses one chunk-sized buffer. Accepts 0 through 8;
+        /// default 1, and 0 writes each chunk before receiving the next. Set on the replica.
+        /// </summary>
+        public int ReplicaDiskBasedSyncWriteBuffers = 1;
 
         /// <summary>
         /// Validate the pipeline depth and its maximum outstanding payload budget.
@@ -1232,6 +1244,9 @@ namespace Garnet.server
                 }
                 ReplicaDiskBasedSyncSectorSize = sectorSize;
                 _ = GetReplicaDiskBasedSyncChunkSizeBytes();
+                if (ReplicaDiskBasedSyncWriteBuffers is < 0 or > ReplicaDiskBasedSyncWriteBuffersMax)
+                    throw new ArgumentOutOfRangeException(nameof(ReplicaDiskBasedSyncWriteBuffers), ReplicaDiskBasedSyncWriteBuffers,
+                        $"{nameof(ReplicaDiskBasedSyncWriteBuffers)} must be from 0 through {ReplicaDiskBasedSyncWriteBuffersMax}.");
             }
 
             if (LatencyMonitor && MetricsSamplingFrequency == 0)

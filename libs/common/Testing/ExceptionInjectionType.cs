@@ -215,5 +215,9 @@ namespace Garnet.common
         /// TLS handler: signal that receive-side resource cleanup has finished.
         /// </summary>
         Tls_Signal_After_Handler_Dispose,
+        /// <summary>
+        /// Replica checkpoint writer: hold each overlapped file write until cleared.
+        /// </summary>
+        Replication_Hold_Snapshot_Write,
     }
 }

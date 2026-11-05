@@ -10,8 +10,8 @@ namespace ReplicaTransfer.benchmark;
 
 internal sealed class Protocol
 {
-    // V2: the handshake reports the ACK delay in microseconds; a V1 peer fails the handshake instead of misreading it.
-    internal const string Magic = "CHECKPOINT_BENCH_V2";
+    // V3: the handshake also reports the receiver's write buffers; an older peer fails the handshake instead of misreading it.
+    internal const string Magic = "CHECKPOINT_BENCH_V4";
     private readonly NetworkStream stream;
     private readonly TimeSpan timeout;
     private readonly int maxFrame;

@@ -3,7 +3,8 @@
 This signed, standalone executable sweeps checkpoint chunk sizes and bounded
 pipeline depths using the real Garnet
 `FileDataSource → FileTransmitSource → GarnetClientSession.ExecuteClusterSnapshotData`
-sender and `FileDataSink.WriteChunk → OK` receiver path. It uses two processes:
+sender and the replica's `OverlappedFileDataSink` (or, with `--write-buffers 0`,
+`FileDataSink`) receiver path, acknowledging each chunk once accepted and the end marker only after all writes complete. It uses two processes:
 one sender and one dedicated benchmark receiver, on the same machine or on two
 machines. No Garnet server is started, reset, or modified. Checkpoint selection,
 recovery, AOF replay, cluster administration, and TLS are deliberately excluded.
@@ -123,7 +124,7 @@ and both machines have built the same revision:
 dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll receive --bind 192.168.50.20 --port 7010 --output F:\checkpoint-output --runs 48 --timeout-seconds 120
 
 # Sender machine.
-dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll send --host 192.168.50.20 --port 7010 --generate E:\checkpoint-input --data-size 512m --chunks 128k,512k,1m,4m --depths 1,2,4,8 --repeats 3 --csv .\replica-transfer-private-network.csv --timeout-seconds 120
+dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll send --host 192.168.50.20 --port 7010 --generate E:\checkpoint-input --data-size 512m --chunks 128k,1m,4m,16m --depths 1,2,4,8 --repeats 3 --csv .\replica-transfer-private-network.csv --timeout-seconds 120
 ```
 
 `--host` and `--bind` take IP literals (IPv4 or IPv6), not DNS names. Unix users
@@ -139,7 +140,7 @@ paths.
 | send / generate | `--data-size` | `512m` | Generated value payload, 16 KiB through 64 GiB; requires generation |
 | generate | `--output` | required | Existing parent directory; print a reusable source prefix and exit |
 | send | `--host` | `127.0.0.1` | Benchmark receiver IP |
-| send | `--chunks` | `128k,512k,1m,4m` | Comma-separated chunk sizes |
+| send | `--chunks` | `128k,1m,4m,16m` | Comma-separated chunk sizes |
 | send | `--depths` | `1,2,4,8` | Comma-separated bounded FIFO depths |
 | send | `--repeats` | `3` | Repeats per distinct effective pair |
 | send | `--csv` | none | New CSV path; refuses an existing file |
@@ -147,14 +148,15 @@ paths.
 | receive | `--bind` | `127.0.0.1` | Listener IP |
 | receive | `--runs` | `1` | Number of verified transfers before exit |
 | receive | `--max-chunk` | `16m` | Bounded receive-frame allocation limit |
-| receive | `--ack-delay-us` | `0` | Fixed additional ACK availability delay, in microseconds, after each completed data write and EOF; e.g. `1000` models a 1 ms RTT |
+| receive | `--ack-delay-us` | `0` | Fixed additional ACK availability delay, in microseconds, after chunk acceptance and EOF completion; e.g. `1000` models a 1 ms RTT |
+| receive | `--write-buffers` | `1` | Received chunks that may wait for the file writer, as Garnet's `--repl-disk-based-sync-write-buffers` (0–8); `0` writes each chunk before receiving the next |
 | send / receive | `--port` | `7010` | Dedicated benchmark port |
 | send / receive | `--timeout-seconds` | `30` | Connect, command, I/O, verification, and receiver accept/read timeout (1–3600 seconds) |
 | all | `--device` | `RandomAccess` | Real Tsavorite local device: `RandomAccess`, `Native`, or `FileStream` |
 | all | `--buffered` | `false` | Request OS-buffered device I/O; backend/platform support varies |
 
-Integer options (`--port`, `--runs`, `--repeats`, `--timeout-seconds` and
-`--ack-delay-us`) accept C#-style digit separators, for example
+Integer options (`--port`, `--runs`, `--repeats`, `--timeout-seconds`,
+`--ack-delay-us` and `--write-buffers`) accept C#-style digit separators, for example
 `--ack-delay-us 20_000`.
 
 Chunk/depth validation reuses `GarnetServerOptions`: memory sizes use binary
@@ -167,18 +169,19 @@ The sender uses the production checkpoint send-buffer sizing rule:
 
 ## Representative output
 
-Excerpt from one generated-checkpoint sweep on 2026-11-02: .NET 10 Release,
+Excerpt from one generated-checkpoint sweep on 2026-11-03: .NET 10 Release,
 Windows loopback, source and destination on the same D: NTFS volume,
-`RandomAccess` devices, `--buffered false`, no added ACK delay. The command used
+`RandomAccess` devices, `--buffered false`, no added ACK delay, and the receiver's
+default single write buffer. The command used
 `--generate`, `--data-size 64m`, `--chunks 128k,1m,4m`, `--depths 1,3,8`,
 and `--repeats 1`. All nine combinations completed and passed SHA-256 verification.
 These are individual illustrative observations, **not medians, cold-cache disk
 measurements, network bandwidth, or recommended settings**:
 
 ```text
-VERIFIED token=2fe2482e-dfdf-46d9-a36a-3797cd2a16fa repeat=1 chunk=131072 depth=1 bytes=68177920 seconds=0.497949 MB/s=136.917 ACK-delay-us=0
-VERIFIED token=054d4dfd-4fdf-4629-999e-8ac1decb65eb repeat=1 chunk=1048576 depth=3 bytes=68177920 seconds=0.157220 MB/s=433.647 ACK-delay-us=0
-VERIFIED token=0e180310-dae9-49a4-ba32-2af422cb2850 repeat=1 chunk=4194304 depth=8 bytes=68177920 seconds=0.132065 MB/s=516.247 ACK-delay-us=0
+VERIFIED token=6752831b-4174-47f1-91f2-d7640bc75f9f repeat=1 chunk=131072 depth=1 bytes=68177920 seconds=0.418233 MB/s=163.014 ACK-delay-us=0 write-buffers=1
+VERIFIED token=cc69c5b1-e51b-4c8f-b2c8-61265ca69060 repeat=1 chunk=1048576 depth=3 bytes=68177920 seconds=0.151840 MB/s=449.010 ACK-delay-us=0 write-buffers=1
+VERIFIED token=3937fa9c-9f90-46f4-9109-affda772588b repeat=1 chunk=4194304 depth=8 bytes=68177920 seconds=0.089714 MB/s=759.946 ACK-delay-us=0 write-buffers=1
 ```
 
 The 64-MiB value payload produced a 68,177,920-byte checkpoint HLOG, including
@@ -215,7 +218,7 @@ dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer
 ```
 
 An independent FIFO response writer releases each ACK no earlier than
-`completed-write-time + delay`. The receiver **continues reading and writing
+`acceptance-time + delay` for chunks, or `file-completion-time + delay` for EOF. The receiver **continues reading and writing
 subsequent chunks while earlier ACKs are delayed**; it does not sleep in the
 write loop or add a serial service-time delay per chunk. A depth-1 sender
 therefore waits the full delay for every chunk, while a deeper window overlaps
@@ -243,15 +246,21 @@ precise wait: a requested 1 ms there lasted about one 15.6 ms timer tick.
 The timed interval starts immediately before `FileTransmitSource.TransmitAsync`
 and ends when it returns after the final empty EOF marker's `OK`. It includes
 source reads, framing/copying/batching, real TCP transfer, sector-aligned
-`FileDataSink` writes, ACK waits, and sink completion/device close. Connection
+receiver writes, ACK waits, and sink completion/device close. Connection
 setup, checkpoint generation, file reservation, source SHA-256, and destination SHA-256 are outside
 the interval. Hash reads can warm filesystem caches; source prehash and repeats
 make these **steady-state**, not guaranteed cold-cache measurements.
 
 For every run, the receiver validates token, file type, contiguous addresses,
 exact chunk sizes, declared total bytes, and one EOF at exactly the final
-address. It sends `OK` only after `WriteChunk` has completed, and the EOF `OK`
-only after sink completion. A separate untimed `VERIFY` then checks physical
+address. It sends chunk `OK` after copying and queue acceptance, and the EOF `OK`
+only after all writes succeed and sink completion closes the file. As in Garnet,
+the receiver keeps reading chunks while earlier writes are in progress (unless
+`--write-buffers 0`). Replies remain in command order; the benchmark's independent
+reply writer models added network delay, not deferred device-write acknowledgements.
+The versioned benchmark handshake requires both processes to use this strategy. The handshake reports
+the receiver's write buffers, which the sender prints and records in the CSV's
+`receiver_write_buffers` column. A separate untimed `VERIFY` then checks physical
 length and SHA-256. Only a verified run prints throughput or writes a CSV row.
 Both processes exit nonzero on disconnect, timeout, protocol/I/O error,
 cancellation, or hash mismatch; a failed run has **no success-shaped rate**.
@@ -274,6 +283,13 @@ representative data, avoid competing disk/network work, and account for loopback
 CPU/memory limits, shared-device read/write contention, storage caches, and
 destination capacity. This benchmark selects candidates for the file-transfer
 stage, not a guarantee of optimal end-to-end replica recovery settings.
+
+On one machine, loopback TCP makes the sender's thread copy each chunk into the
+receiver's socket buffer, which a network adapter does on a real link. The
+sender's loop pays that copy, which is about 2.6 ms per 16 MiB chunk on a 64-core
+AMD EPYC test host, so large chunks can look slower over loopback than they are
+between machines. The receiver's memory state also affects that copy, so a
+receiver-side change can move the sender's numbers.
 
 ## Validation checklist
 

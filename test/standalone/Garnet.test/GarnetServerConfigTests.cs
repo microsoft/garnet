@@ -28,10 +28,27 @@ namespace Garnet.test
         public void DefaultDiskBasedSyncChunkSize()
         {
             Assert.That(ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true), Is.True);
-            Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(4 << 20));
-            Assert.That(new GarnetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(4 << 20));
+            Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(16 << 20));
+            Assert.That(new GarnetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(16 << 20));
             Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncPipelineDepth(), Is.EqualTo(4));
             Assert.That(new GarnetServerOptions().GetReplicaDiskBasedSyncPipelineDepth(), Is.EqualTo(4));
+            Assert.That(options.GetServerOptions().ReplicaDiskBasedSyncWriteBuffers, Is.EqualTo(1));
+            Assert.That(new GarnetServerOptions().ReplicaDiskBasedSyncWriteBuffers, Is.EqualTo(1));
+        }
+
+        [TestCase(0, true)]
+        [TestCase(1, true)]
+        [TestCase(8, true)]
+        [TestCase(-1, false)]
+        [TestCase(9, false)]
+        public void DiskBasedSyncWriteBuffersConfiguration(int writeBuffers, bool valid)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-disk-based-sync-write-buffers", writeBuffers.ToString()], out var options, out _, out _, out _, silentMode: true), Is.EqualTo(valid));
+            if (valid)
+                Assert.That(options.GetServerOptions().ReplicaDiskBasedSyncWriteBuffers, Is.EqualTo(writeBuffers));
+            var json = JsonSerializer.Serialize(new { ReplicaDiskBasedSyncWriteBuffers = writeBuffers });
+            Assert.That(TryParseGarnetConfOptions(json, out _, out _, out _), Is.EqualTo(valid));
         }
 
         [TestCase("512", false)]
@@ -139,6 +156,19 @@ namespace Garnet.test
             Assert.That(exception.Message, Does.Contain("depth 4, chunk size 268435456 bytes"));
             Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
                 ["--repl-disk-based-sync-chunk-size", "256m", "--repl-disk-based-sync-pipeline-depth", "2"], out _, out _, out _, out _, silentMode: true), Is.True);
+        }
+
+        [Test]
+        public void DeepPipelineRequiresSmallerThanDefaultChunk()
+        {
+            // Depth 64 at the default 16 MiB chunk exceeds the 512 MiB outstanding-payload budget; an 8 MiB chunk fits.
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-disk-based-sync-pipeline-depth", "64"], out _, out _, out _, out _, silentMode: true), Is.False);
+            var exception = Assert.Throws<ArgumentException>(() =>
+                new GarnetServerOptions { ReplicaDiskBasedSyncPipelineDepth = 64 }.GetReplicaDiskBasedSyncPipelineDepth());
+            Assert.That(exception.Message, Does.Contain("depth 64, chunk size 16777216 bytes"));
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-disk-based-sync-pipeline-depth", "64", "--repl-disk-based-sync-chunk-size", "8m"], out _, out _, out _, out _, silentMode: true), Is.True);
         }
 
         [TestCase(null)]
