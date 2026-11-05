@@ -667,7 +667,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVCREATE", "vectors", "ef", buildExplorationFactor, "DIM", 8, "NOQUANT"));
             var info = (RedisValue[])db.Execute("VINFO", "vectors");
             ClassicAssert.AreEqual(buildExplorationFactor, (int)info[9]);
-            VectorManager.ReadIndex(ReadRawVectorStub("vectors"), out _, out _, out _, out _, out var storedFactor, out _, out _, out _, out _);
+            VectorManager.ReadIndex(ReadRawVectorStub("vectors"), out _, out _, out _, out _, out var storedFactor, out _, out _, out _, out _, out _);
             ClassicAssert.AreEqual((uint)buildExplorationFactor, storedFactor);
 
             ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVCREATE", "vectors", "DIM", 8, "EF", 38));
@@ -991,7 +991,7 @@ namespace Garnet.test
                 void AssertConfiguration(string key)
                 {
                     VectorManager.ReadIndex(ReadRawVectorStub(key), out _, out var dimensions, out var reduceDims, out var quantType,
-                        out var buildExplorationFactor, out var numLinks, out var metric, out _, out _);
+                        out var buildExplorationFactor, out var numLinks, out var metric, out _, out _, out _);
                     ClassicAssert.AreEqual(8, dimensions);
                     ClassicAssert.AreEqual(0, reduceDims);
                     ClassicAssert.AreEqual(quantizer == "BIN" ? VectorQuantType.Bin : VectorQuantType.Q8, quantType);
@@ -5021,7 +5021,7 @@ namespace Garnet.test
         private unsafe byte[] ReadRawVectorTerm(string key, byte termType, ReadOnlySpan<byte> termKey, int bufferSize = 8192)
         {
             var stub = ReadRawVectorStub(key);
-            VectorManager.ReadIndex(stub, out var indexContext, out _, out _, out _, out _, out _, out _, out _, out _);
+            VectorManager.ReadIndex(stub, out var indexContext, out _, out _, out _, out _, out _, out _, out _, out _, out _);
             Span<byte> namespaceBytes = stackalloc byte[sizeof(uint)];
             VectorManager.StoreContextInNamespace(indexContext | termType, ref namespaceBytes);
 

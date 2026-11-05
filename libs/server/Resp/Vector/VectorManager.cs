@@ -209,6 +209,13 @@ namespace Garnet.server
         /// </summary>
         private ConcurrentDictionary<int, ContextMetadata> recoveredMetadata;
 
+        /// <summary>
+        /// Maintains a map of a "Vector Set which is a shallow copy"'s context -> "the original Vector Set"'s context.
+        /// 
+        /// Built during recovery and then updated during normal operation.
+        /// </summary>
+        private readonly ConcurrentDictionary<ulong, ulong> shallowCopyBackReferences;
+
         public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getTempSession, ILoggerFactory loggerFactory)
         {
             this.dbId = dbId;
@@ -257,6 +264,7 @@ namespace Garnet.server
 
             recoveredIndexes = new();
             recoveredMetadata = new();
+            shallowCopyBackReferences = new();
 
             quantizationChannel = VectorSetCleanupWorkChannel<QuantizationState>.CreateMultiReaderMultiWriter();
 
@@ -527,7 +535,13 @@ namespace Garnet.server
                     return true;
                 }
 
-                ReadIndex(logRecord.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
+                ReadIndex(logRecord.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out var shallowCopyOfContext, out _);
+
+                if (shallowCopyOfContext != 0)
+                {
+                    manager.shallowCopyBackReferences[context] = shallowCopyOfContext;
+                }
+
                 manager.recoveredIndexes[context] = HashSlotUtils.HashSlot(logRecord.Key);
 
                 cursorRecordResult = CursorRecordResult.Accept;
@@ -545,11 +559,16 @@ namespace Garnet.server
                 return;
             }
 
-            ReadIndex(record.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
+            ReadIndex(record.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out var shallowCopyOfContext, out _);
 
             // The hash slot is needed to restore the context reservation in ReconcileRecoveredState, which
             // has only this map to work from - the record itself is not retained past this call
             recoveredIndexes[context] = HashSlotUtils.HashSlot(record.Key);
+
+            if (shallowCopyOfContext != 0)
+            {
+                shallowCopyBackReferences[context] = shallowCopyOfContext;
+            }
         }
 
         /// <summary>
@@ -725,7 +744,7 @@ namespace Garnet.server
 
             errorMsg = default;
 
-            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out var distanceMetric, out var flags, out var indexPtr);
+            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out var distanceMetric, out var flags, out _, out var indexPtr);
 
             if (flags.HasFlag(VectorSetFlags.ShallowCopySource))
             {
@@ -816,7 +835,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out var flags, out var indexPtr);
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out var flags, out _, out var indexPtr);
 
             if (flags.HasFlag(VectorSetFlags.ShallowCopySource))
             {
@@ -831,7 +850,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out var flags, out var indexPtr);
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out var flags, out _, out var indexPtr);
 
             if (flags.HasFlag(VectorSetFlags.ShallowCopySource))
             {
@@ -856,7 +875,7 @@ namespace Garnet.server
 
             ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
-            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out var indexPtr);
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out _, out var _);
 
             // Ignore any deletion requested for an index that has the SuppressCleanup flag
             //
@@ -893,7 +912,7 @@ namespace Garnet.server
                 return;
             }
 
-            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out var indexPtr);
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out _, out var indexPtr);
 
             // Ignore any drop requested for an index that has the SuppressCleanup flag
             //
@@ -930,7 +949,7 @@ namespace Garnet.server
                 return;
             }
 
-            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
             Service.DropIndex(context, indexPtr);
         }
@@ -974,7 +993,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out _, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out var _, out _, out _, out _, out var indexPtr);
 
             var effectiveEF = Math.Max(searchExplorationFactor, count);
 
@@ -1190,7 +1209,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out _, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out var _, out var _, out var _, out _, out var _, out _, out _, out _, out var indexPtr);
 
             var effectiveEF = Math.Max(searchExplorationFactor, count);
 
@@ -1423,7 +1442,7 @@ namespace Garnet.server
         internal VectorManagerResult FetchSingleVectorElementAttributes(ReadOnlySpan<byte> indexValue, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes)
         {
             AssertHaveStorageSession();
-            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out _, out _);
 
             Span<byte> internalId = stackalloc byte[sizeof(int)];
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
@@ -1531,7 +1550,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out _, out _, out _, out _, out var indexPtr);
 
             // Make sure enough space in distances for requested count
             if (dimensions * sizeof(float) > outputDistances.Length)
@@ -1625,7 +1644,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out quantType, out _, out _, out _, out _, out _);
+            ReadIndex(indexValue, out var context, out _, out _, out quantType, out _, out _, out _, out _, out _, out _);
 
             // Get internal id for the given element
             Span<byte> internalId = stackalloc byte[sizeof(int)];
@@ -1689,7 +1708,7 @@ namespace Garnet.server
         /// </summary>
         internal bool IsMember(ReadOnlySpan<byte> indexSpan, ReadOnlySpan<byte> element)
         {
-            ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
+            ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _, out _);
 
             Span<byte> internalId = stackalloc byte[sizeof(int)];
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
@@ -1711,7 +1730,7 @@ namespace Garnet.server
             // Limit the number of times we'll try to get new random members
             const int MaximumAttempts = 5;
 
-            ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
             GCHandle? idsPin = null;
 
@@ -1881,7 +1900,7 @@ namespace Garnet.server
         /// </summary>
         internal VectorManagerResult GetNeighbors(ReadOnlySpan<byte> indexSpan, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances)
         {
-            ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out var numLinks, out _, out _, out var indexPtr);
+            ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out var numLinks, out _, out _, out _, out var indexPtr);
 
             if (outputDistances.Length < sizeof(float) * numLinks)
             {
@@ -1935,7 +1954,7 @@ namespace Garnet.server
         /// </summary>
         internal GarnetStatus ShallowCopy(StorageSession session, scoped ReadOnlySpan<byte> sourceKey, scoped ReadOnlySpan<byte> sourceIndex, scoped ReadOnlySpan<byte> destKey, out VectorManagerResult result, out ReadOnlySpan<byte> errorMessage)
         {
-            ReadIndex(sourceIndex, out var sourceContext, out var dims, out var reduceDims, out var quantizer, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _);
+            ReadIndex(sourceIndex, out var sourceContext, out var dims, out var reduceDims, out var quantizer, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _, out _);
 
             var destSlot = HashSlotUtils.HashSlot(destKey);
             var destIndexContext = NextVectorSetContext(destSlot);
@@ -2012,6 +2031,8 @@ namespace Garnet.server
 
                 throw;
             }
+
+            shallowCopyBackReferences[destIndexContext] = sourceContext;
 
             result = VectorManagerResult.OK;
             errorMessage = default;

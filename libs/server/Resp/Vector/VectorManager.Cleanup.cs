@@ -448,7 +448,7 @@ namespace Garnet.server
                 return;
             }
 
-            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out _);
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out _, out _);
 
             // Record _may_ be dead, but does not imply anything about the Vector Set if it is
             if (flags.HasFlag(VectorSetFlags.SuppressCleanup))
@@ -504,7 +504,7 @@ namespace Garnet.server
                                     else
                                     {
                                         // If the _context_ on this record has changed, that also means the old Vector Set is dead
-                                        ReadIndex(output.SpanByteAndMemory.Span, out var liveContext, out _, out _, out _, out _, out _, out _, out _, out _);
+                                        ReadIndex(output.SpanByteAndMemory.Span, out var liveContext, out _, out _, out _, out _, out _, out _, out _, out _, out _);
                                         needsDelete = liveContext != context;
                                     }
                                 }

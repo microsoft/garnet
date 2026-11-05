@@ -141,7 +141,7 @@ namespace Garnet.server
         /// </summary>
         internal bool NeedsRecreate(ReadOnlySpan<byte> indexConfig)
         {
-            ReadIndex(indexConfig, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexConfig, out _, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
             return indexPtr == 0;
         }
@@ -364,7 +364,7 @@ namespace Garnet.server
                             }
                         }
 
-                        ReadIndex(indexSpan, out var indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _);
+                        ReadIndex(indexSpan, out var indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _, out _);
 
                         input.arg1 = RecreateIndexArg;
 
@@ -605,7 +605,7 @@ namespace Garnet.server
                                 continue;
                             }
 
-                            ReadIndex(indexSpan, out indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _);
+                            ReadIndex(indexSpan, out indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _, out _);
 
                             input.arg1 = RecreateIndexArg;
 

@@ -633,7 +633,7 @@ namespace Garnet.server
                 }
 
                 // After a successful read we extract metadata
-                VectorManager.ReadIndex(indexSpan, out _, out var dimensionsUS, out var reducedDimensionsUS, out _, out _, out _, out _, out _, out _);
+                VectorManager.ReadIndex(indexSpan, out _, out var dimensionsUS, out var reducedDimensionsUS, out _, out _, out _, out _, out _, out _, out _);
 
                 dimensions = (int)(reducedDimensionsUS == 0 ? dimensionsUS : reducedDimensionsUS);
 
@@ -676,7 +676,7 @@ namespace Garnet.server
                 }
 
                 // After a successful read we extract metadata
-                VectorManager.ReadIndex(indexSpan, out var context, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out distanceMetricType, out var flags, out var indexPtr);
+                VectorManager.ReadIndex(indexSpan, out var context, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out distanceMetricType, out var flags, out _, out var indexPtr);
                 if (importPendingBool)
                 {
                     // Can't check cardinality if Vector Set is being imported
@@ -713,7 +713,7 @@ namespace Garnet.server
                 }
 
                 // After a successful read we extract metadata
-                VectorManager.ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+                VectorManager.ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
                 var cardinality = NativeDiskANNMethods.card(context, indexPtr);
                 card = cardinality == ulong.MaxValue ? -1 : (long)cardinality;
 

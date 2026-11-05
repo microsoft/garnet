@@ -775,7 +775,7 @@ namespace Garnet.server
                 return;
             }
 
-            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out _, out _, out _);
 
             var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
 

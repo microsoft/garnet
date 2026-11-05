@@ -109,7 +109,7 @@ namespace Garnet.server
                 throw new GarnetException($"Acquired space for vector set index does not match expectations, {indexSpan.Length} != {Index.Size}");
             }
 
-            ReadIndex(indexSpan, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexSpan, out _, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
             Debug.Assert(indexPtr == 0, "Shouldn't be recreating an index if we already have a pointer");
 
             ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexSpan));
@@ -121,7 +121,7 @@ namespace Garnet.server
         /// </summary>
         internal void DropIndex(ReadOnlySpan<byte> indexValue)
         {
-            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
             if (indexPtr == 0)
             {
@@ -145,6 +145,7 @@ namespace Garnet.server
             out uint numLinks,
             out VectorDistanceMetricType distanceMetric,
             out VectorSetFlags flags,
+            out ulong shallowCopyOfContext,
             out nint indexPtr
         )
         {
@@ -160,6 +161,7 @@ namespace Garnet.server
             numLinks = asIndex.NumLinks;
             distanceMetric = asIndex.DistanceMetric;
             flags = asIndex.Flags;
+            shallowCopyOfContext = asIndex.ShallowCopyOfContext;
             indexPtr = (nint)asIndex.IndexPtr;
 
             Debug.Assert((context % ContextStep) == 0, $"Context ({context}) not as expected (% 4 == {context % 4}), vector set index is probably corrupted");
