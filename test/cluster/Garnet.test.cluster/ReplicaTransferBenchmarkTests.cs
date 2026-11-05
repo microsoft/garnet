@@ -150,6 +150,42 @@ namespace Garnet.test.cluster
             }
         }
 
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(2)]
+        public async Task TransfersAndVerifiesFileWithAcceptanceReplies(int writeBuffers)
+        {
+            var sourcePrefix = Path.Combine(TestUtils.MethodTestDir, "source");
+            var destination = Path.Combine(TestUtils.MethodTestDir, "destination");
+            Directory.CreateDirectory(destination);
+            var data = new byte[64 << 10];
+            new Random(42).NextBytes(data);
+            await File.WriteAllBytesAsync(sourcePrefix + ".0", data);
+
+            var port = ClusterTestContext.Port.ToString();
+            var receiverOptions = BenchmarkOptions.Parse(["receive", "--output", destination, "--bind", "127.0.0.1",
+                "--port", port, "--runs", "2", "--write-buffers", writeBuffers.ToString(), "--timeout-seconds", "20",
+                "--ack-delay-us", "1000"]);
+            var senderOptions = BenchmarkOptions.Parse(["send", "--source-prefix", sourcePrefix, "--host", "127.0.0.1",
+                "--port", port, "--chunks", "4k", "--depths", "1,3", "--repeats", "1", "--timeout-seconds", "20"]);
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var receiver = Receiver.RunAsync(receiverOptions, cancellation.Token);
+            try
+            {
+                await Sender.RunAsync(senderOptions, cancellation.Token);
+                await receiver;
+                var files = Directory.GetFiles(destination, "payload.0", SearchOption.AllDirectories);
+                Assert.That(files, Has.Length.EqualTo(2));
+                foreach (var file in files)
+                    Assert.That(await File.ReadAllBytesAsync(file), Is.EqualTo(data));
+            }
+            finally
+            {
+                await cancellation.CancelAsync();
+                await receiver.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            }
+        }
+
         [Test]
         public void CancelBeforeGeneration()
         {

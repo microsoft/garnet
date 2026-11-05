@@ -281,8 +281,6 @@ namespace Garnet.cluster
 
         public void Dispose()
         {
-            DisposeDeferredReplies();
-
             rangeIndexMigrationState?.Dispose();
 
             // A record whose chunks were still arriving when the connection went away holds pooled buffers that no Reset

@@ -261,6 +261,7 @@ namespace Garnet.client
 
         /// <summary>
         /// Send snapshot data (file segments or metadata) via unified CLUSTER SNAPSHOT_DATA command.
+        /// Chunk OKs confirm acceptance; an empty file payload's OK confirms all writes completed and the file closed.
         /// </summary>
         /// <param name="fileTokenBytes">The checkpoint token bytes.</param>
         /// <param name="fileType">The checkpoint file type (including metadata variants).</param>
@@ -272,6 +273,7 @@ namespace Garnet.client
 
         /// <summary>
         /// Frame snapshot data with optional flushing for a single producer's bounded batch.
+        /// Chunk OKs confirm acceptance; an empty file payload's OK confirms all writes completed and the file closed.
         /// </summary>
         /// <param name="fileTokenBytes">The checkpoint token bytes.</param>
         /// <param name="fileType">The checkpoint file type (including metadata variants).</param>

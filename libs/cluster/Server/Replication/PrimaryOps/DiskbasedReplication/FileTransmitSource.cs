@@ -56,7 +56,7 @@ namespace Garnet.cluster
                 gcs.CloseConnection();
             });
 
-            // Send chunks serially, allowing a bounded FIFO of outstanding acknowledgements.
+            // Send chunks serially, allowing a bounded FIFO of outstanding acceptance acknowledgements.
             // Only this async flow mutates pending; response continuations cannot change its head across an await.
             // Peek retains the head in the abort-cleanup set until its acknowledgement succeeds.
             var pending = new Queue<Task>(pipelineDepth);
@@ -70,7 +70,7 @@ namespace Garnet.cluster
                     if (pending.Count == pipelineDepth)
                     {
                         gcs.CompletePending(wait: false);
-                        // Wait for the oldest item to acknowledge completion before dequeueing it and sending another chunk.
+                        // Wait for the oldest chunk to be accepted before dequeueing it and sending another chunk.
                         await pending.Peek().ConfigureAwait(false);
                         _ = pending.Dequeue();
                     }
@@ -85,7 +85,8 @@ namespace Garnet.cluster
                     pending.Enqueue(SendChunkAsync(result.ChunkStartAddress, result.BytesRead, result.Buffer));
                 }
 
-                // Wait for all outstanding acknowledgements before sending the completion marker.
+                // Chunk OKs confirm acceptance, not completed writes. Only the end marker confirms the file was written
+                // and closed; await its response before returning or advancing to the next file.
                 if (pending.Count > 0)
                     gcs.CompletePending(wait: false);
                 while (pending.Count > 0)

@@ -4,7 +4,7 @@ This signed, standalone executable sweeps checkpoint chunk sizes and bounded
 pipeline depths using the real Garnet
 `FileDataSource → FileTransmitSource → GarnetClientSession.ExecuteClusterSnapshotData`
 sender and the replica's `OverlappedFileDataSink` (or, with `--write-buffers 0`,
-`FileDataSink`) receiver path, acknowledging each chunk once it is written. It uses two processes:
+`FileDataSink`) receiver path, acknowledging each chunk once accepted and the end marker only after all writes complete. It uses two processes:
 one sender and one dedicated benchmark receiver, on the same machine or on two
 machines. No Garnet server is started, reset, or modified. Checkpoint selection,
 recovery, AOF replay, cluster administration, and TLS are deliberately excluded.
@@ -148,7 +148,7 @@ paths.
 | receive | `--bind` | `127.0.0.1` | Listener IP |
 | receive | `--runs` | `1` | Number of verified transfers before exit |
 | receive | `--max-chunk` | `16m` | Bounded receive-frame allocation limit |
-| receive | `--ack-delay-us` | `0` | Fixed additional ACK availability delay, in microseconds, after each completed data write and EOF; e.g. `1000` models a 1 ms RTT |
+| receive | `--ack-delay-us` | `0` | Fixed additional ACK availability delay, in microseconds, after chunk acceptance and EOF completion; e.g. `1000` models a 1 ms RTT |
 | receive | `--write-buffers` | `1` | Received chunks that may wait for the file writer, as Garnet's `--repl-disk-based-sync-write-buffers` (0–8); `0` writes each chunk before receiving the next |
 | send / receive | `--port` | `7010` | Dedicated benchmark port |
 | send / receive | `--timeout-seconds` | `30` | Connect, command, I/O, verification, and receiver accept/read timeout (1–3600 seconds) |
@@ -218,7 +218,7 @@ dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer
 ```
 
 An independent FIFO response writer releases each ACK no earlier than
-`completed-write-time + delay`. The receiver **continues reading and writing
+`acceptance-time + delay` for chunks, or `file-completion-time + delay` for EOF. The receiver **continues reading and writing
 subsequent chunks while earlier ACKs are delayed**; it does not sleep in the
 write loop or add a serial service-time delay per chunk. A depth-1 sender
 therefore waits the full delay for every chunk, while a deeper window overlaps
@@ -253,11 +253,12 @@ make these **steady-state**, not guaranteed cold-cache measurements.
 
 For every run, the receiver validates token, file type, contiguous addresses,
 exact chunk sizes, declared total bytes, and one EOF at exactly the final
-address. It sends `OK` only after that chunk's write has completed, and the EOF `OK`
-only after sink completion. As in Garnet, the receiver keeps reading chunks while
-earlier writes are in progress (unless `--write-buffers 0`), but sends replies in
-order and never while it is copying a chunk, because Garnet's receiving thread holds
-the connection's sender while it processes received commands. The handshake reports
+address. It sends chunk `OK` after copying and queue acceptance, and the EOF `OK`
+only after all writes succeed and sink completion closes the file. As in Garnet,
+the receiver keeps reading chunks while earlier writes are in progress (unless
+`--write-buffers 0`). Replies remain in command order; the benchmark's independent
+reply writer models added network delay, not deferred device-write acknowledgements.
+The versioned benchmark handshake requires both processes to use this strategy. The handshake reports
 the receiver's write buffers, which the sender prints and records in the CSV's
 `receiver_write_buffers` column. A separate untimed `VERIFY` then checks physical
 length and SHA-256. Only a verified run prints throughput or writes a CSV row.

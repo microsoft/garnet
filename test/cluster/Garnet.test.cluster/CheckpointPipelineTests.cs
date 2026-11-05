@@ -219,6 +219,55 @@ namespace Garnet.test.cluster
         [TestCase("unexpected")]
         [TestCase("disconnect")]
         [TestCase("timeout")]
+        public async Task AcceptedChunksDoNotHideEndMarkerFailure(string failure)
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            using var client = new GarnetClientSession(listener.LocalEndpoint, new NetworkBufferSettings(1 << 20, 4096));
+            var accept = listener.AcceptTcpClientAsync(timeout.Token);
+            await client.ConnectAsync(token: timeout.Token);
+            using var peer = await accept;
+            using var stream = peer.GetStream();
+            var source = new TestSource(2);
+            using var transmitter = new FileTransmitSource(source, pipelineDepth: 2);
+            var transfer = transmitter.TransmitAsync(client,
+                failure == "timeout" ? TimeSpan.FromSeconds(1) : TimeSpan.FromSeconds(10), timeout.Token);
+
+            for (var i = 0; i < source.ChunkCount; i++)
+            {
+                _ = await ReadChunkAsync(stream, timeout.Token);
+                await ReplyAsync(stream, "+OK\r\n", timeout.Token);
+            }
+
+            var (address, data) = await ReadChunkAsync(stream, timeout.Token);
+            Assert.That(address, Is.EqualTo(source.EndOffset));
+            Assert.That(data, Is.Empty);
+            Assert.That(transfer.IsCompleted, Is.False, "Acceptance replies do not confirm completed file writes");
+
+            switch (failure)
+            {
+                case "error":
+                    await ReplyAsync(stream, "-ERR injected file write failure\r\n", timeout.Token);
+                    break;
+                case "unexpected":
+                    await ReplyAsync(stream, "+NOT_OK\r\n", timeout.Token);
+                    break;
+                case "disconnect":
+                    peer.Dispose();
+                    break;
+            }
+
+            var error = Assert.CatchAsync(async () => await transfer.WaitAsync(timeout.Token));
+            if (failure == "timeout")
+                Assert.That(error, Is.TypeOf<TimeoutException>());
+            Assert.That(client.IsConnected, Is.False, "A failed completion barrier aborts the checkpoint connection");
+        }
+
+        [TestCase("error")]
+        [TestCase("unexpected")]
+        [TestCase("disconnect")]
+        [TestCase("timeout")]
         [TestCase("cancel")]
         public async Task FailedWindowAbortsWithoutEndMarker(string failure)
         {

@@ -94,7 +94,7 @@ In single-machine benchmark runs with an emulated 1.05 ms round trip, throughput
 ```mermaid
 sequenceDiagram
     accTitle: Disk-based checkpoint file transfer
-    accDescr: A primary pipelines checkpoint chunks to a replica, which writes them in order and acknowledges each after its write
+    accDescr: A primary pipelines checkpoint chunks to a replica, which acknowledges acceptance and confirms all writes at end of file
     participant T as FileTransmitSource (primary)
     participant S as FileDataSource
     participant C as GarnetClientSession
@@ -107,20 +107,18 @@ sequenceDiagram
         S-->>T: sector-aligned buffer
         T->>C: ExecuteClusterSnapshotData, copies chunk, buffer returned
         C->>R: CLUSTER SNAPSHOT_DATA token type address data
-        R->>H: ProcessSnapshotDataAsync
-        H->>K: WriteChunkAsync, copies into a write buffer
-        K-->>R: task for this chunk's write
-        Note over R: reply deferred, next chunk received meanwhile
+        R->>H: ProcessSnapshotData
+        H->>K: WriteChunk, copies into a write buffer
         K->>W: queued in arrival order
+        K-->>R: accepted
+        R-->>C: +OK, queued
         W->>W: device write, one at a time
-        W-->>R: chunk's task completes
-        R-->>C: +OK, in command order
     end
     T->>C: empty chunk, after every OK
     C->>R: CLUSTER SNAPSHOT_DATA with empty data
-    R->>H: ProcessSnapshotDataAsync
-    H->>K: CompleteAsync, drains writes and closes the file
-    R-->>C: +OK
+    R->>H: ProcessSnapshotData
+    H->>K: Complete, drains writes and closes the file
+    R-->>C: +OK, all writes succeeded and file closed
 ```
 
 #### Primary: reading and sending (`PrimaryOps/DiskbasedReplication`)
@@ -132,7 +130,7 @@ sequenceDiagram
    - it reads the next chunk with `FileDataSource.ReadNextChunkAsync`. Reads are bounded by the chunk size and the next segment boundary, and the final read is aligned up to the device sector;
    - it frames the chunk with `GarnetClientSession.ExecuteClusterSnapshotData(..., flush: false)`. That copies the chunk into the client's send buffer, so the read buffer goes straight back to the pool;
    - it adds the response task to the window. Ready requests can share a send buffer; `CompletePending(wait: false)` flushes before a window wait, an asynchronous read, and the final drain.
-4. After the last chunk it waits for every acknowledgement, then sends the end-of-file request and waits for its `OK`.
+4. After the last chunk it waits for every acceptance acknowledgement, then sends the end-of-file request and waits for its `OK`. Acceptance does not imply a completed write; a failed end-of-file request aborts the transfer even if every chunk was accepted.
 5. Each request has its own `ReplicaSyncTimeout` deadline. It starts before submission, so socket backpressure counts, and it is not restarted when the request reaches the head of the window. Every response is checked as it completes.
    - On the first failure (an error reply, a deadline, a disconnect or a cancellation), the transfer cancels any overlapping read and closes the socket to unblock a stalled send.
    - Full client disposal waits until synchronous buffer access has unwound. Abort observes every outstanding response, and the first failure is rethrown.
@@ -143,36 +141,28 @@ Chunk sizes are validated against device sectors at startup, through `INamedDevi
 #### Replica: receiving and writing (`ReplicaOps/DiskbasedReplication`)
 
 1. `ReplicaDiskbasedSync` creates a `ReceiveCheckpointHandler` before it asks the primary to start, and disposes it when the attempt ends. The primary's requests arrive on an inbound connection, served by an ordinary `RespServerSession` and its `ClusterSession`.
-2. `ClusterSession.NetworkClusterSnapshotData` parses each request and calls `ReceiveCheckpointHandler.ProcessSnapshotDataAsync`:
+2. `ClusterSession.NetworkClusterSnapshotData` parses each request and calls `ReceiveCheckpointHandler.ProcessSnapshotData`:
    - start address −1 carries checkpoint metadata, or the header that precedes a RangeIndex file's chunks, handled synchronously;
    - empty data ends the file and completes its sink;
    - anything else is a chunk. The file's first chunk opens its device and sink, and the chunk is handed to the sink.
 3. With `ReplicaDiskBasedSyncWriteBuffers` above 0 (default 1), the sink is an `OverlappedFileDataSink`:
-   - `WriteChunkAsync` waits for one of the write-buffer slots, which is the backpressure point. It copies the chunk into a sector-aligned pool buffer, queues it, and returns a task that completes when that chunk's write does;
-   - a single writer task issues the device writes one at a time, in arrival order, so the file is still written sequentially. After each write it returns the buffer, which the pool zeroes; the comment at the rental explains why that zeroing is kept. It then frees the slot and completes the chunk's task;
-   - the first failed or timed-out write fails its own chunk and every later one. A timed-out write's buffer is abandoned rather than reused, because the device may still read from it;
-   - the end-of-file request's task (`CompleteAsync`) completes after every write has completed and the file is closed.
+   - `WriteChunk` waits for one of the write-buffer slots, which is the backpressure point. It copies the chunk into a sector-aligned pool buffer, queues it, and returns without waiting for that chunk's write;
+   - a single writer task issues the device writes one at a time, in arrival order, so the file is still written sequentially. After each write it returns the buffer, which the pool zeroes; the comment at the rental explains why that zeroing is kept. It then frees the slot;
+   - the first failed or timed-out write is retained for subsequent requests and completion. Later queued chunks are discarded and their buffers returned. A timed-out write's buffer is abandoned rather than reused, because the device may still read from it;
+   - the end-of-file request blocks in `Complete` until every queued write has been processed and the file is closed, and throws if any write failed.
 
    With 0 write buffers the sink is `FileDataSink`, which writes each chunk before the command returns, as before these changes.
 4. `ReceiveCheckpointHandler.Dispose` cancels outstanding writes and closes every sink before it frees the buffer pool that their writers return buffers to.
 
-#### Replies: deferred, but in command order (`Session/ClusterSessionDeferredReplies.cs`)
+#### Replies: acceptance and completion
 
-An `OK` must not be sent before its chunk is written. RESP replies must also follow command order, and a session normally writes each reply inline while it processes a batch of received commands, holding the connection's network sender for the whole batch.
+`NetworkClusterSnapshotData` writes every reply inline, preserving RESP command order without a background responder. A chunk's `OK` confirms that its payload has been copied and accepted into the bounded write queue. Other commands do not wait for those writes.
 
-1. If the chunk's write has already completed and no earlier reply is pending, `NetworkClusterSnapshotData` writes the reply inline. Otherwise `DeferReply` queues the task, and starts a responder task if none is running.
-2. The responder (`SendDeferredRepliesAsync`) waits for the task at the head of the queue, then takes the network sender between batches, as `AsyncProcessor` does. It then writes the replies of the completed tasks at the head. Each reply is `+OK`, or the error text that a thrown command would produce. The responder exits when the queue is empty.
-3. Any other reply on the session must follow the deferred ones. `RespServerSession` keeps a flag, `clusterRepliesMayBeDeferred`, refreshed after each CLUSTER command. While it is set, these paths first call `IClusterSession.DrainDeferredReplies`, which waits for the pending writes and writes their replies:
-   - `CanServeSlot`, for every command except `CLUSTER SNAPSHOT_DATA`;
-   - ACL and NOSCRIPT rejections;
-   - unknown-command errors.
-   
-   A primary sends nothing else while acknowledgements are outstanding, so in practice a drain never waits. The flag keeps the cost to every other command down to a field read.
-4. `ClusterSession.Dispose` stops deferred replies. The responder holds a lock while it writes and sends, so it cannot touch a send buffer (with TLS, the connection's own) after the closing connection releases it.
+The empty end-of-file request is the completion barrier: it waits for all queued writes and closes the device before replying `OK`. A write failure is reported on a subsequent chunk or this barrier, including failures occurring after the last chunk's acceptance reply. The primary must await this final response before returning success or advancing to another file.
 
 ### Guarantees
 
-- An `OK` still means "this chunk and every earlier chunk of the file were received in order and written", and the end-of-file `OK` means the file is closed. The primary relies on nothing else, so the protocol is unchanged.
+- A chunk's `OK` means accepted, not written. The end-of-file `OK` confirms every queued write succeeded and the file is closed. Both peers must run the updated implementation; mixed-version negotiation is not provided.
 - Memory is bounded on both sides.
   - On the primary, at most depth × chunk of payload is unacknowledged, capped at 512 MiB, in send buffers of up to twice the chunk.
   - On the replica, there is one chunk per write buffer, plus a receive buffer that holds one whole request.
@@ -197,11 +187,9 @@ Tuning guidance and memory costs are in the [operator guide](../../cluster/repli
 | `FileDataSource` | Chunked, sector-aligned reads | #2334 (chunk size); overlapped writes (no zeroing, short-read tail) |
 | `GarnetClientSession`, `GarnetClientSessionReplicationExtensions`, `GarnetClientSessionTcpNetworkHandler`, `NetworkHandler` | Framing without a flush, explicit flushes, TLS send-buffer ownership on abort | #2334 |
 | `GarnetServerOptions`, `Options`, `OptionsValidators`, `RuntimeServerConfig`, `defaults.conf` | Settings, validation, `CONFIG GET`/`SET` | #2334; overlapped writes (write buffers, 16 MiB default) |
-| `ReceiveCheckpointHandler` | Routes requests to sinks and returns write tasks | Overlapped writes |
+| `ReceiveCheckpointHandler` | Routes requests to sinks and waits for end-of-file completion | Overlapped writes |
 | `OverlappedFileDataSink` | Ordered writer that overlaps receiving | Overlapped writes |
-| `RespClusterReplicationCommands.cs` (`NetworkClusterSnapshotData`), `ClusterSessionDeferredReplies.cs` | Deferred, ordered replies | Overlapped writes |
-| `IClusterSession`, `RespServerSessionSlotVerify.cs`, `AdminCommands.cs`, `Parser/RespCommand.cs` | The reply-order barrier | Overlapped writes |
-| `ClusterSession` | Stops deferred replies on dispose; `Send(d, end)` sizes a send from its caller's position | Overlapped writes |
+| `RespClusterReplicationCommands.cs` (`NetworkClusterSnapshotData`) | Inline acceptance replies and end-of-file completion | Overlapped writes |
 | `benchmark/Replica-transfer.benchmark` | Measures both sides with the production code | #2334; overlapped writes (production sinks, `--write-buffers`) |
 
 ### Tests and measurement
@@ -212,7 +200,7 @@ Tuning guidance and memory costs are in the [operator guide](../../cluster/repli
 | `GarnetClientArgumentFramingTests` | Rejecting a chunk too large for the client's send buffer, and sending one that exactly fits |
 | `GarnetClientSessionTlsLifetimeTests` | Releasing the TLS send buffer whichever owner finishes first, and after reconnects and failed handshakes or authentication |
 | `DiskBasedCheckpointChunkTests` | Chunk sizing, sector and segment bounds, and the zeroed tail of a short read |
-| `ReplicaCheckpointWriteTests` | The sink's write order, backpressure, failures and timeouts; and over a real connection, that deferred `OK`s precede a later reply |
+| `ReplicaCheckpointWriteTests` | The sink's write order, backpressure, failures and timeouts; immediate acceptance replies and the end-of-file write barrier over a real connection |
 | `ClusterReplicationBaseTests.DiskBasedSync*` | Full syncs across chunk sizes, depths, runtime changes, and 0, 1 and 2 write buffers, with and without TLS |
 | `GarnetServerConfigTests`, `RespConfigTests` | Option parsing, validation and `CONFIG GET`/`SET` |
 | `ReplicaTransferBenchmarkTests` | The benchmark's options, checkpoint generation and ACK-delay precision |

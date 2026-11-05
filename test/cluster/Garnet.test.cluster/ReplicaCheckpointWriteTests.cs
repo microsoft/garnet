@@ -16,7 +16,7 @@ namespace Garnet.test.cluster
 {
     /// <summary>
     /// Replica side of disk-based sync with overlapped file writes: <see cref="OverlappedFileDataSink"/> and the
-    /// deferred CLUSTER SNAPSHOT_DATA replies that wait for its writes.
+    /// CLUSTER SNAPSHOT_DATA acceptance replies and end-of-file write barrier.
     /// </summary>
     [TestFixture, NonParallelizable]
     public class ReplicaCheckpointWriteTests : TestBase
@@ -31,14 +31,16 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public async Task WritesOneAtATimeInOrderAndCompletesEachChunkAfterItsOwnWrite()
+        public async Task AcceptsChunksBeforeWritingAndCompletesOnlyAfterEveryWrite()
         {
             var device = new GatedDevice();
             var pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
             try
             {
                 using var sink = CreateSink(device, pool, writeBuffers: 3);
-                var written = Enumerable.Range(0, 3).Select(i => sink.WriteChunkAsync(i * Chunk, ChunkData(i))).ToArray();
+                for (var i = 0; i < 3; i++)
+                    sink.WriteChunk(i * Chunk, ChunkData(i));
+                var completion = sink.CompleteAsync();
 
                 for (var i = 0; i < 3; i++)
                 {
@@ -46,16 +48,14 @@ namespace Garnet.test.cluster
                     Assert.That(write.Address, Is.EqualTo(i * Chunk));
                     Assert.That(write.Data, Is.EqualTo(ChunkData(i)));
 
-                    // Give an early completion, or a second concurrent write, a chance to show.
                     await Task.Delay(50);
-                    Assert.That(written[i].IsCompleted, Is.False, "A chunk completes only after its own write");
+                    Assert.That(completion.IsCompleted, Is.False, "Completion waits for every queued write");
                     Assert.That(device.WritesIssued, Is.EqualTo(i + 1), "The next write waits for this one");
 
                     write.Complete();
-                    await written[i];
                 }
 
-                await sink.CompleteAsync();
+                await completion;
                 Assert.That(device.Disposed, Is.True);
             }
             finally
@@ -72,22 +72,20 @@ namespace Garnet.test.cluster
             try
             {
                 using var sink = CreateSink(device, pool, writeBuffers: 1);
-                var first = sink.WriteChunkAsync(0, ChunkData(0));
+                sink.WriteChunk(0, ChunkData(0));
                 var firstWrite = await device.NextWriteAsync();
 
                 // The only buffer holds the first chunk until its write completes, so the second must wait to be copied.
-                var queueSecond = Task.Factory.StartNew(() => sink.WriteChunkAsync(Chunk, ChunkData(1)),
+                var queueSecond = Task.Factory.StartNew(() => sink.WriteChunk(Chunk, ChunkData(1)),
                     CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
                 await Task.Delay(100);
                 Assert.That(queueSecond.IsCompleted, Is.False);
 
                 firstWrite.Complete();
-                var second = await queueSecond;
-                await first;
+                await queueSecond;
                 var secondWrite = await device.NextWriteAsync();
                 Assert.That(secondWrite.Data, Is.EqualTo(ChunkData(1)));
                 secondWrite.Complete();
-                await second;
                 await sink.CompleteAsync();
             }
             finally
@@ -97,22 +95,21 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public async Task AFailedWriteFailsItsChunkAndEveryLaterChunk()
+        public async Task AFailedWriteFailsCompletionAndDiscardsLaterChunks()
         {
             var device = new GatedDevice();
             var pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
             try
             {
                 using var sink = CreateSink(device, pool, writeBuffers: 2);
-                var first = sink.WriteChunkAsync(0, ChunkData(0));
-                var second = sink.WriteChunkAsync(Chunk, ChunkData(1));
+                sink.WriteChunk(0, ChunkData(0));
+                sink.WriteChunk(Chunk, ChunkData(1));
                 (await device.NextWriteAsync()).Complete(errorCode: 5);
 
-                var error = Assert.ThrowsAsync<GarnetException>(async () => await first);
+                var error = Assert.ThrowsAsync<GarnetException>(sink.CompleteAsync);
                 Assert.That(error.Message, Does.StartWith("I/O error 5 writing STORE_HLOG checkpoint file at address 0"));
-                Assert.That(Assert.ThrowsAsync<GarnetException>(async () => await second), Is.SameAs(error));
                 Assert.That(device.WritesIssued, Is.EqualTo(1), "No write is issued after a failure");
-                Assert.That(Assert.Throws<GarnetException>(() => sink.WriteChunkAsync(2 * Chunk, ChunkData(2))), Is.SameAs(error));
+                Assert.That(Assert.Throws<GarnetException>(() => sink.WriteChunk(2 * Chunk, ChunkData(2))), Is.SameAs(error));
                 Assert.That(Assert.ThrowsAsync<GarnetException>(sink.CompleteAsync), Is.SameAs(error));
                 Assert.That(device.Disposed, Is.True);
             }
@@ -130,14 +127,14 @@ namespace Garnet.test.cluster
             try
             {
                 using var sink = CreateSink(device, pool, writeBuffers: 1, timeout: TimeSpan.FromMilliseconds(200));
-                var written = sink.WriteChunkAsync(0, ChunkData(0));
+                sink.WriteChunk(0, ChunkData(0));
                 _ = await device.NextWriteAsync();
 
-                var error = Assert.ThrowsAsync<GarnetException>(async () => await written);
+                var error = Assert.ThrowsAsync<GarnetException>(sink.CompleteAsync);
                 Assert.That(error.Message, Does.StartWith("Timed out writing STORE_HLOG checkpoint file at address 0"));
 
                 // The timed-out write keeps its buffer, but the receiving thread is not left waiting for it.
-                Assert.That(Assert.Throws<GarnetException>(() => sink.WriteChunkAsync(Chunk, ChunkData(1))), Is.SameAs(error));
+                Assert.That(Assert.Throws<GarnetException>(() => sink.WriteChunk(Chunk, ChunkData(1))), Is.SameAs(error));
             }
             finally
             {
@@ -146,7 +143,7 @@ namespace Garnet.test.cluster
         }
 
         [Test, CancelAfter(60_000)]
-        public async Task SnapshotDataRepliesWaitForTheirWritesAndPrecedeLaterReplies(CancellationToken cancellationToken)
+        public async Task SnapshotDataRepliesAcknowledgeQueueingAndEndMarkerWaitsForWrites(CancellationToken cancellationToken)
         {
             TestUtils.IgnoreIfExceptionInjectionDisabled();
 
@@ -156,8 +153,7 @@ namespace Garnet.test.cluster
             ClusterProvider provider = null;
             try
             {
-                // Two buffers let the second chunk queue behind the held write, so PING is processed, and its reply has
-                // to wait, while the first write is still in progress.
+                // Both chunks fit in the queue while the writer is held.
                 context.CreateInstances(1, replicaDiskBasedSyncWriteBuffers: 2);
 
                 // Stand in for a sync attempt, which creates the handler before asking the primary for its checkpoint.
@@ -172,30 +168,27 @@ namespace Garnet.test.cluster
                 // A snapshot file is new for each token; an HLOG chunk would be written into this node's own log.
                 const int type = (int)CheckpointFileType.STORE_SNAPSHOT;
 
-                Task<string> first, second, ping;
+                Task<string> completion;
                 ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Hold_Snapshot_Write);
                 try
                 {
-                    first = client.ExecuteClusterSnapshotData(token, type, 0, ChunkData(0));
-                    second = client.ExecuteClusterSnapshotData(token, type, Chunk, ChunkData(1));
-                    ping = client.ExecuteAsync("PING");
+                    var first = client.ExecuteClusterSnapshotData(token, type, 0, ChunkData(0));
+                    var second = client.ExecuteClusterSnapshotData(token, type, Chunk, ChunkData(1));
+                    var ping = client.ExecuteAsync("PING");
+                    Assert.That(await first.WaitAsync(cancellationToken), Is.EqualTo("OK"));
+                    Assert.That(await second.WaitAsync(cancellationToken), Is.EqualTo("OK"));
+                    Assert.That(await ping.WaitAsync(cancellationToken), Is.EqualTo("PONG"));
 
-                    // The first write is held, so nothing may be acknowledged yet, and PING's reply must wait its turn.
+                    completion = client.ExecuteClusterSnapshotData(token, type, 2 * Chunk, []);
                     await Task.Delay(200, cancellationToken);
-                    Assert.That(first.IsCompleted || second.IsCompleted || ping.IsCompleted, Is.False);
+                    Assert.That(completion.IsCompleted, Is.False, "End marker must wait for disk writes, not just acceptance");
                 }
                 finally
                 {
                     ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Hold_Snapshot_Write);
                 }
 
-                // Replies are matched to commands in order, so PONG overtaking an OK would fail these.
-                Assert.That(await first.WaitAsync(cancellationToken), Is.EqualTo("OK"));
-                Assert.That(await second.WaitAsync(cancellationToken), Is.EqualTo("OK"));
-                Assert.That(await ping.WaitAsync(cancellationToken), Is.EqualTo("PONG"));
-
-                // The end-of-file marker is acknowledged once the file is closed.
-                Assert.That(await client.ExecuteClusterSnapshotData(token, type, 2 * Chunk, []).WaitAsync(cancellationToken), Is.EqualTo("OK"));
+                Assert.That(await completion.WaitAsync(cancellationToken), Is.EqualTo("OK"));
             }
             finally
             {

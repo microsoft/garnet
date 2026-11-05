@@ -4,7 +4,6 @@
 using System;
 using System.Diagnostics;
 using System.Text;
-using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.cluster.Server.Replication;
 using Garnet.common;
@@ -389,11 +388,8 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            // Replies to earlier chunks may still be deferred (see ClusterSessionDeferredReplies.cs), so an error written
-            // here drains them first.
             if (parseState.Count != 4)
             {
-                DrainDeferredReplies();
                 invalidParameters = true;
                 return true;
             }
@@ -403,7 +399,6 @@ namespace Garnet.cluster
             if (!parseState.TryGetInt(1, out var ckptFileTypeInt) ||
                 !parseState.TryGetLong(2, out var startAddress))
             {
-                DrainDeferredReplies();
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
@@ -412,25 +407,11 @@ namespace Garnet.cluster
             var data = parseState.GetArgSliceByRef(3).ReadOnlySpan;
             var ckptFileType = (CheckpointFileType)ckptFileTypeInt;
 
-            Task written;
-            try
-            {
-                written = clusterProvider.replicationManager.recvCheckpointHandler.ProcessSnapshotDataAsync(new Guid(fileTokenBytes), ckptFileType, startAddress, data);
-            }
-            catch
-            {
-                // The session replies to the exception after this returns.
-                DrainDeferredReplies();
-                throw;
-            }
+            clusterProvider.replicationManager.recvCheckpointHandler.ProcessSnapshotData(new Guid(fileTokenBytes), ckptFileType, startAddress, data);
 
-            // The reply acknowledges that the payload is written. While a chunk's write is in progress, defer the reply so
-            // this connection can receive the next chunk meanwhile. A reply behind deferred ones also waits its turn, to
-            // keep replies in command order.
-            if (written.IsCompleted && !hasDeferredReplies)
-                WriteDeferredReply(written);
-            else
-                DeferReply(written);
+            // Chunks acknowledge acceptance; the empty end marker waits for all writes and closes the sink.
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
             return true;
         }
 

@@ -16,14 +16,13 @@ namespace Garnet.cluster
     /// Device-backed <see cref="ISnapshotDataSink"/> that lets the replica keep receiving while it writes.
     /// <para>
     /// The receiving thread copies each chunk into a sector-aligned buffer and queues it. One writer issues the device
-    /// writes strictly in arrival order, one at a time, so the file is still written sequentially. Each chunk's task
-    /// completes only after that chunk's own write succeeds, and writes complete in order, so a reply sent after awaiting
-    /// the task still means "this chunk and every earlier one were received in order and written".
+    /// writes strictly in arrival order, one at a time, so the file is still written sequentially. A chunk is accepted
+    /// once it is queued; completing the sink waits for every queued write and reports the first failure.
     /// </para>
     /// <para>
     /// Up to <c>writeBuffers</c> received chunks may be held, queued or being written; beyond that
-    /// <see cref="WriteChunkAsync"/> blocks the receiving thread, which is the backpressure point. The first failed write
-    /// fails every later chunk, and no further chunk is accepted.
+    /// <see cref="WriteChunk"/> blocks the receiving thread, which is the backpressure point. After the first failed write,
+    /// later queued chunks are discarded and no further chunk is accepted.
     /// </para>
     /// </summary>
     internal sealed class OverlappedFileDataSink : ISnapshotDataSink
@@ -42,7 +41,7 @@ namespace Garnet.cluster
         private Exception failure;
         private int disposed;
 
-        private readonly record struct PendingWrite(long Address, SectorAlignedMemory Buffer, uint Length, TaskCompletionSource Written);
+        private readonly record struct PendingWrite(long Address, SectorAlignedMemory Buffer, uint Length);
 
         /// <inheritdoc/>
         public CheckpointFileType Type { get; }
@@ -84,12 +83,12 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Copies a chunk and queues its write. The returned task completes after this chunk's write completes.
+        /// Copies a chunk and queues its write. Completion of the sink confirms that every chunk was written.
         /// Blocks while <c>writeBuffers</c> earlier chunks are still queued or being written.
         /// </summary>
         /// <param name="startAddress">The sector-aligned start address for this chunk.</param>
         /// <param name="data">The chunk; copied before this method returns.</param>
-        public Task WriteChunkAsync(long startAddress, ReadOnlySpan<byte> data)
+        public void WriteChunk(long startAddress, ReadOnlySpan<byte> data)
         {
             if ((startAddress & (device.SectorSize - 1)) != 0)
                 throw new ArgumentException($"startAddress {startAddress} is not aligned to device sector size {device.SectorSize}", nameof(startAddress));
@@ -125,10 +124,8 @@ namespace Garnet.cluster
                         Buffer.MemoryCopy(source, buffer.aligned_pointer, data.Length, data.Length);
                 }
 
-                var written = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                if (!queue.Writer.TryWrite(new PendingWrite(startAddress, buffer, length, written)))
+                if (!queue.Writer.TryWrite(new PendingWrite(startAddress, buffer, length)))
                     throw new InvalidOperationException($"The {Type} checkpoint sink is already complete.");
-                return written.Task;
             }
             catch
             {
@@ -138,12 +135,6 @@ namespace Garnet.cluster
                 throw;
             }
         }
-
-        /// <summary>
-        /// Writes a chunk and waits for the write; <see cref="ISnapshotDataSink"/> compatibility for synchronous callers.
-        /// </summary>
-        public void WriteChunk(long startAddress, ReadOnlySpan<byte> data)
-            => AsyncUtils.BlockingWait(WriteChunkAsync(startAddress, data));
 
         /// <summary>
         /// Completes after every queued write has completed and the device is closed; faults with the first write failure.
@@ -200,12 +191,11 @@ namespace Garnet.cluster
         {
             await foreach (var pending in queue.Reader.ReadAllAsync().ConfigureAwait(false))
             {
-                if (Volatile.Read(ref failure) is { } previous)
+                if (Volatile.Read(ref failure) != null)
                 {
                     // Never issued, so the buffer can go back to the pool.
                     pending.Buffer.Return();
                     _ = freeBuffers.Release();
-                    _ = pending.Written.TrySetException(previous);
                     continue;
                 }
 
@@ -217,7 +207,6 @@ namespace Garnet.cluster
                     await WriteAsync(pending).ConfigureAwait(false);
                     pending.Buffer.Return();
                     _ = freeBuffers.Release();
-                    _ = pending.Written.TrySetResult();
                 }
                 catch (Exception ex)
                 {
@@ -227,7 +216,6 @@ namespace Garnet.cluster
                     // A timed-out write may still complete into its buffer, so it is abandoned rather than reused.
                     // Releasing the slot lets a receiving thread blocked on a buffer observe the failure.
                     _ = freeBuffers.Release();
-                    _ = pending.Written.TrySetException(ex);
                 }
             }
         }

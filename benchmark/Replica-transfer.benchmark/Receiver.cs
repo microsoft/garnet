@@ -6,7 +6,6 @@ using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading.Channels;
 using Garnet.cluster;
 using Tsavorite.core;
 
@@ -49,14 +48,12 @@ internal static class Receiver
         var protocol = new Protocol(stream, options.Timeout, options.MaxChunk);
         var replies = new Acknowledgements(options.AckDelayUs);
         var writer = replies.WriteAsync(stream, abort, options.Timeout);
-        using var responder = new Responder(replies);
-        var responding = responder.RunAsync(abort);
         Transfer transfer = null;
         try
         {
             var hello = await protocol.ReadAsync(abort.Token);
             Require(hello.Length == 1 && Text(hello[0]) == Protocol.Magic, "Expected benchmark-only handshake.");
-            responder.Reply($"{Protocol.Magic}|{options.AckDelayUs}|{options.MaxChunk}|{options.WriteBuffers}");
+            await replies.EnqueueAsync($"{Protocol.Magic}|{options.AckDelayUs}|{options.MaxChunk}|{options.WriteBuffers}", false, abort.Token);
 
             var begin = await protocol.ReadAsync(abort.Token);
             Require(begin.Length == 6 && Text(begin[0]) == "BEGIN", "Expected BEGIN token bytes chunk depth sha256.");
@@ -76,7 +73,7 @@ internal static class Receiver
             Require(hash.Length == 64 && Convert.FromHexString(hash).Length == 32, "Expected a SHA-256 hash.");
             transfer = Transfer.Create(options, id, length, chunk, hash, abort.Token);
             Console.WriteLine($"Receiving run {run}: token={id}, bytes={length}, chunk={chunk}, depth={depth}, destination={transfer.Path}");
-            responder.Reply("OK");
+            await replies.EnqueueAsync("OK", false, abort.Token);
 
             while (true)
             {
@@ -88,9 +85,7 @@ internal static class Receiver
                     verifyDeadline.CancelAfter(options.Timeout);
                     var verifiedHash = await HashAsync(transfer.Path, transfer.Length, verifyDeadline.Token);
                     Require(verifiedHash == transfer.Hash, "Destination SHA-256 differs from the source; this run has no valid throughput result.");
-                    responder.Reply($"VERIFIED|{transfer.NextAddress}|{transfer.Chunks}|{verifiedHash}");
-                    responder.Complete();
-                    await responding;
+                    await replies.EnqueueAsync($"VERIFIED|{transfer.NextAddress}|{transfer.Chunks}|{verifiedHash}", false, abort.Token);
                     replies.Complete();
                     await writer;
                     Console.WriteLine($"VERIFIED run {run}: {transfer.NextAddress} completed bytes, {transfer.Chunks} chunks, SHA256={verifiedHash}; {replies.Report()}");
@@ -110,29 +105,20 @@ internal static class Receiver
                 else
                     Require(payload.Count == Math.Min(transfer.Chunk, transfer.Length - address), "Incorrect chunk size or bytes beyond declared EOF.");
 
-                // Garnet's receiving thread holds the session's network sender while it processes received commands, so
-                // no reply can be sent meanwhile. Hold the stand-in for the copy, and for any wait for a write buffer.
-                await responder.Sender.WaitAsync(abort.Token);
-                try
-                {
-                    // The ACK waits for the write (or, at EOF, for completion and close), then for the ACK delay.
-                    responder.Acknowledge(payload.Count == 0 ? transfer.CompleteAsync() : transfer.Write(payload));
-                }
-                finally
-                {
-                    _ = responder.Sender.Release();
-                }
+                // Chunk OKs confirm queue acceptance. EOF confirms all device writes and close.
+                if (payload.Count == 0)
+                    await transfer.CompleteAsync();
+                else
+                    transfer.Write(payload);
+                await replies.EnqueueAsync("OK", true, abort.Token);
             }
         }
         catch
         {
             await abort.CancelAsync();
-            responder.Complete();
             replies.Complete();
-            try { await responding; }
-            catch { /* The connection is already failing; preserve the receive/write/verification error. */ }
             try { await writer; }
-            catch { /* As above. */ }
+            catch { /* The connection is already failing; preserve the receive/write/verification error. */ }
             throw;
         }
         finally
@@ -155,62 +141,6 @@ internal static class Receiver
     {
         if (!condition)
             throw new InvalidDataException(message);
-    }
-
-    /// <summary>
-    /// Sends replies in command order, each once its write completes, as Garnet's <c>ClusterSession</c> defers CLUSTER
-    /// SNAPSHOT_DATA replies. Garnet's receiving thread holds the session's network sender for as long as it processes
-    /// received commands, so a reply can only be sent between commands; <see cref="Sender"/> stands in for that network
-    /// sender. The ACK delay starts when the reply is sent, as a network round trip would.
-    /// </summary>
-    private sealed class Responder(Acknowledgements replies) : IDisposable
-    {
-        private readonly Channel<(string Reply, Task Written, bool Delayed)> pending =
-            Channel.CreateUnbounded<(string, Task, bool)>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
-
-        internal SemaphoreSlim Sender { get; } = new(1, 1);
-
-        /// <summary>Replies to a control command without delay.</summary>
-        internal void Reply(string reply) => Enqueue(reply, Task.CompletedTask, delayed: false);
-
-        /// <summary>Acknowledges a chunk or EOF once <paramref name="written"/> completes, after the ACK delay.</summary>
-        internal void Acknowledge(Task written) => Enqueue("OK", written, delayed: true);
-
-        internal void Complete() => pending.Writer.TryComplete();
-
-        internal async Task RunAsync(CancellationTokenSource abort)
-        {
-            try
-            {
-                await foreach (var (reply, written, delayed) in pending.Reader.ReadAllAsync(abort.Token))
-                {
-                    // A failed write fails the run: the sender sees the connection close, never a success-shaped ACK.
-                    await written.WaitAsync(abort.Token);
-                    await Sender.WaitAsync(abort.Token);
-                    try
-                    {
-                        await replies.EnqueueAsync(reply, delayed, abort.Token);
-                    }
-                    finally
-                    {
-                        _ = Sender.Release();
-                    }
-                }
-            }
-            catch
-            {
-                await abort.CancelAsync();
-                throw;
-            }
-        }
-
-        public void Dispose() => Sender.Dispose();
-
-        private void Enqueue(string reply, Task written, bool delayed)
-        {
-            if (!pending.Writer.TryWrite((reply, written, delayed)))
-                throw new InvalidOperationException("The run's replies are already complete.");
-        }
     }
 
     private sealed class Transfer : IDisposable
@@ -274,17 +204,12 @@ internal static class Receiver
             }
         }
 
-        /// <summary>Consumes (copies) <paramref name="payload"/>; the task completes once it is written.</summary>
-        internal Task Write(ReadOnlySpan<byte> payload)
+        /// <summary>Consumes (copies) and accepts <paramref name="payload"/> for writing.</summary>
+        internal void Write(ReadOnlySpan<byte> payload)
         {
-            var written = Task.CompletedTask;
-            if (sink is OverlappedFileDataSink overlapped)
-                written = overlapped.WriteChunkAsync(NextAddress, payload);
-            else
-                sink.WriteChunk(NextAddress, payload);
+            sink.WriteChunk(NextAddress, payload);
             NextAddress += payload.Length;
             Chunks++;
-            return written;
         }
 
         /// <summary>Completes once every write has completed and the device is closed.</summary>

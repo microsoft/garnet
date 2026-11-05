@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 
 namespace Garnet.server
 {
@@ -22,26 +21,6 @@ namespace Garnet.server
         ];
 
         /// <summary>
-        /// Whether the cluster session may hold replies that it writes only once their work completes, in command order:
-        /// a disk-based sync chunk's acknowledgement waits for its write. Only a CLUSTER command defers a reply, so this is
-        /// refreshed after each one, and any other reply first calls <see cref="DrainDeferredClusterReplies"/>. Caching the
-        /// flag keeps the check per command to a field read. It may be stale-true once the replies have been sent, which
-        /// costs one empty drain, but never stale-false: replies are deferred only on this thread.
-        /// </summary>
-        bool clusterRepliesMayBeDeferred;
-
-        /// <summary>
-        /// Writes the replies that the cluster session deferred, waiting for their work to complete, so that the next
-        /// reply follows them.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        void DrainDeferredClusterReplies()
-        {
-            clusterSession.DrainDeferredReplies(ref dcurr, ref dend);
-            clusterRepliesMayBeDeferred = false;
-        }
-
-        /// <summary>
         /// Validates whether a command can be served based on the current slot assignment
         /// </summary>
         /// <param name="cmd"></param>
@@ -49,11 +28,6 @@ namespace Garnet.server
         bool CanServeSlot(RespCommand cmd)
         {
             Debug.Assert(clusterSession != null);
-
-            // Replies that earlier CLUSTER SNAPSHOT_DATA chunks deferred until their writes complete precede this
-            // command's reply. Further chunks may keep deferring theirs.
-            if (clusterRepliesMayBeDeferred && cmd != RespCommand.CLUSTER_SNAPSHOT_DATA)
-                DrainDeferredClusterReplies();
 
             if (!cmd.IsDataCommand())
             {

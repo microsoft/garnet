@@ -1321,10 +1321,6 @@ namespace Garnet.server
             // Parsing for command name was successful, but the command is unknown
             if (writeErrorOnFailure && success && cmd == RespCommand.INVALID)
             {
-                // Any replies the cluster session deferred precede this error (see CanServeSlot).
-                if (clusterRepliesMayBeDeferred)
-                    DrainDeferredClusterReplies();
-
                 if (!specificErrorMessage.IsEmpty)
                 {
                     while (!RespWriteUtils.TryWriteError(specificErrorMessage, ref dcurr, dend))
