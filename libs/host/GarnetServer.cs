@@ -187,6 +187,9 @@ namespace Garnet
                     """);
             }
 
+            // Validate programmatic options before allocating stores or network buffers.
+            _ = opts.GetReplicaDiskBasedSyncPipelineDepth();
+
             var clusterFactory = opts.EnableCluster ? new ClusterFactory() : null;
 
             if (opts.ReplicaDisklessSync && opts.EnableRangeIndexPreview)

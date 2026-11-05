@@ -1027,6 +1027,66 @@ namespace Garnet.test
             ClassicAssert.AreEqual(LogCompactionType.Shift, runtimeConfig.GetEnum<LogCompactionType>(ServerConfigType.COMPACTION_TYPE));
         }
 
+        [Test]
+        public void ConfigGetSetCheckpointTransferSettings()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            Assert.That(db.Execute("CONFIG", "SET", "repl-disk-based-sync-chunk-size", "17m").ToString(), Is.EqualTo("OK"));
+            Assert.That(db.Execute("CONFIG", "SET", "repl-disk-based-sync-pipeline-depth", "3").ToString(), Is.EqualTo("OK"));
+            var chunk = (RedisResult[])db.Execute("CONFIG", "GET", "repl-disk-based-sync-chunk-size");
+            var depth = (RedisResult[])db.Execute("CONFIG", "GET", "repl-disk-based-sync-pipeline-depth");
+            Assert.That(chunk[1].ToString(), Is.EqualTo((16 << 20).ToString()));
+            Assert.That(depth[1].ToString(), Is.EqualTo("3"));
+            var all = (RedisResult[])db.Execute("CONFIG", "GET", "*");
+            Assert.That(all.Select(value => value.ToString()), Does.Contain("repl-disk-based-sync-chunk-size"));
+            Assert.That(all.Select(value => value.ToString()), Does.Contain("repl-disk-based-sync-pipeline-depth"));
+            var exception = Assert.Throws<RedisServerException>(() =>
+                db.Execute("CONFIG", "SET", "repl-disk-based-sync-pipeline-depth", "64"));
+            Assert.That(exception.Message, Does.Contain("512"));
+            depth = (RedisResult[])db.Execute("CONFIG", "GET", "repl-disk-based-sync-pipeline-depth");
+            Assert.That(depth[1].ToString(), Is.EqualTo("3"), "Rejected settings must remain unchanged");
+        }
+
+        [TestCase("repl-disk-based-sync-chunk-size", "511")]
+        [TestCase("repl-disk-based-sync-chunk-size", "513m")]
+        [TestCase("repl-disk-based-sync-chunk-size", "4mbjunk")]
+        [TestCase("repl-disk-based-sync-pipeline-depth", "0")]
+        [TestCase("repl-disk-based-sync-pipeline-depth", "65")]
+        public void InvalidRuntimeCheckpointSettingsAreRejected(string name, string value)
+        {
+            Assert.That(RuntimeServerConfig.TryGetType(System.Text.Encoding.ASCII.GetBytes(name), out var type), Is.True);
+            var runtimeConfig = new RuntimeServerConfig(new GarnetServerOptions());
+            var original = runtimeConfig.GetReplicaDiskBasedSyncSettings();
+            Assert.That(runtimeConfig.TrySet(type, value, out var error), Is.False);
+            Assert.That(error, Does.StartWith("ERR "));
+            Assert.That(runtimeConfig.GetReplicaDiskBasedSyncSettings(), Is.EqualTo(original));
+        }
+
+        [Test]
+        public void RuntimeCheckpointSettingsAreCapturedAsAValidPair()
+        {
+            var runtimeConfig = new RuntimeServerConfig(new GarnetServerOptions());
+            Parallel.For(0, 2000, i =>
+            {
+                _ = runtimeConfig.TrySet(ServerConfigType.REPL_DISK_BASED_SYNC_CHUNK_SIZE, (i % 2 == 0 ? "8m" : "16m"), out _);
+                _ = runtimeConfig.TrySet(ServerConfigType.REPL_DISK_BASED_SYNC_PIPELINE_DEPTH, (i % 2 == 0 ? "32" : "64"), out _);
+                var settings = runtimeConfig.GetReplicaDiskBasedSyncSettings();
+                Assert.That((long)settings.ChunkSize * settings.PipelineDepth,
+                    Is.LessThanOrEqualTo(GarnetServerOptions.ReplicaDiskBasedSyncOutstandingPayloadBytesMax));
+            });
+        }
+
+        [Test]
+        public void RuntimeCheckpointChunkRespectsTheConfiguredDeviceSector()
+        {
+            var runtimeConfig = new RuntimeServerConfig(new GarnetServerOptions { ReplicaDiskBasedSyncSectorSize = 4096 });
+            var original = runtimeConfig.GetReplicaDiskBasedSyncSettings().ChunkSize;
+            Assert.That(runtimeConfig.TrySet(ServerConfigType.REPL_DISK_BASED_SYNC_CHUNK_SIZE, "512", out var error), Is.False);
+            Assert.That(error, Does.Contain("4096"));
+            Assert.That(runtimeConfig.GetReplicaDiskBasedSyncSettings().ChunkSize, Is.EqualTo(original), "A rejected chunk size must leave the setting unchanged");
+        }
+
         /// <summary>
         /// Verifies that a duration-valued option can be read through every unit it declares, and that a
         /// non-positive value is surfaced as an infinite timeout where that is the documented meaning.

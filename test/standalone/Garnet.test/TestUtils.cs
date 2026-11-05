@@ -827,7 +827,9 @@ namespace Garnet.test
             int threadPoolMinIOCompletionThreads = 0,
             bool enableRangeIndexPreview = false,
             TimeSpan? networkSendTimeout = null,
-            bool enableVectorSetPreview = true)
+            bool enableVectorSetPreview = true,
+            string replicaDiskBasedSyncChunkSize = "4m",
+            int replicaDiskBasedSyncPipelineDepth = 4)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -898,7 +900,9 @@ namespace Garnet.test
                     threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
                     enableRangeIndexPreview: enableRangeIndexPreview,
                     networkSendTimeout: networkSendTimeout,
-                    enableVectorSetPreview: enableVectorSetPreview);
+                    enableVectorSetPreview: enableVectorSetPreview,
+                    replicaDiskBasedSyncChunkSize: replicaDiskBasedSyncChunkSize,
+                    replicaDiskBasedSyncPipelineDepth: replicaDiskBasedSyncPipelineDepth);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -985,7 +989,9 @@ namespace Garnet.test
             bool enableRangeIndexPreview = false,
             int vectorSetQuantizationTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
-            TimeSpan? networkSendTimeout = null)
+            TimeSpan? networkSendTimeout = null,
+            string replicaDiskBasedSyncChunkSize = "4m",
+            int replicaDiskBasedSyncPipelineDepth = 4)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -1106,6 +1112,8 @@ namespace Garnet.test
                 CheckpointThrottleFlushDelayMs = checkpointThrottleFlushDelayMs,
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
+                ReplicaDiskBasedSyncChunkSize = replicaDiskBasedSyncChunkSize,
+                ReplicaDiskBasedSyncPipelineDepth = replicaDiskBasedSyncPipelineDepth,
                 AofPhysicalSublogCount = sublogCount,
                 AofReplayTaskCount = replayTaskCount,
                 EnableVectorSetPreview = enableVectorSetPreview,

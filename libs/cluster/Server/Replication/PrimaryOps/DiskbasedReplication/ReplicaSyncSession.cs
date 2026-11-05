@@ -96,9 +96,10 @@ namespace Garnet.cluster
                 return false;
             }
 
+            var transferSettings = storeWrapper.runtimeConfig.GetReplicaDiskBasedSyncSettings();
             GarnetClientSession gcs = new(
                 new IPEndPoint(IPAddress.Parse(address), port),
-                clusterProvider.replicationManager.GetRSSNetworkBufferSettings,
+                ReplicationManager.CreateRSSNetworkBufferSettings(transferSettings.ChunkSize),
                 clusterProvider.replicationManager.GetNetworkPool,
                 tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
                 authUsername: clusterProvider.ClusterUsername,
@@ -138,7 +139,8 @@ namespace Garnet.cluster
                     logger?.LogInformation("Sending main store checkpoint {version} {storeHlogToken} {storeIndexToken} to replica", localEntry.metadata.storeVersion, localEntry.metadata.storeHlogToken, localEntry.metadata.storeIndexToken);
 
                     using var checkpointTransmissionDriver = new SnapshotTransmissionDriver(gcs, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
-                    checkpointTransmissionDriver.AddReader(new TsavoriteSnapshotReader(clusterProvider, localEntry, hlog_size, index_size, storeWrapper.serverOptions.ReplicaSyncTimeout, logger));
+                    checkpointTransmissionDriver.AddReader(new TsavoriteSnapshotReader(clusterProvider, localEntry, hlog_size, index_size,
+                        storeWrapper.serverOptions.ReplicaSyncTimeout, transferSettings, logger));
 
                     // Add RangeIndex files if RI is enabled
                     if (storeWrapper.serverOptions.EnableRangeIndexPreview)

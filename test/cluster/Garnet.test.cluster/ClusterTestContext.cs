@@ -310,6 +310,11 @@ namespace Garnet.test.cluster
         /// <param name="vectorSetReplayTaskCount"></param>
         /// <param name="threadPoolMinIOCompletionThreads"></param>
         /// <param name="networkSendTimeout">Overrides how long a send may wait for a client to accept data.</param>
+        /// <param name="replicaDiskBasedSyncChunkSize">Maximum Tsavorite checkpoint transfer chunk.</param>
+        /// <param name="replicaDiskBasedSyncPipelineDepth">
+        /// Maximum unacknowledged disk-based Tsavorite checkpoint chunks per replica on the primary (1-64, default 4; 1 disables pipelining).
+        /// Depth times effective chunk size must not exceed 512 MiB.
+        /// </param>
         public void CreateInstances(
             int shards,
             bool enableCluster = true,
@@ -364,7 +369,9 @@ namespace Garnet.test.cluster
             int threadPoolMinIOCompletionThreads = 0,
             bool enableRangeIndexPreview = false,
             TimeSpan? networkSendTimeout = null,
-            bool enableVectorSetPreview = true)
+            bool enableVectorSetPreview = true,
+            string replicaDiskBasedSyncChunkSize = "4m",
+            int replicaDiskBasedSyncPipelineDepth = 4)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, Port);
@@ -427,7 +434,9 @@ namespace Garnet.test.cluster
                 threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
                 enableRangeIndexPreview: enableRangeIndexPreview,
                 networkSendTimeout: networkSendTimeout,
-                enableVectorSetPreview: enableVectorSetPreview);
+                enableVectorSetPreview: enableVectorSetPreview,
+                replicaDiskBasedSyncChunkSize: replicaDiskBasedSyncChunkSize,
+                replicaDiskBasedSyncPipelineDepth: replicaDiskBasedSyncPipelineDepth);
 
             foreach (var node in nodes)
                 node.Start();
