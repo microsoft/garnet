@@ -546,7 +546,7 @@
   {
     "Command": "DELEX",
     "Name": "DELEX",
-    "Summary": "Deletes a key, optionally requiring its string value to equal or differ from the comparison value.",
+    "Summary": "Deletes a key, optionally comparing its string value or XXH3-64 digest.",
     "Group": "String",
     "Complexity": "O(N) where N is the length of the compared string.",
     "Arguments": [
@@ -576,8 +576,38 @@
             "DisplayText": "comparison-value",
             "Type": "String",
             "Token": "IFNE"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "IFDEQ",
+            "DisplayText": "digest",
+            "Type": "String",
+            "Token": "IFDEQ"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "IFDNE",
+            "DisplayText": "digest",
+            "Type": "String",
+            "Token": "IFDNE"
           }
         ]
+      }
+    ]
+  },
+  {
+    "Command": "DIGEST",
+    "Name": "DIGEST",
+    "Summary": "Returns the on-demand XXH3-64 digest of a string as 16 hexadecimal characters.",
+    "Group": "String",
+    "Complexity": "O(N) where N is the length of the string value.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
       }
     ]
   },
@@ -1536,9 +1566,9 @@
   {
     "Command": "SET",
     "Name": "SET",
-    "Summary": "Sets the string value of a key, ignoring its type. The key is created if it doesn't exist.",
+    "Summary": "Sets a string value, optionally comparing the current value or its XXH3-64 digest.",
     "Group": "String",
-    "Complexity": "O(1)",
+    "Complexity": "O(N) for value/digest comparisons, where N is the length of the compared string.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -1586,6 +1616,20 @@
             "DisplayText": "comparison-value",
             "Type": "String",
             "Token": "IFNE"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "IFDEQ",
+            "DisplayText": "digest",
+            "Type": "String",
+            "Token": "IFDEQ"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "IFDNE",
+            "DisplayText": "digest",
+            "Type": "String",
+            "Token": "IFDNE"
           }
         ]
       },

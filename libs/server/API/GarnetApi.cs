@@ -39,6 +39,10 @@ namespace Garnet.server
 
         #region GET
         /// <inheritdoc />
+        public GarnetStatus DIGEST(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
+            => storageSession.DIGEST(key, ref input, ref output, ref stringContext);
+
+        /// <inheritdoc />
         public GarnetStatus GET(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.GET(key, ref input, ref output, ref stringContext);
 

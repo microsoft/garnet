@@ -112,6 +112,10 @@ namespace Garnet.server
                 var option = parseState.GetArgSliceByRef(1).Span;
                 if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.IFNE))
                     condition = ExistOptions.IFNE;
+                else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.IFDEQ))
+                    condition = ExistOptions.IFDEQ;
+                else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.IFDNE))
+                    condition = ExistOptions.IFDNE;
                 else if (!option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.IFEQ))
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
                 comparisonIndex = 2;

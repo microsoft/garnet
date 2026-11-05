@@ -19,6 +19,8 @@ namespace Garnet.server
         NX,
         XX,
         IFEQ,
-        IFNE
+        IFNE,
+        IFDEQ,
+        IFDNE
     }
 }

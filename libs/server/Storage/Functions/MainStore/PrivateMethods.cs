@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.IO.Hashing;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -17,6 +18,34 @@ namespace Garnet.server
     /// </summary>
     public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, StringOutput, long>
     {
+        const int StringDigestLength = 16;
+
+        private static void ComputeStringDigest(ReadOnlySpan<byte> value, Span<byte> digest)
+        {
+            var hash = XxHash3.HashToUInt64(value);
+            for (var i = StringDigestLength - 1; i >= 0; i--)
+            {
+                var digit = (byte)(hash & 0xf);
+                digest[i] = (byte)(digit < 10 ? '0' + digit : 'a' + digit - 10);
+                hash >>= 4;
+            }
+        }
+
+        private bool TryMatchStringDigest(ReadOnlySpan<byte> value, ReadOnlySpan<byte> expected, ref StringOutput output, out bool matches)
+        {
+            matches = false;
+            if (expected.Length != StringDigestLength)
+            {
+                functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_INVALID_DIGEST, ref output.SpanByteAndMemory);
+                return false;
+            }
+
+            Span<byte> digest = stackalloc byte[StringDigestLength];
+            ComputeStringDigest(value, digest);
+            matches = expected.EqualsLowerCaseSpanIgnoringCase(digest, allowNonAlphabeticChars: true);
+            return true;
+        }
+
         static void CopyTo(ReadOnlySpan<byte> src, ref StringOutput dst, MemoryPool<byte> memoryPool)
         {
             int srcLength = src.Length;
@@ -92,6 +121,11 @@ namespace Garnet.server
 
             switch (input.header.cmd)
             {
+                case RespCommand.DIGEST:
+                    Span<byte> digest = stackalloc byte[StringDigestLength];
+                    ComputeStringDigest(value, digest);
+                    CopyRespTo(digest, ref output);
+                    break;
                 case RespCommand.ASYNC:
                     // If the GET is expected to complete continuations asynchronously, we should not write anything
                     // to the network buffer in case the operation does go pending (latter is indicated by isFromPending)

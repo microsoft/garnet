@@ -1420,6 +1420,15 @@ namespace Garnet.server
     /// </summary>
     public interface IGarnetReadApi
     {
+        /// <summary>
+        /// Compute the XXH3-64 digest of the current string value.
+        /// </summary>
+        /// <param name="key">Key to read.</param>
+        /// <param name="input">DIGEST command input.</param>
+        /// <param name="output">RESP bulk string containing the hexadecimal digest.</param>
+        /// <returns>The storage operation status.</returns>
+        GarnetStatus DIGEST(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
+
         #region GET
         /// <summary>
         /// GET

@@ -52,7 +52,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task AofSetValueConditionalRecoverTestAsync([Values] bool evict, [Values("IFEQ", "IFNE")] string condition)
+        public async Task AofSetValueConditionalRecoverTestAsync([Values] bool evict, [Values("IFEQ", "IFNE", "IFDEQ", "IFDNE")] string condition)
         {
             long expiration;
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
@@ -64,14 +64,20 @@ namespace Garnet.test
                 if (evict)
                     server.Provider.StoreWrapper.store.Log.FlushAndEvict(wait: true);
 
-                ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "clear", "new", condition, condition == "IFEQ" ? "old" : "different"));
-                ClassicAssert.AreEqual("old", (string)db.Execute("SET", "keep", "new", "KEEPTTL", condition, condition == "IFEQ" ? "old" : "different", "GET"));
-                ClassicAssert.IsTrue(db.Execute("SET", "clear", "rejected", condition, condition == "IFEQ" ? "old" : "new", "EX", 120).IsNull);
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "clear", "new", condition, ComparisonFor(condition, condition is "IFEQ" or "IFDEQ" ? "old" : "different")));
+                ClassicAssert.AreEqual("old", (string)db.Execute("SET", "keep", "new", "KEEPTTL", condition, ComparisonFor(condition, condition is "IFEQ" or "IFDEQ" ? "old" : "different"), "GET"));
+                ClassicAssert.IsTrue(db.Execute("SET", "clear", "rejected", condition, ComparisonFor(condition, condition is "IFEQ" or "IFDEQ" ? "old" : "new"), "EX", 120).IsNull);
                 ClassicAssert.IsTrue(db.Execute("SET", "missing", "new", "IFEQ", "").IsNull);
                 ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "created", "new", "IFNE", ""));
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "created-digest", "new", "IFDNE", "bad"));
+                db.Execute("SET", "expired-digest", "old", "PX", 20);
+                if (evict)
+                    server.Provider.StoreWrapper.store.Log.FlushAndEvict(wait: true);
+                await Task.Delay(50);
+                ClassicAssert.IsTrue(db.Execute("SET", "expired-digest", "new", "IFDNE", "bad", "GET").IsNull);
 
                 db.Execute("SET", "deterministic", "old", "PX", 200);
-                ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "deterministic", "new", condition, condition == "IFEQ" ? "old" : "different"));
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "deterministic", "new", condition, ComparisonFor(condition, condition is "IFEQ" or "IFDEQ" ? "old" : "different")));
             }
 
             _ = await server.Store.CommitAOFAsync(default);
@@ -90,6 +96,9 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("new", (string)db.StringGet("deterministic"));
                 ClassicAssert.IsFalse(db.KeyExists("missing"));
                 ClassicAssert.AreEqual("new", (string)db.StringGet("created"));
+                ClassicAssert.AreEqual("new", (string)db.StringGet("created-digest"));
+                ClassicAssert.AreEqual("new", (string)db.StringGet("expired-digest"));
+                ClassicAssert.AreEqual(-1, (long)db.Execute("PTTL", "expired-digest"));
             }
         }
 
@@ -99,7 +108,7 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
                 var db = redis.GetDatabase();
-                foreach (var key in new[] { "alias", "equal", "not-equal", "keep-equal", "keep-not-equal" })
+                foreach (var key in new[] { "alias", "equal", "not-equal", "keep-equal", "keep-not-equal", "digest-equal", "digest-not-equal", "keep-digest" })
                     db.StringSet(key, "old");
                 var store = server.Provider.StoreWrapper.store;
                 if (storageRegion == 1)
@@ -112,6 +121,9 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(1, (long)db.Execute("DELEX", "not-equal", "IFNE", "different"));
                 ClassicAssert.AreEqual(0, (long)db.Execute("DELIFEQ", "keep-equal", "different"));
                 ClassicAssert.AreEqual(0, (long)db.Execute("DELEX", "keep-not-equal", "IFNE", "old"));
+                ClassicAssert.AreEqual(1, (long)db.Execute("DELEX", "digest-equal", "IFDEQ", ComparisonFor("IFDEQ", "old")));
+                ClassicAssert.AreEqual(1, (long)db.Execute("DELEX", "digest-not-equal", "IFDNE", ComparisonFor("IFDNE", "different")));
+                ClassicAssert.AreEqual(0, (long)db.Execute("DELEX", "keep-digest", "IFDEQ", ComparisonFor("IFDEQ", "different")));
             }
 
             _ = await server.Store.CommitAOFAsync(default);
@@ -126,8 +138,16 @@ namespace Garnet.test
                 ClassicAssert.IsFalse(db.KeyExists("not-equal"));
                 ClassicAssert.AreEqual("old", (string)db.StringGet("keep-equal"));
                 ClassicAssert.AreEqual("old", (string)db.StringGet("keep-not-equal"));
+                ClassicAssert.IsFalse(db.KeyExists("digest-equal"));
+                ClassicAssert.IsFalse(db.KeyExists("digest-not-equal"));
+                ClassicAssert.AreEqual("old", (string)db.StringGet("keep-digest"));
             }
         }
+
+        private static string ComparisonFor(string condition, string value)
+            => condition is "IFDEQ" or "IFDNE"
+                ? System.IO.Hashing.XxHash3.HashToUInt64(System.Text.Encoding.UTF8.GetBytes(value)).ToString("x16")
+                : value;
 
         [Test]
         public async Task AofUpsertStoreRecoverTestAsync()

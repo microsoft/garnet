@@ -393,8 +393,9 @@ Legend: ➕ = supported, ➖ = not supported.
 | <span id="string">**STRING**</span> | [APPEND](raw-string.md#append) | ➕ |  |
 |  | [DECR](raw-string.md#decr) | ➕ |  |
 |  | [DECRBY](raw-string.md#decrby) | ➕ |  |
-|  | [DELEX](raw-string.md#delex) | ➕ | Supports unconditional, IFEQ, and IFNE; digest conditions are not supported. |
+|  | [DELEX](raw-string.md#delex) | ➕ | Supports unconditional, IFEQ, IFNE, IFDEQ, and IFDNE. |
 |  | [DELIFEQ](raw-string.md#delifeq) | ➕ |  |
+|  | [DIGEST](raw-string.md#digest) | ➕ | On-demand XXH3-64 digest. |
 |  | [GET](raw-string.md#get) | ➕ |  |
 |  | [GETDEL](raw-string.md#getdel) | ➕ |  |
 |  | [GETEX](raw-string.md#getex) | ➕ |  |
@@ -408,7 +409,7 @@ Legend: ➕ = supported, ➖ = not supported.
 |  | [MSET](raw-string.md#mset) | ➕ |  |
 |  | [MSETNX](raw-string.md#msetnx) | ➕ |  |
 |  | [PSETEX](raw-string.md#psetex) | ➕ | (Deprecated) |
-|  | [SET](raw-string.md#set) | ➕ | Supports IFEQ and IFNE; digest conditions are not supported. |
+|  | [SET](raw-string.md#set) | ➕ | Supports IFEQ, IFNE, IFDEQ, and IFDNE. |
 |  | [SETEX](raw-string.md#setex) | ➕ | (Deprecated) |
 |  | [SETNX](raw-string.md#setnx) | ➕ |  |
 |  | [SETRANGE](raw-string.md#setrange) | ➕ |  |
