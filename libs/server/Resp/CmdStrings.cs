@@ -125,6 +125,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> NX => "NX"u8;
         public static ReadOnlySpan<byte> XX => "XX"u8;
         public static ReadOnlySpan<byte> IFEQ => "IFEQ"u8;
+        public static ReadOnlySpan<byte> IFNE => "IFNE"u8;
+        public static ReadOnlySpan<byte> DELIFEQ => "DELIFEQ"u8;
+        public static ReadOnlySpan<byte> DELEX => "DELEX"u8;
         public static ReadOnlySpan<byte> CH => "CH"u8;
         public static ReadOnlySpan<byte> UNSAFETRUNCATELOG => "UNSAFETRUNCATELOG"u8;
         public static ReadOnlySpan<byte> SAMPLES => "SAMPLES"u8;

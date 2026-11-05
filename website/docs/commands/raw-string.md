@@ -54,6 +54,38 @@ Integer reply: the value of the key after decrementing it.
 
 ---
 
+### DELEX
+
+#### Syntax
+
+```bash
+    DELEX key [IFEQ comparison-value | IFNE comparison-value]
+```
+
+Without a condition, delete the key regardless of its type. With IFEQ, atomically delete an existing string only if its bytes equal comparison-value. With IFNE, delete it only if its bytes differ. A conditional delete returns WRONGTYPE for a live non-string value. A failed comparison leaves the value and expiration unchanged. Digest conditions IFDEQ and IFDNE are not supported.
+
+#### Resp Reply
+
+Integer reply: 1 if the key was deleted; 0 if it was missing, expired, or the condition was not met.
+
+---
+
+### DELIFEQ
+
+#### Syntax
+
+```bash
+    DELIFEQ key comparison-value
+```
+
+Atomically delete an existing string only if its bytes equal comparison-value. This is equivalent to DELEX key IFEQ comparison-value. A live non-string value returns WRONGTYPE. A failed comparison leaves the value and expiration unchanged.
+
+#### Resp Reply
+
+Integer reply: 1 if the key was deleted; 0 if it was missing, expired, or the comparison failed.
+
+---
+
 ### GET
 
 #### Syntax
@@ -316,7 +348,7 @@ Simple string reply: OK.
 #### Syntax
 
 ```bash
-    SET key value [NX | XX | IFEQ comparison-value] [GET] [EX seconds | PX milliseconds | KEEPTTL]
+    SET key value [NX | XX | IFEQ comparison-value | IFNE comparison-value] [GET] [EX seconds | PX milliseconds | KEEPTTL]
 ```
 
 Set **key** to hold the string value. If key already holds a value, it is overwritten, regardless of its type. Any previous time to live associated with the **key** is discarded on successful SET operation.
@@ -327,15 +359,18 @@ Set **key** to hold the string value. If key already holds a value, it is overwr
 * PX milliseconds -- Set the specified expire time, in milliseconds (a positive integer).
 * NX -- Only set the key if it does not already exist.
 * XX -- Only set the key if it already exists.
-* IFEQ comparison-value -- Atomically set an existing string only if its bytes equal comparison-value. A missing or expired key is not created. A non-string value returns WRONGTYPE. A failed comparison leaves the value and expiration unchanged. Cannot be combined with NX or XX.
-* GET -- Return the previous string value, including when an IFEQ comparison fails, or nil if the key does not exist.
+* IFEQ comparison-value -- Atomically set an existing string only if its bytes equal comparison-value. A missing or expired key is not created.
+* IFNE comparison-value -- Atomically set a string only if its bytes differ from comparison-value, or create it if the key is missing or expired.
+* GET -- Return the previous string value, including when an IFEQ or IFNE comparison fails, or nil if the key does not exist.
 * KEEPTTL -- Retain the time to live associated with the key.
+
+NX, XX, IFEQ, and IFNE are mutually exclusive. IFEQ and IFNE return WRONGTYPE for a live non-string value. A failed comparison leaves the value and expiration unchanged. Digest conditions IFDEQ and IFDNE are not supported.
 
 #### Resp Reply
 
 Any of the following:
 
-* Nil reply: GET not given: Operation was aborted (the NX, XX, or IFEQ condition was not met).
+* Nil reply: GET not given: Operation was aborted (the NX, XX, IFEQ, or IFNE condition was not met).
 * Simple string reply: OK. GET not given: The key was set.
 * Nil reply: GET given: The key didn't exist before the SET.
 * Bulk string reply: GET given: The previous value of the key.

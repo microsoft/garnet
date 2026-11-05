@@ -1246,6 +1246,58 @@
     "StoreType": "All"
   },
   {
+    "Command": "DELEX",
+    "Name": "DELEX",
+    "Arity": -2,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Access, Delete"
+      }
+    ],
+    "StoreType": "All"
+  },
+  {
+    "Command": "DELIFEQ",
+    "Name": "DELIFEQ",
+    "Arity": 3,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Access, Delete"
+      }
+    ],
+    "StoreType": "Main"
+  },
+  {
     "Command": "DELIFGREATER",
     "Name": "DELIFGREATER",
     "Arity": 2,

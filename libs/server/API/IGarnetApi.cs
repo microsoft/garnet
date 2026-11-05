@@ -54,6 +54,15 @@ namespace Garnet.server
         GarnetStatus DEL_ETagConditional(PinnedSpanByte key, ref StringInput input);
 
         /// <summary>
+        /// Delete a string only when its value satisfies the supplied comparison.
+        /// </summary>
+        /// <param name="key">Key to delete.</param>
+        /// <param name="input">Command, comparison value, and equality condition.</param>
+        /// <param name="output">RESP integer indicating whether the key was deleted.</param>
+        /// <returns>The storage operation status.</returns>
+        GarnetStatus DELETE_Conditional(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
+
+        /// <summary>
         /// SET
         /// </summary>
         GarnetStatus SET(PinnedSpanByte key, Memory<byte> value);

@@ -27,14 +27,14 @@ namespace Garnet.test.cluster
 
         [Test]
         [Category("CLUSTER")]
-        public async Task SetIfEqualReplicatesAndSurvivesFailover()
+        public async Task SetValueConditionalReplicatesAndSurvivesFailover([Values("IFEQ", "IFNE")] string condition)
         {
             CreateCluster(1, 1);
             const string Key = "ifeq-replication";
             Assert.That((string)Execute(0, "SET", Key, "old", "EX", 300), Is.EqualTo("OK"));
             long expiration = (long)Execute(0, "PEXPIRETIME", Key);
-            Assert.That((string)Execute(0, "SET", Key, "new", "IFEQ", "old", "KEEPTTL"), Is.EqualTo("OK"));
-            Assert.That(Execute(0, "SET", Key, "rejected", "IFEQ", "old").IsNull, Is.True);
+            Assert.That((string)Execute(0, "SET", Key, "new", condition, condition == "IFEQ" ? "old" : "different", "KEEPTTL"), Is.EqualTo("OK"));
+            Assert.That(Execute(0, "SET", Key, "rejected", condition, condition == "IFEQ" ? "old" : "new").IsNull, Is.True);
             context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger, context.cts.Token);
 
             using (GarnetClientSession replica = context.clusterTestUtils.CreateGarnetClientSession(1))
@@ -44,7 +44,7 @@ namespace Garnet.test.cluster
                 Assert.That(await replica.ExecuteAsync("GET", Key), Is.EqualTo("new"));
                 int slot = ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(Key));
                 Exception exception = Assert.ThrowsAsync<Exception>(async () =>
-                    await replica.ExecuteAsync("SET", Key, "rejected", "IFEQ", "new").WaitAsync(context.cts.Token));
+                    await replica.ExecuteAsync("SET", Key, "rejected", condition, "new").WaitAsync(context.cts.Token));
                 Assert.That(exception.Message, Is.EqualTo($"MOVED {slot} {context.clusterTestUtils.GetEndPoint(0)}"));
             }
 
@@ -59,15 +59,15 @@ namespace Garnet.test.cluster
 
             Assert.That((string)Execute(1, "GET", Key), Is.EqualTo("new"));
             Assert.That((long)Execute(1, "PEXPIRETIME", Key), Is.EqualTo(expiration));
-            Assert.That(Execute(1, "SET", Key, "rejected", "IFEQ", "old").IsNull, Is.True);
-            Assert.That((string)Execute(1, "SET", Key, "final", "IFEQ", "new", "GET"), Is.EqualTo("new"));
+            Assert.That(Execute(1, "SET", Key, "rejected", condition, condition == "IFEQ" ? "old" : "new").IsNull, Is.True);
+            Assert.That((string)Execute(1, "SET", Key, "final", condition, condition == "IFEQ" ? "new" : "old", "GET"), Is.EqualTo("new"));
             Assert.That((string)Execute(1, "GET", Key), Is.EqualTo("final"));
             Assert.That((long)Execute(1, "PTTL", Key), Is.EqualTo(-1));
         }
 
         [Test]
         [Category("CLUSTER")]
-        public async Task SetIfEqualRoutesAndMigrates()
+        public async Task SetValueConditionalRoutesAndMigrates([Values("IFEQ", "IFNE")] string condition)
         {
             CreateCluster(2);
             const string Key = "{b}ifeq";
@@ -84,7 +84,7 @@ namespace Garnet.test.cluster
             AssertRedirect(1, Key, "old", moved);
             Assert.That(context.clusterTestUtils.SetSlot(1, slot, "IMPORTING", sourceId), Is.EqualTo("OK"));
             Assert.That(context.clusterTestUtils.SetSlot(0, slot, "MIGRATING", targetId), Is.EqualTo("OK"));
-            Assert.That((string)Execute(0, "SET", Key, "new", "GET", "IFEQ", "old", "KEEPTTL"), Is.EqualTo("old"));
+            Assert.That((string)Execute(0, "SET", Key, "new", "GET", condition, condition == "IFEQ" ? "old" : "different", "KEEPTTL"), Is.EqualTo("old"));
             AssertRedirect(0, Missing, "", ask);
             AssertRedirect(1, Missing, "", moved);
 
@@ -96,6 +96,8 @@ namespace Garnet.test.cluster
                 Exception exception = Assert.ThrowsAsync<Exception>(async () =>
                     await importer.ExecuteAsync("SET", Missing, "rejected", "IFEQ", "").WaitAsync(context.cts.Token));
                 Assert.That(exception.Message, Is.EqualTo(moved));
+                Assert.That(await importer.ExecuteAsync("ASKING"), Is.EqualTo("OK"));
+                Assert.That(await importer.ExecuteAsync("SET", "{b}created", "new", "IFNE", ""), Is.EqualTo("OK"));
             }
 
             context.clusterTestUtils.MigrateKeys(context.clusterTestUtils.GetEndPoint(0), context.clusterTestUtils.GetEndPoint(1),
@@ -105,12 +107,104 @@ namespace Garnet.test.cluster
             Assert.That(context.clusterTestUtils.SetSlot(0, slot, "NODE", targetId), Is.EqualTo("OK"));
             Assert.That((string)Execute(1, "GET", Key), Is.EqualTo("new"));
             Assert.That((long)Execute(1, "PEXPIRETIME", Key), Is.EqualTo(expiration));
-            Assert.That(Execute(1, "SET", Key, "rejected", "IFEQ", "old").IsNull, Is.True);
-            Assert.That((string)Execute(1, "SET", Key, "final", "IFEQ", "new", "KEEPTTL"), Is.EqualTo("OK"));
+            Assert.That(Execute(1, "SET", Key, "rejected", condition, condition == "IFEQ" ? "old" : "new").IsNull, Is.True);
+            Assert.That((string)Execute(1, "SET", Key, "final", condition, condition == "IFEQ" ? "new" : "old", "KEEPTTL"), Is.EqualTo("OK"));
             Assert.That((string)Execute(1, "GET", Key), Is.EqualTo("final"));
             Assert.That((long)Execute(1, "PEXPIRETIME", Key), Is.EqualTo(expiration));
             AssertRedirect(0, Key, "final", $"MOVED {slot} {context.clusterTestUtils.GetEndPoint(1)}");
         }
+
+        [Test]
+        [Category("CLUSTER")]
+        public async Task DeleteValueConditionalReplicatesAndSurvivesFailover([Values("DELIFEQ", "IFEQ", "IFNE")] string condition)
+        {
+            CreateCluster(1, 1);
+            Execute(0, "SET", "deleted", "old");
+            Execute(0, "SET", "kept", "old");
+            Assert.That(Delete(0, "deleted", condition, condition == "IFNE" ? "different" : "old"), Is.EqualTo(1));
+            Assert.That(Delete(0, "kept", condition, condition == "IFNE" ? "old" : "different"), Is.Zero);
+            context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger, context.cts.Token);
+            using (GarnetClientSession replica = context.clusterTestUtils.CreateGarnetClientSession(1))
+            {
+                replica.Connect();
+                await replica.ExecuteAsync("READONLY");
+                Assert.That(await replica.ExecuteAsync("GET", "deleted"), Is.Null);
+                Assert.That(await replica.ExecuteAsync("GET", "kept"), Is.EqualTo("old"));
+                int slot = ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes("kept"));
+                Exception exception = Assert.ThrowsAsync<Exception>(async () =>
+                    await replica.ExecuteAsync(DeleteRequest("kept", condition, "old")).WaitAsync(context.cts.Token));
+                Assert.That(exception.Message, Is.EqualTo($"MOVED {slot} {context.clusterTestUtils.GetEndPoint(0)}"));
+            }
+
+            Assert.That(context.clusterTestUtils.ClusterFailover(1, logger: context.logger), Is.EqualTo("OK"));
+            context.clusterTestUtils.WaitForNoFailover(1, context.logger);
+            context.clusterTestUtils.WaitForFailoverCompleted(1, context.logger);
+            context.clusterTestUtils.WaitForReplicaRecovery(0, context.logger);
+            context.clusterTestUtils.WaitForPrimaryRole(1, context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(1, 0, context.logger, context.cts.Token);
+            string primaryId = context.clusterTestUtils.GetNodeIdFromNode(1, context.logger);
+            context.clusterTestUtils.WaitForSlotOwnership(0, primaryId, [0, 16383], context.logger);
+            Assert.That(Execute(1, "GET", "deleted").IsNull, Is.True);
+            Assert.That((string)Execute(1, "GET", "kept"), Is.EqualTo("old"));
+            Assert.That(Delete(1, "kept", condition, condition == "IFNE" ? "different" : "old"), Is.EqualTo(1));
+            Assert.That(Execute(1, "GET", "kept").IsNull, Is.True);
+        }
+
+        [Test]
+        [Category("CLUSTER")]
+        public async Task DeleteValueConditionalRoutesAndMigrates([Values("DELIFEQ", "IFEQ", "IFNE")] string condition)
+        {
+            CreateCluster(2);
+            const string Key = "{b}delete";
+            const string Missing = "{b}absent";
+            int slot = ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(Key));
+            Execute(0, "SET", Key, "old", "EX", 300);
+            long expiration = (long)Execute(0, "PEXPIRETIME", Key);
+            string sourceId = context.clusterTestUtils.GetNodeIdFromNode(0, context.logger);
+            string targetId = context.clusterTestUtils.GetNodeIdFromNode(1, context.logger);
+            string moved = $"MOVED {slot} {context.clusterTestUtils.GetEndPoint(0)}";
+            AssertDeleteRedirect(1, Key, moved);
+            Assert.That(context.clusterTestUtils.SetSlot(1, slot, "IMPORTING", sourceId), Is.EqualTo("OK"));
+            Assert.That(context.clusterTestUtils.SetSlot(0, slot, "MIGRATING", targetId), Is.EqualTo("OK"));
+            Assert.That(Delete(0, Key, condition, condition == "IFNE" ? "old" : "different"), Is.Zero);
+            Assert.That((long)Execute(0, "PEXPIRETIME", Key), Is.EqualTo(expiration));
+            AssertDeleteRedirect(0, Missing, $"ASK {slot} {context.clusterTestUtils.GetEndPoint(1)}");
+            using (GarnetClientSession importer = context.clusterTestUtils.CreateGarnetClientSession(1))
+            {
+                importer.Connect();
+                await importer.ExecuteAsync("ASKING");
+                Assert.That(await importer.ExecuteAsync(DeleteRequest(Missing, condition, "old")), Is.EqualTo("0"));
+                Exception exception = Assert.ThrowsAsync<Exception>(async () =>
+                    await importer.ExecuteAsync(DeleteRequest(Missing, condition, "old")).WaitAsync(context.cts.Token));
+                Assert.That(exception.Message, Is.EqualTo(moved));
+            }
+
+            context.clusterTestUtils.MigrateKeys(context.clusterTestUtils.GetEndPoint(0), context.clusterTestUtils.GetEndPoint(1),
+                [Encoding.ASCII.GetBytes(Key)], context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(0, context.cts.Token, context.logger);
+            Assert.That(context.clusterTestUtils.SetSlot(1, slot, "NODE", targetId), Is.EqualTo("OK"));
+            Assert.That(context.clusterTestUtils.SetSlot(0, slot, "NODE", targetId), Is.EqualTo("OK"));
+            Assert.That((long)Execute(1, "PEXPIRETIME", Key), Is.EqualTo(expiration));
+            Assert.That(Delete(1, Key, condition, condition == "IFNE" ? "different" : "old"), Is.EqualTo(1));
+            Assert.That(Execute(1, "GET", Key).IsNull, Is.True);
+            AssertDeleteRedirect(0, Key, $"MOVED {slot} {context.clusterTestUtils.GetEndPoint(1)}");
+
+            void AssertDeleteRedirect(int node, string key, string redirect)
+            {
+                using GarnetClientSession client = context.clusterTestUtils.CreateGarnetClientSession(node);
+                client.Connect();
+                Exception exception = Assert.ThrowsAsync<Exception>(async () =>
+                    await client.ExecuteAsync(DeleteRequest(key, condition, "old")).WaitAsync(context.cts.Token));
+                Assert.That(exception.Message, Is.EqualTo(redirect));
+            }
+        }
+
+        private long Delete(int nodeIndex, string key, string condition, string expected)
+            => (long)Execute(nodeIndex, condition == "DELIFEQ" ? "DELIFEQ" : "DELEX",
+                condition == "DELIFEQ" ? [key, expected] : [key, condition, expected]);
+
+        private static string[] DeleteRequest(string key, string condition, string expected)
+            => condition == "DELIFEQ" ? ["DELIFEQ", key, expected] : ["DELEX", key, condition, expected];
 
         private void CreateCluster(int primaryCount, int replicaCount = 0)
         {
