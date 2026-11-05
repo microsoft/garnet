@@ -435,6 +435,49 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
+        [TestCase(1 << 22)]
+        [TestCase(1 << 23)]
+        public void ScanOverflowValuesAcrossObjectLogSegments(int valueLength)
+        {
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "overflow.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "overflow.obj.log"), deleteOnClose: true);
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                LogMemorySize = 1L << 16,
+                PageSize = MinKvLogPageSize,
+                ObjectLogSegmentSize = 1L << 22,
+                MaxInlineValueSize = 0
+            }, StoreFunctions.Create(comparer, () => new TestObjectValue.Serializer()), (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+            using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            var value = new byte[valueLength];
+            for (var key = 0; key < 3; key++)
+            {
+                value.AsSpan().Fill((byte)(key + 1));
+                _ = session.BasicContext.Upsert(new TestObjectKey { key = key }, value.AsSpan(), Empty.Default);
+            }
+
+            store.Log.FlushAndEvict(wait: true);
+
+            using var iterator = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress, DiskScanBufferingMode.SinglePageBuffering);
+            var count = 0;
+            while (iterator.GetNext())
+            {
+                Assert.That(iterator.DataHeader.ValueIsOverflow, Is.True);
+                Assert.That(iterator.ValueSpan.Length, Is.EqualTo(valueLength));
+                Assert.That(iterator.ValueSpan.IndexOfAnyExcept((byte)(count + 1)), Is.EqualTo(-1), $"Value mismatch for record {count}");
+                count++;
+            }
+
+            Assert.That(count, Is.EqualTo(3));
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        [Category("Smoke")]
         public void DiskWriteScanBasicTest([Values] TestDeviceType deviceType, [Values] ScanIteratorType scanIteratorType)
         {
             log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"DiskWriteScanBasicTest_{deviceType}.log"));
