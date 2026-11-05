@@ -5815,6 +5815,32 @@ namespace Garnet.test
             ClassicAssert.AreEqual("ERR Vector Set import is not finished", exc7.Message);
         }
 
+        [Test]
+        public async Task XVSCOPYLeavesSourceReadOnly()
+        {
+            const string SourceKey = nameof(XVSCOPYLeavesSourceReadOnly) + "_Source";
+            const string DestKey = nameof(XVSCOPYLeavesSourceReadOnly) + "_Dest";
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            ClassicAssert.IsTrue(await db.VectorSetAddAsync(SourceKey, VectorSetAddRequest.Member("foo", new[] { 1f, 2f, 3f })).ConfigureAwait(false));
+
+            ClassicAssert.AreEqual("OK", (string)await db.ExecuteAsync("XVSCOPY", [SourceKey, DestKey]).ConfigureAwait(false));
+
+            // VADD
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.VectorSetAddAsync(SourceKey, VectorSetAddRequest.Member("bar", new[] { 1f, 2f, 3f })));
+            ClassicAssert.AreEqual("ERR Vector Set is read only due to being shallow copied", exc0.Message);
+
+            // VREM
+            var exc1 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.VectorSetRemoveAsync(SourceKey, "foo"));
+            ClassicAssert.AreEqual("ERR Vector Set is read only due to being shallow copied", exc1.Message);
+
+            // VSETATTR
+            var exc2 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.VectorSetSetAttributesJsonAsync(SourceKey, "foo", "{\"id\": 123}"));
+            ClassicAssert.AreEqual("ERR Vector Set is read only due to being shallow copied", exc2.Message);
+        }
+
         /// <summary>
         /// Run XVIMPORT ... VERIFY on the given vector set.
         /// 

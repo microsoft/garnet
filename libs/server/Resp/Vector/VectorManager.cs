@@ -29,6 +29,7 @@ namespace Garnet.server
         MissingElement,
 
         ImportingPending,
+        FailedReadOnly,
     }
 
     /// <summary>
@@ -724,7 +725,12 @@ namespace Garnet.server
 
             errorMsg = default;
 
-            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out var distanceMetric, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out var distanceMetric, out var flags, out var indexPtr);
+
+            if (flags.HasFlag(VectorSetFlags.ShallowCopySource))
+            {
+                return VectorManagerResult.FailedReadOnly;
+            }
 
             if (providedReduceDims != 0 && providedReduceDims != reduceDims)
             {
@@ -806,23 +812,34 @@ namespace Garnet.server
         /// <summary>
         /// Try to remove a vector (and associated attributes) from a Vector Set, as identified by element key.
         /// </summary>
-        internal VectorManagerResult TryRemove(ReadOnlySpan<byte> indexValue, ReadOnlySpan<byte> element)
+        internal VectorManagerResult TryRemove(scoped ReadOnlySpan<byte> indexValue, scoped ReadOnlySpan<byte> element)
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out var flags, out var indexPtr);
+
+            if (flags.HasFlag(VectorSetFlags.ShallowCopySource))
+            {
+                return VectorManagerResult.FailedReadOnly;
+            }
 
             var del = Service.Remove(context, indexPtr, element);
-
             return del ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
         }
 
-        internal bool TrySetAttribute(ReadOnlySpan<byte> indexValue, ReadOnlySpan<byte> element, ReadOnlySpan<byte> attribute)
+        internal bool TrySetAttribute(ReadOnlySpan<byte> indexValue, ReadOnlySpan<byte> element, ReadOnlySpan<byte> attribute, out VectorManagerResult result)
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out var flags, out var indexPtr);
 
+            if (flags.HasFlag(VectorSetFlags.ShallowCopySource))
+            {
+                result = VectorManagerResult.FailedReadOnly;
+                return false;
+            }
+
+            result = VectorManagerResult.OK;
             return Service.SetAttribute(context, indexPtr, element, attribute);
         }
 

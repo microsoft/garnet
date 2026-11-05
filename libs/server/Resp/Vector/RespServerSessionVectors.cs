@@ -789,11 +789,11 @@ namespace Garnet.server
 
                 // We need to reject these HERE because validation during create_index is very awkward
                 GarnetStatus res;
-                VectorManagerResult result;
+                VectorManagerResult vectorManagerResult;
                 ReadOnlySpan<byte> customErrMsg;
                 if (quantType is VectorQuantType.XBin_U8 or VectorQuantType.XBin_I8 or VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8 && reduceDim != 0)
                 {
-                    result = VectorManagerResult.BadParams;
+                    vectorManagerResult = VectorManagerResult.BadParams;
                     res = GarnetStatus.OK;
                     customErrMsg = default;
                 }
@@ -804,18 +804,23 @@ namespace Garnet.server
                         // For large enough values we have to pay for a pin
                         fixed (byte* valuesPtr = rentedValues)
                         {
-                            res = storageApi.VectorSetAdd(key, reduceDim, valueType, PinnedSpanByte.FromPinnedPointer(valuesPtr, values.Length), element, quantType.Value, buildExplorationFactor.Value, attributes.Value, numLinks.Value, distanceMetric.Value, out result, out customErrMsg);
+                            res = storageApi.VectorSetAdd(key, reduceDim, valueType, PinnedSpanByte.FromPinnedPointer(valuesPtr, values.Length), element, quantType.Value, buildExplorationFactor.Value, attributes.Value, numLinks.Value, distanceMetric.Value, out vectorManagerResult, out customErrMsg);
                         }
                     }
                     else
                     {
-                        res = storageApi.VectorSetAdd(key, reduceDim, valueType, PinnedSpanByte.FromPinnedSpan(values), element, quantType.Value, buildExplorationFactor.Value, attributes.Value, numLinks.Value, distanceMetric.Value, out result, out customErrMsg);
+                        res = storageApi.VectorSetAdd(key, reduceDim, valueType, PinnedSpanByte.FromPinnedSpan(values), element, quantType.Value, buildExplorationFactor.Value, attributes.Value, numLinks.Value, distanceMetric.Value, out vectorManagerResult, out customErrMsg);
                     }
+                }
+
+                if (vectorManagerResult == VectorManagerResult.FailedReadOnly)
+                {
+                    return AbortVectorSetReadOnly();
                 }
 
                 if (res == GarnetStatus.OK)
                 {
-                    if (result == VectorManagerResult.OK)
+                    if (vectorManagerResult == VectorManagerResult.OK)
                     {
                         if (respProtocolVersion == 3)
                         {
@@ -828,7 +833,7 @@ namespace Garnet.server
                                 SendAndReset();
                         }
                     }
-                    else if (result == VectorManagerResult.Duplicate)
+                    else if (vectorManagerResult == VectorManagerResult.Duplicate)
                     {
                         if (respProtocolVersion == 3)
                         {
@@ -841,7 +846,7 @@ namespace Garnet.server
                                 SendAndReset();
                         }
                     }
-                    else if (result == VectorManagerResult.BadParams)
+                    else if (vectorManagerResult == VectorManagerResult.BadParams)
                     {
                         if (customErrMsg.IsEmpty)
                         {
@@ -850,7 +855,7 @@ namespace Garnet.server
 
                         return AbortWithErrorMessage(customErrMsg);
                     }
-                    else if (result == VectorManagerResult.ImportingPending)
+                    else if (vectorManagerResult == VectorManagerResult.ImportingPending)
                     {
                         if (customErrMsg.IsEmpty)
                         {
@@ -2322,11 +2327,16 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var elem = parseState.GetArgSliceByRef(1);
 
-            var res = storageApi.VectorSetRemove(key, elem, out var importPending);
+            var res = storageApi.VectorSetRemove(key, elem, out var importPending, out var vectorManagerRes);
 
             if (importPending)
             {
                 return AbortVectorSetNotReady();
+            }
+
+            if (vectorManagerRes == VectorManagerResult.FailedReadOnly)
+            {
+                return AbortVectorSetReadOnly();
             }
 
             if (res == GarnetStatus.WRONGTYPE)
@@ -2358,11 +2368,16 @@ namespace Garnet.server
             var elem = parseState.GetArgSliceByRef(1);
             var attr = parseState.GetArgSliceByRef(2);
 
-            var res = storageApi.VectorSetSetAttribute(key, elem, attr, out var importPending);
+            var res = storageApi.VectorSetSetAttribute(key, elem, attr, out var importPending, out var vectorManagerRes);
 
             if (importPending)
             {
                 return AbortVectorSetNotReady();
+            }
+
+            if (vectorManagerRes == VectorManagerResult.FailedReadOnly)
+            {
+                return AbortVectorSetReadOnly();
             }
 
             switch (res)
@@ -2398,15 +2413,12 @@ namespace Garnet.server
         }
 
         private bool AbortVectorSetNotReady()
-            => AbortWithErrorMessage("ERR Vector Set import is not finished"u8);
+        => AbortWithErrorMessage("ERR Vector Set import is not finished"u8);
+
+        private bool AbortVectorSetReadOnly()
+        => AbortWithErrorMessage("ERR Vector Set is read only due to being shallow copied"u8);
 
         private bool AbortVectorSetWrongType()
-        {
-            // Matches Redis behavior - doesn't indicate the type involved
-            while (!RespWriteUtils.TryWriteError("WRONGTYPE Operation against a key holding the wrong kind of value"u8, ref dcurr, dend))
-                SendAndReset();
-
-            return true;
-        }
+        => AbortWithErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value"u8);
     }
 }

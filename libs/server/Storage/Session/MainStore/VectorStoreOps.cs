@@ -446,7 +446,7 @@ namespace Garnet.server
         /// Implement Vector Set Remove - returns not found if the element is not present, or the vector set does not exist.
         /// </summary>
         [SkipLocalsInit]
-        public GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element, out bool importPending)
+        public GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element, out bool importPending, out VectorManagerResult vectorManagerResult)
         {
             parseState.InitializeWithArgument(key);
 
@@ -457,14 +457,15 @@ namespace Garnet.server
             {
                 if (status != GarnetStatus.OK)
                 {
+                    vectorManagerResult = VectorManagerResult.Invalid;
                     return status;
                 }
 
                 // After a successful read we remove the vector while holding a shared lock
                 // That lock prevents deletion, but everything else can proceed in parallel
-                var res = vectorManager.TryRemove(indexSpan, element.ReadOnlySpan);
+                vectorManagerResult = vectorManager.TryRemove(indexSpan, element.ReadOnlySpan);
 
-                if (res == VectorManagerResult.OK)
+                if (vectorManagerResult == VectorManagerResult.OK)
                 {
                     // On successful removal, we need to manually replicate the write
                     vectorManager.ReplicateVectorSetRemove(key, element, ref input, ref stringBasicContext);
@@ -484,7 +485,7 @@ namespace Garnet.server
         /// Removing an attribute is modelled as setting an empty attribute.
         /// </summary>
         [SkipLocalsInit]
-        public GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute, out bool importPending)
+        public GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute, out bool importPending, out VectorManagerResult vectorManagerResult)
         {
             parseState.InitializeWithArguments([key, element, attribute]);
 
@@ -494,10 +495,11 @@ namespace Garnet.server
             {
                 if (status != GarnetStatus.OK)
                 {
+                    vectorManagerResult = VectorManagerResult.Invalid;
                     return status;
                 }
 
-                if (vectorManager.TrySetAttribute(indexSpan, element, attribute))
+                if (vectorManager.TrySetAttribute(indexSpan, element, attribute, out vectorManagerResult))
                 {
                     // On successful update, we need to manually replicate the write
                     vectorManager.ReplicateVectorSetSetAttribute(key, element, attribute, ref input, ref stringBasicContext);

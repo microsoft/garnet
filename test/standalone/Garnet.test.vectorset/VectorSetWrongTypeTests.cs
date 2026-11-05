@@ -265,6 +265,15 @@ namespace Garnet.test
         }
 
         [Test]
+        public Task XVSCOPYAsync()
+        {
+            return TestVectorSetCommandAsync(RunCommandAsync);
+
+            static Task RunCommandAsync(IDatabase db, RedisKey againstKey)
+            => db.ExecuteAsync("XVSCOPY", againstKey, "foo");
+        }
+
+        [Test]
         public Task VADDAsync()
         {
             return TestVectorSetCommandAsync(RunCommandAsync);

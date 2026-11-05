@@ -1408,12 +1408,12 @@ namespace Garnet.server
         /// <summary>
         /// Remove a member from a vector set, if it is present and the key exists.
         /// </summary>
-        GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element, out bool importPending);
+        GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element, out bool importPending, out VectorManagerResult vectorManagerResult);
 
         /// <summary>
         /// Update attribute for element in a Vector Set.
         /// </summary>
-        GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute, out bool importPending);
+        GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute, out bool importPending, out VectorManagerResult vectorManagerResult);
         #endregion
     }
 

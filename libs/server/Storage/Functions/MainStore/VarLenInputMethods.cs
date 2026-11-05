@@ -165,6 +165,7 @@ namespace Garnet.server
                     return fieldInfo;
 
                 case RespCommand.VADD:
+                case RespCommand.XVSCOPY:
                     fieldInfo.ValueSize = VectorManager.IndexSizeBytes;
                     fieldInfo.RecordType = VectorManager.RecordType;
                     fieldInfo.HasExpiration = input.parseState.Count >= 13 && MemoryMarshal.Read<long>(input.parseState.GetArgSliceByRef(12).Span) != 0;
