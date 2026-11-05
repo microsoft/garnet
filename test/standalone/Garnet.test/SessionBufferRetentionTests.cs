@@ -16,8 +16,9 @@ namespace Garnet.test
     /// command permanently enlarges every session that saw it and total memory tracks session count
     /// rather than working set.
     ///
-    /// Measured in-process with a forced collection: the server's own <c>gc_heap_bytes</c> is
-    /// <c>GC.GetTotalMemory(false)</c>, which rises on allocation but cannot show a release.
+    /// Parse-state retention is checked directly on live sessions. Heap-based checks use a forced
+    /// collection: the server's own <c>gc_heap_bytes</c> is <c>GC.GetTotalMemory(false)</c>,
+    /// which rises on allocation but cannot show a release.
     /// </summary>
     [TestFixture]
     public class SessionBufferRetentionTests : TestBase
@@ -248,28 +249,58 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// The parse state ratchet needs no large values at all - only a high argument count, which costs
-        /// the client nothing to send.
+        /// A wide command grows each live session's pinned parse state; subsequent small commands must
+        /// release that capacity only when a retention cap is enabled. Inspect the retained buffers
+        /// directly so unrelated process-wide heap changes cannot mask a missing batch-boundary trim.
         /// </summary>
-        [Test]
-        public void ParseStateDoesNotRetainAfterOneWideCommand()
+        [TestCase(null)]
+        [TestCase(0)]
+        [TestCase(128)]
+        public void ParseStateDoesNotRetainAfterOneWideCommand(int? parseStateCap)
         {
-            StartServer(parseStateCap: 0);
-            var unbounded = MeasureRetentionPerSession(_ => WideCommand(), _ => NarrowCommand(), Connections, ":0\r\n");
-            server.Dispose(); server = null;
+            StartServer(parseStateCap: parseStateCap);
+            var sockets = new List<Socket>();
+            try
+            {
+                var wide = WideCommand();
+                var narrow = NarrowCommand();
+                for (var i = 0; i < Connections; i++)
+                {
+                    var socket = Connect();
+                    sockets.Add(socket);
+                    AssertReply(socket, wide, ":0\r\n");
+                }
 
-            StartServer();
-            var bounded = MeasureRetentionPerSession(_ => WideCommand(), _ => NarrowCommand(), Connections, ":0\r\n");
+                var sessions = ActiveSessions();
+                ClassicAssert.AreEqual(Connections, sessions.Count);
+                var grown = new int[sessions.Count];
+                for (var i = 0; i < sessions.Count; i++)
+                {
+                    grown[i] = sessions[i].parseState.RootBufferLength;
+                    ClassicAssert.GreaterOrEqual(grown[i], WideCommandArgs, $"session {i} did not grow for the wide command");
+                }
 
-            TestContext.Out.WriteLine($"parse state retained/session: unbounded={unbounded / 1024}KB bounded={bounded / 1024}KB");
+                for (var r = 0; r < SmallRounds; r++)
+                    foreach (var socket in sockets)
+                        AssertReply(socket, narrow, ":0\r\n");
 
-            // Assert a magnitude, not merely a direction. The root buffer holds one PinnedSpanByte
-            // (16 bytes) per argument, so capping 20,000 arguments to 1,024 should return roughly
-            // 300 KB per session; requiring at least half of that keeps the test insensitive to
-            // measurement variance while still failing outright if the release path is neutered.
-            // A bare Less() passed with 413 KB against 407 KB when the shrink was disabled.
-            ClassicAssert.Less(bounded, unbounded - (WideCommandArgs * 8),
-                "capping retained parse state must reduce what a session holds after one wide command");
+                // A reply can precede its batch-end trim. A further request on each connection
+                // ensures the previous batch has completed before inspecting its retained capacity.
+                foreach (var socket in sockets)
+                    AssertReply(socket, narrow, ":0\r\n");
+
+                var expected = parseStateCap ?? Garnet.server.GarnetServerOptions.DefaultSessionParseStateMaxRetainedArgs;
+                for (var i = 0; i < sessions.Count; i++)
+                {
+                    ClassicAssert.AreEqual(expected == 0 ? grown[i] : expected, sessions[i].parseState.RootBufferLength,
+                        $"session {i} retained the wrong parse-state capacity after returning to small commands");
+                }
+            }
+            finally
+            {
+                foreach (var socket in sockets)
+                    socket.Dispose();
+            }
         }
 
         /// <summary>
