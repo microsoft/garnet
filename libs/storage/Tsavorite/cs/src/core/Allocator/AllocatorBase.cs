@@ -947,10 +947,13 @@ namespace Tsavorite.core
                 return;
 
             // TryRemoveSegmentsAbove returns false only when the device cannot list its segments. So remove the segments known to
-            // exist, up to lastAvailSegment, one at a time. This relies on RemoveSegment removing only the segment named, as IDevice
-            // requires. A NativeStorageDevice with an older native library removes every open segment through the one named, valid
-            // ones included; it lists its own segments, so it gets here only as a tier or shard of a composite device. Highest
-            // first, so that an interruption leaves the remaining segments contiguous.
+            // exist, up to lastAvailSegment, one at a time, highest first, so that an interruption leaves the remaining segments
+            // contiguous. This relies on RemoveSegment removing only the segment named, as IDevice requires.
+            //
+            // A NativeStorageDevice with an older native library instead removes every open segment through the one named, valid
+            // ones included. It lists its own segments, so it gets here only as a tier or shard of a composite device. That case is
+            // deliberately left unhandled: recovery itself never trims (it passes trimLog false; only tests pass true), Garnet
+            // builds no composite devices, and current native libraries remove only the segment named.
             for (var segment = lastAvailSegment; segment > lastValidSegment; segment--)
             {
                 logger?.LogInformation("Trimming tail segment {s} on disk", segment);
