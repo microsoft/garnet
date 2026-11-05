@@ -204,9 +204,14 @@ namespace Garnet.server
         ImportFailed = 1 << 3,
 
         /// <summary>
+        /// Vector Set has been shallow copied.  This implies the Vector Set is read only.
+        /// </summary>
+        ShallowCopySource = 1 << 4,
+
+        /// <summary>
         /// Covers all legal flag options
         /// </summary>
-        All = SuppressCleanup | ImportPending | ImportCompleted | ImportFailed,
+        All = SuppressCleanup | ImportPending | ImportCompleted | ImportFailed | ShallowCopySource,
     }
 
     /// <summary>
@@ -381,29 +386,7 @@ namespace Garnet.server
                     return res;
                 }
 
-                if (txnManager?.state == TxnState.Running)
-                {
-                    if (EXISTS(destKey, ref unifiedTransactionalContext) == GarnetStatus.OK)
-                    {
-                        result = VectorManagerResult.Duplicate;
-                        errorMsg = "destination already exists, must create shallow copy into empty key"u8;
-                        return GarnetStatus.OK;
-                    }
-                }
-                else
-                {
-                    if (EXISTS(destKey, ref unifiedBasicContext) == GarnetStatus.OK)
-                    {
-                        result = VectorManagerResult.Duplicate;
-                        errorMsg = "destination already exists, must create shallow copy into empty key"u8;
-                        return GarnetStatus.OK;
-                    }
-                }
-
-                // TODO: Implement properly
-                result = VectorManagerResult.OK;
-                errorMsg = default;
-                return GarnetStatus.OK;
+                return vectorManager.ShallowCopy(this, sourceKey, indexSpan, destKey, out result, out errorMsg);
             }
         }
 

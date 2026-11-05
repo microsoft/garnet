@@ -59,6 +59,7 @@ namespace Garnet.server
         internal const long VSETATTRAppendLogArg = CreateIndexArg + 1; // User VSETATTR update, replayed on replicas. AOF: Yes. InitialUpdater: NO.
         internal const long SetImportStateArg = VSETATTRAppendLogArg + 1; // Import lifecycle flags. AOF: NO. InitialUpdater: NO (record must exist).
         internal const long XVImportFailedArg = SetImportStateArg + 1; // Replication / replay for failed imports.  AOF: Yes.  InitialUpdater: No.
+        internal const long XVSCopySourceArg = XVImportFailedArg + 1; // Shallow copy flags.  AOF: NO.  InitialUpdater: NO.
 
         /// <summary>
         /// Byte stored on log records to distinguish the INDEX key as a Vector Set
@@ -1906,6 +1907,97 @@ namespace Garnet.server
 
             outputDistances.Length = sizeof(float) * found;
             return VectorManagerResult.OK;
+        }
+
+        /// <summary>
+        /// Perform a shallow copy of <paramref name="sourceKey"/> into <paramref name="destKey"/>.
+        /// 
+        /// Marks <paramref name="sourceKey"/> read only upon success.
+        /// 
+        /// Assumes we have exclusive Vector Set locks over _both_ keys.
+        /// </summary>
+        internal GarnetStatus ShallowCopy(StorageSession session, scoped ReadOnlySpan<byte> sourceKey, scoped ReadOnlySpan<byte> sourceIndex, scoped ReadOnlySpan<byte> destKey, out VectorManagerResult result, out ReadOnlySpan<byte> errorMessage)
+        {
+            ReadIndex(sourceIndex, out var sourceContext, out var dims, out var reduceDims, out var quantizer, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _);
+
+            var destSlot = HashSlotUtils.HashSlot(destKey);
+            var destIndexContext = NextVectorSetContext(destSlot);
+
+            SessionParseState reusableParseState = new();
+            var dimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
+            var reduceDimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
+            PinnedSpanByte valueTypeArg = default;
+            PinnedSpanByte valuesArg = default;
+            PinnedSpanByte elementArg = default;
+            var quantizerArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorQuantType, byte>(MemoryMarshal.CreateSpan(ref quantizer, 1)));
+            var buildExplorationFactorArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
+            PinnedSpanByte attributesArg = default;
+            var numLinksArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
+            var distanceMetricArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorDistanceMetricType, byte>(MemoryMarshal.CreateSpan(ref distanceMetric, 1)));
+
+            var contextArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref destIndexContext, 1)));
+
+            // We aren't doing any modifications, so don't spin the DiskANN side up yet
+            nint indexPtr = 0;
+            var indexPtrArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref indexPtr, 1)));
+
+            long expirationTicks = 0;
+            var expirationTicksArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<long, byte>(MemoryMarshal.CreateSpan(ref expirationTicks, 1)));
+
+            var startPointId = DefaultStartPointId;
+            var startPointIdArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref startPointId, 1)));
+
+            var sourceContextArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref sourceContext, 1)));
+
+            reusableParseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg, contextArg, indexPtrArg, expirationTicksArg, startPointIdArg, sourceContextArg]);
+
+            // Create the shallow copy index key
+            var input = new StringInput(RespCommand.XVSCOPY, ref reusableParseState, arg1: CreateIndexArg);
+            var status = session.stringBasicContext.RMW((FixedSpanByteKey)destKey, ref input);
+            if (status.IsPending)
+            {
+                CompletePending(ref status, ref session.stringBasicContext);
+            }
+
+            if (!status.IsCompletedSuccessfully)
+            {
+                if (status.IsCanceled)
+                {
+                    result = VectorManagerResult.Duplicate;
+                    errorMessage = "ERR Cannot copy over existing key"u8;
+                    return GarnetStatus.NOTFOUND;
+                }
+
+                result = VectorManagerResult.BadParams;
+                errorMessage = ""u8;
+                return GarnetStatus.NOTFOUND;
+            }
+
+            // Mark source Vector Set read only
+            try
+            {
+                SetFlags(sourceKey, VectorSetFlags.ShallowCopySource, ref session.stringBasicContext, operation: XVSCopySourceArg);
+            }
+            catch (Exception e)
+            {
+                // Attempt to cleanup dest key in the face of error
+                logger?.LogError(e, "Failed to mark source Vector Set");
+
+                try
+                {
+                    _ = session.stringBasicContext.Delete((FixedSpanByteKey)destKey);
+                }
+                catch (Exception innerE)
+                {
+                    logger?.LogError(innerE, "Cleanup of failed shallow copy failed, {destKey} is in a very bad state", SpanByte.ToShortString(destKey));
+                }
+
+                throw;
+            }
+
+            result = VectorManagerResult.OK;
+            errorMessage = default;
+            return GarnetStatus.OK;
         }
 
         [Conditional("DEBUG")]

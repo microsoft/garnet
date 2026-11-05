@@ -354,13 +354,13 @@ namespace Garnet.server
             {
                 return AbortVectorSetWrongType();
             }
-            if (status == GarnetStatus.NOTFOUND)
+            else if (status == GarnetStatus.NOTFOUND)
             {
                 return AbortWithErrorMessage("ERR vector set does not exist"u8);
             }
-            if (status != GarnetStatus.OK || result != VectorManagerResult.OK)
+            else if (status != GarnetStatus.OK || result != VectorManagerResult.OK)
             {
-                return AbortWithErrorMessage(errorMsg.IsEmpty ? "ERR vector set shallow copy"u8 : errorMsg);
+                return AbortWithErrorMessage(errorMsg.IsEmpty ? "ERR vector set shallow copy failed"u8 : errorMsg);
             }
 
             WriteDirect(CmdStrings.RESP_OK);

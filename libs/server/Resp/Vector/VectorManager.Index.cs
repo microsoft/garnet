@@ -49,7 +49,7 @@ namespace Garnet.server
             [FieldOffset(44)]
             public uint StartPointId;
             [FieldOffset(48)]
-            private ulong unused0;
+            public ulong ShallowCopyOfContext;
         }
 
         /// <summary>
@@ -65,11 +65,13 @@ namespace Garnet.server
             ulong newContext,
             nint newIndexPtr,
             Span<byte> indexSpan,
-            uint startPointId)
+            uint startPointId,
+            ulong copyOfContext)
         {
             AssertHaveStorageSession();
 
             Debug.Assert((newContext % 8) == 0 && newContext != 0, "Illegal context provided");
+            Debug.Assert((copyOfContext % 8) == 0, "Illegal copy context provided");
             Debug.Assert(Unsafe.SizeOf<Index>() == Index.Size, "Constant index size is incorrect");
 
             if (indexSpan.Length != Index.Size)
@@ -88,6 +90,7 @@ namespace Garnet.server
             asIndex.DistanceMetric = distanceMetric;
             asIndex.StartPointId = startPointId;
             asIndex.Flags = VectorSetFlags.None;
+            asIndex.ShallowCopyOfContext = copyOfContext;
             asIndex.IndexPtr = (ulong)newIndexPtr;
         }
 
