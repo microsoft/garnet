@@ -906,6 +906,7 @@ namespace Garnet.server
             _ = cmd switch
             {
                 RespCommand.GET => NetworkGET(ref storageApi),
+                RespCommand.DIGEST => NetworkDIGEST(ref storageApi),
                 RespCommand.GETEX => NetworkGETEX(ref storageApi),
                 RespCommand.SET => NetworkSET(ref storageApi),
                 RespCommand.SETEX => NetworkSETEX(false, ref storageApi),
@@ -913,6 +914,7 @@ namespace Garnet.server
                 RespCommand.PSETEX => NetworkSETEX(true, ref storageApi),
                 RespCommand.SETEXNX => NetworkSETEXNX(ref storageApi),
                 RespCommand.DEL => NetworkDEL(ref storageApi),
+                RespCommand.DELIFEQ or RespCommand.DELEX => NetworkDELValueConditional(cmd, ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(ref storageApi),
                 RespCommand.RENAMENX => NetworkRENAMENX(ref storageApi),
                 RespCommand.EXISTS => NetworkEXISTS(ref storageApi),

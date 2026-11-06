@@ -124,6 +124,14 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> KEEPTTL => "KEEPTTL"u8;
         public static ReadOnlySpan<byte> NX => "NX"u8;
         public static ReadOnlySpan<byte> XX => "XX"u8;
+        public static ReadOnlySpan<byte> IFEQ => "IFEQ"u8;
+        public static ReadOnlySpan<byte> IFNE => "IFNE"u8;
+        public static ReadOnlySpan<byte> IFDEQ => "IFDEQ"u8;
+        public static ReadOnlySpan<byte> IFDNE => "IFDNE"u8;
+        public static ReadOnlySpan<byte> DIGEST => "DIGEST"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_DIGEST => "-ERR must be exactly 16 hexadecimal characters\r\n"u8;
+        public static ReadOnlySpan<byte> DELIFEQ => "DELIFEQ"u8;
+        public static ReadOnlySpan<byte> DELEX => "DELEX"u8;
         public static ReadOnlySpan<byte> CH => "CH"u8;
         public static ReadOnlySpan<byte> UNSAFETRUNCATELOG => "UNSAFETRUNCATELOG"u8;
         public static ReadOnlySpan<byte> SAMPLES => "SAMPLES"u8;
@@ -326,6 +334,7 @@ namespace Garnet.server
         /// Response string templates
         /// </summary>
         public const string GenericErrWrongNumArgs = "ERR wrong number of arguments for '{0}' command";
+        public const string GenericErrUnknownCommand = "ERR unknown command '{0}'";
         public const string GenericErrInvalidClientAttr = "ERR {0} cannot contain spaces, newlines or special characters.";
         public const string GenericErrUnknownOptionConfigSet = "ERR Unknown option or number of arguments for CONFIG SET - '{0}'";
         public const string GenericErrUnknownOption = "ERR Unknown option or number of arguments for '{0}' command";

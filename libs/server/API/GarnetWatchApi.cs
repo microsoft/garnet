@@ -23,6 +23,13 @@ namespace Garnet.server
 
         #region GET
         /// <inheritdoc />
+        public GarnetStatus DIGEST(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.DIGEST(key, ref input, ref output);
+        }
+
+        /// <inheritdoc />
         public GarnetStatus GET(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
         {
             garnetApi.WATCH(key, StoreType.Main);

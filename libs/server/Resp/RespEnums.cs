@@ -17,6 +17,10 @@ namespace Garnet.server
     {
         None,
         NX,
-        XX
+        XX,
+        IFEQ,
+        IFNE,
+        IFDEQ,
+        IFDNE
     }
 }

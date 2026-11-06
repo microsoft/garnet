@@ -52,6 +52,104 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task AofSetValueConditionalRecoverTestAsync([Values] bool evict, [Values("IFEQ", "IFNE", "IFDEQ", "IFDNE")] string condition)
+        {
+            long expiration;
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase();
+                db.Execute("SET", "clear", "old", "EX", 60);
+                db.Execute("SET", "keep", "old", "EX", 60);
+                expiration = (long)db.Execute("PEXPIRETIME", "keep");
+                if (evict)
+                    server.Provider.StoreWrapper.store.Log.FlushAndEvict(wait: true);
+
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "clear", "new", condition, ComparisonFor(condition, condition is "IFEQ" or "IFDEQ" ? "old" : "different")));
+                ClassicAssert.AreEqual("old", (string)db.Execute("SET", "keep", "new", "KEEPTTL", condition, ComparisonFor(condition, condition is "IFEQ" or "IFDEQ" ? "old" : "different"), "GET"));
+                ClassicAssert.IsTrue(db.Execute("SET", "clear", "rejected", condition, ComparisonFor(condition, condition is "IFEQ" or "IFDEQ" ? "old" : "new"), "EX", 120).IsNull);
+                ClassicAssert.IsTrue(db.Execute("SET", "missing", "new", "IFEQ", "").IsNull);
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "created", "new", "IFNE", ""));
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "created-digest", "new", "IFDNE", "bad"));
+                db.Execute("SET", "expired-digest", "old", "PX", 20);
+                if (evict)
+                    server.Provider.StoreWrapper.store.Log.FlushAndEvict(wait: true);
+                await Task.Delay(50);
+                ClassicAssert.IsTrue(db.Execute("SET", "expired-digest", "new", "IFDNE", "bad", "GET").IsNull);
+
+                db.Execute("SET", "deterministic", "old", "PX", 200);
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "deterministic", "new", condition, ComparisonFor(condition, condition is "IFEQ" or "IFDEQ" ? "old" : "different")));
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+            await Task.Delay(250);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase();
+                ClassicAssert.AreEqual("new", (string)db.StringGet("clear"));
+                ClassicAssert.AreEqual(-1, (long)db.Execute("PTTL", "clear"));
+                ClassicAssert.AreEqual("new", (string)db.StringGet("keep"));
+                ClassicAssert.AreEqual(expiration, (long)db.Execute("PEXPIRETIME", "keep"));
+                ClassicAssert.AreEqual("new", (string)db.StringGet("deterministic"));
+                ClassicAssert.IsFalse(db.KeyExists("missing"));
+                ClassicAssert.AreEqual("new", (string)db.StringGet("created"));
+                ClassicAssert.AreEqual("new", (string)db.StringGet("created-digest"));
+                ClassicAssert.AreEqual("new", (string)db.StringGet("expired-digest"));
+                ClassicAssert.AreEqual(-1, (long)db.Execute("PTTL", "expired-digest"));
+            }
+        }
+
+        [Test]
+        public async Task AofDeleteValueConditionalRecoverTestAsync([Values(0, 1, 2)] int storageRegion)
+        {
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase();
+                foreach (var key in new[] { "alias", "equal", "not-equal", "keep-equal", "keep-not-equal", "digest-equal", "digest-not-equal", "keep-digest" })
+                    db.StringSet(key, "old");
+                var store = server.Provider.StoreWrapper.store;
+                if (storageRegion == 1)
+                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                else if (storageRegion == 2)
+                    store.Log.FlushAndEvict(wait: true);
+
+                ClassicAssert.AreEqual(1, (long)db.Execute("DELIFEQ", "alias", "old"));
+                ClassicAssert.AreEqual(1, (long)db.Execute("DELEX", "equal", "IFEQ", "old"));
+                ClassicAssert.AreEqual(1, (long)db.Execute("DELEX", "not-equal", "IFNE", "different"));
+                ClassicAssert.AreEqual(0, (long)db.Execute("DELIFEQ", "keep-equal", "different"));
+                ClassicAssert.AreEqual(0, (long)db.Execute("DELEX", "keep-not-equal", "IFNE", "old"));
+                ClassicAssert.AreEqual(1, (long)db.Execute("DELEX", "digest-equal", "IFDEQ", ComparisonFor("IFDEQ", "old")));
+                ClassicAssert.AreEqual(1, (long)db.Execute("DELEX", "digest-not-equal", "IFDNE", ComparisonFor("IFDNE", "different")));
+                ClassicAssert.AreEqual(0, (long)db.Execute("DELEX", "keep-digest", "IFDEQ", ComparisonFor("IFDEQ", "different")));
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase();
+                ClassicAssert.IsFalse(db.KeyExists("alias"));
+                ClassicAssert.IsFalse(db.KeyExists("equal"));
+                ClassicAssert.IsFalse(db.KeyExists("not-equal"));
+                ClassicAssert.AreEqual("old", (string)db.StringGet("keep-equal"));
+                ClassicAssert.AreEqual("old", (string)db.StringGet("keep-not-equal"));
+                ClassicAssert.IsFalse(db.KeyExists("digest-equal"));
+                ClassicAssert.IsFalse(db.KeyExists("digest-not-equal"));
+                ClassicAssert.AreEqual("old", (string)db.StringGet("keep-digest"));
+            }
+        }
+
+        private static string ComparisonFor(string condition, string value)
+            => condition is "IFDEQ" or "IFDNE"
+                ? System.IO.Hashing.XxHash3.HashToUInt64(System.Text.Encoding.UTF8.GetBytes(value)).ToString("x16")
+                : value;
+
+        [Test]
         public async Task AofUpsertStoreRecoverTestAsync()
         {
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
