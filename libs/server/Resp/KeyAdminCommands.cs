@@ -25,14 +25,56 @@ namespace Garnet.server
         bool NetworkRESTORE<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.Count != 3)
+            if (parseState.Count < 3)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RESTORE));
             }
 
             var key = parseState.GetArgSliceByRef(0);
 
-            if (!parseState.TryGetLong(parseState.Count - 2, out var ttlMs))
+            // RESTORE key ttl serialized-value [REPLACE] [ABSTTL] [IDLETIME seconds] [FREQ frequency]
+            var replace = false;
+            var absTtl = false;
+            var hasIdleTime = false;
+            var hasFreq = false;
+            for (var i = 3; i < parseState.Count; i++)
+            {
+                var option = parseState.GetArgSliceByRef(i).ReadOnlySpan;
+                var hasArgument = i + 1 < parseState.Count;
+
+                if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.REPLACE))
+                {
+                    replace = true;
+                }
+                else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ABSTTL))
+                {
+                    absTtl = true;
+                }
+                else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.IDLETIME) && hasArgument && !hasFreq)
+                {
+                    // Garnet does not track idle time, so the value is only validated
+                    if (!parseState.TryGetLong(++i, out var idleTime))
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                    if (idleTime < 0)
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_IDLETIME);
+                    hasIdleTime = true;
+                }
+                else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FREQ) && hasArgument && !hasIdleTime)
+                {
+                    // Garnet does not track access frequency, so the value is only validated
+                    if (!parseState.TryGetLong(++i, out var freq))
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                    if (freq is < 0 or > 255)
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_FREQ);
+                    hasFreq = true;
+                }
+                else
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                }
+            }
+
+            if (!parseState.TryGetLong(1, out var ttlMs))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
@@ -42,8 +84,11 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
             }
 
+            // With ABSTTL the ttl is a Unix time in milliseconds instead of a relative one
             var expirationTicks = 0L;
-            if (ttlMs > 0 && !ConvertUtils.TryRelativeMillisecondsToTicks(ttlMs, out expirationTicks))
+            if (ttlMs > 0 && !(absTtl
+                    ? ConvertUtils.TryUnixTimestampInMillisecondsToTicks(ttlMs, out expirationTicks)
+                    : ConvertUtils.TryRelativeMillisecondsToTicks(ttlMs, out expirationTicks)))
             {
                 return AbortWithErrorMessage(CmdStrings.GenericErrInvalidExpireTime, "restore");
             }
@@ -102,6 +147,23 @@ namespace Garnet.server
                 return true;
             }
 
+            // An ABSTTL in the past restores nothing, like Redis, but REPLACE still removes the existing key
+            if (expirationTicks != 0 && expirationTicks <= DateTimeOffset.UtcNow.Ticks)
+            {
+                if (replace)
+                {
+                    _ = storageApi.DELETE(key);
+                }
+                else if (storageApi.EXISTS(key) == GarnetStatus.OK)
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_BUSSYKEY);
+                }
+
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             // Start from payload start and skip the value type byte
             var val = value.ReadOnlySpan.Slice(payloadStart + 1, length);
 
@@ -109,21 +171,23 @@ namespace Garnet.server
 
             parseState.InitializeWithArgument(valArgSlice);
 
-            StringInput input;
-            if (ttlMs > 0)
-            {
-                input = new StringInput(RespCommand.SETEXNX, ref parseState, arg1: expirationTicks);
-            }
-            else
-            {
-                input = new StringInput(RespCommand.SETEXNX, ref parseState);
-            }
+            var input = new StringInput(replace ? RespCommand.SET : RespCommand.SETEXNX, ref parseState, arg1: expirationTicks);
 
             var status = storageApi.SET_Conditional(key, ref input);
 
+            // REPLACE over a non-string key needs an explicit delete, same as SET
+            if (replace && status == GarnetStatus.WRONGTYPE)
+            {
+                using (txnManager.PromoteToTransaction(TransactionStoreTypes.Main | TransactionStoreTypes.Object, key, LockType.Exclusive))
+                {
+                    _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
+                    status = storageSession.SET_Conditional(key, ref input, ref storageSession.stringTransactionalContext);
+                }
+            }
+
             scratchBufferBuilder.RewindScratchBuffer(valArgSlice);
 
-            if (status is GarnetStatus.NOTFOUND)
+            if (replace || status is GarnetStatus.NOTFOUND)
             {
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
