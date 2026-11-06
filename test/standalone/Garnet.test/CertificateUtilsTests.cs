@@ -13,6 +13,12 @@ namespace Garnet.test
     [TestFixture]
     public class CertificateUtilsTests : TestBase
     {
+        [SetUp]
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+        }
+
         [TearDown]
         public void TearDown()
         {
@@ -22,7 +28,7 @@ namespace Garnet.test
         [Test]
         public void GetMachineCertificateByFileLoadsPfxCertificate()
         {
-            var cert = CertificateUtils.GetMachineCertificateByFile(TestUtils.certFile, TestUtils.certPassword);
+            using var cert = CertificateUtils.GetMachineCertificateByFile(TestUtils.certFile, TestUtils.certPassword);
 
             ClassicAssert.IsNotNull(cert);
             ClassicAssert.IsTrue(cert.HasPrivateKey);
@@ -31,15 +37,16 @@ namespace Garnet.test
         [Test]
         public void GetMachineCertificateByFileLoadsPemCertificateWithSeparateKeyFile()
         {
-            var cert = CertificateUtils.GetMachineCertificateByFile(TestUtils.pemCertFile, TestUtils.pemCertKeyFile);
+            using var cert = CertificateUtils.GetMachineCertificateByFile(TestUtils.pemCertFile, TestUtils.pemCertKeyFile);
 
             ClassicAssert.IsNotNull(cert);
             ClassicAssert.IsTrue(cert.HasPrivateKey);
             StringAssert.Contains("CN=Garnet", cert.Subject);
         }
 
-        [Test]
-        public void GetMachineCertificateByFileLoadsPemCertificateWithEmbeddedKey()
+        [TestCase(null)]
+        [TestCase("")]
+        public void GetMachineCertificateByFileLoadsPemCertificateWithEmbeddedKey(string keyFileName)
         {
             // A single PEM file containing both the certificate and the private key should load
             // without a separate key file being specified.
@@ -50,7 +57,7 @@ namespace Garnet.test
                 certContents += Environment.NewLine;
             File.WriteAllText(combinedPemFile, certContents + File.ReadAllText(TestUtils.pemCertKeyFile));
 
-            var cert = CertificateUtils.GetMachineCertificateByFile(combinedPemFile, null);
+            using var cert = CertificateUtils.GetMachineCertificateByFile(combinedPemFile, keyFileName);
 
             ClassicAssert.IsNotNull(cert);
             ClassicAssert.IsTrue(cert.HasPrivateKey);
@@ -64,7 +71,7 @@ namespace Garnet.test
             var renamedCertFile = Path.Combine(TestUtils.MethodTestDir, "testcert.pfx");
             File.Copy(TestUtils.pemCertFile, renamedCertFile, overwrite: true);
 
-            var cert = CertificateUtils.GetMachineCertificateByFile(renamedCertFile, TestUtils.pemCertKeyFile);
+            using var cert = CertificateUtils.GetMachineCertificateByFile(renamedCertFile, TestUtils.pemCertKeyFile);
 
             ClassicAssert.IsNotNull(cert);
             ClassicAssert.IsTrue(cert.HasPrivateKey);
@@ -81,7 +88,7 @@ namespace Garnet.test
             var contents = "\r\n\n" + File.ReadAllText(TestUtils.pemCertFile);
             File.WriteAllText(bomPemFile, contents, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
 
-            var cert = CertificateUtils.GetMachineCertificateByFile(bomPemFile, TestUtils.pemCertKeyFile);
+            using var cert = CertificateUtils.GetMachineCertificateByFile(bomPemFile, TestUtils.pemCertKeyFile);
 
             ClassicAssert.IsNotNull(cert);
             ClassicAssert.IsTrue(cert.HasPrivateKey);
