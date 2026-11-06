@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
@@ -90,6 +91,60 @@ namespace Garnet.server
                 storeWrapper.FlushDatabase(unsafeTruncateLog, dbId);
 
                 return true;
+            }
+        }
+
+        /// <summary>
+        /// Take checkpoint for all active databases
+        /// </summary>
+        /// <param name="background">True if method can return before checkpoint is taken</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>false if checkpoint was skipped due to node state, another checkpoint in progress for background, or failed</returns>
+        public async ValueTask<bool> TakeCheckpointAsync(bool background = false, CancellationToken token = default)
+        {
+            using (PreventRoleChange(out var acquired))
+            {
+                if (!acquired || IsReplica)
+                {
+                    return false;
+                }
+
+                while (!token.IsCancellationRequested)
+                {
+                    var status = await storeWrapper.TakeCheckpointAsync(background, token: token).ConfigureAwait(false);
+
+                    switch (status)
+                    {
+                        case CheckpointStatus.Success:
+                            return true;
+
+                        case CheckpointStatus.AlreadyInProgress:
+                            if (background)
+                            {
+                                return false;
+                            }
+
+                            try
+                            {
+                                await Task.Delay(50, token).ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                return false;
+                            }
+
+                            continue;
+
+                        case CheckpointStatus.Failed:
+                            storeWrapper.logger?.LogError("TakeCheckpointAsync failed to complete checkpoint.");
+                            return false;
+
+                        default:
+                            return false;
+                    }
+                }
+
+                return false;
             }
         }
 
