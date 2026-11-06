@@ -117,6 +117,11 @@
       "mode": "755"
     },
     {
+      "src": "cluster/cluster-utils.ps1",
+      "dst": "/usr/local/bin/cluster-utils.ps1",
+      "mode": "644"
+    },
+    {
       "src": "bootstrap/list-ips.ps1",
       "dst": "/usr/local/bin/list-ips.ps1",
       "mode": "755"

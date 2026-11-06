@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 1,
+  "Kind": "Cluster",
+  "System": "garnet",
+  "InstanceConfig": "..\\..\\02-platform\\tools\\config\\garnet\\garnet-cluster-diskless.conf",
+  "Port": 7000,
+  "Primaries": [
+    {
+      "VMs": ["vm0"],
+      "Slots": [[0, 16383]]
+    }
+  ],
+  "Replicas": [
+    {
+      "VMs": ["vm1"],
+      "Primary": "vm0"
+    }
+  ]
+}

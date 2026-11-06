@@ -5,11 +5,14 @@
     Controls cluster lifecycle (start/stop) on remote VMSS server instances via SSH.
 
 .DESCRIPTION
+    With -Definition, creates (clean/start/setup) or stops an explicit cluster.
     SSHs into the first server VM and invokes cluster-deploy.ps1 to manage
     the cluster across all discovered peers. The 'start' action automatically
     starts instances and forms the cluster (setup) in one step.
 
 .EXAMPLE
+    pwsh .\03-workload\cluster.ps1 --action create --definition .\03-workload\templates\cluster-explicit.template.json --rg <resource-group> --vmssname d128ldsv6
+    pwsh .\03-workload\cluster.ps1 --action stop --definition .\03-workload\templates\cluster-explicit.template.json --rg <resource-group>
     pwsh .\03-workload\cluster.ps1 -Action start -System valkey -Conf .\02-platform\tools\config\valkey\valkey-cache.conf -InstancePerVm 2
     pwsh .\03-workload\cluster.ps1 -Action start -System valkey -Conf .\02-platform\tools\config\valkey\valkey-cache.conf -InstancePerVm 2 -Clean
     pwsh .\03-workload\cluster.ps1 -Action start -System garnet -Conf .\02-platform\tools\config\garnet\garnet-cache-replication.conf -InstancePerVm 1 -NoCluster
@@ -17,13 +20,14 @@
     pwsh .\03-workload\cluster.ps1 -Action restart -System garnet -Conf .\02-platform\tools\config\garnet\garnet-aofx8.conf -InstancePerVm 1 -Replicas 1 -CreateManual
 #>
 param(
-    [ValidateSet("start","stop","restart")]
+    [ValidateSet("create","start","stop","restart")]
     [string]$Action,
 
     [ValidateSet("valkey","garnet")]
     [string]$System,
 
     [Alias('Config')][string]$Conf,
+    [Alias('ClusterDefinition')][string]$Definition,
     [Alias('ICount', 'InstancesPerVm')][int]$InstancePerVm = 1,
     [Alias('NodeCount')][int]$VmCount = 0,
     [int]$MaxScan = 0,
@@ -34,28 +38,32 @@ param(
     [switch]$CreateManual,
     [string]$ConfigFile = "$PSScriptRoot\bench\bench.conf",
     [string]$ServerHost,
-    [string]$ResourceGroup,
+    [Alias('rg')][string]$ResourceGroup,
     [string]$VmssName,
     [string]$SshUser,
     [string]$SshKey,
     [switch]$ForcePeerRefresh,
     [int]$PeerCacheTtlMinutes = 30,
+    [switch]$NonInteractive,
     [switch]$Help
 )
 
 if ($Help -or -not $Action) {
-    Write-Host "Usage: cluster.ps1 -Action <start|stop|restart> -System <valkey|garnet> [options]"
+    Write-Host "Usage: cluster.ps1 -Action <create|stop> -Definition <cluster.json> [options]"
+    Write-Host "       cluster.ps1 -Action <start|stop|restart> -System <valkey|garnet> [options]"
     Write-Host ""
     Write-Host "Controls cluster lifecycle on remote VMSS server instances via SSH."
     Write-Host "SSHs into the server VM and runs cluster-deploy.ps1 to orchestrate."
     Write-Host ""
     Write-Host "Actions:"
+    Write-Host "  create   Clean, start and set up only the nodes in -Definition (destructive)"
     Write-Host "  start    Start instances + form cluster (start then setup)"
-    Write-Host "  stop     Stop cluster instances on all server VMs"
+    Write-Host "  stop     Stop declared instances, or discovered server VMs in legacy mode"
     Write-Host "  restart  Stop instances, then start + form cluster (stop then start)"
     Write-Host ""
     Write-Host "Options:"
-    Write-Host "  -System      Target system: valkey or garnet (required)"
+    Write-Host "  -Definition  Declarative cluster JSON; accepts create/stop, targets only declared VMs"
+    Write-Host "  -System      Target system: valkey or garnet (required without -Definition)"
     Write-Host "  -Conf        Local config file path on THIS workstation (required for start/restart); its content is shipped to the nodes"
     Write-Host "  -InstancePerVm Number of server processes per VM (default: 1; aliases: -InstancesPerVm, -ICount)"
     Write-Host "  -VmCount       Expected/selected VMSS machine count (default: 0 = all; alias: -NodeCount)"
@@ -67,16 +75,45 @@ if ($Help -or -not $Action) {
     Write-Host "  -CreateManual Form the cluster manually (MEET + ADDSLOTSRANGE + REPLICATE) instead of '--cluster create'"
     Write-Host "  -ConfigFile  Path to bench.conf for SSH host/key resolution (default: bench.conf)"
     Write-Host "  -ServerHost  Override server SSH host (default: from bench.conf Host field)"
-    Write-Host "  -ResourceGroup Azure resource group containing the server VMSS (inferred when possible)"
-    Write-Host "  -VmssName    Server VMSS name (inferred from vmN.<vmss>.* ServerHost when possible)"
-    Write-Host "  -SshUser     Override SSH user (default: from bench.conf or guser)"
+    Write-Host "  -ResourceGroup Azure resource group (alias -rg); required for VMSS-based definitions"
+    Write-Host "  -VmssName    VMSS selection; prompts when omitted with -Definition/-ResourceGroup"
+    Write-Host "  -SshUser     Override SSH user (default: VMSS admin username for VMSS-based definitions)"
     Write-Host "  -SshKey      Override SSH key path (default: from security/manifest.json)"
     Write-Host "  -ForcePeerRefresh Ignore local peer cache and regenerate it through Azure CLI"
     Write-Host "  -PeerCacheTtlMinutes Regenerate caches older than this value through Azure CLI (default: 30; 0 disables)"
+    Write-Host "  -NonInteractive Require an explicit -VmssName instead of prompting"
     return
 }
 
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot\..\02-platform\tools\cluster\cluster-utils.ps1"
+
+$clusterDefinition = $null
+if ($Definition) {
+    if ($Action -notin @('create', 'stop')) { throw '-Definition supports only create and stop.' }
+    foreach ($name in @('System', 'Conf', 'InstancePerVm', 'VmCount', 'MaxScan', 'Replicas', 'Clean', 'NoCluster',
+        'CreateManual', 'ServerHost', 'ForcePeerRefresh', 'PeerCacheTtlMinutes', 'ConfigFile')) {
+        if ($PSBoundParameters.ContainsKey($name)) { throw "-$name cannot be combined with -Definition." }
+    }
+    $clusterDefinition = Read-ClusterDefinition -Path $Definition -RequireInstanceConfig:($Action -eq 'create')
+    $System = $clusterDefinition.System
+    if ($ResourceGroup -or $VmssName -or -not $clusterDefinition.VmDomain) {
+        . "$PSScriptRoot\..\02-platform\vmss-utils.ps1"
+        $context = Resolve-VmssExecutionContext -ResourceGroup $ResourceGroup -VmssName $VmssName `
+            -VmNames $clusterDefinition.Nodes.Vm -SshUser $SshUser -NonInteractive:$NonInteractive
+        $SshUser = $context.SshUser
+        $VmssName = $context.VmssName
+        foreach ($node in $clusterDefinition.Nodes) {
+            $hostName = ($context.Nodes | Where-Object Vm -eq $node.Vm).HostName
+            $node | Add-Member -NotePropertyName HostName -NotePropertyValue $hostName -Force
+        }
+    } elseif (-not $SshUser) {
+        $SshUser = $clusterDefinition.SshUser
+    }
+    if ($Action -eq 'create') { $Conf = $clusterDefinition.InstanceConfig }
+} elseif ($Action -eq 'create') {
+    throw '-Definition is required for create. Existing command-line deployments use start/restart.'
+}
 
 # --- Validate params ---
 if (-not $System) { Write-Error "-System is required"; exit 1 }
@@ -122,16 +159,11 @@ if (Test-Path $ConfigFile) {
 # --- Resolve SSH key ---
 if (-not $SshKey) {
     $manifestPath = Join-Path (Split-Path $PSScriptRoot -Parent) "01-resources\security\manifest.json"
-    if (Test-Path $manifestPath) {
-        . (Join-Path (Split-Path $PSScriptRoot -Parent) "01-resources\security\ssh-key-utils.ps1")
-        $manifest = Get-SshKeyManifest -ManifestPath $manifestPath
-        $SshKey = Resolve-SshUserPrivateKey -Manifest $manifest -AllowMissing
-    }
-    if (-not $SshKey) {
-        $SshKey = "$env:USERPROFILE\.ssh\id_ed25519"
-    }
+    . (Join-Path (Split-Path $PSScriptRoot -Parent) "01-resources\security\ssh-key-utils.ps1")
+    $manifest = Get-SshKeyManifest -ManifestPath $manifestPath
+    $SshKey = Resolve-SshUserPrivateKey -Manifest $manifest
 }
-if (-not (Test-Path $SshKey)) {
+if (-not (Test-Path -LiteralPath $SshKey -PathType Leaf)) {
     Write-Error "SSH key not found: $SshKey"
     exit 1
 }
@@ -139,13 +171,13 @@ if (-not (Test-Path $SshKey)) {
 # --- Resolve SSH user and server host ---
 if (-not $SshUser) { $SshUser = $config["SshUser"] ?? "guser" }
 if (-not $ServerHost) { $ServerHost = $config["Host"] ?? "" }
-if (-not $ServerHost) {
+if (-not $ServerHost -and -not $clusterDefinition) {
     Write-Error "No server host specified. Use -ServerHost or set Host= in bench.conf"
     exit 1
 }
 
 # --- Helper to run a remote command ---
-$sshOpts = @('-i', $SshKey, '-o', 'StrictHostKeyChecking=no', '-o', 'ConnectTimeout=10', '-t')
+$sshOpts = @('-i', $SshKey, '-o', 'StrictHostKeyChecking=no', '-o', 'ConnectTimeout=10', '-T')
 
 function Get-InferredVmssName {
     param([string]$HostName)
@@ -289,18 +321,81 @@ function Send-PeerManifest {
 }
 
 function Invoke-Remote {
-    param([string]$Cmd, [string]$Label)
-    Write-Host "[$Label] $Cmd" -ForegroundColor Yellow
+    param([string]$Cmd, [string]$Label, [string]$TargetHost = $ServerHost, [switch]$CaptureOutput)
+    Write-Host "[$Label] $TargetHost" -ForegroundColor Yellow
     Write-Host ""
-    ssh @sshOpts "${SshUser}@${ServerHost}" "pwsh -c '$Cmd'"
+    $scriptText = "`$ErrorActionPreference = 'Stop'`n$Cmd"
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($scriptText))
+    $output = @(ssh @sshOpts "${SshUser}@${TargetHost}" "pwsh -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand $encoded")
     $code = $LASTEXITCODE
-    Write-Host ""
     if ($code -ne 0) {
-        Write-Host "[$Label] FAILED (exit code $code)" -ForegroundColor Red
-        exit $code
+        $output | ForEach-Object { Write-Host $_ }
+        throw "[$Label] $TargetHost failed (exit code $code)."
     }
+    if ($CaptureOutput) { return $output }
+    $output | ForEach-Object { Write-Host $_ }
     Write-Host "[$Label] Done." -ForegroundColor Green
     Write-Host ""
+}
+
+function Invoke-DeclaredCluster {
+    param([object]$Cluster, [ValidateSet('create', 'stop')][string]$Operation, [switch]$UseTls)
+
+    $instanceContent = if ($Operation -eq 'create') { [Convert]::ToBase64String([IO.File]::ReadAllBytes($Cluster.InstanceConfig)) } else { '' }
+    $preflight = @'
+$command = Get-Command mcluster.ps1 -ErrorAction Stop
+foreach ($parameter in @('BasePort', 'InstanceOnly')) {
+    if (-not $command.Parameters.ContainsKey($parameter)) { throw 'Update the VM tools before using declarative deployments.' }
+}
+'@
+    if ($Operation -eq 'create') {
+        $preflight += @'
+
+$deploy = Get-Command cluster-deploy.ps1 -ErrorAction Stop
+if (-not $deploy.Parameters.ContainsKey('TopologyContent')) { throw 'Update the VM tools before using declarative deployments.' }
+. (Join-Path (Split-Path -Parent $deploy.Source) 'cluster-utils.ps1')
+Write-Output "CLUSTER_ADDRESS=$(Get-ClusterDataPlaneIp)"
+'@
+    }
+    $addresses = @{}
+    foreach ($node in $Cluster.Nodes) {
+        $output = @(Invoke-Remote -Cmd $preflight -TargetHost $node.HostName -Label 'preflight' -CaptureOutput)
+        if ($Operation -eq 'create') {
+            $markers = @($output | Where-Object { $_ -match '^CLUSTER_ADDRESS=' })
+            $address = $null
+            $ip = if ($markers.Count -eq 1) { ($markers[0] -replace '^CLUSTER_ADDRESS=', '').Trim() } else { '' }
+            if (-not [Net.IPAddress]::TryParse($ip, [ref]$address) -or
+                $address.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork -or $addresses.ContainsKey($ip)) {
+                throw "Invalid or duplicate eth1 address from $($node.HostName): $ip"
+            }
+            $addresses[$ip] = $true
+            $node.Ip = $ip
+        }
+    }
+
+    Write-Host "==== declared cluster ($Operation): $($Cluster.Nodes.Count) VM(s) ====" -ForegroundColor Cyan
+    foreach ($node in $Cluster.Nodes) {
+        $command = "mcluster.ps1 -Action $(if ($Operation -eq 'create') { 'start' } else { 'stop' }) -System $($Cluster.System) -Nodes 1 -BasePort $($Cluster.Port) -InstanceOnly"
+        if ($Operation -eq 'create') {
+            $command += " -ConfContent $instanceContent -ConfName instance.conf -Clean"
+            if ($UseTls) { $command += ' -Tls' }
+        }
+        Invoke-Remote -Cmd $command -TargetHost $node.HostName -Label $Operation
+    }
+    if ($Operation -eq 'create') {
+        $nodes = @($Cluster.Nodes | Select-Object Vm, Role, Slots, Primary, Ip, Port)
+        $json = ConvertTo-Json -InputObject $nodes -Depth 10 -Compress
+        $content = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
+        $command = "cluster-deploy.ps1 -Action setup -System $($Cluster.System) -TopologyContent $content"
+        if ($UseTls) { $command += ' -Tls' }
+        Invoke-Remote -Cmd $command -TargetHost $Cluster.Nodes[0].HostName -Label 'setup'
+    }
+}
+
+if ($clusterDefinition) {
+    Invoke-DeclaredCluster -Cluster $clusterDefinition -Operation $Action -UseTls:$Tls
+    Write-Host "==== declared cluster ($Action) complete ====" -ForegroundColor Green
+    return
 }
 
 $cacheRoot = Get-PeerCacheRoot

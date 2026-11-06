@@ -76,7 +76,7 @@ normally be inferred from a host such as `vm0.ds8server.<region>.cloudapp.azure.
 the resource group can be inferred through Azure CLI when the local cache is first
 created.
 
-> **🔑 SSH key resolution:** `cluster.ps1` (like `manage-vmss.ps1`) SSHs from your **local machine into the VMs** using your personal keys. It resolves the private key from `01-resources/security/manifest.json` — expanding `basePath` and picking the first existing entry in `userKeys` — falling back to `~/.ssh/id_ed25519` if none is found. Pass `-SshKey <path>` to override. The `vmKeys` entry / Key Vault key is **not** used here; that key is only for **VM-to-VM** (intra-cluster) SSH. `manifest.json` is authored/edited by you; `01-resources/deploy-common-resources.ps1` copies the listed public keys into `security/` and uploads the `vmKeys` private key to Key Vault.
+> **🔑 SSH key resolution:** `cluster.ps1` SSHs from your **local machine into the VMs** using your personal keys. Both declarative and legacy operations resolve the private key from `01-resources/security/manifest.json`, expanding `basePath` and picking the first existing entry in `userKeys`. A missing/unconfigured manifest or missing declared keys produces a configuration error; there is no fallback to an undeclared key. Pass `-SshKey <path>` to override. The `vmKeys` entry / Key Vault key is **not** used here; that key is only for **VM-to-VM** (intra-cluster) SSH. Initialize the git-ignored manifest once per checkout using `01-resources/security/initialize-manifest.ps1 -SshUserKey <personal-key-names> -SshVmKey <existing-vm-key-name>`. `01-resources/deploy-common-resources.ps1` copies the listed public keys into `security/` and uploads the `vmKeys` private key to Key Vault.
 
 > **⚠️ Azure VPN required:** These commands run locally and SSH into the remote server VMs by their public Azure hostnames. You must be connected to the **Azure VPN** for the local machine to reach and SSH into the remote machines. Example invocations:
 >
@@ -84,6 +84,98 @@ created.
 > pwsh .\03-workload\cluster.ps1 --serverhost vm1.d128ldsv6server.canadaeast.cloudapp.azure.com --clean --instancespervm 1 --vmcount 4 --system garnet --action start --conf .\02-platform\tools\config\garnet\garnet-aofx16m.conf --replicas 1 --createmanual
 > pwsh .\03-workload\cluster.ps1 --serverhost vm1.d128ldsv6server.canadaeast.cloudapp.azure.com --instancespervm 1 --vmcount 4 --system garnet --action stop
 > ```
+
+## Declarative cluster definitions
+
+`cluster.ps1` accepts the cluster JSON files in `templates/` through `-Definition`
+(alias `-ClusterDefinition`). The benchmark template remains review-only; benchmark
+declaration execution is not implemented.
+
+```powershell
+# Destructive: stop and clean the declared instances, start them, then form the cluster.
+.\03-workload\cluster.ps1 --action create --definition .\03-workload\templates\cluster-explicit.template.json --rg <resource-group> --vmssname d128ldsv6
+
+# Kill only the declared server instances; do not clean data or touch client vm2.
+.\03-workload\cluster.ps1 --action stop --definition .\03-workload\templates\cluster-explicit.template.json --rg <resource-group> --vmssname d128ldsv6
+
+# Interactive: list VMSS in the resource group, then select one by index or name.
+.\03-workload\cluster.ps1 --action create --definition .\03-workload\templates\cluster-auto.template.json --rg <resource-group>
+```
+
+Update the VM tools bundle before using these actions; it includes the shared
+`cluster-utils.ps1` helper and scoped instance management. `create` preflights SSH,
+tool support, and each declared VM's `eth1` address before any cleanup. Azure
+inventory resolves the environment; peer caches do not add nodes to the
+declaration. Only the listed VMs participate. Instance
+configuration content is shipped from the workstation. Setup verifies all slots,
+each declared role, and replica links/full-sync completion before reporting success.
+The final setup summary lists each VM's endpoint, role, primary, slots, health, and
+replica sync status. It reports `Cluster is UP` only after these checks and a
+successful `PING` on every node.
+
+`create` always cleans the selected system's per-port instance directories under
+the managed home, ramdisk, NVMe, and `/dev/shm` roots. Other ports are left alone.
+`stop` confirms termination without requiring the referenced instance config file
+to remain available. A failed operation is reported as an error; already started
+instances are not automatically rolled back and can be stopped with the same
+definition.
+
+`-SshKey`, `-SshUser`, and Garnet `-Tls` remain available. Do not combine a definition
+with legacy topology/discovery flags such as `-System`, `-Conf`, `-VmCount`,
+`-Replicas`, or `-Clean`. Existing `start`, `stop`, and `restart` usage without
+`-Definition` is unchanged.
+
+- `cluster-explicit.template.json`: primary `vm0` owns all slots (`0..16383`);
+  `vm1` is its replica.
+- `cluster-auto.template.json`: the same VM roles, with `auto` assigning all slots
+  to the sole primary, `vm0`.
+- `benchmark.template.json`: one benchmark process on client `vm2`, targeting
+  primary `vm0`.
+
+Templates contain no `VmDomain` or `SshUser`. Provide `-ResourceGroup` (alias `-rg`)
+and optionally `-VmssName`; omitting the name lists available VMSS and prompts.
+Exactly one VMSS must be selected. `-NonInteractive` requires an explicit name.
+Azure login and read access to the VMSS and its instance public IPs are required.
+The shared `02-platform/vmss-utils.ps1` helper is also used by `manage-vmss.ps1`.
+
+Declared VM names match the first DNS label of Azure-reported instance FQDNs.
+The tool does not construct domains from the VMSS name or assume VM instance IDs
+match DNS labels. Missing or ambiguous FQDNs fail before any cleanup. SSH uses the
+VMSS admin username unless `-SshUser` overrides it, and workstation keys still
+come from `01-resources/security/manifest.json`.
+
+Older declarations containing `VmDomain` and `SshUser` still work without Azure
+selection parameters. Supplying `-ResourceGroup`/`-VmssName` switches them to
+VMSS resolution, with Azure supplying the username unless explicitly overridden.
+
+`InstanceConfig` paths are relative to the declaration file on the workstation. Server instances
+use the declared port and their VM's internal data-plane address; benchmark
+traffic likewise uses the seed VM's internal data-plane address, not its public
+SSH address. SSH keys follow the existing key-resolution convention.
+
+Cluster templates use `Primaries` and `Replicas` groups. Each group has a nonempty
+`VMs` array. A primary group's `Slots` is `"auto"` or an array of inclusive ranges;
+explicit ranges require exactly one VM in the group. All VMs in a replica group
+replicate its scalar `Primary`. Replicas can be omitted or an empty array.
+Groups expand into the existing per-node representation. Existing `Nodes`
+definitions remain supported, but cannot be combined with grouped definitions.
+
+Cluster examples run one server instance per VM. Primary slot assignments must
+cover `0..16383` without overlaps or gaps; replicas reference a declared primary
+and do not own slots. The examples demonstrate all-explicit or all-`auto` primary
+assignments; mixing explicit and `auto` assignments is rejected.
+Automatic division spans all primary VMs, preserving group order and VM order
+within each group. Earlier primaries receive one extra slot if there is a
+remainder. The single-primary auto example assigns `0..16383` to `vm0`.
+
+For benchmarks, the declaration owns VM placement and target endpoint.
+Those settings override the corresponding values in the referenced workload
+configuration, including its machine counts and multiplier. Repeated client VM
+entries are invalid: each declared client VM runs one benchmark instance.
+The benchmark target is a seed for cluster discovery, not a restriction to that
+shard. The benchmark template likewise leaves environment selection outside JSON.
+Benchmark declaration execution is not implemented; a future runner can reuse
+the shared resolver separately for client and target VMSS when they differ.
 
 ## Run Benchmarks
 

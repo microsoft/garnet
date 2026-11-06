@@ -172,6 +172,7 @@ if ($Help -or -not $rg) {
 
 $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. "$scriptDir\vmss-utils.ps1"
 $securityDir = Join-Path $scriptDir '..\01-resources\security'
 . (Join-Path $securityDir 'ssh-key-utils.ps1')
 . (Join-Path $scriptDir '..\01-resources\storage-permission-utils.ps1')
@@ -673,106 +674,10 @@ if ($Ref -and $Action -ne 'rebuild') {
 }
 
 # --- VMSS Discovery & Selection ---
-Write-Host "`n=== Discovering VMSS in resource group '$rg' ===" -ForegroundColor Cyan
-
-$allVmssJson = az vmss list --resource-group $rg --query '[].{name:name, state:provisioningState}' -o json 2>$null
-if ($LASTEXITCODE -ne 0 -or -not $allVmssJson) {
-    Write-Error "Failed to list VMSS in resource group '$rg'. Ensure the resource group exists and you're logged in."
-    exit 1
-}
-
-$allVmssInfo = @($allVmssJson | ConvertFrom-Json)
-if ($allVmssInfo.Count -eq 0) {
-    Write-Error "No VMSS found in resource group '$rg'."
-    exit 1
-}
-
-$allVmss = @($allVmssInfo | ForEach-Object { $_.name })
-
-$targetVmss = @()
-
-if (-not $VmssName) {
-    # Prompt user to select
-    Write-Host "`nAvailable VMSS:"
-    Write-Host "  (querying power state...)" -ForegroundColor DarkGray
-    $powerMap = Get-VmssPowerStates -ResourceGroup $rg -VmssNames $allVmss
-
-    # Build rows and compute column widths for aligned table output
-    $rows = for ($i = 0; $i -lt $allVmssInfo.Count; $i++) {
-        [PSCustomObject]@{
-            Idx   = "[$i]"
-            Name  = $allVmssInfo[$i].name
-            Prov  = $allVmssInfo[$i].state
-            Power = $powerMap[$allVmssInfo[$i].name]
-        }
-    }
-
-    $wIdx   = [Math]::Max('#'.Length, (($rows | ForEach-Object { $_.Idx.Length }   | Measure-Object -Maximum).Maximum))
-    $wName  = [Math]::Max('NAME'.Length, (($rows | ForEach-Object { $_.Name.Length }  | Measure-Object -Maximum).Maximum))
-    $wProv  = [Math]::Max('PROVISIONING'.Length, (($rows | ForEach-Object { $_.Prov.Length }  | Measure-Object -Maximum).Maximum))
-    $wPower = [Math]::Max('POWER'.Length, (($rows | ForEach-Object { "$($_.Power)".Length } | Measure-Object -Maximum).Maximum))
-
-    $header = "  {0}  {1}  {2}  {3}" -f `
-        '#'.PadRight($wIdx), 'NAME'.PadRight($wName), 'PROVISIONING'.PadRight($wProv), 'POWER'.PadRight($wPower)
-    Write-Host $header -ForegroundColor Cyan
-    Write-Host ("  {0}  {1}  {2}  {3}" -f `
-        ('-' * $wIdx), ('-' * $wName), ('-' * $wProv), ('-' * $wPower)) -ForegroundColor DarkGray
-
-    foreach ($row in $rows) {
-        $provColor  = if ($row.Prov -eq 'Succeeded') { 'Green' } elseif ($row.Prov -eq 'Failed') { 'Red' } else { 'Yellow' }
-        $powerColor = if ($row.Power -match 'running') { 'Green' } elseif ($row.Power -match 'deallocated|stopped') { 'DarkGray' } else { 'Yellow' }
-        Write-Host ("  {0}  {1}  " -f $row.Idx.PadRight($wIdx), $row.Name.PadRight($wName)) -NoNewline
-        Write-Host $row.Prov.PadRight($wProv) -NoNewline -ForegroundColor $provColor
-        Write-Host '  ' -NoNewline
-        Write-Host $row.Power.PadRight($wPower) -ForegroundColor $powerColor
-    }
-    Write-Host ""
-    $selection = Read-Host "Select VMSS (comma-separated indices/names, or 'all')"
-
-    if ($selection -eq 'all') {
-        $targetVmss = $allVmss
-    } else {
-        $parts = $selection -split ',' | ForEach-Object { $_.Trim() }
-        foreach ($part in $parts) {
-            if ($part -match '^\d+$') {
-                $idx = [int]$part
-                if ($idx -ge 0 -and $idx -lt $allVmss.Count) {
-                    $targetVmss += $allVmss[$idx]
-                } else {
-                    Write-Error "Invalid index: $idx"
-                    exit 1
-                }
-            } else {
-                if ($part -in $allVmss) {
-                    $targetVmss += $part
-                } else {
-                    Write-Error "VMSS '$part' not found in resource group '$rg'"
-                    exit 1
-                }
-            }
-        }
-    }
-} else {
-    # Validate provided VMSS names
-    if ($VmssName -eq 'all') {
-        $targetVmss = $allVmss
-    } else {
-        $targetVmss = $VmssName -split ',' | ForEach-Object { $_.Trim() }
-        foreach ($vmss in $targetVmss) {
-            if ($vmss -notin $allVmss) {
-                Write-Error "VMSS '$vmss' not found in resource group '$rg'. Available: $($allVmss -join ', ')"
-                exit 1
-            }
-        }
-    }
-}
-
-if ($targetVmss.Count -eq 0) {
-    Write-Error "No VMSS selected."
-    exit 1
-}
-
-Write-Host "Target VMSS: $($targetVmss -join ', ')" -ForegroundColor Green
+$targetVmss = @(Select-Vmss -ResourceGroup $rg -VmssName $VmssName -PowerStateProvider {
+    param($names)
+    Get-VmssPowerStates -ResourceGroup $rg -VmssNames $names
+})
 
 # --- List Action: show per-instance status ---
 if ($Action -eq 'list') {
