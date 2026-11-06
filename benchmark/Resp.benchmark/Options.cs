@@ -71,11 +71,11 @@ namespace Resp.benchmark
         [Option("client", Required = false, Default = ClientType.LightClient, HelpText = "Choose ClientType to run benchmark (LightClient, SERedis, GarnetClientSession)")]
         public ClientType Client { get; set; }
 
-        [Option("pool", Required = false, Default = false, HelpText = "Pool client instances. For cluster-bench: enables worker pool architecture (scalable for large clusters). For online bench: pools SERedis, GarnetClient and GarnetClientSession instances.")]
-        public bool Pool { get; set; }
+        [Option("use-fixed-worker-pool", Required = false, Default = false, HelpText = "For cluster-bench, use a fixed number of workers across all shards (--threads is global instead of per shard). For other online benchmarks, pool SERedis, GarnetClient and GarnetClientSession instances.")]
+        public bool UseFixedWorkerPool { get; set; }
 
-        [Option("broadcast", Required = false, Default = false, HelpText = "Enable broadcast mode in worker pool (--pool). Sends a request to every shard in parallel, then completes all pending responses.")]
-        public bool Broadcast { get; set; }
+        [Option("use-parallel-fan-out", Required = false, Default = false, HelpText = "With --use-fixed-worker-pool, each worker sends shard-specific work to every shard before draining all responses and starting the next round. Requests overlap across shards; no additional worker threads are created.")]
+        public bool UseParallelFanOut { get; set; }
 
         [Option("tls", Required = false, Default = false, HelpText = "Enable TLS.")]
         public bool EnableTLS { get; set; }

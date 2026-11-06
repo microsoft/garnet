@@ -146,7 +146,7 @@ namespace Resp.benchmark
 
         private void InitializeClients()
         {
-            if (opts.Client == ClientType.GarnetClientSession && opts.Pool)
+            if (opts.Client == ClientType.GarnetClientSession && opts.UseFixedWorkerPool)
             {
                 gcsPool = new AsyncPool<GarnetClientSession>(opts.NumThreads.First(), () =>
                 {
@@ -162,7 +162,7 @@ namespace Resp.benchmark
             }
             if (opts.Client == ClientType.GarnetClient)
             {
-                if (opts.Pool)
+                if (opts.UseFixedWorkerPool)
                 {
                     gdbPool = new AsyncPool<GarnetClient>(opts.NumThreads.First(), () =>
                     {
@@ -187,7 +187,7 @@ namespace Resp.benchmark
             }
             if (opts.Client == ClientType.SERedis)
             {
-                if (opts.Pool)
+                if (opts.UseFixedWorkerPool)
                 {
                     redisPool = new AsyncPool<IConnectionMultiplexer>(opts.NumThreads.First(), () =>
                     {
@@ -562,7 +562,7 @@ namespace Resp.benchmark
             var req = new OnlineReqGen(thread_id, opts.DbSize, true, opts.Zipf, opts.KeyLength, opts.ValueLength);
 
             GarnetClientSession client = null;
-            if (!opts.Pool)
+            if (!opts.UseFixedWorkerPool)
             {
                 client = new GarnetClientSession(
                     endpoint,
@@ -587,7 +587,7 @@ namespace Resp.benchmark
                     var rand = r.Next(100);
                     var op = SelectOpType(rand);
                     var startTimestamp = Stopwatch.GetTimestamp();
-                    var c = opts.Pool ? await gcsPool.GetAsync() : client;
+                    var c = opts.UseFixedWorkerPool ? await gcsPool.GetAsync() : client;
                     _ = op switch
                     {
                         OpType.PING => await c.ExecuteAsync(["PING"]),
@@ -612,7 +612,7 @@ namespace Resp.benchmark
                         _ => throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!")
                     };
 
-                    if (opts.Pool)
+                    if (opts.UseFixedWorkerPool)
                         gcsPool.Return(c);
 
                     var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
@@ -665,7 +665,7 @@ namespace Resp.benchmark
             var req = new OnlineReqGen(thread_id, opts.DbSize, true, opts.Zipf, opts.KeyLength, opts.ValueLength);
 
             GarnetClientSession client = null;
-            if (!opts.Pool)
+            if (!opts.UseFixedWorkerPool)
             {
                 client = new GarnetClientSession(
                     endpoint,
@@ -688,7 +688,7 @@ namespace Resp.benchmark
                 if (cts.IsCancellationRequested) break;
                 var rand = r.Next(100);
                 var op = SelectOpType(rand);
-                var c = opts.Pool ? await gcsPool.GetAsync() : client;
+                var c = opts.UseFixedWorkerPool ? await gcsPool.GetAsync() : client;
                 var startTimestamp = Stopwatch.GetTimestamp();
 
                 switch (op)
@@ -731,7 +731,7 @@ namespace Resp.benchmark
                     if (offset == parallel)
                     {
                         c.CompletePending(!opts.Burst);
-                        if (opts.Pool) gcsPool.Return(c);
+                        if (opts.UseFixedWorkerPool) gcsPool.Return(c);
                         offset = 0;
                         var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
                         RecordValue(thread_id, elapsed);
@@ -785,7 +785,7 @@ namespace Resp.benchmark
                 var op = SelectOpType(rand);
                 var startTimestamp = Stopwatch.GetTimestamp();
 
-                var gdb = opts.Pool ? gdbPool.Get() : garnetClient;
+                var gdb = opts.UseFixedWorkerPool ? gdbPool.Get() : garnetClient;
                 switch (op)
                 {
                     case OpType.PING:
@@ -849,7 +849,7 @@ namespace Resp.benchmark
                     waitCallback.Reset();
                 }
 
-                if (opts.Pool)
+                if (opts.UseFixedWorkerPool)
                     gdbPool.Return(gdb);
             }
             _ = Interlocked.Decrement(ref workerCount);
@@ -874,7 +874,7 @@ namespace Resp.benchmark
                     var op = SelectOpType(rand);
                     var startTimestamp = Stopwatch.GetTimestamp();
 
-                    var gdb = opts.Pool ? await gdbPool.GetAsync() : garnetClient;
+                    var gdb = opts.UseFixedWorkerPool ? await gdbPool.GetAsync() : garnetClient;
                     switch (op)
                     {
                         case OpType.PING:
@@ -917,7 +917,7 @@ namespace Resp.benchmark
                         default:
                             throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!");
                     }
-                    if (opts.Pool)
+                    if (opts.UseFixedWorkerPool)
                     {
                         gdbPool.Return(gdb);
                     }
@@ -955,7 +955,7 @@ namespace Resp.benchmark
                     var op = SelectOpType(rand);
                     var startTimestamp = Stopwatch.GetTimestamp();
 
-                    var gdb = opts.Pool ? await gdbPool.GetAsync() : garnetClient;
+                    var gdb = opts.UseFixedWorkerPool ? await gdbPool.GetAsync() : garnetClient;
 
                     async Task<string> ZADD()
                     {
@@ -989,7 +989,7 @@ namespace Resp.benchmark
                         _ => throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!")
                     };
 
-                    if (opts.Pool)
+                    if (opts.UseFixedWorkerPool)
                         gdbPool.Return(gdb);
 
                     if (offset == parallel)
@@ -1029,7 +1029,7 @@ namespace Resp.benchmark
                     var op = SelectOpType(rand);
                     var startTimestamp = Stopwatch.GetTimestamp();
 
-                    var rd = opts.Pool ? redisPool.Get() : redis;
+                    var rd = opts.UseFixedWorkerPool ? redisPool.Get() : redis;
                     var db = rd.GetDatabase(0);
 
                     switch (op)
@@ -1081,7 +1081,7 @@ namespace Resp.benchmark
                             throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!");
                     }
 
-                    if (opts.Pool)
+                    if (opts.UseFixedWorkerPool)
                         redisPool.Return(rd);
 
                     var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
@@ -1117,7 +1117,7 @@ namespace Resp.benchmark
                     var op = SelectOpType(rand);
                     var startTimestamp = Stopwatch.GetTimestamp();
 
-                    var rd = opts.Pool ? await redisPool.GetAsync() : redis;
+                    var rd = opts.UseFixedWorkerPool ? await redisPool.GetAsync() : redis;
                     var db = rd.GetDatabase(0);
                     switch (op)
                     {
@@ -1174,7 +1174,7 @@ namespace Resp.benchmark
                             throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!");
                     }
 
-                    if (opts.Pool)
+                    if (opts.UseFixedWorkerPool)
                         redisPool.Return(rd);
 
                     if (offset == parallel)

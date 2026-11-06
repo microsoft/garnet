@@ -64,7 +64,7 @@ namespace Resp.benchmark
             Console.WriteLine($"ClientType used for benchmarking: {opts.Client}");
             if (opts.Online)
             {
-                Console.WriteLine($"Pool: {opts.Pool}");
+                Console.WriteLine($"UseFixedWorkerPool: {opts.UseFixedWorkerPool}");
                 Console.WriteLine($"OpWorkload {String.Join(',', opts.OpWorkload)}");
                 Console.WriteLine($"OpPercent {String.Join(',', opts.OpPercent)}");
                 if (opts.Ttl > 0)
@@ -162,15 +162,15 @@ namespace Resp.benchmark
                     return true;
                 }
 
-                if (opts.Client == ClientType.LightClient && opts.Pool && (!opts.ClusterBench || opts.Broadcast))
+                if (opts.Client == ClientType.LightClient && opts.UseFixedWorkerPool && (!opts.ClusterBench || opts.UseParallelFanOut))
                 {
-                    Console.WriteLine("Pooling of LightClient is not supported");
+                    Console.WriteLine("--use-fixed-worker-pool is not supported for LightClient in this mode");
                     return true;
                 }
 
-                if (opts.ClientHistogram && opts.Pool)
+                if (opts.ClientHistogram && opts.UseFixedWorkerPool)
                 {
-                    Console.WriteLine("Client hisogram and pool are not supported at the same time.");
+                    Console.WriteLine("Client histogram and --use-fixed-worker-pool are not supported at the same time.");
                     return true;
                 }
             }

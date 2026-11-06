@@ -551,7 +551,7 @@ namespace Resp.benchmark
 
         /// <summary>
         /// Send-only: issue a single offline batch without waiting for the response.
-        /// Called during the broadcast send phase of pipeline mode.
+        /// Called during the parallel fan-out send phase of pipeline mode.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SendSingleOfflineBatch()
@@ -780,7 +780,7 @@ namespace Resp.benchmark
 
         /// <summary>
         /// Complete pending for a previously sent offline batch and record metrics.
-        /// Called during the broadcast complete phase of pipeline mode.
+        /// Called during the parallel fan-out complete phase of pipeline mode.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CompletePendingAndRecordOfflineMetrics()
@@ -880,7 +880,7 @@ namespace Resp.benchmark
 
         /// <summary>
         /// Send-only: issue a single online operation without waiting for the response.
-        /// Called during the broadcast send phase of pipeline mode.
+        /// Called during the parallel fan-out send phase of pipeline mode.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SendSingleOnlineOperation()
@@ -915,7 +915,7 @@ namespace Resp.benchmark
 
         /// <summary>
         /// Complete pending for a previously sent online operation and record metrics.
-        /// Called during the broadcast complete phase of pipeline mode.
+        /// Called during the parallel fan-out complete phase of pipeline mode.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CompletePendingAndRecordOnlineMetrics()

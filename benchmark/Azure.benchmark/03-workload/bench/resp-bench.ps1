@@ -61,9 +61,9 @@ if ($Help) {
     Write-Host "  ValueLength      - Value length in bytes (--valuelength)"
     Write-Host "  BatchSize        - Batch size (--batchsize)"
     Write-Host "  Op               - Operation type (--op, e.g., GET, SET, MGET)"
-    Write-Host "  Broadcast        - Enable broadcast mode (true/false)"
+    Write-Host "  UseParallelFanOut - Send to all shards before draining responses (true/false, default: false)"
     Write-Host "  ClusterBench     - Enable cluster bench mode (true/false)"
-    Write-Host "  Pool             - Enable connection pooling (true/false, default: true)"
+    Write-Host "  UseFixedWorkerPool - Use a fixed worker pool across shards (true/false, default: true)"
     Write-Host "  Tls              - Enable TLS using client material in /opt/azurebench/tls"
     Write-Host "  TlsHost          - Expected TLS server identity (default: azurebench-server)"
     Write-Host "  ExtraArgs        - Additional arguments to pass"
@@ -138,9 +138,9 @@ $keyLength    = $config["KeyLength"]    ?? ""
 $valueLength  = $config["ValueLength"]  ?? ""
 $batchSize    = $config["BatchSize"]    ?? ""
 $op           = $config["Op"]           ?? ""
-$broadcast    = $config["Broadcast"]    ?? ""
+$useParallelFanOut = $config["UseParallelFanOut"] ?? "false"
 $clusterBench = $config["ClusterBench"] ?? "true"
-$pool         = $config["Pool"]         ?? "true"
+$useFixedWorkerPool = $config["UseFixedWorkerPool"] ?? "true"
 $extraArgs    = $config["ExtraArgs"]    ?? ""
 $tlsValue     = if ($Tls) { "true" } else { $config["Tls"] ?? "false" }
 $tlsHost      = $config["TlsHost"] ?? "azurebench-server"
@@ -216,14 +216,14 @@ if ($keyLength)    { $benchCmd += " --keylength $keyLength" }
 if ($valueLength)  { $benchCmd += " --valuelength $valueLength" }
 if ($batchSize)    { $benchCmd += " --batchsize $batchSize" }
 if ($op)           { $benchCmd += " --op $op" }
-if ($broadcast -eq "true") {
-    $benchCmd += " --broadcast"
+if ($useParallelFanOut -eq "true") {
+    $benchCmd += " --use-parallel-fan-out"
 }
 if ($clusterBench -eq "true") {
     $benchCmd += " --cluster-bench"
 }
-if ($pool -eq "true") {
-    $benchCmd += " --pool"
+if ($useFixedWorkerPool -eq "true") {
+    $benchCmd += " --use-fixed-worker-pool"
 }
 if ($tlsEnabled) {
     $benchCmd += " --tls --tlshost $tlsHost"

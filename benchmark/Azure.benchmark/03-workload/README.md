@@ -107,8 +107,8 @@ TlsHost=azurebench-server  # server certificate DNS identity
 
 # Optional workload tuning
 # Op=SET                # operation type (GET, SET, MGET, MSET)
-# Pool=true             # connection pool per worker
-# Broadcast=false       # broadcast requests across pool
+# UseFixedWorkerPool=true # fixed worker count across shards; otherwise per shard
+# UseParallelFanOut=false # send to all shards before draining responses
 # DbSize=1000000
 # KeyLength=16
 # ValueLength=128
