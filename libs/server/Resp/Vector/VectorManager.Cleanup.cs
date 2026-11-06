@@ -146,12 +146,13 @@ namespace Garnet.server
                     throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
                 }
 
-                ActiveThreadSession = dropSession.storageSession;
-                try
+                // Process all pending drops
+                foreach (var (k, (context, indexPtr)) in requestedDrops)
                 {
-                    // Process all pending drops
-                    foreach (var (k, (context, indexPtr)) in requestedDrops)
+                    try
                     {
+                        SetActiveThreadSession(dropSession.storageSession, default, context);
+
                         long keyHash;
                         unsafe
                         {
@@ -176,10 +177,10 @@ namespace Garnet.server
                             }
                         }
                     }
-                }
-                finally
-                {
-                    ActiveThreadSession = null;
+                    finally
+                    {
+                        ClearActiveThreadSession();
+                    }
                 }
             }
         }

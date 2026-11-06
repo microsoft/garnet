@@ -184,7 +184,8 @@ namespace Garnet.server
                 Debug.Assert(db != null, "Must have DB if session is not already set");
                 Debug.Assert(storeWrapper != null, "Must have StoreWrapper if session is not already set");
 
-                ActiveThreadSession = newStorageSession = new StorageSession(storeWrapper, new(), new(), null, null, db.Id, null, this, this.logger);
+                newStorageSession = new StorageSession(storeWrapper, new(), new(), null, null, db.Id, null, this, this.logger);
+                SetActiveThreadSession(newStorageSession, default, context);
             }
             else
             {
@@ -238,7 +239,7 @@ namespace Garnet.server
                     needsWaitForDrop = false;
                 }
 
-                using (AcquireExclusiveLocks(ActiveThreadSession, key))
+                using (AcquireExclusiveLock(ActiveThreadSession, key))
                 {
                     // If we're racing with a drop to the same key, we need to drop the lock and wait for index drop.
                     //
@@ -292,7 +293,7 @@ namespace Garnet.server
             }
             finally
             {
-                ActiveThreadSession = null;
+                ClearActiveThreadSession();
 
                 // If we spun up a new storage session, dispose it
                 newStorageSession?.Dispose();

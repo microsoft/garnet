@@ -250,6 +250,15 @@ namespace Garnet.server
         internal static StorageSession ActiveThreadSession;
 
         /// <summary>
+        /// Used to thread the chain of backreferences from shallow copies across p/invoke and reverse p/invoke boundaries.
+        /// 
+        /// Tracks <see cref="ActiveThreadSession"/> closely, but unlike that it is not always set as not all Vector Sets
+        /// start as shallow copies.
+        /// </summary>
+        [ThreadStatic]
+        internal static ReadOnlyMemory<ulong> ActiveThreadShallowCopyBackReferences;
+
+        /// <summary>
         /// Destination for copying the small graph "stub" records (NeighborList adjacency, internal/external id
         /// maps, quantized vectors) back into memory when they are read from disk (see
         /// <see cref="VectorReadBatch.ReadCopyOptions"/>). Set from <see cref="GarnetServerOptions.EnableReadCache"/>

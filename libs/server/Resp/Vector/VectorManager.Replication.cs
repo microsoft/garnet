@@ -469,7 +469,7 @@ namespace Garnet.server
                     localIndexValue = remappedIndexValue;
                 }
 
-                ActiveThreadSession = currentSession;
+                SetActiveThreadSession(currentSession, default, context);
                 try
                 {
                     DateTime? expiration = expirationTicks == 0 ? null : new DateTime(expirationTicks, DateTimeKind.Utc);
@@ -477,7 +477,7 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    ActiveThreadSession = null;
+                    ClearActiveThreadSession();
                 }
 
                 // Element records for a migration are all transmitted, applied, and acknowledged before its index

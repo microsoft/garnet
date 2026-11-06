@@ -3177,7 +3177,7 @@ namespace Garnet.test.cluster
         private static unsafe byte[] ReadRawVectorTerm(GarnetServer server, string key, byte termType, ReadOnlySpan<byte> termKey, int bufferSize = 8192)
         {
             var stub = ReadRawVectorStub(server, key);
-            VectorManager.ReadIndex(stub, out var indexContext, out _, out _, out _, out _, out _, out _, out _, out _);
+            VectorManager.ReadIndex(stub, out var indexContext, out _, out _, out _, out _, out _, out _, out _, out _, out _);
             Span<byte> namespaceBytes = stackalloc byte[sizeof(uint)];
             VectorManager.StoreContextInNamespace(indexContext | termType, ref namespaceBytes);
 
