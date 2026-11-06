@@ -586,6 +586,41 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task DELEXAsync()
+        {
+            string[] conditions = ["IFEQ", "IFNE", "IFDEQ", "IFDNE"];
+            foreach (var condition in conditions)
+            {
+                await TestNonVectorSetCommandAsync((database, againstKey) =>
+                    database.ExecuteAsync("DELEX", againstKey, condition, "0000000000000000")).ConfigureAwait(false);
+            }
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase();
+            var key = await CreateKeyWithTypeAsync(db, KeyType.VectorSet).ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, (long)await db.ExecuteAsync("DELEX", key).ConfigureAwait(false));
+            ClassicAssert.IsFalse(await db.KeyExistsAsync(key).ConfigureAwait(false));
+        }
+
+        [Test]
+        public Task DELIFEQAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommandAsync);
+
+            static Task RunCommandAsync(IDatabase db, RedisKey againstKey)
+            => db.ExecuteAsync("DELIFEQ", againstKey, "foo");
+        }
+
+        [Test]
+        public Task DIGESTAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommandAsync);
+
+            static Task RunCommandAsync(IDatabase db, RedisKey againstKey)
+            => db.ExecuteAsync("DIGEST", againstKey);
+        }
+
+        [Test]
         public Task GETBITAsync()
         {
             return TestNonVectorSetCommandAsync(RunCommandAsync);
