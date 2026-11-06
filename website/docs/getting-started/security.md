@@ -24,6 +24,13 @@ subject name on Windows via `cert-subject-name`. Certificate refresh can be done
 `--cert-file-name` accepts either a PKCS#12/PFX file, or a PEM-encoded certificate (`.pem`, `.crt`, `.cer`); the actual format is auto-detected from the file's contents. When pointing
 `--cert-file-name` at a PEM certificate, `--cert-password` is repurposed as the path to the matching PEM private key file, unless the private key is already included in the certificate file.
 
+On Windows, file-based certificate loading first uses the default private-key storage. If the PKCS#12 import fails with
+`0x80070002` (a missing key store, for example when an IIS or service identity has no loaded user profile), Garnet retries once
+with `MachineKeySet`. This applies to both PFX files and the PKCS#12 re-import of PEM certificates. The process identity needs
+permission to create and use keys in the machine key storage; Garnet does not change these permissions or install the certificate
+in a system certificate store. The fallback does not request `PersistKeySet`; .NET attempts to remove the imported key when
+the certificate is disposed, but cleanup is best-effort. Other import errors and failures of the retry are propagated. Non-Windows loading is unchanged.
+
 ```bash
     GarnetServer --tls --cert-file-name testcert.pfx --cert-password placeholder
 ```

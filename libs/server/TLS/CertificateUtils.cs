@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 namespace Garnet.server.TLS
@@ -73,7 +74,8 @@ namespace Garnet.server.TLS
             if (IsPemFile(fileName))
                 return GetCertificateFromPemFile(fileName, password);
 
-            return X509CertificateLoader.LoadPkcs12FromFile(fileName, password);
+            return LoadPkcs12WithFallback(
+                flags => X509CertificateLoader.LoadPkcs12FromFile(fileName, password, flags), OperatingSystem.IsWindows());
         }
 
         /// <summary>
@@ -87,7 +89,26 @@ namespace Garnet.server.TLS
 
             // The certificate above carries an ephemeral key set, which isn't supported by SslStream on
             // all platforms. Re-import it via PKCS#12 to get a certificate with a persisted key set.
-            return X509CertificateLoader.LoadPkcs12(pemCertificate.Export(X509ContentType.Pkcs12), password: null);
+            var pkcs12 = pemCertificate.Export(X509ContentType.Pkcs12);
+            return LoadPkcs12WithFallback(
+                flags => X509CertificateLoader.LoadPkcs12(pkcs12, password: null, flags), OperatingSystem.IsWindows());
+        }
+
+        /// <summary>
+        /// Imports a PKCS#12 certificate, retrying with machine key storage when the Windows user key store is missing.
+        /// </summary>
+        internal static X509Certificate2 LoadPkcs12WithFallback(Func<X509KeyStorageFlags, X509Certificate2> load, bool isWindows)
+        {
+            try
+            {
+                return load(X509KeyStorageFlags.DefaultKeySet);
+            }
+            catch (CryptographicException ex) when (isWindows && ex.HResult == unchecked((int)0x80070002))
+            {
+                // A Windows identity without a loaded profile may have no user key store (ERROR_FILE_NOT_FOUND).
+                // MachineKeySet supports SslStream; omit PersistKeySet so disposal can attempt key cleanup.
+                return load(X509KeyStorageFlags.MachineKeySet);
+            }
         }
 
         /// <summary>
