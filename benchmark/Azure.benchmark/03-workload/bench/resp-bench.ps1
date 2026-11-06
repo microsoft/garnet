@@ -21,6 +21,9 @@
 param(
     [string]$ConfigFile = "$PSScriptRoot\bench-cluster.conf",
     [string[]]$ClientHosts,
+    [string]$ClientMachineHostnames,
+    [string]$ClientMachineCount = '1',
+    [ValidateRange(1, 2147483647)][int]$Multiplier = 1,
     [string]$SshUser,
     [string]$SshKey,
     [string]$Server,
@@ -36,12 +39,12 @@ param(
 if ($Help) {
     Write-Host "Usage: resp-bench.ps1 [-ConfigFile <path>] [-Detail] [-Monitor] [-Background] [-Tls] [-Verbose]"
     Write-Host ""
-    Write-Host "Reads parameters from a key=value config file and runs"
+    Write-Host "Forwards a native JSON .conf file unchanged and runs"
     Write-Host "Resp.benchmark on remote VMs via SSH."
     Write-Host ""
     Write-Host "Without -Verbose: runs inline in parallel, aggregates results."
     Write-Host "With -Verbose: spawns Windows Terminal panes for visual inspection."
-    Write-Host "-ClientHosts supplies exact clients (one workload each), overriding host counts/multiplier and skipping the 1s config probe."
+    Write-Host "-ClientHosts supplies exact clients (one workload each), overriding host counts/multiplier."
     Write-Host "-SshUser/-SshKey/-Server/-Port override connection settings for declarative execution."
     Write-Host "-PrintOutput prints captured benchmark-client output inline; failed output is always printed."
     Write-Host ""
@@ -55,27 +58,8 @@ if ($Help) {
     Write-Host "            benchmark runs (a subset of -Detail). Does not print the"
     Write-Host "            full per-instance result breakdown after the run."
     Write-Host ""
-    Write-Host "Config file keys:"
-    Write-Host "  SshKey           - Path to SSH private key"
-    Write-Host "  SshUser          - SSH username"
-    Write-Host "  ClientMachineHostnames - Base remote hostname (vm prefix before index)"
-    Write-Host "  ClientMachineCount     - Number of physical hosts/VMs"
-    Write-Host "  Multiplier       - Benchmark instances per VM (default: 1)"
-    Write-Host "  Server           - Benchmark target host (--host)"
-    Write-Host "  Port             - Benchmark target port (--port)"
-    Write-Host "  Threads          - Number of threads (--threads)"
-    Write-Host "  Runtime          - Runtime in seconds (--runtime)"
-    Write-Host "  DbSize           - Database size (--dbsize)"
-    Write-Host "  KeyLength        - Key length in bytes (--keylength)"
-    Write-Host "  ValueLength      - Value length in bytes (--valuelength)"
-    Write-Host "  BatchSize        - Batch size (--batchsize)"
-    Write-Host "  Op               - Operation type (--op, e.g., GET, SET, MGET)"
-    Write-Host "  UseParallelFanOut - Send to all shards before draining responses (true/false, default: false)"
-    Write-Host "  ClusterBench     - Enable cluster bench mode (true/false)"
-    Write-Host "  UseFixedWorkerPool - Use a fixed worker pool across shards (true/false, default: true)"
-    Write-Host "  Tls              - Enable TLS using client material in /opt/azurebench/tls"
-    Write-Host "  TlsHost          - Expected TLS server identity (default: azurebench-server)"
-    Write-Host "  ExtraArgs        - Additional arguments to pass"
+    Write-Host "Use Resp.benchmark --help for native option names; JSON keys use Options property names."
+    Write-Host "SSH placement uses -ClientHosts or -ClientMachineHostnames/-ClientMachineCount/-Multiplier."
     return
 }
 
@@ -83,22 +67,11 @@ $ErrorActionPreference = 'Stop'
 # --- Load shared utilities ---
 . "$PSScriptRoot\utils.ps1"
 
-# --- Parse config file ---
-if (-not (Test-Path $ConfigFile)) {
-    Write-Error "Config file not found: $ConfigFile"
-    exit 1
-}
-
-$config = @{}
-Get-Content $ConfigFile | ForEach-Object {
-    $line = $_.Trim()
-    if ($line -and -not $line.StartsWith("#")) {
-        $parts = $line -split "=", 2
-        if ($parts.Count -eq 2) {
-            $config[$parts[0].Trim()] = $parts[1].Trim()
-        }
-    }
-}
+$configJson = Get-Content -LiteralPath $ConfigFile -Raw
+$document = [System.Text.Json.JsonDocument]::Parse($configJson)
+$document.Dispose()
+$config = $configJson | ConvertFrom-Json -AsHashtable
+if ($config -isnot [System.Collections.IDictionary]) { throw 'Benchmark config must be a JSON object.' }
 
 # --- Resolve parameters ---
 # --- Resolve SSH keys from security/manifest.json ---
@@ -114,93 +87,55 @@ if ($SshKey) {
         Write-Error $_.Exception.Message
         exit 1
     }
-} elseif ($config["SshKey"]) {
-    $sshKeyRaw = $config["SshKey"]
-    if ($sshKeyRaw -match '^\[(.+)\]$') {
-        $candidates = $Matches[1] -split ',\s*'
-        $sshKey = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-        if (-not $sshKey) {
-            Write-Error "None of the SSH keys exist: $($candidates -join ', ')"
-            exit 1
-        }
-    } else {
-        $sshKey = $sshKeyRaw
-    }
 } else {
     $sshKey = "$env:USERPROFILE\.ssh\id_ed25519"
+    if (-not (Test-Path -LiteralPath $sshKey -PathType Leaf)) {
+        throw 'SSH key configuration is missing. Supply -SshKey or configure the security manifest.'
+    }
 }
-$sshUser         = if ($SshUser) { $SshUser } else { $config["SshUser"] ?? "guser" }
-$sshHostBase     = $config["ClientMachineHostnames"] ?? "vm0.dps8v6vmss.southcentralus.cloudapp.azure.com"
-$hostCountRaw    = $config["ClientMachineCount"] ?? "1"
-$multiplier      = if ($ClientHosts) { 1 } else { [int]($config["Multiplier"] ?? "1") }
-
-$benchHost    = if ($Server) { $Server } else { $config["Server"] ?? "10.5.1.4" }
-$benchPort    = if ($Port) { [string]$Port } else { $config["Port"] ?? "7000" }
-$threads      = $config["Threads"]      ?? "4"
-$runtime      = $config["Runtime"]      ?? "60"
-$dbSize       = $config["DbSize"]       ?? ""
-$keyLength    = $config["KeyLength"]    ?? ""
-$valueLength  = $config["ValueLength"]  ?? ""
-$batchSize    = $config["BatchSize"]    ?? ""
-$op           = $config["Op"]           ?? ""
-$useParallelFanOut = $config["UseParallelFanOut"] ?? "false"
-$clusterBench = $config["ClusterBench"] ?? "true"
-$useFixedWorkerPool = $config["UseFixedWorkerPool"] ?? "true"
-$extraArgs    = $config["ExtraArgs"]    ?? ""
-if ($ClientHosts -and $extraArgs -match '(?i)(^|\s)(?:--(?:host|port)(?:\s|=|$)|-[hp]\S*)') {
-    throw 'ExtraArgs cannot override the declarative target host or port.'
-}
-$tlsValue     = if ($Tls) { "true" } else { $config["Tls"] ?? "false" }
-$tlsHost      = $config["TlsHost"] ?? "azurebench-server"
-
-if ($tlsValue -notin @("true", "false")) {
-    Write-Error "Tls must be 'true' or 'false', got '$tlsValue'."
-    exit 1
-}
-$tlsEnabled = $tlsValue -eq "true"
+$sshUser = if ($SshUser) { $SshUser } else { 'guser' }
+$multiplier = if ($ClientHosts) { 1 } else { $Multiplier }
+$benchHost = if ($Server) { $Server } else { $config["Address"] ?? '127.0.0.1' }
+$benchPort = if ($Port) { [string]$Port } else { [string]($config["Port"] ?? 6379) }
+$runtime = $config["RunTime"] ?? 15
+$clusterBench = if ($config["ClusterBench"]) { 'true' } else { 'false' }
+$tlsEnabled = $Tls -or $config["EnableTLS"]
+$tlsHost = $config["TlsHost"] ?? $(if ($Tls) { 'azurebench-server' } else { 'GarnetTest' })
+if ([Uri]::CheckHostName($benchHost) -eq [UriHostNameType]::Unknown) { throw "Invalid benchmark target: $benchHost" }
 
 if ($tlsEnabled -and $tlsHost -notmatch '^[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$') {
     Write-Error "TlsHost is not a valid DNS name: '$tlsHost'."
     exit 1
 }
 
-if ($tlsEnabled -and $extraArgs -match '(?i)(^|\s)--(?:tls|tlshost|cert-file-name|cert-password(?:-file)?|issuer-certificate-path)(?:\s|=|$)') {
-    Write-Error "ExtraArgs must not override TLS options. Use Tls and TlsHost in the config file."
-    exit 1
-}
-
 # --- Derive host list from base + count ---
-$sshHosts = @(Get-BenchmarkClientHosts -ClientHosts $ClientHosts -HostBase $sshHostBase -HostCount $hostCountRaw -Multiplier ([string]$multiplier))
+if (-not $ClientHosts -and -not $ClientMachineHostnames) {
+    throw 'Supply -ClientHosts or -ClientMachineHostnames, or use benchmark.ps1 with a declarative definition.'
+}
+$sshHosts = @(Get-BenchmarkClientHosts -ClientHosts $ClientHosts -HostBase $ClientMachineHostnames -HostCount $ClientMachineCount -Multiplier ([string]$multiplier))
 
 # --- Build benchmark command ---
-$benchCmd = "Resp.benchmark --host $benchHost --port $benchPort --threads $threads --runtime $runtime"
-if ($dbSize)       { $benchCmd += " --dbsize $dbSize" }
-if ($keyLength)    { $benchCmd += " --keylength $keyLength" }
-if ($valueLength)  { $benchCmd += " --valuelength $valueLength" }
-if ($batchSize)    { $benchCmd += " --batchsize $batchSize" }
-if ($op)           { $benchCmd += " --op $op" }
-if ($useParallelFanOut -eq "true") {
-    $benchCmd += " --use-parallel-fan-out"
+$nativeOverrides = @()
+if ($Server) { $nativeOverrides += @('--host', $Server) }
+if ($Port) { $nativeOverrides += @('--port', [string]$Port) }
+if ($Tls) {
+    $nativeOverrides += @('--tls', '--tlshost', $tlsHost,
+        '--cert-file-name', '/opt/azurebench/tls/client.pfx',
+        '--cert-password-file', '/opt/azurebench/tls/client.password',
+        '--issuer-certificate-path', '/opt/azurebench/tls/ca.crt')
 }
-if ($clusterBench -eq "true") {
-    $benchCmd += " --cluster-bench"
-}
-if ($useFixedWorkerPool -eq "true") {
-    $benchCmd += " --use-fixed-worker-pool"
-}
-if ($tlsEnabled) {
-    $benchCmd += " --tls --tlshost $tlsHost"
-    $benchCmd += " --cert-file-name /opt/azurebench/tls/client.pfx"
-    $benchCmd += " --cert-password-file /opt/azurebench/tls/client.password"
-    $benchCmd += " --issuer-certificate-path /opt/azurebench/tls/ca.crt"
-}
-if ($extraArgs) {
-    $benchCmd += " $extraArgs"
-}
+$benchCmd = "Resp.benchmark --config <uploaded $([IO.Path]::GetFileName($ConfigFile))> $($nativeOverrides -join ' ')"
+$remoteBenchCommand = New-RespBenchmarkRemoteCommand -ConfigFile $ConfigFile -Arguments $nativeOverrides
+$validateCommand = New-RespBenchmarkRemoteCommand -ConfigFile $ConfigFile -Arguments ($nativeOverrides + '--validate-config')
 
 # --- Probe server info ---
 $probeOpts = @('-n', '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes')
 $probeHost = $sshHosts | Select-Object -First 1
+
+foreach ($clientHost in ($sshHosts | Select-Object -Unique)) {
+    $validationOutput = ssh -i $sshKey @probeOpts "${sshUser}@${clientHost}" $validateCommand 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "Native benchmark configuration validation failed on '${clientHost}': $($validationOutput -join "`n")" }
+}
 
 if ($tlsEnabled) {
     $tlsPreflightScript = @"
@@ -301,12 +236,8 @@ Write-Host "  $benchCmd" -ForegroundColor Yellow
 Write-Host "=========================" -ForegroundColor Yellow
 Write-Host ""
 
-if ($ClientHosts) {
-    $workersPerInstance = $null
-    Write-Host 'Configuration probe skipped: exactly one workload instance will run per declared client.'
-} else {
-    $workersPerInstance = Show-BenchmarkConfig -BenchCmd $benchCmd -SshKey $sshKey -SshUser $sshUser -ProbeHost $probeHost -Runtime $runtime -DbSize ($config["DbSize"] ?? "") -Threads ([int]$threads)
-}
+$workersPerInstance = $null
+Write-Host 'Configuration validated natively without launching a probe workload.'
 
 # --- Print client machine info ---
 Show-ClientMachineInfo -SshHosts $sshHosts -SshKey $sshKey -SshUser $sshUser
@@ -356,7 +287,7 @@ if ($Background) {
         $host_ = $sshHosts[$i]
         $logFile = "$runDir\$($host_ -replace '\.', '-')-$i.log"
         $logFiles += $logFile
-        $paneCmd = "powershell -NoExit -Command `"ssh -i '$sshKey' -o StrictHostKeyChecking=no $sshUser@$host_ '$benchCmd' 2>&1 | Tee-Object -FilePath '$logFile'`""
+        $paneCmd = "powershell -NoExit -Command `"ssh -i '$sshKey' -o StrictHostKeyChecking=no $sshUser@$host_ '$remoteBenchCommand' 2>&1 | Tee-Object -FilePath '$logFile'`""
 
         if ($i % $maxPerTab -eq 0) {
             if ($i -eq 0) {
@@ -433,7 +364,7 @@ if ($Background) {
         $outputText = ""
 
         try {
-            $benchCommand = $using:benchCmd
+            $benchCommand = $using:remoteBenchCommand
             $output = ssh -n -i $using:sshKey $using:sshOpts "${using:sshUser}@${host_}" $benchCommand 2>&1
             $exitCode = $LASTEXITCODE
             $outputText = $output -join "`n"

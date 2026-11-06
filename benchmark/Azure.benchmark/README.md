@@ -124,8 +124,13 @@ pwsh .\03-workload\cluster.ps1 `
 
 # 5. Run benchmark from client VMs -> see 03-workload/README.md
 pwsh .\03-workload\bench\resp-bench.ps1 `
-  --configfile .\03-workload\bench\bench-cluster.conf
+  --configfile .\03-workload\bench\bench-cluster.conf `
+  -ClientHosts vm0.myclient.example.com
 ```
+
+RESP workload `.conf` files are native JSON consumed by `Resp.benchmark` itself;
+SSH placement stays outside them. See the workload README for declarative VMSS
+selection and config migration. Memtier keeps its key=value format.
 
 > **VM provisioning takes time:** A newly created VMSS instance may accept SSH before
 > cloud-init has finished downloading and installing the tools bundle. Wait for

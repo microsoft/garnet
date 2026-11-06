@@ -25,13 +25,15 @@ storage cluster and executing client benchmarks over SSH. Run this layer **after
 .\03-workload\cluster.ps1 -Action start -System valkey -Conf .\02-platform\tools\config\valkey\valkey-cache.conf -InstancePerVm 2 -VmCount <server-vm-count> -Clean
 
 # Run a benchmark from the client VMs
-.\03-workload\bench\resp-bench.ps1 -Detail
+.\03-workload\bench\resp-bench.ps1 -ClientHosts <client-host> -Detail
 .\03-workload\bench\memtier-bench.ps1 -Background
 ```
 
 ## Manage Cluster (`cluster.ps1`)
 
-Start or stop the storage cluster on server VMs. Reads connection info from `bench/bench-cluster.conf`.
+Start or stop the storage cluster on server VMs. Declarative runs resolve SSH
+placement through VMSS selection. Legacy runs require `-ServerHost` (or `Host`
+in an optional key=value `-ConfigFile`); RESP workload files contain no SSH settings.
 
 ```powershell
 # Start a 2-instance-per-node valkey cache cluster (clean deploy)
@@ -193,12 +195,15 @@ they differ, using the same resource group.
 ```
 
 `System` selects `Resp.benchmark` or `memtier_benchmark`. `InstanceConfig` points to
-the existing key=value workload configuration, resolved relative to the JSON file.
-Both RESP templates use `System: "Resp.benchmark"`: `ClusterBench=true` in
+the native RESP JSON workload configuration (or memtier's key=value configuration),
+resolved relative to the JSON file.
+Both RESP templates use `System: "Resp.benchmark"`: `"ClusterBench": true` in
 `*-cluster.conf` selects its `ClusterBench` implementation, while
-`ClusterBench=false` in `bench-standalone.conf` selects the standalone RESP benchmark.
+`"ClusterBench": false` in `bench-standalone.conf` selects the standalone RESP benchmark.
 The standalone profile disables the cluster worker pool and fan-out and contains
-no cluster-only extra arguments. `memtier-cluster.conf` retains `Cluster=true`
+no cluster-only options. It uses `"LSet": true` for single-key preload, which also
+avoids cross-slot MSET when targeting one cluster primary.
+`memtier-cluster.conf` retains `Cluster=true`
 for the separate memtier driver.
 Standalone offline results report Kops/sec; data/wire bandwidth is omitted because
 that benchmark implementation does not emit those metrics.
@@ -212,8 +217,12 @@ and obtains the target's `eth1` address through the existing cluster helper.
 The runner invokes `bench/resp-bench.ps1` or `bench/memtier-bench.ps1` inline.
 Their workload options, TLS checks, logs, progress, and aggregation remain in use.
 The declaration overrides client host/count/multiplier and target host/port settings.
-Each client runs exactly one workload instance; RESP's preliminary one-second
-configuration benchmark is skipped. All clients are checked for the selected
+Each client runs exactly one workload instance; RESP validates the native config
+on every client without launching a preliminary workload. The file is forwarded
+byte-for-byte, with CLI overrides only for target host/port and optional TLS.
+Temporary remote config files are removed on exit, including client errors.
+New native benchmark options require no Azure forwarding-map changes.
+All clients are checked for the selected
 benchmark executable before workloads start. Failed instances return an error
 instead of reporting declarative completion; logs remain under `03-workload/results`.
 Declarative `-Verbose` prints captured benchmark-client stdout/stderr, grouped by VM,
@@ -227,38 +236,41 @@ Dry runs resolve Azure inventory and the target address, but do not launch workl
 
 ### Configuration (`bench/bench-cluster.conf`)
 
-```ini
-# SSH connection
-SshUser=guser
-ClientMachineHostnames=[vm0.myclient.southcentralus.cloudapp.azure.com]
-ClientMachineCount=12   # number of VM instances (vm0..vm11)
-Multiplier=1            # benchmark instances per VM
-
-# Benchmark parameters
-Server=10.5.1.4         # target server IP
-Port=7000
-Threads=16
-Runtime=60
-ClusterBench=true
-Tls=false                  # set true for a TLS-enabled Garnet cluster
-TlsHost=azurebench-server  # server certificate DNS identity
-
-# Optional workload tuning
-# Op=SET                # operation type (GET, SET, MGET, MSET)
-# UseFixedWorkerPool=true # fixed worker count across shards; otherwise per shard
-# UseParallelFanOut=false # send to all shards before draining responses
-# DbSize=1000000
-# KeyLength=16
-# ValueLength=128
-# BatchSize=100
-# ExtraArgs=--db-size 1000000
+```json
+{
+  "Address": "10.5.1.4",
+  "Port": 7000,
+  "NumThreads": [16],
+  "RunTime": 60,
+  "ClusterBench": true,
+  "UseFixedWorkerPool": true,
+  "UseParallelFanOut": false,
+  "Op": "SET",
+  "DbSize": 1000000,
+  "KeyLength": 16,
+  "ValueLength": 128,
+  "BatchSize": [100]
+}
 ```
 
-SSH keys are resolved automatically from `01-resources/security/manifest.json` (falls back to `~/.ssh/id_ed25519`).
+RESP configs use native `Options.cs` property names, including arrays and enum
+strings. Defaults are provided by the benchmark; explicit CLI overrides take
+precedence over the file. `ExtraArgs` is removed: set its native options directly.
+Old RESP key=value files must be converted (`Threads` becomes `NumThreads`,
+`Runtime` becomes `RunTime`, `Server` becomes `Address`, `Tls` becomes `EnableTLS`).
+Memtier retains its existing key=value format.
+
+Client placement and SSH settings belong in the declaration/VMSS selection or
+driver parameters, never in the native workload file. For direct driver use,
+pass `-ClientHosts`, or `-ClientMachineHostnames` with `-ClientMachineCount` and
+optional `-Multiplier`. SSH keys are resolved automatically from
+`01-resources/security/manifest.json` (falls back to `~/.ssh/id_ed25519`).
 
 ### Running
 
 ```powershell
+# Direct driver examples require explicit client placement:
+$PSDefaultParameterValues['resp-bench.ps1:ClientHosts'] = @('vm0.myclient.example.com')
 .\03-workload\bench\resp-bench.ps1                                    # inline parallel, totals only
 .\03-workload\bench\resp-bench.ps1 -Detail                            # show per-instance results
 .\03-workload\bench\resp-bench.ps1 -Background                        # spawn Windows Terminal panes
@@ -273,7 +285,7 @@ SSH keys are resolved automatically from `01-resources/security/manifest.json` (
 | *(none)* | Inline parallel execution, prints TOTAL only |
 | `-Detail` | Adds per-instance breakdown to aggregation output |
 | `-Background` | Spawns Windows Terminal tabs/panes (2 per tab) for visual inspection |
-| `-Tls` | Enables TLS, overriding `Tls=false` or an omitted `Tls` config key |
+| `-Tls` | Enables AzureBench TLS, overriding `EnableTLS=false` or an omitted key |
 
 Before running benchmarks, the script probes the server and displays system info (name, version, OS, CPU count, port, uptime).
 
@@ -320,7 +332,7 @@ does not send a client certificate and never uses `--tls-skip-verify`.
 ## Notes on paths after the refactor
 
 - `cluster.ps1` and the `bench/*` drivers resolve SSH keys from `../01-resources/security/manifest.json` (relative to this folder / `bench/` respectively).
-- `cluster.ps1` defaults its connection config to `bench/bench-cluster.conf`; the benchmark drivers default to `bench-cluster.conf` and `memtier-cluster.conf`.
+- `cluster.ps1` accepts an optional legacy SSH connection file; it does not read RESP workload JSON. The benchmark drivers default to `bench-cluster.conf` and `memtier-cluster.conf`.
 - Benchmark output is written to `03-workload/results/<run>/` by both drivers and is git-ignored.
 - `02-platform/manage-vmss.ps1` dot-sources `bench/utils.ps1` from this layer for shared helpers.
 - The VM-side counterparts (`02-platform/tools/cluster/`, `02-platform/tools/bench/`) live under `02-platform/tools/` because they are packaged into `tools.tar.gz` and deployed into the VM guest tree; this layer is the **workstation-side** driver for them.

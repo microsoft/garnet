@@ -86,6 +86,33 @@ function Invoke-WorkloadRemoteScript {
     return $output
 }
 
+function New-RespBenchmarkRemoteCommand {
+    param([string]$ConfigFile, [string[]]$Arguments = @())
+
+    $config = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $ConfigFile).Path))
+    $argumentsJson = ConvertTo-Json -InputObject @($Arguments) -Compress
+    $encodedArguments = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($argumentsJson))
+    $script = @'
+$ErrorActionPreference = 'Stop'
+$path = Join-Path ([IO.Path]::GetTempPath()) ('garnet-benchmark-' + [guid]::NewGuid().ToString('N') + '.conf')
+try {
+    [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String('__CONFIG__'))
+    if (-not $IsWindows) {
+        [IO.File]::SetUnixFileMode($path, [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite)
+    }
+    $benchmarkArgs = @('--config', $path) + @([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__ARGUMENTS__')) | ConvertFrom-Json)
+    & Resp.benchmark @benchmarkArgs
+    $code = $LASTEXITCODE
+} finally {
+    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path }
+}
+exit $code
+'@
+    $script = $script.Replace('__CONFIG__', $config).Replace('__ARGUMENTS__', $encodedArguments)
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
+    return "pwsh -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand $encoded"
+}
+
 function Assert-RespBenchmarkResult {
     param([string]$Path, [switch]$RequireThroughput)
 

@@ -36,7 +36,7 @@ param(
     [switch]$NoCluster,
     [switch]$Tls,
     [switch]$CreateManual,
-    [string]$ConfigFile = "$PSScriptRoot\bench\bench-cluster.conf",
+    [string]$ConfigFile,
     [string]$ServerHost,
     [Alias('rg')][string]$ResourceGroup,
     [string]$VmssName,
@@ -73,8 +73,8 @@ if ($Help -or -not $Action) {
     Write-Host "  -NoCluster   Disable cluster mode (skip setup step)"
     Write-Host "  -Tls         Enable Garnet TLS with server-role Key Vault certificate material"
     Write-Host "  -CreateManual Form the cluster manually (MEET + ADDSLOTSRANGE + REPLICATE) instead of '--cluster create'"
-    Write-Host "  -ConfigFile  Path to benchmark config for SSH host/key resolution (default: bench-cluster.conf)"
-    Write-Host "  -ServerHost  Override server SSH host (default: from bench-cluster.conf Host field)"
+    Write-Host "  -ConfigFile  Optional legacy key=value SSH connection file (Host, SshUser)"
+    Write-Host "  -ServerHost  Server SSH host, required without a definition or legacy Host field"
     Write-Host "  -ResourceGroup Azure resource group (alias -rg); required for VMSS-based definitions"
     Write-Host "  -VmssName    VMSS selection; prompts when omitted with -Definition/-ResourceGroup"
     Write-Host "  -SshUser     Override SSH user (default: VMSS admin username for VMSS-based definitions)"
@@ -144,7 +144,7 @@ if ($Conf) {
 
 # --- Load config file for defaults ---
 $config = @{}
-if (Test-Path $ConfigFile) {
+if ($ConfigFile -and (Test-Path $ConfigFile)) {
     Get-Content $ConfigFile | ForEach-Object {
         $line = $_.Trim()
         if ($line -and -not $line.StartsWith("#")) {
@@ -172,7 +172,7 @@ if (-not (Test-Path -LiteralPath $SshKey -PathType Leaf)) {
 if (-not $SshUser) { $SshUser = $config["SshUser"] ?? "guser" }
 if (-not $ServerHost) { $ServerHost = $config["Host"] ?? "" }
 if (-not $ServerHost -and -not $clusterDefinition) {
-    Write-Error "No server host specified. Use -ServerHost or set Host= in bench-cluster.conf"
+    Write-Error "No server host specified. Use -ServerHost or set Host= in a legacy -ConfigFile"
     exit 1
 }
 

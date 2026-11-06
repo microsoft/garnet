@@ -87,12 +87,8 @@ Describe 'Existing benchmark driver overrides' {
         'test fixture, not a private key' | Set-Content $key
         $command = & $path -ConfigFile $definition.InstanceConfig -ClientHosts client.example.com `
             -SshKey $key -SshUser operator -Server 10.1.0.4 -Port 7000
-        if ($Mode -eq 'cluster') {
-            $command | Should Match '--cluster-bench'
-            $command | Should Match '--use-fixed-worker-pool'
-        } else {
-            $command | Should Not Match '--cluster-bench|--use-fixed-worker-pool|--use-parallel-fan-out|--replica-ops-percent|--offline-buffers'
-        }
+        $command | Should Match "--config <uploaded bench-$Mode.conf>"
+        $command | Should Not Match '--cluster-bench|--use-fixed-worker-pool|--use-parallel-fan-out|--replica-ops-percent|--offline-buffers'
     }
 
     It 'honors authoritative connection settings in <Driver>' -TestCases @(
@@ -109,12 +105,16 @@ Describe 'Existing benchmark driver overrides' {
         Set-Content -LiteralPath $path -Value $prefix
         Copy-Item (Join-Path $benchmarkDir '03-workload\bench\utils.ps1') $TestDrive
         $config = Join-Path $TestDrive 'workload.conf'
-        @('ClientMachineHostnames=wrong', 'ClientMachineCount=invalid', 'Multiplier=invalid',
-            'Server=wrong', 'Port=1', 'SshUser=wrong', 'UseFixedWorkerPool=false') | Set-Content $config
+        if ($Driver -eq 'resp-bench.ps1') {
+            '{"Address":"wrong","Port":1,"UseFixedWorkerPool":false}' | Set-Content $config
+        } else {
+            @('ClientMachineHostnames=wrong', 'ClientMachineCount=invalid', 'Multiplier=invalid',
+                'Server=wrong', 'Port=1', 'SshUser=wrong') | Set-Content $config
+        }
         $key = Join-Path $TestDrive 'key'
         'test fixture, not a private key' | Set-Content $key
         $resolved = & $path -ConfigFile $config -ClientHosts client-a.example.com,client-b.example.com `
-            -Server 10.1.0.4 -Port 7000 -SshUser operator -SshKey $key
+            -Server 10.1.0.4 -Port 7000 -SshUser operator -SshKey $key -Tls:($Driver -eq 'resp-bench.ps1')
         ($resolved.Hosts -join ',') | Should Be 'client-a.example.com,client-b.example.com'
         $resolved.User | Should Be 'operator'
         $resolved.Multiplier | Should Be 1
@@ -122,13 +122,8 @@ Describe 'Existing benchmark driver overrides' {
         $resolved.Command | Should Match '7000'
         if ($Driver -eq 'resp-bench.ps1') {
             $resolved.Command | Should Not Match '--(?:no-)?fixed-worker-pool|--use-fixed-worker-pool'
-            foreach ($targetOverride in @('--host other', '--port=1234', '-h other', '-p1234')) {
-                Add-Content -LiteralPath $config -Value "ExtraArgs=$targetOverride"
-                {
-                    & $path -ConfigFile $config -ClientHosts client-a.example.com -Server 10.1.0.4 `
-                        -Port 7000 -SshUser operator -SshKey $key
-                } | Should Throw 'ExtraArgs'
-            }
+            $resolved.Command | Should Match '--config <uploaded workload.conf>'
+            $resolved.Command | Should Match '--tls --tlshost azurebench-server'
         }
     }
 

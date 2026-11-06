@@ -8,6 +8,12 @@ namespace Resp.benchmark
 {
     public partial class Options
     {
+        [Option("config", Required = false, HelpText = "Load benchmark options from a JSON .conf file. Explicit CLI options override the file.")]
+        public string ConfigFile { get; set; }
+
+        [Option("validate-config", Required = false, Default = false, HelpText = "Validate options without connecting to a server or running a workload.")]
+        public bool ValidateConfig { get; set; }
+
         [Option('p', "port", Required = false, Default = 6379, HelpText = "Port to connect to")]
         public int Port { get; set; }
 
@@ -45,6 +51,7 @@ namespace Resp.benchmark
         public IEnumerable<int> BatchSize { get; set; }
 
         [Option("pipeline", Separator = ',', Required = false, Hidden = true, HelpText = "Alias for --batchsize")]
+        [ConfigurationAlias(nameof(BatchSize))]
         public IEnumerable<int> Pipeline { set { if (value != null && value.Any()) BatchSize = value; } get => BatchSize; }
 
         [Option("runtime", Required = false, Default = 15, HelpText = "Run time (seconds)")]
