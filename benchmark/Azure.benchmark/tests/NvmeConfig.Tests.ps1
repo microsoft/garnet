@@ -49,7 +49,7 @@ Describe 'NVMe investigation configuration' {
     It 'uses the same dataset with memory headroom in one profile and disk spill in the other' {
         $memoryTemplate = Get-Content (Join-Path $benchmarkDir '02-platform\tools\config\garnet\garnet-nvme-memory.conf') -Raw
         $memorySettings = $memoryTemplate.Replace('$nvme', '/mnt/nvme').Replace('$port', '7000').Replace('$eth1', '10.5.128.5') | ConvertFrom-Json
-        $workload = Get-Content (Join-Path $benchmarkDir '03-workload\bench\bench-ltm.conf') -Raw | ConvertFrom-StringData
+        $workload = Get-Content (Join-Path $benchmarkDir '03-workload\bench\bench-ltm-cluster.conf') -Raw | ConvertFrom-StringData
         $payloadBytes = [long]$workload.DbSize * [long]$workload.ValueLength
         $diskBudgetBytes = ConvertTo-MemoryBytes $settings.LogMemorySize
         $memoryBudgetBytes = ConvertTo-MemoryBytes $memorySettings.LogMemorySize

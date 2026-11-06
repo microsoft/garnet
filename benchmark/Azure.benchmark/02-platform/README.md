@@ -150,6 +150,11 @@ publisher blob data access. See [RBAC and elevation](../README-RBAC.md).
 | `restart` | Restart only the failed instances in each VMSS (`az vmss restart --instance-ids`) |
 | `publish-tools` | Package the `tools/` bundle into `tools.tar.gz` and upload it to the shared storage account's blob container (`tools` by default) with Entra auth (`--auth-mode login`), so the caller needs **Storage Blob Data Contributor** on the account or container. VMSS instances pull this tarball at boot with their managed identity (Storage Blob Data Reader), so **run this before `create`** (and after changing `tools/`). Override the source with `-ToolsPath`, the container with `-ContainerName`, and the blob name with `-ToolsBlobName` |
 
+Use `-VmNames vm2` to limit `refresh`, `rebuild`, `deploy`, or `install` to
+specific short DNS labels in a single VMSS. Omitting it retains all-instance execution.
+For example, `-Action rebuild -System resp-bench -NoPull -VmNames vm2` rebuilds
+only that client's benchmark from its existing checkout without changing its branch.
+
 ### Examples
 
 ```powershell

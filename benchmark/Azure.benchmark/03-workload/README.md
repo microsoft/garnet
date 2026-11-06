@@ -8,11 +8,12 @@ storage cluster and executing client benchmarks over SSH. Run this layer **after
 
 | Path | Purpose |
 |------|---------|
-| `cluster.ps1` | Cluster lifecycle: start/stop/restart server instances and form the cluster on remote VMs via SSH (invokes VM-side `cluster-deploy.ps1`) |
+| `cluster.ps1` | Cluster lifecycle and declarative create/stop on remote VMs |
+| `benchmark.ps1` | Runs a declarative benchmark through the existing RESP or memtier driver |
 | `bench/resp-bench.ps1` | Launches [Resp.benchmark](https://github.com/microsoft/garnet) across client VMs via SSH |
 | `bench/memtier-bench.ps1` | Drives `memtier_benchmark` across client VMs via SSH |
 | `bench/utils.ps1` | Shared helper functions for the benchmark drivers |
-| `bench/*.conf` | Key-value configs for SSH targets, benchmark parameters, and workload tuning, including separate `bench-tls.conf` and `memtier-tls.conf` TLS configurations |
+| `bench/*-cluster.conf`, `bench/*-standalone.conf` | Key-value configs for SSH targets, benchmark parameters, and workload tuning; `bench-tls-cluster.conf` enables TLS |
 | `bench/EXPERIMENTAL_SETUP.md` | Notes on the benchmarking methodology |
 | `analysis/*.py` | Python post-processing / plotting of collected results |
 | `results/` | Auto-generated per-run output (git-ignored) |
@@ -30,7 +31,7 @@ storage cluster and executing client benchmarks over SSH. Run this layer **after
 
 ## Manage Cluster (`cluster.ps1`)
 
-Start or stop the storage cluster on server VMs. Reads connection info from `bench/bench.conf`.
+Start or stop the storage cluster on server VMs. Reads connection info from `bench/bench-cluster.conf`.
 
 ```powershell
 # Start a 2-instance-per-node valkey cache cluster (clean deploy)
@@ -87,19 +88,18 @@ created.
 
 ## Declarative cluster definitions
 
-`cluster.ps1` accepts the cluster JSON files in `templates/` through `-Definition`
-(alias `-ClusterDefinition`). The benchmark template remains review-only; benchmark
-declaration execution is not implemented.
+`cluster.ps1` accepts the cluster JSON files in `../templates/` through `-Definition`
+(alias `-ClusterDefinition`). Commands below run from the `Azure.benchmark` root.
 
 ```powershell
 # Destructive: stop and clean the declared instances, start them, then form the cluster.
-.\03-workload\cluster.ps1 --action create --definition .\03-workload\templates\cluster-explicit.template.json --rg <resource-group> --vmssname d128ldsv6
+.\03-workload\cluster.ps1 --action create --definition .\templates\cluster-explicit.template.json --rg <resource-group> --vmssname d128ldsv6
 
 # Kill only the declared server instances; do not clean data or touch client vm2.
-.\03-workload\cluster.ps1 --action stop --definition .\03-workload\templates\cluster-explicit.template.json --rg <resource-group> --vmssname d128ldsv6
+.\03-workload\cluster.ps1 --action stop --definition .\templates\cluster-explicit.template.json --rg <resource-group> --vmssname d128ldsv6
 
 # Interactive: list VMSS in the resource group, then select one by index or name.
-.\03-workload\cluster.ps1 --action create --definition .\03-workload\templates\cluster-auto.template.json --rg <resource-group>
+.\03-workload\cluster.ps1 --action create --definition .\templates\cluster-auto.template.json --rg <resource-group>
 ```
 
 Update the VM tools bundle before using these actions; it includes the shared
@@ -129,8 +129,10 @@ with legacy topology/discovery flags such as `-System`, `-Conf`, `-VmCount`,
   `vm1` is its replica.
 - `cluster-auto.template.json`: the same VM roles, with `auto` assigning all slots
   to the sole primary, `vm0`.
-- `benchmark.template.json`: one benchmark process on client `vm2`, targeting
-  primary `vm0`.
+- `benchmark-cluster.json`: one cluster benchmark process on client `vm2`, targeting
+  primary `vm0`, using `bench-cluster.conf`.
+- `benchmark-standalone.json`: one standalone benchmark process on client `vm2`,
+  targeting `vm0`, using `bench-standalone.conf`.
 
 Templates contain no `VmDomain` or `SshUser`. Provide `-ResourceGroup` (alias `-rg`)
 and optionally `-VmssName`; omitting the name lists available VMSS and prompts.
@@ -172,14 +174,58 @@ For benchmarks, the declaration owns VM placement and target endpoint.
 Those settings override the corresponding values in the referenced workload
 configuration, including its machine counts and multiplier. Repeated client VM
 entries are invalid: each declared client VM runs one benchmark instance.
-The benchmark target is a seed for cluster discovery, not a restriction to that
-shard. The benchmark template likewise leaves environment selection outside JSON.
-Benchmark declaration execution is not implemented; a future runner can reuse
-the shared resolver separately for client and target VMSS when they differ.
+For cluster benchmarks, the target is a seed for discovery, not a restriction to
+that shard. Standalone benchmarks connect directly to the target without discovery.
+Benchmark templates likewise leave environment selection outside JSON.
+The runner reuses the shared resolver separately for client and target VMSS when
+they differ, using the same resource group.
+
+## Declarative benchmarks
+
+```powershell
+.\03-workload\benchmark.ps1 --definition .\templates\benchmark-cluster.json --rg <resource-group> --vmssname d128ldsv6
+
+# Standalone RESP workload, without cluster discovery.
+.\03-workload\benchmark.ps1 --definition .\templates\benchmark-standalone.json --rg <resource-group> --vmssname d128ldsv6
+
+# Resolve and inspect the plan without loading keys or launching a benchmark.
+.\03-workload\benchmark.ps1 --definition .\templates\benchmark-cluster.json --rg <resource-group> --vmssname d128ldsv6 --dryrun
+```
+
+`System` selects `Resp.benchmark` or `memtier_benchmark`. `InstanceConfig` points to
+the existing key=value workload configuration, resolved relative to the JSON file.
+Both RESP templates use `System: "Resp.benchmark"`: `ClusterBench=true` in
+`*-cluster.conf` selects its `ClusterBench` implementation, while
+`ClusterBench=false` in `bench-standalone.conf` selects the standalone RESP benchmark.
+The standalone profile disables the cluster worker pool and fan-out and contains
+no cluster-only extra arguments. `memtier-cluster.conf` retains `Cluster=true`
+for the separate memtier driver.
+Standalone offline results report Kops/sec; data/wire bandwidth is omitted because
+that benchmark implementation does not emit those metrics.
+`Target` declares the seed VM and port; each entry in `Instances` contains one
+unique `Vm`. The runner resolves SSH endpoints and usernames through VMSS selection
+and obtains the target's `eth1` address through the existing cluster helper.
+`-TargetVmssName` selects a separate server VMSS; by default it uses the client VMSS.
+`-SshUser`, `-TargetSshUser`, and `-SshKey` override the discovered connection settings.
+`-NonInteractive` requires an explicit client VMSS, just as for cluster execution.
+
+The runner invokes `bench/resp-bench.ps1` or `bench/memtier-bench.ps1` inline.
+Their workload options, TLS checks, logs, progress, and aggregation remain in use.
+The declaration overrides client host/count/multiplier and target host/port settings.
+Each client runs exactly one workload instance; RESP's preliminary one-second
+configuration benchmark is skipped. All clients are checked for the selected
+benchmark executable before workloads start. Failed instances return an error
+instead of reporting declarative completion; logs remain under `03-workload/results`.
+Declarative `-Verbose` prints captured benchmark-client stdout/stderr, grouped by VM,
+after each phase completes, without opening terminal panes. Failed client output
+is printed even without `-Verbose`. This is not a stream of Garnet server logs.
+`-Detail`/`-Monitor` apply to RESP, `-SkipLoad` to memtier, and `-Tls` to either.
+Memtier still performs its normal load phase unless skipped by the flag or profile.
+Dry runs resolve Azure inventory and the target address, but do not launch workloads.
 
 ## Run Benchmarks
 
-### Configuration (`bench/bench.conf`)
+### Configuration (`bench/bench-cluster.conf`)
 
 ```ini
 # SSH connection
@@ -217,7 +263,8 @@ SSH keys are resolved automatically from `01-resources/security/manifest.json` (
 .\03-workload\bench\resp-bench.ps1 -Detail                            # show per-instance results
 .\03-workload\bench\resp-bench.ps1 -Background                        # spawn Windows Terminal panes
 .\03-workload\bench\resp-bench.ps1 -ConfigFile .\custom.conf -Detail  # custom config
-.\03-workload\bench\resp-bench.ps1 -ConfigFile .\03-workload\bench\bench-tls.conf -Detail
+.\03-workload\bench\resp-bench.ps1 -ConfigFile .\03-workload\bench\bench-tls-cluster.conf -Detail
+.\03-workload\bench\resp-bench.ps1 -ConfigFile .\03-workload\bench\bench-standalone.conf -Detail
 .\03-workload\bench\resp-bench.ps1 -Tls -Detail                       # force TLS for this run
 ```
 
@@ -273,7 +320,7 @@ does not send a client certificate and never uses `--tls-skip-verify`.
 ## Notes on paths after the refactor
 
 - `cluster.ps1` and the `bench/*` drivers resolve SSH keys from `../01-resources/security/manifest.json` (relative to this folder / `bench/` respectively).
-- `cluster.ps1` defaults its connection config to `bench/bench.conf`; the benchmark drivers default to their sibling `.conf` files.
+- `cluster.ps1` defaults its connection config to `bench/bench-cluster.conf`; the benchmark drivers default to `bench-cluster.conf` and `memtier-cluster.conf`.
 - Benchmark output is written to `03-workload/results/<run>/` by both drivers and is git-ignored.
 - `02-platform/manage-vmss.ps1` dot-sources `bench/utils.ps1` from this layer for shared helpers.
 - The VM-side counterparts (`02-platform/tools/cluster/`, `02-platform/tools/bench/`) live under `02-platform/tools/` because they are packaged into `tools.tar.gz` and deployed into the VM guest tree; this layer is the **workstation-side** driver for them.

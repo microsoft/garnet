@@ -19,10 +19,16 @@
     .\resp-bench.ps1 -ConfigFile .\my-bench.conf -Verbose
 #>
 param(
-    [string]$ConfigFile = "$PSScriptRoot\bench.conf",
+    [string]$ConfigFile = "$PSScriptRoot\bench-cluster.conf",
+    [string[]]$ClientHosts,
+    [string]$SshUser,
+    [string]$SshKey,
+    [string]$Server,
+    [ValidateRange(1, 65535)][int]$Port,
     [switch]$Background,
     [switch]$Detail,
     [switch]$Monitor,
+    [switch]$PrintOutput,
     [switch]$Tls,
     [switch]$Help
 )
@@ -35,6 +41,9 @@ if ($Help) {
     Write-Host ""
     Write-Host "Without -Verbose: runs inline in parallel, aggregates results."
     Write-Host "With -Verbose: spawns Windows Terminal panes for visual inspection."
+    Write-Host "-ClientHosts supplies exact clients (one workload each), overriding host counts/multiplier and skipping the 1s config probe."
+    Write-Host "-SshUser/-SshKey/-Server/-Port override connection settings for declarative execution."
+    Write-Host "-PrintOutput prints captured benchmark-client output inline; failed output is always printed."
     Write-Host ""
     Write-Host "  -Detail   During the run, show a live completed/pending status view"
     Write-Host "            listing which instances are still running. After the run,"
@@ -70,6 +79,7 @@ if ($Help) {
     return
 }
 
+$ErrorActionPreference = 'Stop'
 # --- Load shared utilities ---
 . "$PSScriptRoot\utils.ps1"
 
@@ -93,7 +103,9 @@ Get-Content $ConfigFile | ForEach-Object {
 # --- Resolve parameters ---
 # --- Resolve SSH keys from security/manifest.json ---
 $manifestPath = Join-Path $PSScriptRoot "..\..\01-resources\security\manifest.json"
-if (Test-Path $manifestPath) {
+if ($SshKey) {
+    if (-not (Test-Path -LiteralPath $SshKey -PathType Leaf)) { throw "SSH key not found: $SshKey" }
+} elseif (Test-Path $manifestPath) {
     . (Join-Path $PSScriptRoot "..\..\01-resources\security\ssh-key-utils.ps1")
     try {
         $manifest = Get-SshKeyManifest -ManifestPath $manifestPath
@@ -117,20 +129,13 @@ if (Test-Path $manifestPath) {
 } else {
     $sshKey = "$env:USERPROFILE\.ssh\id_ed25519"
 }
-$sshUser         = $config["SshUser"]         ?? "guser"
+$sshUser         = if ($SshUser) { $SshUser } else { $config["SshUser"] ?? "guser" }
 $sshHostBase     = $config["ClientMachineHostnames"] ?? "vm0.dps8v6vmss.southcentralus.cloudapp.azure.com"
 $hostCountRaw    = $config["ClientMachineCount"] ?? "1"
-$multiplier      = [int]($config["Multiplier"] ?? "1")
+$multiplier      = if ($ClientHosts) { 1 } else { [int]($config["Multiplier"] ?? "1") }
 
-# Parse ClientMachineCount — supports scalar or array [n1, n2, ...]
-$hostCounts = @()
-if ($hostCountRaw -match '^\[(.+)\]$') {
-    $hostCounts = $Matches[1] -split ',\s*' | ForEach-Object { [int]$_ }
-} else {
-    $hostCounts = @([int]$hostCountRaw)
-}
-$benchHost    = $config["Server"]       ?? "10.5.1.4"
-$benchPort    = $config["Port"]         ?? "7000"
+$benchHost    = if ($Server) { $Server } else { $config["Server"] ?? "10.5.1.4" }
+$benchPort    = if ($Port) { [string]$Port } else { $config["Port"] ?? "7000" }
 $threads      = $config["Threads"]      ?? "4"
 $runtime      = $config["Runtime"]      ?? "60"
 $dbSize       = $config["DbSize"]       ?? ""
@@ -142,6 +147,9 @@ $useParallelFanOut = $config["UseParallelFanOut"] ?? "false"
 $clusterBench = $config["ClusterBench"] ?? "true"
 $useFixedWorkerPool = $config["UseFixedWorkerPool"] ?? "true"
 $extraArgs    = $config["ExtraArgs"]    ?? ""
+if ($ClientHosts -and $extraArgs -match '(?i)(^|\s)(?:--(?:host|port)(?:\s|=|$)|-[hp]\S*)') {
+    throw 'ExtraArgs cannot override the declarative target host or port.'
+}
 $tlsValue     = if ($Tls) { "true" } else { $config["Tls"] ?? "false" }
 $tlsHost      = $config["TlsHost"] ?? "azurebench-server"
 
@@ -162,52 +170,7 @@ if ($tlsEnabled -and $extraArgs -match '(?i)(^|\s)--(?:tls|tlshost|cert-file-nam
 }
 
 # --- Derive host list from base + count ---
-$sshHosts = @()
-
-# Support array syntax: [host1, host2, ...]
-if ($sshHostBase -match '^\[(.+)\]$') {
-    $baseHosts = $Matches[1] -split ',\s*'
-    if ($hostCounts.Count -eq 1) {
-        # Single count applies to all hostnames
-        $hostCounts = @($hostCounts[0]) * $baseHosts.Count
-    } elseif ($hostCounts.Count -ne $baseHosts.Count) {
-        Write-Error "ClientMachineCount has $($hostCounts.Count) entries but ClientMachineHostnames has $($baseHosts.Count). They must match."
-        exit 1
-    }
-    for ($h = 0; $h -lt $baseHosts.Count; $h++) {
-        $base = $baseHosts[$h]
-        $count = $hostCounts[$h]
-        if ($base -match '^([a-zA-Z]+)(\d+)\.(.+)$') {
-            $prefix = $Matches[1]
-            $startIndex = [int]$Matches[2]
-            $domain = $Matches[3]
-            for ($i = $startIndex; $i -lt ($startIndex + $count); $i++) {
-                for ($m = 0; $m -lt $multiplier; $m++) {
-                    $sshHosts += "$prefix$i.$domain"
-                }
-            }
-        } else {
-            Write-Error "Invalid host in array: $base (expected <prefix><index>.<domain>)"
-            exit 1
-        }
-    }
-} else {
-    # Single host pattern
-    $hostCount = $hostCounts[0]
-    if ($sshHostBase -match '^([a-zA-Z]+)(\d+)\.(.+)$') {
-        $prefix = $Matches[1]
-        $startIndex = [int]$Matches[2]
-        $domain = $Matches[3]
-    } else {
-        Write-Error "ClientMachineHostnames must follow pattern: <prefix><index>.<domain> (e.g., vm0.example.com)"
-        exit 1
-    }
-    for ($i = $startIndex; $i -lt ($startIndex + $hostCount); $i++) {
-        for ($m = 0; $m -lt $multiplier; $m++) {
-            $sshHosts += "$prefix$i.$domain"
-        }
-    }
-}
+$sshHosts = @(Get-BenchmarkClientHosts -ClientHosts $ClientHosts -HostBase $sshHostBase -HostCount $hostCountRaw -Multiplier ([string]$multiplier))
 
 # --- Build benchmark command ---
 $benchCmd = "Resp.benchmark --host $benchHost --port $benchPort --threads $threads --runtime $runtime"
@@ -338,19 +301,28 @@ Write-Host "  $benchCmd" -ForegroundColor Yellow
 Write-Host "=========================" -ForegroundColor Yellow
 Write-Host ""
 
-$workersPerInstance = Show-BenchmarkConfig -BenchCmd $benchCmd -SshKey $sshKey -SshUser $sshUser -ProbeHost $probeHost -Runtime $runtime -DbSize ($config["DbSize"] ?? "") -Threads ([int]$threads)
+if ($ClientHosts) {
+    $workersPerInstance = $null
+    Write-Host 'Configuration probe skipped: exactly one workload instance will run per declared client.'
+} else {
+    $workersPerInstance = Show-BenchmarkConfig -BenchCmd $benchCmd -SshKey $sshKey -SshUser $sshUser -ProbeHost $probeHost -Runtime $runtime -DbSize ($config["DbSize"] ?? "") -Threads ([int]$threads)
+}
 
 # --- Print client machine info ---
 Show-ClientMachineInfo -SshHosts $sshHosts -SshKey $sshKey -SshUser $sshUser
 
 # --- Print instance configuration ---
-$totalWorkers = $workersPerInstance * $instances
 Write-Host "=== Instance Configuration ===" -ForegroundColor Cyan
 Write-Host "  SSH Key    : $sshKey"
 Write-Host "  SSH User   : $sshUser"
 Write-Host "  TLS        : $(if ($tlsEnabled) { "enabled ($tlsHost)" } else { "disabled" })"
 Write-Host "  Instances  : $instances ($multiplier x $uniqueHosts hosts)"
-Write-Host "  Workers    : $totalWorkers total ($workersPerInstance per instance x $instances instances)"
+if ($null -ne $workersPerInstance) {
+    $totalWorkers = $workersPerInstance * $instances
+    Write-Host "  Workers    : $totalWorkers total ($workersPerInstance per instance x $instances instances)"
+} else {
+    Write-Host '  Workers    : reported in per-instance benchmark output'
+}
 Write-Host "===============================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -494,6 +466,19 @@ if ($Background) {
     $benchResults = $benchJob | Receive-Job -Wait
     Remove-Job $benchJob
 
+    foreach ($result in $benchResults) {
+        if ($result.Success) {
+            try {
+                Assert-RespBenchmarkResult -Path $result.LogFile -RequireThroughput:($clusterBench -eq 'true')
+            } catch {
+                $result.Success = $false
+                $hostStatus[$result.Index] = 'failed'
+                Write-Host "  $($result.Host): $($_.Exception.Message)" -ForegroundColor Red
+            }
+        }
+    }
+
+    Show-BenchmarkClientOutput -Results $benchResults -All:$PrintOutput
     $stopwatch.Stop()
     $benchSuccess = ($benchResults | Where-Object { $_.Success }).Count
     $benchFailed = $benchResults.Count - $benchSuccess
@@ -529,6 +514,7 @@ if ($Background) {
         $benchResults | Where-Object { -not $_.Success } | ForEach-Object {
             Write-Host "    $($_.Host) [$($_.Duration)]" -ForegroundColor Red
         }
+        if ($ClientHosts) { throw "$benchFailed declarative benchmark instance(s) failed. Logs: $runDir" }
     }
     Write-Host ""
 
@@ -536,6 +522,9 @@ if ($Background) {
 }
 
 # --- Aggregate results ---
+foreach ($lf in $logFiles) {
+    Assert-RespBenchmarkResult -Path $lf -RequireThroughput:($clusterBench -eq 'true')
+}
 Write-Host "=== Aggregate Results ($runTimestamp) ===" -ForegroundColor Cyan
 $totalKops = 0.0
 $totalData = 0.0
@@ -554,6 +543,14 @@ foreach ($lf in $logFiles) {
 
         $kops = 0.0; $data = 0.0; $wire = 0.0
         if ($kopsLine -match '([\d,.]+)\s*Kops/sec') { $kops = [double]($Matches[1] -replace ',', '') }
+        if ($clusterBench -ne 'true') {
+            $standaloneLine = $content | Where-Object { $_ -match '^\[Throughput\]:\s*([\d,.]+)\s*ops/sec' } | Select-Object -Last 1
+            if ($standaloneLine -match '^\[Throughput\]:\s*([\d,.]+)\s*ops/sec') {
+                $kops = [double]($Matches[1] -replace ',', '') / 1000
+            } else {
+                throw "No standalone throughput results found. Log: $lf"
+            }
+        }
         if ($dataLine -match '([\d.]+)\s*GB/sec') { $data = [double]$Matches[1] }
         if ($wireLine -match '([\d.]+)\s*GB/sec') { $wire = [double]$Matches[1] }
 
@@ -562,7 +559,11 @@ foreach ($lf in $logFiles) {
         $totalWire += $wire
         if ($Detail) {
             $durSuffix = if ($durByLog -and $durByLog.ContainsKey($lf)) { " | $($durByLog[$lf])" } else { "" }
-            Write-Host ("  {0}  {1,12:N2} Kops/sec | {2,6:N3} GB/s data | {3,6:N3} GB/s wire{4}" -f $name.PadRight($maxHostLen), $kops, $data, $wire, $durSuffix)
+            if ($clusterBench -eq 'true') {
+                Write-Host ("  {0}  {1,12:N2} Kops/sec | {2,6:N3} GB/s data | {3,6:N3} GB/s wire{4}" -f $name.PadRight($maxHostLen), $kops, $data, $wire, $durSuffix)
+            } else {
+                Write-Host ("  {0}  {1,12:N2} Kops/sec{2}" -f $name.PadRight($maxHostLen), $kops, $durSuffix)
+            }
         }
     } else {
         if ($Detail) {
@@ -571,7 +572,11 @@ foreach ($lf in $logFiles) {
     }
 }
 if ($Detail) { Write-Host ("  " + ("-" * 70)) }
-Write-Host ("  {0}  {1,12:N2} Kops/sec | {2,6:N3} GB/s data | {3,6:N3} GB/s wire" -f "TOTAL".PadRight($maxHostLen), $totalKops, $totalData, $totalWire) -ForegroundColor Green
+if ($clusterBench -eq 'true') {
+    Write-Host ("  {0}  {1,12:N2} Kops/sec | {2,6:N3} GB/s data | {3,6:N3} GB/s wire" -f "TOTAL".PadRight($maxHostLen), $totalKops, $totalData, $totalWire) -ForegroundColor Green
+} else {
+    Write-Host ("  {0}  {1,12:N2} Kops/sec" -f "TOTAL".PadRight($maxHostLen), $totalKops) -ForegroundColor Green
+}
 
 # --- Probe DBSIZE per shard ---
 Write-Host ""

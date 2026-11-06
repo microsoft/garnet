@@ -11,8 +11,8 @@
     starts instances and forms the cluster (setup) in one step.
 
 .EXAMPLE
-    pwsh .\03-workload\cluster.ps1 --action create --definition .\03-workload\templates\cluster-explicit.template.json --rg <resource-group> --vmssname d128ldsv6
-    pwsh .\03-workload\cluster.ps1 --action stop --definition .\03-workload\templates\cluster-explicit.template.json --rg <resource-group>
+    pwsh .\03-workload\cluster.ps1 --action create --definition .\templates\cluster-explicit.template.json --rg <resource-group> --vmssname d128ldsv6
+    pwsh .\03-workload\cluster.ps1 --action stop --definition .\templates\cluster-explicit.template.json --rg <resource-group>
     pwsh .\03-workload\cluster.ps1 -Action start -System valkey -Conf .\02-platform\tools\config\valkey\valkey-cache.conf -InstancePerVm 2
     pwsh .\03-workload\cluster.ps1 -Action start -System valkey -Conf .\02-platform\tools\config\valkey\valkey-cache.conf -InstancePerVm 2 -Clean
     pwsh .\03-workload\cluster.ps1 -Action start -System garnet -Conf .\02-platform\tools\config\garnet\garnet-cache-replication.conf -InstancePerVm 1 -NoCluster
@@ -36,7 +36,7 @@ param(
     [switch]$NoCluster,
     [switch]$Tls,
     [switch]$CreateManual,
-    [string]$ConfigFile = "$PSScriptRoot\bench\bench.conf",
+    [string]$ConfigFile = "$PSScriptRoot\bench\bench-cluster.conf",
     [string]$ServerHost,
     [Alias('rg')][string]$ResourceGroup,
     [string]$VmssName,
@@ -73,8 +73,8 @@ if ($Help -or -not $Action) {
     Write-Host "  -NoCluster   Disable cluster mode (skip setup step)"
     Write-Host "  -Tls         Enable Garnet TLS with server-role Key Vault certificate material"
     Write-Host "  -CreateManual Form the cluster manually (MEET + ADDSLOTSRANGE + REPLICATE) instead of '--cluster create'"
-    Write-Host "  -ConfigFile  Path to bench.conf for SSH host/key resolution (default: bench.conf)"
-    Write-Host "  -ServerHost  Override server SSH host (default: from bench.conf Host field)"
+    Write-Host "  -ConfigFile  Path to benchmark config for SSH host/key resolution (default: bench-cluster.conf)"
+    Write-Host "  -ServerHost  Override server SSH host (default: from bench-cluster.conf Host field)"
     Write-Host "  -ResourceGroup Azure resource group (alias -rg); required for VMSS-based definitions"
     Write-Host "  -VmssName    VMSS selection; prompts when omitted with -Definition/-ResourceGroup"
     Write-Host "  -SshUser     Override SSH user (default: VMSS admin username for VMSS-based definitions)"
@@ -172,7 +172,7 @@ if (-not (Test-Path -LiteralPath $SshKey -PathType Leaf)) {
 if (-not $SshUser) { $SshUser = $config["SshUser"] ?? "guser" }
 if (-not $ServerHost) { $ServerHost = $config["Host"] ?? "" }
 if (-not $ServerHost -and -not $clusterDefinition) {
-    Write-Error "No server host specified. Use -ServerHost or set Host= in bench.conf"
+    Write-Error "No server host specified. Use -ServerHost or set Host= in bench-cluster.conf"
     exit 1
 }
 

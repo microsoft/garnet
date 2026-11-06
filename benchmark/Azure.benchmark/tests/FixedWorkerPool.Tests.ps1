@@ -24,7 +24,7 @@ Describe 'Fixed worker pool command generation' {
 
     It 'maps <Setting> to the benchmark flag without launching SSH' -TestCases @(
         @{ Setting = 'true'; Expected = 'Resp.benchmark --use-fixed-worker-pool' }
-        @{ Setting = 'false'; Expected = 'Resp.benchmark --no-fixed-worker-pool' }
+        @{ Setting = 'false'; Expected = 'Resp.benchmark' }
         @{ Setting = $null; Expected = 'Resp.benchmark --use-fixed-worker-pool' }
     ) {
         param($Setting, $Expected)

@@ -1,5 +1,115 @@
 # Shared utility functions for benchmark scripts
 
+function Read-BenchmarkDefinition {
+    param([string]$Path)
+
+    $path = (Resolve-Path -LiteralPath $Path -ErrorAction Stop).Path
+    $json = Get-Content -LiteralPath $path -Raw
+    $document = [System.Text.Json.JsonDocument]::Parse($json)
+    $document.Dispose()
+    $definition = $json | ConvertFrom-Json
+    foreach ($property in $definition.PSObject.Properties.Name) {
+        if ($property -notin @('SchemaVersion', 'Kind', 'System', 'InstanceConfig', 'Target', 'Instances')) {
+            throw "Unknown benchmark definition property: $property"
+        }
+    }
+    if (($definition.SchemaVersion -isnot [int] -and $definition.SchemaVersion -isnot [long]) -or
+        $definition.SchemaVersion -ne 1 -or $definition.Kind -ne 'Benchmark') {
+        throw 'Expected a SchemaVersion 1 Benchmark definition.'
+    }
+    if ($definition.System -notin @('Resp.benchmark', 'memtier_benchmark')) {
+        throw 'System must be Resp.benchmark or memtier_benchmark.'
+    }
+    if ($definition.Target -isnot [pscustomobject]) { throw 'Target must be an object.' }
+    foreach ($property in $definition.Target.PSObject.Properties.Name) {
+        if ($property -notin @('Vm', 'Port')) { throw "Unknown benchmark target property: $property" }
+    }
+    if (($definition.Target.Port -isnot [int] -and $definition.Target.Port -isnot [long]) -or
+        $definition.Target.Port -lt 1 -or $definition.Target.Port -gt 65535) { throw 'Target.Port must be an integer between 1 and 65535.' }
+    if ($definition.Instances -isnot [array] -or -not $definition.Instances.Count) { throw 'Instances must be a nonempty array.' }
+    $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($instance in $definition.Instances) {
+        if ($instance -isnot [pscustomobject] -or @($instance.PSObject.Properties.Name | Where-Object { $_ -ne 'Vm' }).Count) {
+            throw 'Each benchmark instance must be an object containing only Vm.'
+        }
+        if (-not $seen.Add([string]$instance.Vm)) { throw "Duplicate benchmark VM: $($instance.Vm)" }
+    }
+    foreach ($entry in @($definition.Target) + @($definition.Instances)) {
+        if ($entry.Vm -isnot [string] -or $entry.Vm -notmatch '^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$') {
+            throw 'Each benchmark VM must be a valid short DNS label.'
+        }
+    }
+    if ($definition.InstanceConfig -isnot [string] -or -not $definition.InstanceConfig) { throw 'InstanceConfig is required.' }
+    $configPath = $definition.InstanceConfig
+    if (-not [IO.Path]::IsPathRooted($configPath)) { $configPath = Join-Path (Split-Path -Parent $path) $configPath }
+    if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) { throw "Benchmark instance configuration not found: $configPath" }
+    $definition.InstanceConfig = [IO.Path]::GetFullPath($configPath)
+    return $definition
+}
+
+function Get-BenchmarkClientHosts {
+    param([string[]]$ClientHosts, [string]$HostBase, [string]$HostCount = '1', [string]$Multiplier = '1')
+
+    if ($ClientHosts.Count) {
+        $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        foreach ($hostName in $ClientHosts) {
+            if ([Uri]::CheckHostName($hostName) -eq [UriHostNameType]::Unknown -or -not $seen.Add($hostName)) {
+                throw "Invalid or duplicate benchmark client hostname: $hostName"
+            }
+        }
+        return $ClientHosts
+    }
+    $copies = [int]$Multiplier
+    $bases = @(if ($HostBase -match '^\[(.+)\]$') { $Matches[1] -split ',\s*' } else { $HostBase })
+    $counts = @(if ($HostCount -match '^\[(.+)\]$') { $Matches[1] -split ',\s*' | ForEach-Object { [int]$_ } } else { [int]$HostCount })
+    if ($counts.Count -eq 1) { $counts = @($counts[0]) * $bases.Count }
+    if ($counts.Count -ne $bases.Count) { throw 'ClientMachineCount entries must match ClientMachineHostnames.' }
+    if ($copies -lt 1 -or @($counts | Where-Object { $_ -lt 1 }).Count) { throw 'Client counts and Multiplier must be positive.' }
+    for ($h = 0; $h -lt $bases.Count; $h++) {
+        if ($bases[$h] -notmatch '^([a-zA-Z]+)(\d+)\.(.+)$') {
+            throw "ClientMachineHostnames must follow <prefix><index>.<domain>: $($bases[$h])"
+        }
+        $prefix = $Matches[1]; $start = [int]$Matches[2]; $domain = $Matches[3]
+        for ($i = $start; $i -lt $start + $counts[$h]; $i++) {
+            for ($m = 0; $m -lt $copies; $m++) { "$prefix$i.$domain" }
+        }
+    }
+}
+
+function Invoke-WorkloadRemoteScript {
+    param([string]$HostName, [string]$SshUser, [string]$SshKey, [string]$Script)
+
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes("`$ErrorActionPreference = 'Stop'`n$Script"))
+    $output = @(ssh -n -i $SshKey -T -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no `
+        "${SshUser}@${HostName}" "pwsh -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand $encoded")
+    if ($LASTEXITCODE -ne 0) { throw "Benchmark preflight failed on '$HostName' (exit $LASTEXITCODE): $($output -join "`n")" }
+    return $output
+}
+
+function Assert-RespBenchmarkResult {
+    param([string]$Path, [switch]$RequireThroughput)
+
+    $content = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
+    if ([string]::IsNullOrWhiteSpace($content)) { throw "Resp.benchmark produced no output. Log: $Path" }
+    if ($content -match '(?m)^\s*ERROR\(S\):\s*([^\r\n]+)') {
+        throw "Resp.benchmark rejected its arguments: $($Matches[1].Trim()) Verify that the client binary matches the workload options. Log: $Path"
+    }
+    if ($RequireThroughput -and $content -notmatch 'Total throughput:[^\r\n]*?([\d,.]+)\s*Kops/sec') {
+        throw "Resp.benchmark did not report completed throughput results. Log: $Path"
+    }
+}
+
+function Show-BenchmarkClientOutput {
+    param([object[]]$Results, [switch]$All)
+
+    foreach ($result in $Results) {
+        if ($All -or -not $result.Success) {
+            Write-Host "=== $($result.Host) benchmark-client output ===" -ForegroundColor Cyan
+            Write-Host $result.Output
+        }
+    }
+}
+
 function Wait-ParallelJob {
     <#
     .SYNOPSIS

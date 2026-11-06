@@ -2,7 +2,7 @@
   "SchemaVersion": 1,
   "Kind": "Benchmark",
   "System": "Resp.benchmark",
-  "InstanceConfig": "..\\bench\\bench.conf",
+  "InstanceConfig": "..\\03-workload\\bench\\bench-cluster.conf",
   "Target": {
     "Vm": "vm0",
     "Port": 7000

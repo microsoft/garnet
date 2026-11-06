@@ -28,6 +28,9 @@
     - restart: restart only failed/unhealthy instances in the VMSS (az vmss restart, fire-and-forget)
     - discover: force cluster peer rescan on each instance (runs cluster-deploy.ps1 -Action discover)
 
+.PARAMETER VmNames
+    Limit SSH software actions to these short DNS labels in one VMSS.
+
 .PARAMETER System
     System to rebuild (required when Action=rebuild).
     Valid: garnet, valkey, resp-bench, memtier
@@ -70,6 +73,8 @@ param(
     [string]$rg,
 
     [string]$VmssName,
+
+    [string[]]$VmNames,
 
     [ValidateSet('refresh', 'rebuild', 'deploy', 'install', 'ping', 'start', 'stop', 'restart', 'list', 'discover', 'create', 'push-keys', 'publish-tools')]
     [string]$Action = 'refresh',
@@ -118,6 +123,7 @@ if ($Help -or -not $rg) {
     Write-Host "Optional Parameters:"
     Write-Host "  -VmssName <name>    VMSS name(s) to target (comma-separated or 'all')"
     Write-Host "                      If omitted, script prompts for selection"
+    Write-Host "  -VmNames <names>    Limit refresh/rebuild/deploy/install to short VM DNS labels in one VMSS"
     Write-Host "  -Action <action>    Action to perform (default: refresh)"
     Write-Host "                      refresh        - git pull all repos"
     Write-Host "                      rebuild        - git pull + rebuild system (requires -System)"
@@ -171,6 +177,9 @@ if ($Help -or -not $rg) {
 }
 
 $ErrorActionPreference = 'Stop'
+if ($VmNames.Count -and $Action -notin @('refresh', 'rebuild', 'deploy', 'install')) {
+    throw '-VmNames is supported only with refresh, rebuild, deploy, or install.'
+}
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 . "$scriptDir\vmss-utils.ps1"
 $securityDir = Join-Path $scriptDir '..\01-resources\security'
@@ -674,7 +683,7 @@ if ($Ref -and $Action -ne 'rebuild') {
 }
 
 # --- VMSS Discovery & Selection ---
-$targetVmss = @(Select-Vmss -ResourceGroup $rg -VmssName $VmssName -PowerStateProvider {
+$targetVmss = @(Select-Vmss -ResourceGroup $rg -VmssName $VmssName -Single:([bool]$VmNames.Count) -PowerStateProvider {
     param($names)
     Get-VmssPowerStates -ResourceGroup $rg -VmssNames $names
 })
@@ -1330,6 +1339,21 @@ foreach ($vmss in $targetVmss) {
     }
 
     $instances = $ipsJson | ConvertFrom-Json
+
+    if ($VmNames.Count) {
+        $selectedInstances = @()
+        foreach ($vmName in $VmNames) {
+            $matchingInstances = @($instances | Where-Object {
+                $_.fqdn -and ($_.fqdn -split '\.')[0] -eq $vmName
+            })
+            if ($matchingInstances.Count -ne 1) {
+                throw "Expected exactly one instance for VM '$vmName' in '$vmss'; found $($matchingInstances.Count)."
+            }
+            if ($matchingInstances[0].fqdn -in $selectedInstances.fqdn) { throw "Duplicate VM selection: $vmName" }
+            $selectedInstances += $matchingInstances[0]
+        }
+        $instances = $selectedInstances
+    }
 
     if ($instances.Count -eq 0) {
         Write-Warning "No instances with public IPs found in VMSS '$vmss'. Skipping."
