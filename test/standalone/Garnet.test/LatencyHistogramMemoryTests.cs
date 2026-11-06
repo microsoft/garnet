@@ -178,25 +178,70 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// The flip side, asserted as a magnitude rather than a direction: the gap between a session that
-        /// records and one that does not has to be a real share of the histogram cost. Under eager
-        /// allocation both arms pay the same and the gap collapses, which is what this catches. A bare
-        /// "recording > idle" would not -- the two measurements differ by noise either way.
+        /// Recording allocates histograms on the same sessions that previously held none. Inspect ownership
+        /// directly because renting an already-pooled array need not increase the process's retained heap.
         /// </summary>
         [Test]
         public void RecordingConnectionsDoAllocateHistograms()
         {
-            StartServer(latencyMonitor: true);
-            var idle = MeasurePerConnection(ping: false);
-            var recording = MeasurePerConnection(ping: true);
-            var eager = EagerCostPerSession();
+            // Keep the monitor from reclaiming the histograms while this test inspects them.
+            StartServer(latencyMonitor: true, samplingFreq: 60);
+            var sockets = new List<Socket>();
+            try
+            {
+                for (var i = 0; i < Connections; i++)
+                {
+                    var socket = Connect();
+                    sockets.Add(socket);
+                    OpenSessionWithoutRecording(socket);
+                }
 
-            TestContext.Progress.WriteLine(
-                $"per-session retained: without recording={idle / 1024}KB recording={recording / 1024}KB " +
-                $"(all twelve histograms would be {eager / 1024}KB)");
+                var deadline = DateTime.UtcNow.AddSeconds(15);
+                List<RespServerSession> sessions;
+                while ((sessions = ActiveSessions()).Count < Connections && DateTime.UtcNow < deadline)
+                    Thread.Sleep(10);
+                ClassicAssert.AreEqual(Connections, sessions.Count, "every connection must have created a session");
+                foreach (var session in sessions)
+                {
+                    var metrics = session.LatencyMetrics?.metrics;
+                    ClassicAssert.IsNotNull(metrics, "latency monitoring must be enabled on every session");
+                    foreach (var entry in metrics)
+                        ClassicAssert.IsNull(entry.latency, "an incomplete command must not allocate histograms");
+                }
 
-            ClassicAssert.Greater(recording - idle, eager / 4,
-                "recording a latency value should allocate the histograms it records into");
+                foreach (var socket in sockets)
+                {
+                    socket.Send("G\r\n"u8);
+                    var reply = new byte[7];
+                    for (var received = 0; received < reply.Length;)
+                    {
+                        var read = socket.Receive(reply.AsSpan(received));
+                        ClassicAssert.Greater(read, 0, "connection closed before the PING reply");
+                        received += read;
+                    }
+                    ClassicAssert.AreEqual("+PONG\r\n", Encoding.ASCII.GetString(reply));
+                }
+
+                // Receiving PONG can precede the session's final latency recording.
+                deadline = DateTime.UtcNow.AddSeconds(15);
+                foreach (var session in sessions)
+                {
+                    LongHistogram[] histograms;
+                    while (((histograms = session.LatencyMetrics.metrics[(int)LatencyMetricsType.NET_RS_BYTES].latency) == null
+                            || histograms[0].TotalCount + histograms[1].TotalCount == 0)
+                           && DateTime.UtcNow < deadline)
+                        Thread.Sleep(10);
+                    ClassicAssert.IsNotNull(histograms, "every recording session must allocate its histograms");
+                    ClassicAssert.AreEqual(2, histograms.Length, "session histograms must be double buffered");
+                    ClassicAssert.Greater(histograms[0].TotalCount + histograms[1].TotalCount, 0,
+                        "the PING must be recorded, not just allocate empty histograms");
+                }
+            }
+            finally
+            {
+                foreach (var socket in sockets)
+                    socket.Dispose();
+            }
         }
 
         /// <summary>

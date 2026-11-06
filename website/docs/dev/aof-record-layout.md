@@ -115,6 +115,21 @@ value and/or the serialized input, laid out by `TsavoriteLog.Enqueue(header, key
 - Which components are present depends on the op shape: e.g. DELETE is key-only (the value slot is unused on replay);
   a plain upsert is key + value; an RMW / upsert-with-input carries the input.
 
+### Imported strings
+
+A plain string record imported by `RENAME`, migration or diskless sync is logged as a single
+`StoreUpsert` entry (chunked for large values) carrying the value separately and a `StringInput`
+with command `SET`. Its `arg1` is the absolute expiration (0 when absent).
+The `HasEtag` bit in the existing flags byte indicates an explicit ETag in `StringInput.arg2`,
+serialized as an 8-byte integer between `arg1` and the parse state. Without this bit, `arg2`
+is omitted. Imported replacements set the bit even for ETag 0, which clears a destination's ETag.
+
+Replay upserts the value and sets exactly the entity tag and expiration carried by the entry,
+clearing any the destination already had, so no delete or transaction is needed. Plain-string
+`RENAME` is logged this way too; vector and range-index renames keep their existing unified input.
+This backend-only SET encoding is not exposed through RESP and requires updated readers.
+
+
 ---
 
 ## 5. Chunk management at a glance

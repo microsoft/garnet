@@ -2559,15 +2559,23 @@ namespace Tsavorite.core
         ///     case it IS the completionEvent's request instance, and the completed record is read back through it.</param>
         internal void AsyncGetFromDisk(long fromLogicalAddress, int numBytes, AsyncIOContext context)
         {
-            // If this is a protected thread, we must wait to issue the Read operation. Spin until the device is not throttled,
-            // draining events on each iteration, but do not release the epoch.
-            if (epoch.ThisInstanceProtected())
+            // A protected thread waits until the device is not throttled, reaping its own completions; there is no
+            // completion signal to block on. The wait releases the epoch so it does not hold an epoch-table entry;
+            // no caller depends on epoch-protected state across this call.
+            if (epoch.ThisInstanceProtected() && device.Throttle())
             {
-                while (device.Throttle())
+                epoch.Suspend();
+                try
                 {
-                    _ = device.TryCompleteMine();
-                    _ = Thread.Yield();
-                    epoch.ProtectAndDrain();
+                    while (device.Throttle())
+                    {
+                        _ = device.TryCompleteMine();
+                        _ = Thread.Yield();
+                    }
+                }
+                finally
+                {
+                    epoch.Resume();
                 }
             }
 

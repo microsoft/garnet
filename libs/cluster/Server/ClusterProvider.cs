@@ -119,6 +119,10 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
+        public void OnGossipClientConfigChanged()
+            => clusterManager?.SwapGossipClients();
+
+        /// <inheritdoc />
         public void Dispose()
         {
             failoverManager?.Dispose();
@@ -323,6 +327,9 @@ namespace Garnet.cluster
         public MetricsItem[] GetGossipStats(bool metricsDisabled)
         {
             var gossipStats = clusterManager.gossipStats;
+            var (activeMemoryUsageBytes, maxMemoryUsageBytes) = metricsDisabled
+                ? default
+                : clusterManager.clusterConnectionStore.GetMemoryUsage();
             return
                 [
                     new("meet_requests_recv", metricsDisabled ? "0" : gossipStats.meet_requests_recv.ToString()),
@@ -335,7 +342,9 @@ namespace Garnet.cluster
                     new("gossip_empty_send", metricsDisabled ? "0" : gossipStats.gossip_empty_send.ToString()),
                     new("gossip_bytes_send", metricsDisabled ? "0" : gossipStats.gossip_bytes_send.ToString()),
                     new("gossip_bytes_recv", metricsDisabled ? "0" : gossipStats.gossip_bytes_recv.ToString()),
-                    new("gossip_open_connections", metricsDisabled ? "0" : this.clusterManager.clusterConnectionStore.Count.ToString())
+                    new("gossip_open_connections", metricsDisabled ? "0" : this.clusterManager.clusterConnectionStore.Count.ToString()),
+                    new("gossip_active_memory_bytes", metricsDisabled ? "0" : activeMemoryUsageBytes.ToString()),
+                    new("gossip_max_memory_bytes", metricsDisabled ? "0" : maxMemoryUsageBytes.ToString())
                 ];
         }
 
