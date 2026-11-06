@@ -122,6 +122,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> PXAT => "PXAT"u8;
         public static ReadOnlySpan<byte> PERSIST => "PERSIST"u8;
         public static ReadOnlySpan<byte> KEEPTTL => "KEEPTTL"u8;
+        public static ReadOnlySpan<byte> REPLACE => "REPLACE"u8;
+        public static ReadOnlySpan<byte> ABSTTL => "ABSTTL"u8;
+        public static ReadOnlySpan<byte> IDLETIME => "IDLETIME"u8;
+        public static ReadOnlySpan<byte> FREQ => "FREQ"u8;
         public static ReadOnlySpan<byte> NX => "NX"u8;
         public static ReadOnlySpan<byte> XX => "XX"u8;
         public static ReadOnlySpan<byte> CH => "CH"u8;
@@ -306,6 +310,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_OVERFLOW_TYPE => "ERR Invalid OVERFLOW type specified"u8;
         public static ReadOnlySpan<byte> RESP_ERR_SCRIPT_FLUSH_OPTIONS => "ERR SCRIPT FLUSH only support SYNC|ASYNC option"u8;
         public static ReadOnlySpan<byte> RESP_ERR_BUSSYKEY => "BUSYKEY Target key name already exists."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_IDLETIME => "ERR Invalid IDLETIME value, must be >= 0"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_FREQ => "ERR Invalid FREQ value, must be >= 0 and <= 255"u8;
         public static ReadOnlySpan<byte> RESP_ERR_LENGTH_AND_INDEXES => "If you want both the length and indexes, please just use IDX."u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_EXPIRE_TIME => "ERR invalid expire time, must be >= 0"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_EXPIRATION_TICKS => "ERR invalid expiration ticks, must be >= -1"u8;

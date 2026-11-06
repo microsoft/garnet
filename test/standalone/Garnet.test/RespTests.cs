@@ -327,6 +327,170 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// RESTORE REPLACE overwrites an existing key and its TTL, whatever its type.
+        /// </summary>
+        [Test]
+        public void RestoreReplaceOverwritesExistingKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("source", "new");
+            var dump = db.KeyDump("source")!;
+
+            db.StringSet("mykey", "old", TimeSpan.FromHours(1));
+            ClassicAssert.AreEqual("OK", db.Execute("RESTORE", "mykey", 0, dump, "REPLACE").ToString());
+            ClassicAssert.AreEqual("new", db.StringGet("mykey").ToString());
+            ClassicAssert.IsNull(db.KeyTimeToLive("mykey"));
+
+            db.StringSet("mykey", "old");
+            ClassicAssert.AreEqual("OK", db.Execute("RESTORE", "mykey", 3_600_000, dump, "replace").ToString());
+            ClassicAssert.AreEqual("new", db.StringGet("mykey").ToString());
+            ClassicAssert.IsNotNull(db.KeyTimeToLive("mykey"));
+
+            db.KeyDelete("mykey");
+            db.HashSet("mykey", "field", "value");
+            ClassicAssert.AreEqual("OK", db.Execute("RESTORE", "mykey", 0, dump, "REPLACE").ToString());
+            ClassicAssert.AreEqual("new", db.StringGet("mykey").ToString());
+
+            db.KeyDelete("mykey");
+            db.HashSet("mykey", "field", "value");
+            var tran = db.CreateTransaction();
+            var restored = tran.ExecuteAsync("RESTORE", "mykey", 0, dump, "REPLACE");
+            ClassicAssert.IsTrue(tran.Execute());
+            ClassicAssert.AreEqual("OK", restored.Result.ToString());
+            ClassicAssert.AreEqual("new", db.StringGet("mykey").ToString());
+
+            db.KeyDelete("mykey");
+            ClassicAssert.AreEqual("OK", db.Execute("RESTORE", "mykey", 0, dump, "REPLACE").ToString());
+            ClassicAssert.AreEqual("new", db.StringGet("mykey").ToString());
+        }
+
+        /// <summary>
+        /// RESTORE ABSTTL takes the ttl as a Unix time in milliseconds.
+        /// </summary>
+        [Test]
+        public void RestoreAbsTtlSetsAbsoluteExpiration()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "val");
+            var dump = db.KeyDump("mykey")!;
+            db.KeyDelete("mykey");
+
+            var deadline = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds();
+            ClassicAssert.AreEqual("OK", db.Execute("RESTORE", "mykey", deadline, dump, "ABSTTL").ToString());
+            ClassicAssert.AreEqual("val", db.StringGet("mykey").ToString());
+            ClassicAssert.AreEqual(deadline, (long)db.Execute("PEXPIRETIME", "mykey"));
+        }
+
+        /// <summary>
+        /// RESTORE ABSTTL with a deadline in the past creates no key, and with REPLACE it removes the existing one.
+        /// </summary>
+        [Test]
+        public void RestoreAbsTtlInThePastDoesNotCreateKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "val");
+            var dump = db.KeyDump("mykey")!;
+            db.KeyDelete("mykey");
+
+            var past = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeMilliseconds();
+
+            ClassicAssert.AreEqual("OK", db.Execute("RESTORE", "mykey", past, dump, "ABSTTL").ToString());
+            ClassicAssert.IsFalse(db.KeyExists("mykey"));
+
+            db.StringSet("mykey", "old");
+            var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("RESTORE", "mykey", past, dump, "ABSTTL"));
+            ClassicAssert.AreEqual("BUSYKEY Target key name already exists.", ex.Message);
+            ClassicAssert.AreEqual("old", db.StringGet("mykey").ToString());
+
+            ClassicAssert.AreEqual("OK", db.Execute("RESTORE", "mykey", past, dump, "ABSTTL", "REPLACE").ToString());
+            ClassicAssert.IsFalse(db.KeyExists("mykey"));
+        }
+
+        /// <summary>
+        /// RESTORE rejects a dump whose declared length does not fit in the payload, before touching the key.
+        /// </summary>
+        [Test]
+        public void RestoreRejectsTruncatedPayload()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Declares a 63 byte string but has no string data, with a valid RDB version and checksum
+            byte[] header = [0x00, 0x3F, 0x0B, 0x00];
+            byte[] dump = [.. header, .. Crc64.Hash(header)];
+
+            var past = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeMilliseconds();
+
+            foreach (var args in new object[][] { ["mykey", 0, dump], ["mykey", 0, dump, "REPLACE"], ["mykey", past, dump, "ABSTTL", "REPLACE"] })
+            {
+                db.StringSet("mykey", "old");
+                var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("RESTORE", args));
+                ClassicAssert.AreEqual("ERR DUMP payload length format is invalid", ex.Message, string.Join(' ', args.Skip(1)));
+                ClassicAssert.AreEqual("old", db.StringGet("mykey").ToString(), string.Join(' ', args.Skip(1)));
+            }
+        }
+
+        /// <summary>
+        /// RESTORE accepts IDLETIME and FREQ, which Garnet validates and then ignores.
+        /// </summary>
+        [Test]
+        public void RestoreAcceptsIdleTimeAndFreq()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "val");
+            var dump = db.KeyDump("mykey")!;
+            db.KeyDelete("mykey");
+
+            foreach (var options in new object[][] { ["IDLETIME", 10], ["FREQ", 5], ["freq", 0, "REPLACE", "ABSTTL"] })
+            {
+                ClassicAssert.AreEqual("OK", db.Execute("RESTORE", ["mykey", 0, dump, .. options]).ToString(), string.Join(' ', options));
+                ClassicAssert.AreEqual("val", db.StringGet("mykey").ToString(), string.Join(' ', options));
+                db.KeyDelete("mykey");
+            }
+        }
+
+        /// <summary>
+        /// RESTORE rejects unknown options and invalid IDLETIME or FREQ values, and creates no key.
+        /// </summary>
+        [Test]
+        public void RestoreRejectsInvalidOptions()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "val");
+            var dump = db.KeyDump("mykey")!;
+            db.KeyDelete("mykey");
+
+            foreach (var (options, expected) in new (object[], string)[]
+            {
+                (["FOO"], "ERR syntax error"),
+                (["IDLETIME"], "ERR syntax error"),
+                (["FREQ"], "ERR syntax error"),
+                (["IDLETIME", 1, "FREQ", 1], "ERR syntax error"),
+                (["FREQ", 1, "IDLETIME", 1], "ERR syntax error"),
+                (["IDLETIME", "abc"], "ERR value is not an integer or out of range."),
+                (["IDLETIME", -1], "ERR Invalid IDLETIME value, must be >= 0"),
+                (["FREQ", "abc"], "ERR value is not an integer or out of range."),
+                (["FREQ", -1], "ERR Invalid FREQ value, must be >= 0 and <= 255"),
+                (["FREQ", 256], "ERR Invalid FREQ value, must be >= 0 and <= 255"),
+            })
+            {
+                var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("RESTORE", ["mykey", 0, dump, .. options]));
+                ClassicAssert.AreEqual(expected, ex.Message, string.Join(' ', options));
+                ClassicAssert.IsFalse(db.KeyExists("mykey"), string.Join(' ', options));
+            }
+        }
+
+        /// <summary>
         /// Tests that DUMP command returns payload with 6 bit encoded length
         /// </summary>
         [Test]

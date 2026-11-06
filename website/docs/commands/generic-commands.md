@@ -511,12 +511,18 @@ String reply: The serialization format is opaque and non-standard, however it ha
 #### Syntax
 
 ```bash
-restore mykey 0 "\x00\x0evallllllllllll\x0b\x00|\xeb\xe2|\xd2.\xfa7"
+RESTORE key ttl serialized-value [REPLACE] [ABSTTL] [IDLETIME seconds] [FREQ frequency]
 ```
 
 Create a key associated with a value that is obtained by deserializing the provided serialized value (obtained via [DUMP](#dump)).
 
 If ttl is 0 the key is created without any expire, otherwise the specified expire time (in milliseconds) is set.
+
+If the key already exists the command returns a BUSYKEY error, unless the REPLACE modifier is used.
+
+If the ABSTTL modifier is used, ttl is the absolute Unix timestamp (in milliseconds) at which the key will expire. A timestamp in the past creates no key.
+
+IDLETIME and FREQ are validated but have no effect, because Garnet does not track idle time or access frequency.
 
 #### Resp Reply
 
