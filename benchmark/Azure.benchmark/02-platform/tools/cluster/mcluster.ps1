@@ -120,6 +120,26 @@ function Get-Eth1Ip {
     throw "ERROR: Could not determine $IFACE IP"
 }
 
+function Get-GarnetLogMemorySize {
+    param([string]$AofMemorySize)
+
+    $memInfo = Get-Content -LiteralPath '/proc/meminfo' -Raw
+    if ($memInfo -notmatch '(?m)^MemTotal:\s+(\d+)\s+kB\s*$') {
+        throw 'Cannot determine total VM memory from /proc/meminfo.'
+    }
+    $totalMemoryBytes = [decimal]$Matches[1] * 1KB
+    if ($AofMemorySize -notmatch '^(\d+)([kmgt]?)$') {
+        throw "Unsupported AofMemorySize for VM-sized log memory: $AofMemorySize"
+    }
+    $units = @{ '' = 1; k = 1KB; m = 1MB; g = 1GB; t = 1TB }
+    $aofMemoryBytes = [decimal]$Matches[1] * $units[$Matches[2].ToLowerInvariant()]
+    $logMemoryBytes = [long][decimal]::Floor($totalMemoryBytes * [decimal]0.8 - $aofMemoryBytes)
+    if ($logMemoryBytes -lt 64MB) {
+        throw 'VM memory remaining after the 20% reserve and AOF buffer is below the 64 MiB log minimum.'
+    }
+    return [string]$logMemoryBytes
+}
+
 function Resolve-Config {
     param([string]$Sys, [int]$Count, [string]$ConfPath, [string]$ConfB64, [string]$ConfLeaf)
 
@@ -148,6 +168,14 @@ function Resolve-Config {
 
     # Check if the configuration uses ramdisk and ensure directories exist
     $sourceContent = Get-Content $sourceFile -Raw
+    if ($Sys -eq 'garnet' -and $sourceContent.Contains('$logMemorySize')) {
+        if ($Count -ne 1) {
+            throw 'VM-sized log memory requires exactly one Garnet instance per VM.'
+        }
+        $memorySettings = ($sourceContent -replace '\$port', $BASE_PORT) | ConvertFrom-Json
+        $logMemorySize = Get-GarnetLogMemorySize -AofMemorySize $memorySettings.AofMemorySize
+        $sourceContent = $sourceContent.Replace('$logMemorySize', $logMemorySize)
+    }
     $configEnablesTls = $sourceContent -match '"EnableTLS"\s*:\s*true'
     if ($Sys -eq 'garnet' -and $configEnablesTls -and -not $Tls) {
         throw "Configuration enables TLS; pass -Tls so certificate material is provisioned."
@@ -261,6 +289,13 @@ function Start-Valkey {
 function Get-GarnetRuntimeDirectory {
     param([string]$ConfigPath, [string]$DefaultDirectory)
     $settings = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
+    if ($settings.CheckpointDir -and ([string]$settings.CheckpointDir).StartsWith('/dev/shm/', [StringComparison]::Ordinal)) {
+        $fileSystem = & findmnt -n -o FSTYPE --target /dev/shm
+        if ($LASTEXITCODE -ne 0 -or "$fileSystem".Trim() -ne 'tmpfs') {
+            throw '/dev/shm is not mounted as tmpfs; refusing to write diskless runtime output to disk.'
+        }
+        return [string]$settings.CheckpointDir
+    }
     if ($settings.LogDir -and ([string]$settings.LogDir).StartsWith("$($NVME_DIR.TrimEnd('/'))/", [StringComparison]::Ordinal)) {
         & mountpoint -q $NVME_DIR
         if ($LASTEXITCODE -ne 0) { throw "NVMe mount $NVME_DIR is unavailable; refusing to write to the OS disk." }

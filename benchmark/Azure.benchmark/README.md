@@ -113,6 +113,15 @@ pwsh .\03-workload\cluster.ps1 `
 # To start Garnet with TLS instead, add --tls and use:
 # --conf 02-platform/tools/config/garnet/garnet-cache-tls.conf
 
+# For a diskless cluster, use --icount 1 and:
+# --conf 02-platform/tools/config/garnet/garnet-cluster-diskless.conf
+# mcluster.ps1 sizes LogMemorySize as floor(VM RAM * 0.8) minus the 1 GiB AOF.
+# Storage and metadata use null devices; diskless replication is enabled.
+# Runtime logs go to /dev/shm (verified tmpfs); config staging still writes files.
+# Shipping and replay lag are each bounded to 256 MiB to throttle slow replicas
+# before the AOF buffer wraps. This is volatile storage, not durable replication;
+# restart or replica disconnection can require a full sync.
+
 # 5. Run benchmark from client VMs -> see 03-workload/README.md
 pwsh .\03-workload\bench\resp-bench.ps1 `
   --configfile .\03-workload\bench\bench.conf

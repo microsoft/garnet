@@ -106,6 +106,7 @@ Describe 'Garnet runtime output routing' {
 
     It 'launches with stdout, stderr and the working directory on <RuntimeDir>' -TestCases @(
         @{ RuntimeDir = '/mnt/nvme/garnet-cluster/7000' }
+        @{ RuntimeDir = '/dev/shm/garnet-cluster/7000' }
         @{ RuntimeDir = 'ordinary-instance' }
     ) {
         param($RuntimeDir)
