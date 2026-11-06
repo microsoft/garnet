@@ -413,6 +413,30 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// RESTORE rejects a dump whose declared length does not fit in the payload, before touching the key.
+        /// </summary>
+        [Test]
+        public void RestoreRejectsTruncatedPayload()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Declares a 63 byte string but has no string data, with a valid RDB version and checksum
+            byte[] header = [0x00, 0x3F, 0x0B, 0x00];
+            byte[] dump = [.. header, .. Crc64.Hash(header)];
+
+            var past = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeMilliseconds();
+
+            foreach (var args in new object[][] { ["mykey", 0, dump], ["mykey", 0, dump, "REPLACE"], ["mykey", past, dump, "ABSTTL", "REPLACE"] })
+            {
+                db.StringSet("mykey", "old");
+                var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("RESTORE", args));
+                ClassicAssert.AreEqual("ERR DUMP payload length format is invalid", ex.Message, string.Join(' ', args.Skip(1)));
+                ClassicAssert.AreEqual("old", db.StringGet("mykey").ToString(), string.Join(' ', args.Skip(1)));
+            }
+        }
+
+        /// <summary>
         /// RESTORE accepts IDLETIME and FREQ, which Garnet validates and then ignores.
         /// </summary>
         [Test]

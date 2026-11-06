@@ -139,8 +139,9 @@ namespace Garnet.server
                 return true;
             }
 
-            // decode the length of payload
-            if (!RespLengthEncodingUtils.TryReadLength(valueSpan.Slice(1), out var length, out var payloadStart))
+            // decode the length of payload, which has to fit between the value type byte and the footer
+            if (!RespLengthEncodingUtils.TryReadLength(valueSpan.Slice(1), out var length, out var payloadStart)
+                || 1L + payloadStart + length > valueSpan.Length - footer.Length)
             {
                 while (!RespWriteUtils.TryWriteError("ERR DUMP payload length format is invalid", ref dcurr, dend))
                     SendAndReset();
