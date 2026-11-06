@@ -162,7 +162,7 @@ namespace Resp.benchmark
                     return true;
                 }
 
-                if (opts.Client == ClientType.LightClient && opts.Pool)
+                if (opts.Client == ClientType.LightClient && opts.Pool && (!opts.ClusterBench || opts.Broadcast))
                 {
                     Console.WriteLine("Pooling of LightClient is not supported");
                     return true;

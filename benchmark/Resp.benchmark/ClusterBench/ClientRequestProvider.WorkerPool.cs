@@ -57,7 +57,7 @@ namespace Resp.benchmark
                 case ClientType.LightClient:
                     primaryLightClient = new LightClient(
                         primaryEndpoint,
-                        (int)opts.Op,
+                        (int)(opts.Online ? OpType.NONE : opts.Op),
                         onResponse,
                         bufferSize,
                         opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
@@ -67,7 +67,9 @@ namespace Resp.benchmark
                     if (replicaEndpoint != null)
                     {
                         // For mixed workload (write op + replicas), replica receives read responses
-                        var replicaOpType = workload.ReplicaRequests != null
+                        var replicaOpType = opts.Online
+                            ? (int)OpType.NONE
+                            : workload.ReplicaRequests != null
                             ? (int)GetReadOperationType()
                             : (int)opts.Op;
 
@@ -168,6 +170,12 @@ namespace Resp.benchmark
             // Lazy initialization of connections
             if (!connectionsInitialized)
                 InitializeConnections();
+
+            if (opts.Client == ClientType.LightClient)
+            {
+                ExecuteOnlineLightClientBatch(primaryLightClient, replicaLightClient);
+                return;
+            }
 
             var dbSizePerShard = opts.DbSize;
             var key = GenerateKey(dbSizePerShard);
