@@ -502,17 +502,22 @@ namespace Garnet.test.cluster
 
         // The cases above use the replica's default single write buffer; also cover synchronous writes and two buffers.
         [Category("REPLICATION")]
-        [TestCase(0)]
-        [TestCase(2)]
-        public void DiskBasedSyncWithReplicaWriteBuffers(int writeBuffers)
-            => RunDiskBasedSyncWithConfiguredChunks("1m", 3, runtime: false, writeBuffers);
+        [TestCase(0, false)]
+        [TestCase(2, false)]
+        [TestCase(4, false)]
+        [TestCase(0, true)]
+        [TestCase(2, true)]
+        [TestCase(4, true)]
+        public void DiskBasedSyncWithReplicaWriteBuffers(int writeBuffers, bool concurrently)
+            => RunDiskBasedSyncWithConfiguredChunks("1m", 3, runtime: false, writeBuffers, concurrently);
 
-        void RunDiskBasedSyncWithConfiguredChunks(string chunkSize, int pipelineDepth, bool runtime, int writeBuffers = 1)
+        void RunDiskBasedSyncWithConfiguredChunks(string chunkSize, int pipelineDepth, bool runtime, int writeBuffers = 1, bool concurrently = false)
         {
             context.CreateInstances(2, enableAOF: true, lowMemory: true, memorySize: "4m", pageSize: "1m", segmentSize: "4m",
                 useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount,
                 replicaDiskBasedSyncChunkSize: runtime ? "128k" : chunkSize, replicaDiskBasedSyncPipelineDepth: runtime ? 1 : pipelineDepth,
-                replicaDiskBasedSyncWriteBuffers: writeBuffers);
+                replicaDiskBasedSyncWriteBuffers: writeBuffers,
+                replicaDiskBasedSyncWriteBuffersConcurrently: concurrently);
             context.CreateConnection(useTLS: useTLS);
             Assert.That(context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger), Is.EqualTo("OK"));
             context.clusterTestUtils.BumpEpoch(0, logger: context.logger);

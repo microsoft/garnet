@@ -17,8 +17,11 @@ internal static class Program
             {
                 Console.WriteLine("""
                     Standalone checkpoint-file transfer benchmark (NOT a Garnet server).
+                    [--scenario transfer-only|full] Default: transfer-only.
+                    Full is reserved for the production-driver follow-up and is not implemented yet.
                     receive --output <existing directory> [--bind 127.0.0.1] [--port 7010]
                             [--runs 1] [--max-chunk 16m] [--ack-delay-us 0] [--write-buffers 1]
+                            [--write-buffers-concurrently false]
                     send    --source-prefix <prefix for existing prefix.0> [--host 127.0.0.1]
                             [--port 7010] [--chunks 128k,1m,4m,16m] [--depths 1,2,4,8]
                             [--repeats 3] [--csv <new file>]
@@ -34,7 +37,6 @@ internal static class Program
                 return 0;
             }
 
-            var options = Options.Parse(args);
             using var stop = new CancellationTokenSource();
             ConsoleCancelEventHandler onCancel = (_, e) =>
             {
@@ -44,12 +46,18 @@ internal static class Program
             Console.CancelKeyPress += onCancel;
             try
             {
-                if (options.Mode == "receive")
-                    await Receiver.RunAsync(options, stop.Token);
-                else if (options.Mode == "generate")
-                    _ = await CheckpointGenerator.RunAsync(options, stop.Token);
+                if (SelectScenario(args) == "full")
+                    throw new NotSupportedException("The full production scenario is not implemented yet; use --scenario transfer-only.");
                 else
-                    await Sender.RunAsync(options, stop.Token);
+                {
+                    var options = Options.Parse(args);
+                    if (options.Mode == "receive")
+                        await Receiver.RunAsync(options, stop.Token);
+                    else if (options.Mode == "generate")
+                        _ = await CheckpointGenerator.RunAsync(options, stop.Token);
+                    else
+                        await Sender.RunAsync(options, stop.Token);
+                }
             }
             finally
             {
@@ -62,6 +70,18 @@ internal static class Program
             Console.Error.WriteLine($"FAILED: {ex.GetType().Name}: {ex.Message}");
             return 1;
         }
+    }
+
+    internal static string SelectScenario(string[] args)
+    {
+        var selectors = args.Select((value, index) => (value, index)).Where(pair => pair.value == "--scenario").ToArray();
+        if (selectors.Length > 1)
+            throw new ArgumentException("Repeated --scenario.");
+        var scenario = selectors.Length == 0 ? "transfer-only"
+            : selectors[0].index + 1 < args.Length ? args[selectors[0].index + 1] : "";
+        if (scenario is not ("full" or "transfer-only") || (args[0] == "generate" && scenario != "transfer-only"))
+            throw new ArgumentException("--scenario must be full or transfer-only; generate is transfer-only.");
+        return scenario;
     }
 }
 
@@ -80,6 +100,7 @@ internal sealed class Options
     internal int MaxChunk { get; private init; }
     internal long AckDelayUs { get; private init; }
     internal int WriteBuffers { get; private init; }
+    internal bool WriteBuffersConcurrently { get; private init; }
     internal TimeSpan Timeout { get; private init; }
     internal DeviceType DeviceType { get; private init; }
     internal bool Buffered { get; private init; }
@@ -90,11 +111,13 @@ internal sealed class Options
         var mode = args[0];
         if (mode is not ("send" or "receive" or "generate"))
             throw new ArgumentException("First argument must be send, receive, or generate.");
-        string[] common = ["--device", "--buffered"];
+        if (args.Contains("--scenario") && Program.SelectScenario(args) != "transfer-only")
+            throw new ArgumentException("Component options require --scenario transfer-only.");
+        string[] common = ["--device", "--buffered", "--scenario"];
         string[] specific = mode switch
         {
             "send" => ["--source-prefix", "--generate", "--data-size", "--host", "--port", "--timeout-seconds", "--chunks", "--depths", "--repeats", "--csv"],
-            "receive" => ["--output", "--bind", "--port", "--timeout-seconds", "--runs", "--max-chunk", "--ack-delay-us", "--write-buffers"],
+            "receive" => ["--output", "--bind", "--port", "--timeout-seconds", "--runs", "--max-chunk", "--ack-delay-us", "--write-buffers", "--write-buffers-concurrently"],
             _ => ["--output", "--data-size"]
         };
         var allowed = common.Concat(specific).ToHashSet(StringComparer.Ordinal);
@@ -168,6 +191,7 @@ internal sealed class Options
             MaxChunk = new GarnetServerOptions { ReplicaDiskBasedSyncChunkSize = Get("--max-chunk", "16m") }.GetReplicaDiskBasedSyncChunkSizeBytes(),
             AckDelayUs = ackDelayUs,
             WriteBuffers = Number("--write-buffers", 1, 0, GarnetServerOptions.ReplicaDiskBasedSyncWriteBuffersMax),
+            WriteBuffersConcurrently = bool.Parse(Get("--write-buffers-concurrently", "false")),
             Timeout = timeout,
             DeviceType = device,
             Buffered = bool.Parse(Get("--buffered", "false")),

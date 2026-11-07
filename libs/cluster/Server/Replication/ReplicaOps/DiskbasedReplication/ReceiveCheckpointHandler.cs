@@ -24,12 +24,14 @@ namespace Garnet.cluster
 
         // Received chunks an overlapped file writer may hold, queued or being written; 0 writes each chunk synchronously.
         readonly int writeBuffers;
+        readonly bool writeBuffersConcurrently;
 
         public ReceiveCheckpointHandler(ClusterProvider clusterProvider, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
             this.logger = logger;
             writeBuffers = clusterProvider.serverOptions.ReplicaDiskBasedSyncWriteBuffers;
+            writeBuffersConcurrently = clusterProvider.serverOptions.ReplicaDiskBasedSyncWriteBuffersConcurrently;
             cts = new();
         }
 
@@ -174,7 +176,7 @@ namespace Garnet.cluster
                         bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
                         var timeout = clusterProvider.serverOptions.ReplicaSyncTimeout;
                         activeSink = writeBuffers > 0
-                            ? new OverlappedFileDataSink(type, token, device, bufferPool, writeBuffers, timeout, cts.Token, logger)
+                            ? new OverlappedFileDataSink(type, token, device, bufferPool, writeBuffers, timeout, cts.Token, logger, writeBuffersConcurrently)
                             : new FileDataSink(type, token, device, bufferPool, writeSemaphore, timeout, cts.Token, logger);
                         break;
                     default:

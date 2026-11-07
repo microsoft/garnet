@@ -499,8 +499,12 @@ namespace Garnet
         public int ReplicaDiskBasedSyncPipelineDepth { get; set; }
 
         [IntRangeValidation(0, GarnetServerOptions.ReplicaDiskBasedSyncWriteBuffersMax)]
-        [Option("repl-disk-based-sync-write-buffers", Required = false, HelpText = "Received disk-based Tsavorite checkpoint chunks the replica may hold for its file writer, queued or being written, so it can receive the next chunk while writing (0-8, default 1; 0 writes each chunk before receiving the next). Each uses one chunk-sized buffer. Set on the replica.")]
+        [Option("repl-disk-based-sync-write-buffers", Required = false, HelpText = "Received disk-based Tsavorite checkpoint chunks the replica may hold for its file writer, queued or being written, so it can receive the next chunk while writing (0-8, default 1; 0 writes each chunk before receiving the next). Each uses one chunk-sized buffer. Set on the replica; requires restart.")]
         public int ReplicaDiskBasedSyncWriteBuffers { get; set; }
+
+        [OptionValidation]
+        [Option("repl-disk-based-sync-write-buffers-concurrently", Required = false, HelpText = "Issue disk-based Tsavorite checkpoint writes concurrently when the replica has more than one write buffer (default false). Does not change buffer limits or EOF completion. Set on the replica; requires restart.")]
+        public bool? ReplicaDiskBasedSyncWriteBuffersConcurrently { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("repl-diskless-sync-delay", Required = false, HelpText = "Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.")]
@@ -1054,6 +1058,7 @@ namespace Garnet
                 ReplicaDiskBasedSyncChunkSize = ReplicaDiskBasedSyncChunkSize,
                 ReplicaDiskBasedSyncPipelineDepth = ReplicaDiskBasedSyncPipelineDepth,
                 ReplicaDiskBasedSyncWriteBuffers = ReplicaDiskBasedSyncWriteBuffers,
+                ReplicaDiskBasedSyncWriteBuffersConcurrently = ReplicaDiskBasedSyncWriteBuffersConcurrently.Value,
                 ReplicaAttachTimeout = ReplicaAttachTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(ReplicaAttachTimeout),
                 ReplicaDisklessSyncFullSyncAofThreshold = ReplicaDisklessSyncFullSyncAofThreshold,
                 UseAofNullDevice = UseAofNullDevice.GetValueOrDefault(),

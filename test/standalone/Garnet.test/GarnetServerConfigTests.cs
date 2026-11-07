@@ -34,7 +34,28 @@ namespace Garnet.test
             Assert.That(new GarnetServerOptions().GetReplicaDiskBasedSyncPipelineDepth(), Is.EqualTo(4));
             Assert.That(options.GetServerOptions().ReplicaDiskBasedSyncWriteBuffers, Is.EqualTo(1));
             Assert.That(new GarnetServerOptions().ReplicaDiskBasedSyncWriteBuffers, Is.EqualTo(1));
+            Assert.That(options.GetServerOptions().ReplicaDiskBasedSyncWriteBuffersConcurrently, Is.False);
+            Assert.That(new GarnetServerOptions().ReplicaDiskBasedSyncWriteBuffersConcurrently, Is.False);
         }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void DiskBasedSyncConcurrentWriteConfiguration(bool concurrently)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-disk-based-sync-write-buffers-concurrently", concurrently.ToString()],
+                out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.GetServerOptions().ReplicaDiskBasedSyncWriteBuffersConcurrently, Is.EqualTo(concurrently));
+            var json = JsonSerializer.Serialize(new { ReplicaDiskBasedSyncWriteBuffersConcurrently = concurrently });
+            Assert.That(TryParseGarnetConfOptions(json, out var configured, out _, out _), Is.True);
+            Assert.That(configured.GetServerOptions().ReplicaDiskBasedSyncWriteBuffersConcurrently, Is.EqualTo(concurrently));
+        }
+
+        [Test]
+        public void InvalidConcurrentWriteFlagIsRejected()
+            => Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-disk-based-sync-write-buffers-concurrently", "invalid"],
+                out _, out _, out _, out _, silentMode: true), Is.False);
 
         [TestCase(0, true)]
         [TestCase(1, true)]

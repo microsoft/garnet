@@ -708,6 +708,12 @@ namespace Garnet.server
         public int ReplicaDiskBasedSyncWriteBuffers = 1;
 
         /// <summary>
+        /// Issue disk-based Tsavorite checkpoint writes concurrently when more than one write buffer is configured.
+        /// Default false. Captured at receive-handler creation; requires restart.
+        /// </summary>
+        public bool ReplicaDiskBasedSyncWriteBuffersConcurrently;
+
+        /// <summary>
         /// Validate the pipeline depth and its maximum outstanding payload budget.
         /// </summary>
         public int GetReplicaDiskBasedSyncPipelineDepth()

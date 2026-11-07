@@ -1,6 +1,16 @@
 # Replica-transfer benchmark
 
-This signed, standalone executable sweeps checkpoint chunk sizes and bounded
+## Scenarios
+
+`send` and `receive` currently default to `--scenario transfer-only`.
+The selector also recognizes `--scenario full`, reserved for the
+production-driver follow-up; selecting it currently fails explicitly.
+`generate` remains transfer-only. This commit is a buildable rollback
+point before introducing real-server orchestration and phase timing.
+
+## Transfer-only component scenario
+
+Explicitly select `--scenario transfer-only`. This signed executable sweeps checkpoint chunk sizes and bounded
 pipeline depths using the real Garnet
 `FileDataSource → FileTransmitSource → GarnetClientSession.ExecuteClusterSnapshotData`
 sender and the replica's `OverlappedFileDataSink` (or, with `--write-buffers 0`,
@@ -103,10 +113,10 @@ large checkpoints or slow storage, or prepare with `generate` before starting it
 
 ```powershell
 # Terminal 1: dedicated destination path, 48 successful runs, no ACK delay.
-dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll receive --output F:\checkpoint-output --runs 48 --timeout-seconds 120
+dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll receive --scenario transfer-only --output F:\checkpoint-output --runs 48 --timeout-seconds 120
 
 # Terminal 2: default sweep, with a NEW results file.
-dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll send --generate E:\checkpoint-input --data-size 512m --csv .\replica-transfer-results.csv --timeout-seconds 120
+dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll send --scenario transfer-only --generate E:\checkpoint-input --data-size 512m --csv .\replica-transfer-results.csv --timeout-seconds 120
 ```
 
 For a quick functional check, use `receive --runs 1` and
@@ -121,10 +131,10 @@ and both machines have built the same revision:
 
 ```powershell
 # Receiver machine (private trusted network only).
-dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll receive --bind 192.168.50.20 --port 7010 --output F:\checkpoint-output --runs 48 --timeout-seconds 120
+dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll receive --scenario transfer-only --bind 192.168.50.20 --port 7010 --output F:\checkpoint-output --runs 48 --timeout-seconds 120
 
 # Sender machine.
-dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll send --host 192.168.50.20 --port 7010 --generate E:\checkpoint-input --data-size 512m --chunks 128k,1m,4m,16m --depths 1,2,4,8 --repeats 3 --csv .\replica-transfer-private-network.csv --timeout-seconds 120
+dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll send --scenario transfer-only --host 192.168.50.20 --port 7010 --generate E:\checkpoint-input --data-size 512m --chunks 128k,1m,4m,16m --depths 1,2,4,8 --repeats 3 --csv .\replica-transfer-private-network.csv --timeout-seconds 120
 ```
 
 `--host` and `--bind` take IP literals (IPv4 or IPv6), not DNS names. Unix users
@@ -149,7 +159,8 @@ paths.
 | receive | `--runs` | `1` | Number of verified transfers before exit |
 | receive | `--max-chunk` | `16m` | Bounded receive-frame allocation limit |
 | receive | `--ack-delay-us` | `0` | Fixed additional ACK availability delay, in microseconds, after chunk acceptance and EOF completion; e.g. `1000` models a 1 ms RTT |
-| receive | `--write-buffers` | `1` | Received chunks that may wait for the file writer, as Garnet's `--repl-disk-based-sync-write-buffers` (0–8); `0` writes each chunk before receiving the next |
+| receive | `--write-buffers` | `1` | Maximum received chunks queued or being written, as Garnet's `--repl-disk-based-sync-write-buffers` (0–8); `0` writes each chunk before receiving the next |
+| receive | `--write-buffers-concurrently` | `false` | Concurrent positional writes when more than one buffer is configured; independent of buffer count |
 | send / receive | `--port` | `7010` | Dedicated benchmark port |
 | send / receive | `--timeout-seconds` | `30` | Connect, command, I/O, verification, and receiver accept/read timeout (1–3600 seconds) |
 | all | `--device` | `RandomAccess` | Real Tsavorite local device: `RandomAccess`, `Native`, or `FileStream` |
@@ -211,10 +222,10 @@ availability zones in one region:
 
 ```powershell
 # Terminal 1: eight runs, 1 ms additional delay, same retained-file rules.
-dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll receive --output F:\checkpoint-output --runs 8 --ack-delay-us 1000 --timeout-seconds 120
+dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll receive --scenario transfer-only --output F:\checkpoint-output --runs 8 --ack-delay-us 1000 --timeout-seconds 120
 
 # Terminal 2: one chunk size, four depths, two repeats.
-dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll send --generate E:\checkpoint-input --data-size 64m --chunks 128k --depths 1,2,4,8 --repeats 2 --csv .\replica-transfer-delayed-ack.csv --timeout-seconds 120
+dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll send --scenario transfer-only --generate E:\checkpoint-input --data-size 64m --chunks 128k --depths 1,2,4,8 --repeats 2 --csv .\replica-transfer-delayed-ack.csv --timeout-seconds 120
 ```
 
 An independent FIFO response writer releases each ACK no earlier than

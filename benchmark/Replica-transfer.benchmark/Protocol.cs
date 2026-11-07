@@ -10,8 +10,8 @@ namespace ReplicaTransfer.benchmark;
 
 internal sealed class Protocol
 {
-    // V3: the handshake also reports the receiver's write buffers; an older peer fails the handshake instead of misreading it.
-    internal const string Magic = "CHECKPOINT_BENCH_V4";
+    // The handshake reports write policy as well as buffer count; incompatible peers fail explicitly.
+    internal const string Magic = "CHECKPOINT_BENCH_V5";
     private readonly NetworkStream stream;
     private readonly TimeSpan timeout;
     private readonly int maxFrame;

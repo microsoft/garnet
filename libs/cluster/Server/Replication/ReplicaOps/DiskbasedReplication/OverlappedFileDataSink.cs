@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Channels;
@@ -15,9 +16,9 @@ namespace Garnet.cluster
     /// <summary>
     /// Device-backed <see cref="ISnapshotDataSink"/> that lets the replica keep receiving while it writes.
     /// <para>
-    /// The receiving thread copies each chunk into a sector-aligned buffer and queues it. One writer issues the device
-    /// writes strictly in arrival order, one at a time, so the file is still written sequentially. A chunk is accepted
-    /// once it is queued; completing the sink waits for every queued write and reports the first failure.
+    /// The receiving thread copies each chunk into a sector-aligned buffer and queues it. Writes are sequential unless
+    /// concurrency is enabled; non-overlapping chunks may then complete out of order. A chunk is accepted once queued; completing the sink
+    /// waits for every queued write and reports the first failure.
     /// </para>
     /// <para>
     /// Up to <c>writeBuffers</c> received chunks may be held, queued or being written; beyond that
@@ -33,6 +34,7 @@ namespace Garnet.cluster
         private readonly TimeSpan timeout;
         private readonly CancellationToken cancellationToken;
         private readonly ILogger logger;
+        private readonly bool writeBuffersConcurrently;
         // Single reader: the writer task. Not single-writer: Dispose can complete the channel from the thread abandoning a
         // sync attempt while the receiving thread queues a chunk.
         private readonly Channel<PendingWrite> queue =
@@ -40,6 +42,8 @@ namespace Garnet.cluster
         private readonly Task writer;
         private Exception failure;
         private int disposed;
+        // Only the receiving thread advances this; sector-padded ranges cannot overlap outstanding writes.
+        private long acceptedUntilAddress;
 
         private readonly record struct PendingWrite(long Address, SectorAlignedMemory Buffer, uint Length);
 
@@ -60,6 +64,7 @@ namespace Garnet.cluster
         /// <param name="timeout">Timeout for each device write and for waiting on a free buffer.</param>
         /// <param name="cancellationToken">Cancels waiting and in-progress writes when the receive is abandoned.</param>
         /// <param name="logger">Optional logger.</param>
+        /// <param name="writeBuffersConcurrently">Whether to issue multiple positional writes concurrently.</param>
         public OverlappedFileDataSink(
             CheckpointFileType type,
             Guid token,
@@ -68,7 +73,8 @@ namespace Garnet.cluster
             int writeBuffers,
             TimeSpan timeout,
             CancellationToken cancellationToken,
-            ILogger logger = null)
+            ILogger logger = null,
+            bool writeBuffersConcurrently = false)
         {
             ArgumentOutOfRangeException.ThrowIfLessThan(writeBuffers, 1);
             Type = type;
@@ -78,6 +84,7 @@ namespace Garnet.cluster
             this.timeout = timeout;
             this.cancellationToken = cancellationToken;
             this.logger = logger;
+            this.writeBuffersConcurrently = writeBuffersConcurrently;
             freeBuffers = new SemaphoreSlim(writeBuffers, writeBuffers);
             writer = Task.Run(WriteQueuedChunksAsync);
         }
@@ -94,6 +101,11 @@ namespace Garnet.cluster
                 throw new ArgumentException($"startAddress {startAddress} is not aligned to device sector size {device.SectorSize}", nameof(startAddress));
 
             ThrowIfFailed();
+            var length = (uint)((data.Length + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
+            if (startAddress < acceptedUntilAddress)
+                throw new ArgumentException($"startAddress {startAddress} overlaps an earlier checkpoint chunk ending at {acceptedUntilAddress}", nameof(startAddress));
+            var endAddress = checked(startAddress + length);
+
 #pragma warning disable VSTHRD103 // Blocking the receiving thread is the backpressure: it stops reading the primary's chunks.
             if (!freeBuffers.Wait(timeout, cancellationToken))
 #pragma warning restore VSTHRD103
@@ -107,7 +119,6 @@ namespace Garnet.cluster
                 ExceptionDispatchInfo.Throw(previous);
             }
 
-            var length = (uint)((data.Length + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
             SectorAlignedMemory buffer = null;
             try
             {
@@ -126,6 +137,7 @@ namespace Garnet.cluster
 
                 if (!queue.Writer.TryWrite(new PendingWrite(startAddress, buffer, length)))
                     throw new InvalidOperationException($"The {Type} checkpoint sink is already complete.");
+                acceptedUntilAddress = endAddress;
             }
             catch
             {
@@ -186,37 +198,56 @@ namespace Garnet.cluster
                 ExceptionDispatchInfo.Throw(error);
         }
 
-        // Single consumer: writes, and therefore completions, happen strictly in queue (address) order.
+        // Buffer slots bound queued and in-flight writes together. Retain unfinished or faulted tasks until EOF.
         private async Task WriteQueuedChunksAsync()
         {
+            var writes = new List<Task>();
             await foreach (var pending in queue.Reader.ReadAllAsync().ConfigureAwait(false))
             {
-                if (Volatile.Read(ref failure) != null)
+                if (writeBuffersConcurrently)
                 {
-                    // Never issued, so the buffer can go back to the pool.
-                    pending.Buffer.Return();
-                    _ = freeBuffers.Release();
-                    continue;
+                    _ = writes.RemoveAll(static task => task.IsCompletedSuccessfully);
+                    writes.Add(WriteChunkAsync(pending));
                 }
+                else
+                    await WriteChunkAsync(pending).ConfigureAwait(false);
+            }
+            await Task.WhenAll(writes).ConfigureAwait(false);
+        }
 
-                try
-                {
+        private async Task WriteChunkAsync(PendingWrite pending)
+        {
+            if (Volatile.Read(ref failure) != null)
+            {
+                // Never issued, so the buffer can go back to the pool.
+                pending.Buffer.Return();
+                _ = freeBuffers.Release();
+                return;
+            }
+
+            var writeStarted = false;
+            try
+            {
 #if DEBUG
-                    await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.Replication_Hold_Snapshot_Write).ConfigureAwait(false);
+                await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.Replication_Hold_Snapshot_Write).ConfigureAwait(false);
 #endif
-                    await WriteAsync(pending).ConfigureAwait(false);
-                    pending.Buffer.Return();
-                    _ = freeBuffers.Release();
-                }
-                catch (Exception ex)
-                {
-                    _ = Interlocked.CompareExchange(ref failure, ex, null);
-                    logger?.LogError(ex, "Writing {type} checkpoint file at address {address} failed", Type, pending.Address);
+                cancellationToken.ThrowIfCancellationRequested();
+                ThrowIfFailed();
+                writeStarted = true;
+                await WriteAsync(pending).ConfigureAwait(false);
+                pending.Buffer.Return();
+                _ = freeBuffers.Release();
+            }
+            catch (Exception ex)
+            {
+                _ = Interlocked.CompareExchange(ref failure, ex, null);
+                logger?.LogError(ex, "Writing {type} checkpoint file at address {address} failed", Type, pending.Address);
 
-                    // A timed-out write may still complete into its buffer, so it is abandoned rather than reused.
-                    // Releasing the slot lets a receiving thread blocked on a buffer observe the failure.
-                    _ = freeBuffers.Release();
-                }
+                // A timed-out write may still read its buffer, so only a buffer never issued can be returned here.
+                // Releasing the slot lets a receiving thread blocked on a buffer observe the failure.
+                if (!writeStarted)
+                    pending.Buffer.Return();
+                _ = freeBuffers.Release();
             }
         }
 

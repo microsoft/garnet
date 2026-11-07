@@ -45,6 +45,18 @@ namespace Garnet.test.cluster
         public void InvalidOptions(string command)
             => Assert.Catch<ArgumentException>(() => BenchmarkOptions.Parse(command.Split(' ')));
 
+        [Test]
+        public void ScenarioSelectorReservesFullAndDefaultsToTransferOnly()
+        {
+            Assert.That(Program.SelectScenario(["send"]), Is.EqualTo("transfer-only"));
+            Assert.That(Program.SelectScenario(["receive"]), Is.EqualTo("transfer-only"));
+            Assert.That(Program.SelectScenario(["generate"]), Is.EqualTo("transfer-only"));
+            Assert.That(Program.SelectScenario(["send", "--scenario", "full"]), Is.EqualTo("full"));
+            Assert.Throws<ArgumentException>(() => Program.SelectScenario(["send", "--scenario", "invalid"]));
+            Assert.Throws<ArgumentException>(() => Program.SelectScenario(["send", "--scenario"]));
+            Assert.Throws<ArgumentException>(() => Program.SelectScenario(["send", "--scenario", "full", "--scenario", "full"]));
+        }
+
         [TestCase("receive --output .", 0L)]
         [TestCase("receive --output . --ack-delay-us 1050", 1050L)]
         [TestCase("receive --output . --ack-delay-us 20_000", 20000L)]
@@ -150,10 +162,15 @@ namespace Garnet.test.cluster
             }
         }
 
-        [TestCase(0)]
-        [TestCase(1)]
-        [TestCase(2)]
-        public async Task TransfersAndVerifiesFileWithAcceptanceReplies(int writeBuffers)
+        [TestCase(0, false)]
+        [TestCase(1, false)]
+        [TestCase(2, false)]
+        [TestCase(4, false)]
+        [TestCase(0, true)]
+        [TestCase(1, true)]
+        [TestCase(2, true)]
+        [TestCase(4, true)]
+        public async Task TransfersAndVerifiesFileWithAcceptanceReplies(int writeBuffers, bool concurrently)
         {
             var sourcePrefix = Path.Combine(TestUtils.MethodTestDir, "source");
             var destination = Path.Combine(TestUtils.MethodTestDir, "destination");
@@ -165,7 +182,7 @@ namespace Garnet.test.cluster
             var port = ClusterTestContext.Port.ToString();
             var receiverOptions = BenchmarkOptions.Parse(["receive", "--output", destination, "--bind", "127.0.0.1",
                 "--port", port, "--runs", "2", "--write-buffers", writeBuffers.ToString(), "--timeout-seconds", "20",
-                "--ack-delay-us", "1000"]);
+                "--ack-delay-us", "1000", "--write-buffers-concurrently", concurrently.ToString()]);
             var senderOptions = BenchmarkOptions.Parse(["send", "--source-prefix", sourcePrefix, "--host", "127.0.0.1",
                 "--port", port, "--chunks", "4k", "--depths", "1,3", "--repeats", "1", "--timeout-seconds", "20"]);
             using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));

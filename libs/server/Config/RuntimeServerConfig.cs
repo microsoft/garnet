@@ -182,6 +182,9 @@ namespace Garnet.server
                 static o => o.UnixSocketPath ?? string.Empty);
             RegisterReadOnly(ServerConfigType.CLUSTER_ENABLED, "cluster-enabled", ConfigKind.Bool,
                 static o => o.EnableCluster ? "yes" : "no");
+            RegisterReadOnly(ServerConfigType.REPL_DISK_BASED_SYNC_WRITE_BUFFERS_CONCURRENTLY,
+                "repl-disk-based-sync-write-buffers-concurrently", ConfigKind.Bool,
+                static o => o.ReplicaDiskBasedSyncWriteBuffersConcurrently ? "yes" : "no");
 
             // Read-only AOF parameters resolved directly from the startup options. These describe the
             // physical AOF layout or startup-only toggles and require a restart to change, so CONFIG SET

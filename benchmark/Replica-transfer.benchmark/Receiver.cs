@@ -53,7 +53,7 @@ internal static class Receiver
         {
             var hello = await protocol.ReadAsync(abort.Token);
             Require(hello.Length == 1 && Text(hello[0]) == Protocol.Magic, "Expected benchmark-only handshake.");
-            await replies.EnqueueAsync($"{Protocol.Magic}|{options.AckDelayUs}|{options.MaxChunk}|{options.WriteBuffers}", false, abort.Token);
+            await replies.EnqueueAsync($"{Protocol.Magic}|{options.AckDelayUs}|{options.MaxChunk}|{options.WriteBuffers}|{options.WriteBuffersConcurrently}", false, abort.Token);
 
             var begin = await protocol.ReadAsync(abort.Token);
             Require(begin.Length == 6 && Text(begin[0]) == "BEGIN", "Expected BEGIN token bytes chunk depth sha256.");
@@ -181,7 +181,8 @@ internal static class Receiver
                 writeCompletion = new SemaphoreSlim(0);
                 // The same sinks, chosen the same way, as Garnet's ReceiveCheckpointHandler.
                 ISnapshotDataSink sink = options.WriteBuffers > 0
-                    ? new OverlappedFileDataSink(CheckpointFileType.STORE_HLOG, id, device, pool, options.WriteBuffers, options.Timeout, token)
+                    ? new OverlappedFileDataSink(CheckpointFileType.STORE_HLOG, id, device, pool, options.WriteBuffers, options.Timeout, token,
+                        writeBuffersConcurrently: options.WriteBuffersConcurrently)
                     : new FileDataSink(CheckpointFileType.STORE_HLOG, id, device, pool, writeCompletion, options.Timeout, token);
                 return new Transfer
                 {

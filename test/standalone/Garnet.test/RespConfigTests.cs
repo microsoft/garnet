@@ -57,6 +57,28 @@ namespace Garnet.test
             TestUtils.OnTearDown();
         }
 
+        [TestCase(false)]
+        [TestCase(true)]
+        public void ConcurrentCheckpointWritesAreReadOnlyConfiguration(bool concurrently)
+        {
+            if (concurrently)
+            {
+                server.Dispose();
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                    replicaDiskBasedSyncWriteBuffersConcurrently: true);
+                server.Start();
+            }
+            const string name = "repl-disk-based-sync-write-buffers-concurrently";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var before = (string[])db.Execute("CONFIG", "GET", name);
+            Assert.That(before, Is.EqualTo([name, concurrently ? "yes" : "no"]));
+            var all = (string[])db.Execute("CONFIG", "GET", "*");
+            Assert.That(all, Does.Contain(name));
+            Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", name, concurrently ? "no" : "yes"));
+            Assert.That((string[])db.Execute("CONFIG", "GET", name), Is.EqualTo(before));
+        }
+
         /// <summary>
         /// This test verifies that dynamically changing the memory size configuration using CONFIG SET memory
         /// incurs the expected changes in Garnet server metrics, as well as verifies error handling for incorrect inputs.

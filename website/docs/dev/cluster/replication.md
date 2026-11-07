@@ -78,14 +78,14 @@ Integrity validation is required to ensure that the start address requested by t
 
 ## Disk-Based Checkpoint File Transfer
 
-During a full disk-based sync, the primary ships each Tsavorite checkpoint file (index, main log, object log and snapshot files) to the replica over a dedicated connection. It sends the file as a sequence of `CLUSTER SNAPSHOT_DATA token type startAddress data` requests, then one with empty data that marks the end of the file. The replica writes each chunk at the same offset in its own copy of the file and replies `+OK` once that chunk is written. Checkpoint metadata and RangeIndex files use the same command but their own transmitters, unchanged by the work described here.
+During a full disk-based sync, the primary ships each Tsavorite checkpoint file (index, main log, object log and snapshot files) to the replica over a dedicated connection. It sends the file as a sequence of `CLUSTER SNAPSHOT_DATA token type startAddress data` requests, then one with empty data that marks the end of the file. The replica replies `+OK` once it accepts a chunk for writing at the same offset in its own copy, and confirms completed writes at end of file. Checkpoint metadata and RangeIndex files use the same command but their own transmitters, unchanged by the work described here.
 
 Originally every file moved in fixed 128 KiB chunks, strictly one at a time. The primary read a chunk, sent it, and waited for the replica to write it and reply before reading the next. Each chunk therefore paid a full network round trip on top of a serial read, send and write, which held a link with a 1 ms round trip to about 100 MB/s. Two pull requests remove those limits:
 
 | Pull request | Side | Intent |
 | --- | --- | --- |
 | [#2334](https://github.com/microsoft/garnet/pull/2334): configurable, pipelined transfer | Primary | Take the round trip off the critical path without changing the protocol or the replica. Larger chunks amortize per-request costs, and a bounded window of unacknowledged chunks overlaps each round trip, and the replica's write, with the next reads and sends. Settings are captured once per transfer, so `CONFIG SET` cannot mix sizes within one. Also adds the replica-transfer benchmark and fixes TLS send-buffer ownership on abort. |
-| Overlapped replica writes, stacked on #2334 | Replica, and primary read buffers | With pipelining, the replica's serial receive, copy and write became the limit. The replica now receives the next chunk while it writes the previous one, deferring each `OK` until its write completes while keeping replies in command order. The primary stops zeroing each read buffer on return, which its serial loop paid per chunk, and the default chunk size rises to 16 MiB, which pays off once writes overlap. Also fixes an unrelated `ClusterSession` bug that broke connections whose slot-verification errors overflowed the response buffer. |
+| Overlapped replica writes, stacked on #2334 | Replica, and primary read buffers | The replica receives while writing, acknowledges chunk acceptance inline, and waits for every write at end of file. Multiple buffers overlap receive/write; the separate concurrency flag permits concurrent writes to non-overlapping ranges. The primary stops zeroing each read buffer on return, which its serial loop paid per chunk, and the default chunk size rises to 16 MiB. Also fixes an unrelated `ClusterSession` bug that broke connections whose slot-verification errors overflowed the response buffer. |
 
 In single-machine benchmark runs with an emulated 1.05 ms round trip, throughput went from 81 MB/s with 128 KiB stop-and-wait chunks, to about 1.1 GB/s with #2334's defaults (4 MiB chunks, depth 4), to about 1.8 GB/s with both changes (16 MiB chunks, depth 4).
 
@@ -112,7 +112,7 @@ sequenceDiagram
         K->>W: queued in arrival order
         K-->>R: accepted
         R-->>C: +OK, queued
-        W->>W: device write, one at a time
+        W->>W: device writes, at most write-buffers in flight
     end
     T->>C: empty chunk, after every OK
     C->>R: CLUSTER SNAPSHOT_DATA with empty data
@@ -147,8 +147,8 @@ Chunk sizes are validated against device sectors at startup, through `INamedDevi
    - anything else is a chunk. The file's first chunk opens its device and sink, and the chunk is handed to the sink.
 3. With `ReplicaDiskBasedSyncWriteBuffers` above 0 (default 1), the sink is an `OverlappedFileDataSink`:
    - `WriteChunk` waits for one of the write-buffer slots, which is the backpressure point. It copies the chunk into a sector-aligned pool buffer, queues it, and returns without waiting for that chunk's write;
-   - a single writer task issues the device writes one at a time, in arrival order, so the file is still written sequentially. After each write it returns the buffer, which the pool zeroes; the comment at the rental explains why that zeroing is kept. It then frees the slot;
-   - the first failed or timed-out write is retained for subsequent requests and completion. Later queued chunks are discarded and their buffers returned. A timed-out write's buffer is abandoned rather than reused, because the device may still read from it;
+   - the dispatcher awaits each write by default. With `ReplicaDiskBasedSyncWriteBuffersConcurrently=true`, it issues writes without awaiting earlier writes. The same slots bound queued and in-flight writes together. Chunks must advance past the preceding chunk's sector-padded end, so concurrent writes cannot overlap. After each write it returns the buffer, which the pool zeroes, then frees the slot;
+   - the first failed or timed-out write is retained for subsequent requests and completion. Queued chunks not yet issued are discarded and their buffers returned; other issued writes are still awaited. A timed-out write's buffer is abandoned rather than reused, because the device may still read from it;
    - the end-of-file request blocks in `Complete` until every queued write has been processed and the file is closed, and throws if any write failed.
 
    With 0 write buffers the sink is `FileDataSink`, which writes each chunk before the command returns, as before these changes.
@@ -174,7 +174,8 @@ The empty end-of-file request is the completion barrier: it waits for all queued
 | --- | --- | --- | --- |
 | `ReplicaDiskBasedSyncChunkSize` (`--repl-disk-based-sync-chunk-size`) | Primary | 16 MiB | 512 bytes to 512 MiB, rounded down to a power of two, a multiple of the device sector. `CONFIG GET` and `CONFIG SET`. |
 | `ReplicaDiskBasedSyncPipelineDepth` (`--repl-disk-based-sync-pipeline-depth`) | Primary | 4 | 1 to 64, with depth × chunk at most 512 MiB; 1 is stop-and-wait. `CONFIG GET` and `CONFIG SET`. |
-| `ReplicaDiskBasedSyncWriteBuffers` (`--repl-disk-based-sync-write-buffers`) | Replica | 1 | 0 to 8; 0 writes each chunk before receiving the next. |
+| `ReplicaDiskBasedSyncWriteBuffers` (`--repl-disk-based-sync-write-buffers`) | Replica | 1 | 0 to 8; bounds queued and in-flight writes together. 0 writes each chunk before receiving the next. Requires restart. |
+| `ReplicaDiskBasedSyncWriteBuffersConcurrently` (`--repl-disk-based-sync-write-buffers-concurrently`) | Replica | false | Concurrent positional writes with more than one buffer; otherwise sequential writes with receive/write overlap. Requires restart; read-only `CONFIG GET`. |
 
 Tuning guidance and memory costs are in the [operator guide](../../cluster/replication.md#disk-based-full-sync-transfer-size).
 
@@ -188,9 +189,9 @@ Tuning guidance and memory costs are in the [operator guide](../../cluster/repli
 | `GarnetClientSession`, `GarnetClientSessionReplicationExtensions`, `GarnetClientSessionTcpNetworkHandler`, `NetworkHandler` | Framing without a flush, explicit flushes, TLS send-buffer ownership on abort | #2334 |
 | `GarnetServerOptions`, `Options`, `OptionsValidators`, `RuntimeServerConfig`, `defaults.conf` | Settings, validation, `CONFIG GET`/`SET` | #2334; overlapped writes (write buffers, 16 MiB default) |
 | `ReceiveCheckpointHandler` | Routes requests to sinks and waits for end-of-file completion | Overlapped writes |
-| `OverlappedFileDataSink` | Ordered writer that overlaps receiving | Overlapped writes |
+| `OverlappedFileDataSink` | Bounded queued writes, sequential or concurrent, with an end-of-file barrier | Overlapped writes |
 | `RespClusterReplicationCommands.cs` (`NetworkClusterSnapshotData`) | Inline acceptance replies and end-of-file completion | Overlapped writes |
-| `benchmark/Replica-transfer.benchmark` | Measures both sides with the production code | #2334; overlapped writes (production sinks, `--write-buffers`) |
+| `benchmark/Replica-transfer.benchmark` | Component file-transfer driver with an explicit scenario selector | #2334; overlapped writes |
 
 ### Tests and measurement
 
@@ -200,13 +201,13 @@ Tuning guidance and memory costs are in the [operator guide](../../cluster/repli
 | `GarnetClientArgumentFramingTests` | Rejecting a chunk too large for the client's send buffer, and sending one that exactly fits |
 | `GarnetClientSessionTlsLifetimeTests` | Releasing the TLS send buffer whichever owner finishes first, and after reconnects and failed handshakes or authentication |
 | `DiskBasedCheckpointChunkTests` | Chunk sizing, sector and segment bounds, and the zeroed tail of a short read |
-| `ReplicaCheckpointWriteTests` | The sink's write order, backpressure, failures and timeouts; immediate acceptance replies and the end-of-file write barrier over a real connection |
-| `ClusterReplicationBaseTests.DiskBasedSync*` | Full syncs across chunk sizes, depths, runtime changes, and 0, 1 and 2 write buffers, with and without TLS |
+| `ReplicaCheckpointWriteTests` | Out-of-order write completion, bounded concurrency, non-overlapping padded ranges, disposal, failures and timeouts; immediate acceptance replies and the end-of-file write barrier over a real connection |
+| `ClusterReplicationBaseTests.DiskBasedSync*` | Full syncs across chunk sizes, depths, runtime changes, and 0, 1, 2 and 4 write buffers, with and without TLS |
 | `GarnetServerConfigTests`, `RespConfigTests` | Option parsing, validation and `CONFIG GET`/`SET` |
 | `ReplicaTransferBenchmarkTests` | The benchmark's options, checkpoint generation and ACK-delay precision |
 | `ClusterRedirectTests.ClusterSlotErrorsOverflowingTheResponseBufferAreAllDelivered` | The `ClusterSession` send-size fix |
 
-The [replica-transfer benchmark](https://github.com/microsoft/garnet/tree/main/benchmark/Replica-transfer.benchmark) runs the same sender and receiver code without a Garnet server, on one machine or two. It can emulate a network round trip on one machine with `--ack-delay-us`. On one machine, loopback TCP also makes the sender's thread copy each chunk into the receiver's buffers, so large chunks look slower there than between machines.
+The [replica-transfer benchmark](https://github.com/microsoft/garnet/tree/main/benchmark/Replica-transfer.benchmark) defaults to `--scenario transfer-only`: it shares the file sender and sinks but replaces receiver parsing, orchestration, device creation and reply scheduling. It supports `--ack-delay-us` for controlled component experiments. The selector reserves `--scenario full` for a subsequent production-driver implementation; that scenario currently fails explicitly. Same-host source reads and destination writes can share host storage bandwidth, so separate guest disks do not guarantee isolated I/O.
 
 ## Diskless Attach/Sync Details
 

@@ -318,6 +318,7 @@ namespace Garnet.test.cluster
         /// <param name="replicaDiskBasedSyncWriteBuffers">
         /// Received checkpoint chunks the replica may hold for its file writer, queued or being written (0-8, default 1; 0 writes each chunk before receiving the next).
         /// </param>
+        /// <param name="replicaDiskBasedSyncWriteBuffersConcurrently">Issue checkpoint writes concurrently.</param>
         public void CreateInstances(
             int shards,
             bool enableCluster = true,
@@ -375,7 +376,8 @@ namespace Garnet.test.cluster
             bool enableVectorSetPreview = true,
             string replicaDiskBasedSyncChunkSize = "16m",
             int replicaDiskBasedSyncPipelineDepth = 4,
-            int replicaDiskBasedSyncWriteBuffers = 1)
+            int replicaDiskBasedSyncWriteBuffers = 1,
+            bool replicaDiskBasedSyncWriteBuffersConcurrently = false)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, Port);
@@ -441,7 +443,8 @@ namespace Garnet.test.cluster
                 enableVectorSetPreview: enableVectorSetPreview,
                 replicaDiskBasedSyncChunkSize: replicaDiskBasedSyncChunkSize,
                 replicaDiskBasedSyncPipelineDepth: replicaDiskBasedSyncPipelineDepth,
-                replicaDiskBasedSyncWriteBuffers: replicaDiskBasedSyncWriteBuffers);
+                replicaDiskBasedSyncWriteBuffers: replicaDiskBasedSyncWriteBuffers,
+                replicaDiskBasedSyncWriteBuffersConcurrently: replicaDiskBasedSyncWriteBuffersConcurrently);
 
             foreach (var node in nodes)
                 node.Start();
