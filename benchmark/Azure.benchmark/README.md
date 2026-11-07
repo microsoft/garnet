@@ -129,8 +129,31 @@ pwsh .\03-workload\bench\resp-bench.ps1 `
 ```
 
 RESP workload `.conf` files are native JSON consumed by `Resp.benchmark` itself;
-SSH placement stays outside them. See the workload README for declarative VMSS
-selection and config migration. Memtier keeps its key=value format.
+SSH placement stays outside them. Memtier keeps its key=value format.
+
+### Declarative alternative to steps 4-5
+
+For a single VMSS with three VMs, the supplied templates declare `vm0` as primary,
+`vm1` as replica, and `vm2` as benchmark client. Review the templates and their
+referenced configurations before running. **`create` cleans existing data on the
+declared server instances.**
+
+```powershell
+# Create the declared cluster, then run one benchmark instance on vm2.
+pwsh .\03-workload\cluster.ps1 --action create `
+  --definition .\templates\cluster-explicit.template.json `
+  --rg <resource-group> --vmssname <vmss-name>
+
+pwsh .\03-workload\benchmark.ps1 `
+  --definition .\templates\benchmark-cluster.json `
+  --rg <resource-group> --vmssname <vmss-name> --verbose
+```
+
+Omit `--vmssname` to select interactively from the resource group's VMSS.
+See [declarative cluster definitions](03-workload/README.md#declarative-cluster-definitions)
+and [declarative benchmarks](03-workload/README.md#declarative-benchmarks) for
+template schemas, separate client/server VMSS, dry runs, stop commands, and
+configuration migration.
 
 > **VM provisioning takes time:** A newly created VMSS instance may accept SSH before
 > cloud-init has finished downloading and installing the tools bundle. Wait for

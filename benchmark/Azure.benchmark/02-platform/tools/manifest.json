@@ -97,6 +97,16 @@
       "mode": "755"
     },
     {
+      "src": "bootstrap/azurebench-nvme.service",
+      "dst": "/etc/systemd/system/azurebench-nvme.service",
+      "mode": "644"
+    },
+    {
+      "src": "bootstrap/install-nvme-service.ps1",
+      "dst": "/opt/deploy-actions/install-nvme-service.ps1",
+      "mode": "755"
+    },
+    {
       "src": "cluster/mcluster.ps1",
       "dst": "/usr/local/bin/mcluster.ps1",
       "mode": "755"
@@ -134,9 +144,9 @@
       "args": ""
     },
     {
-      "run": "setup-nvme.ps1",
+      "run": "install-nvme-service.ps1",
       "sudo": true,
-      "args": "--if-present"
+      "args": ""
     },
     {
       "run": "install-dotnet.ps1",

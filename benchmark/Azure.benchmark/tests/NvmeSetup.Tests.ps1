@@ -16,6 +16,7 @@ Describe 'NVMe mounting' {
         }, $true)
         . ([scriptblock]::Create($definition.Extent.Text))
     }
+
     function lsblk { throw 'lsblk must be mocked' }
     function findmnt { throw 'findmnt must be mocked' }
     function readlink { throw 'readlink must be mocked' }
@@ -154,5 +155,82 @@ Describe 'NVMe mounting' {
         $script:types['/dev/nvme1n1'] = @('ext4')
         Mount-NvmeStorage -MountPath /mnt/nvme -Force
         Assert-MockCalled mkfs.xfs -Times 1 -Exactly -Scope It
+    }
+}
+
+Describe 'NVMe startup service deployment' {
+    $tokens = $null
+    $parseErrors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+        (Join-Path $benchmarkDir '02-platform\tools\bootstrap\install-nvme-service.ps1'),
+        [ref]$tokens, [ref]$parseErrors)
+    if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+    $definition = $ast.Find({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+            $node.Name -eq 'Install-NvmeStartupService'
+    }, $true)
+    . ([scriptblock]::Create($definition.Extent.Text))
+    function systemctl { throw 'systemctl must be mocked' }
+
+    BeforeEach {
+        $script:commands = @()
+        $script:failingCommand = ''
+        Mock Test-Path { $true } -ParameterFilter {
+            $LiteralPath -in @('/usr/bin/pwsh', '/opt/deploy-actions/setup-nvme.ps1',
+                '/etc/systemd/system/azurebench-nvme.service')
+        }
+        Mock systemctl {
+            $script:commands += ($args -join ' ')
+            $global:LASTEXITCODE = if ($args[0] -eq $script:failingCommand) { 1 } else { 0 }
+        }
+    }
+
+    It 'reloads, enables and reruns the idempotent setup service in order' {
+        Install-NvmeStartupService
+        ($script:commands -join '|') |
+            Should Be 'daemon-reload|enable azurebench-nvme.service|restart azurebench-nvme.service'
+    }
+
+    It 'fails before activation when <Path> was not deployed' -TestCases @(
+        @{ Path = '/usr/bin/pwsh' }
+        @{ Path = '/opt/deploy-actions/setup-nvme.ps1' }
+        @{ Path = '/etc/systemd/system/azurebench-nvme.service' }
+    ) {
+        param($Path)
+        $script:missingPath = $Path
+        Mock Test-Path { $false } -ParameterFilter { $LiteralPath -eq $script:missingPath }
+        { Install-NvmeStartupService } | Should Throw 'Required NVMe startup file not found'
+        Assert-MockCalled systemctl -Times 0 -Exactly -Scope It
+    }
+
+    It 'propagates <Command> failures and stops deployment' -TestCases @(
+        @{ Command = 'daemon-reload'; Calls = 1 }
+        @{ Command = 'enable'; Calls = 2 }
+        @{ Command = 'restart'; Calls = 3 }
+    ) {
+        param($Command, $Calls)
+        $script:failingCommand = $Command
+        { Install-NvmeStartupService } | Should Throw "systemctl $Command"
+        $script:commands.Count | Should Be $Calls
+    }
+
+    It 'ships the service and installer and activates them after native dependencies' {
+        $tools = Join-Path $benchmarkDir '02-platform\tools'
+        $manifest = Get-Content (Join-Path $tools 'manifest.json') -Raw | ConvertFrom-Json
+        foreach ($destination in @('/etc/systemd/system/azurebench-nvme.service',
+            '/opt/deploy-actions/install-nvme-service.ps1')) {
+            $entries = @($manifest.scripts | Where-Object dst -eq $destination)
+            $entries.Count | Should Be 1
+            Test-Path -LiteralPath (Join-Path $tools $entries[0].src) -PathType Leaf | Should Be $true
+        }
+        $steps = @($manifest.runcmd.run)
+        ($steps.IndexOf('install-nvme-service.ps1') -gt $steps.IndexOf('install-native-dependencies.ps1')) | Should Be $true
+        $install = @($manifest.runcmd | Where-Object run -eq 'install-nvme-service.ps1')
+        $install.Count | Should Be 1
+        $install[0].sudo | Should Be $true
+        $unit = Get-Content (Join-Path $tools 'bootstrap\azurebench-nvme.service') -Raw
+        $unit | Should Match '(?m)^ExecStart=.*setup-nvme\.ps1 --if-present\r?$'
+        $unit | Should Not Match '--force|(?m)^ExecStop='
     }
 }

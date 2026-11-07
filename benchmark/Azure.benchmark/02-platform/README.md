@@ -82,9 +82,12 @@ re-running the full deployment workflow or rebuilding Garnet.
 
 ### Local NVMe mounting
 
-Deployment installs `mdadm`, `xfsprogs`, `e2fsprogs`, and `util-linux`, then runs
-`setup-nvme.ps1 --if-present`. VMs without Azure local NVMe explicitly skip this
-step. Blank `Microsoft NVMe Direct Disk` devices are formatted as XFS, with
+Deployment installs `mdadm`, `xfsprogs`, `e2fsprogs`, and `util-linux`, then installs,
+enables, and starts `azurebench-nvme.service`. This systemd oneshot service runs
+`setup-nvme.ps1 --if-present` during deployment and on every subsequent VM boot,
+after udev device initialization and before `multi-user.target`. VMs without Azure
+local NVMe explicitly skip disk setup. Blank `Microsoft NVMe Direct Disk` devices
+are formatted as XFS, with
 multiple disks combined into RAID0, and mounted at `NVME_DIR` (`/mnt/nvme`).
 The OS disk is excluded.
 
@@ -94,14 +97,34 @@ volumes are left unchanged. Mixed signatures, unrelated arrays, and disks mounte
 elsewhere cause an error rather than overwriting data. `--force` explicitly
 reformats a known, unmounted volume; it does not automatically unmount it.
 
-For existing VMs, publish and install the tools as above, then run:
+For existing VMs, publish and install the updated tools as above (`-Action install`
+copies files only), then enable and run the boot service on each VM:
+
+```powershell
+sudo pwsh /opt/deploy-actions/install-nvme-service.ps1
+sudo systemctl status azurebench-nvme.service --no-pager
+```
+
+To rerun setup manually once the service is installed, without rebooting:
+
+```powershell
+sudo systemctl restart azurebench-nvme.service
+```
+
+The service does not unmount storage when stopped or restarted. Alternatively,
+run the setup script directly for a one-time mount:
 
 ```powershell
 sudo pwsh /opt/deploy-actions/setup-nvme.ps1
 ```
 
-Use `--fs=ext4` to initialize blank storage as ext4 instead of XFS. The mount is
-not written to `/etc/fstab`; rerun the setup step after a reboot if needed.
+Use `--fs=ext4` to initialize blank storage as ext4 instead of XFS; the service
+preserves an existing ext4 filesystem. The mount is not written to `/etc/fstab`;
+the enabled service remounts it after a reboot. Failures are reported by systemd
+and fail deployment rather than being ignored. Inspect them with
+`sudo journalctl -u azurebench-nvme.service -b --no-pager`.
+Garnet is not started by this service; cluster startup still checks that NVMe is
+mounted before launching an NVMe-backed configuration.
 **Local NVMe is ephemeral: deallocation loses the data. RAID0 provides no disk
 redundancy and is not equivalent to the investigation's production RAID10.**
 

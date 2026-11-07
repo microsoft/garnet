@@ -9,7 +9,8 @@
     explicitly requests reformatting an unmounted volume.
 
     Local NVMe disks are EPHEMERAL: contents are lost on VM deallocation.
-    Scratch/benchmark storage only. Not persisted to /etc/fstab.
+    Scratch/benchmark storage only. azurebench-nvme.service runs this script at
+    boot; the mount is not persisted to /etc/fstab.
 #>
 param(
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments
