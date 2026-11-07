@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -19,12 +20,14 @@ namespace Garnet.cluster
         readonly GarnetClientSession gcs;
         readonly TimeSpan timeout;
         readonly ILogger logger;
+        readonly ReplicaBenchmarkTiming benchmarkTiming;
 
-        public SnapshotTransmissionDriver(GarnetClientSession gcs, TimeSpan timeout, ILogger logger = null)
+        public SnapshotTransmissionDriver(GarnetClientSession gcs, TimeSpan timeout, ILogger logger = null, ReplicaBenchmarkTiming benchmarkTiming = null)
         {
             this.gcs = gcs;
             this.timeout = timeout;
             this.logger = logger;
+            this.benchmarkTiming = benchmarkTiming;
         }
 
         /// <summary>
@@ -48,6 +51,8 @@ namespace Garnet.cluster
         /// </summary>
         public async Task SendCheckpointAsync(CancellationToken cancellationToken = default)
         {
+            var started = benchmarkTiming == null ? 0 : Stopwatch.GetTimestamp();
+            long bytes = 0;
             foreach (var checkpointReader in checkpointReaders)
             {
                 foreach (var transmitSource in checkpointReader.GetTransmitSources())
@@ -58,6 +63,8 @@ namespace Garnet.cluster
                             transmitSource.DataSource.Token, transmitSource.DataSource.Type, transmitSource.DataSource.StartOffset, transmitSource.DataSource.EndOffset);
 
                         await transmitSource.TransmitAsync(gcs, timeout, cancellationToken).ConfigureAwait(false);
+                        if (benchmarkTiming != null)
+                            bytes = checked(bytes + transmitSource.DataSource.CurrentOffset - transmitSource.DataSource.StartOffset);
 
                         logger?.LogInformation("<Complete sending checkpoint data {token} {type} {startAddress} {endAddress}",
                             transmitSource.DataSource.Token, transmitSource.DataSource.Type, transmitSource.DataSource.StartOffset, transmitSource.DataSource.EndOffset);
@@ -68,6 +75,7 @@ namespace Garnet.cluster
                     }
                 }
             }
+            benchmarkTiming?.RecordShipment(started, bytes);
         }
     }
 }

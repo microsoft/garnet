@@ -52,6 +52,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\benchmark\Replica-transfer.benchmark\Replica-transfer.benchmark.csproj" />
+    <ProjectReference Include="..\..\..\main\GarnetServer\GarnetServer.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\..\libs\client\Garnet.client.csproj" />
 		<ProjectReference Include="..\..\..\libs\cluster\Garnet.cluster.csproj" />
     <ProjectReference Include="..\..\..\libs\common\Garnet.common.csproj" />

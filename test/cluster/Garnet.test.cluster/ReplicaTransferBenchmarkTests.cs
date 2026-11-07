@@ -5,8 +5,11 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.client;
+using Garnet.cluster;
 using Garnet.common;
 using NUnit.Framework;
 using ReplicaTransfer.benchmark;
@@ -46,15 +49,160 @@ namespace Garnet.test.cluster
             => Assert.Catch<ArgumentException>(() => BenchmarkOptions.Parse(command.Split(' ')));
 
         [Test]
-        public void ScenarioSelectorReservesFullAndDefaultsToTransferOnly()
+        public void ProductionScenarioIsDefault()
         {
-            Assert.That(Program.SelectScenario(["send"]), Is.EqualTo("transfer-only"));
-            Assert.That(Program.SelectScenario(["receive"]), Is.EqualTo("transfer-only"));
+            Assert.That(Program.SelectScenario(["send"]), Is.EqualTo("full"));
+            Assert.That(Program.SelectScenario(["receive"]), Is.EqualTo("full"));
             Assert.That(Program.SelectScenario(["generate"]), Is.EqualTo("transfer-only"));
-            Assert.That(Program.SelectScenario(["send", "--scenario", "full"]), Is.EqualTo("full"));
+            Assert.That(Program.SelectScenario(["send", "--scenario", "transfer-only"]), Is.EqualTo("transfer-only"));
             Assert.Throws<ArgumentException>(() => Program.SelectScenario(["send", "--scenario", "invalid"]));
             Assert.Throws<ArgumentException>(() => Program.SelectScenario(["send", "--scenario"]));
             Assert.Throws<ArgumentException>(() => Program.SelectScenario(["send", "--scenario", "full", "--scenario", "full"]));
+        }
+
+        [TestCase("0.0.0.0")]
+        [TestCase("::")]
+        [TestCase("8.8.8.8")]
+        [TestCase("example.com")]
+        public void FullScenarioRejectsUnsafeAddresses(string address)
+            => Assert.Throws<ArgumentException>(() => FullOptions.PrivateAddress(address));
+
+        [TestCase("127.0.0.1")]
+        [TestCase("::1")]
+        [TestCase("10.1.2.3")]
+        [TestCase("172.16.0.2")]
+        [TestCase("192.168.1.2")]
+        public void FullScenarioAcceptsPrivateAddresses(string address)
+            => Assert.That(FullOptions.PrivateAddress(address).ToString(), Is.EqualTo(address));
+
+        [Test]
+        public void ProductionDatasetIsRepeatableAndPayloadBounded()
+        {
+            Assert.That(FullReplication.Value(0, 16385), Has.Length.EqualTo(16384));
+            Assert.That(FullReplication.Value(1, 16385), Has.Length.EqualTo(1));
+            Assert.That(FullReplication.Value(0, 16385), Is.EqualTo(FullReplication.Value(0, 16385)));
+            Assert.That(FullReplication.Info("# Replication\r\nrole:slave\r\nmaster_sync_in_progress:False\r\n")["role"], Is.EqualTo("slave"));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task FullScenarioUsesRealServerProcessesAndFreshCheckpoints(bool concurrently)
+        {
+            Directory.CreateDirectory(TestUtils.MethodTestDir);
+            var root = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+            while (root != null && !File.Exists(Path.Combine(root.FullName, "Garnet.slnx")))
+                root = root.Parent;
+            Assert.That(root, Is.Not.Null, "The external server build is in this source workspace.");
+#if DEBUG
+            const string configuration = "Debug";
+#else
+            const string configuration = "Release";
+#endif
+            var server = Path.Combine(root.FullName, "main", "GarnetServer", "bin", configuration, "net10.0", "GarnetServer.dll");
+            var port = ClusterTestContext.Port;
+            var receive = FullOptions.Parse(["receive", "--server", server, "--output", TestUtils.MethodTestDir,
+                "--port", port.ToString(), "--server-port", (port + 1).ToString(), "--write-buffers", "2",
+                "--write-buffers-concurrently", concurrently.ToString(), "--phase-timing", "true", "--timeout-seconds", "60"]);
+            var csv = Path.Combine(TestUtils.MethodTestDir, "full.csv");
+            var send = FullOptions.Parse(["send", "--server", server, "--output", TestUtils.MethodTestDir,
+                "--port", port.ToString(), "--server-port", (port + 2).ToString(), "--data-size", "4m",
+                "--chunks", "128k", "--depths", "2", "--phase-timing", "true", "--timeout-seconds", "60", "--csv", csv]);
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+            var receiver = FullReplication.RunAsync(receive, cancellation.Token);
+            try
+            {
+                await FullReplication.RunAsync(send, cancellation.Token);
+                await receiver;
+                var result = await File.ReadAllTextAsync(csv);
+                Assert.That(result, Does.Contain("\"full\",\"verified\""));
+                Assert.That(result, Does.Not.Contain("unavailable"));
+                var fingerprints = Regex.Matches(result, "\"([0-9A-F]{64})\"");
+                Assert.That(fingerprints, Has.Count.EqualTo(2));
+                Assert.That(fingerprints[0].Value, Is.EqualTo(fingerprints[1].Value));
+                Assert.That(Directory.GetDirectories(TestUtils.MethodTestDir, "full-send-*"), Has.Length.EqualTo(1));
+                Assert.That(Directory.GetDirectories(TestUtils.MethodTestDir, "full-receive-*"), Has.Length.EqualTo(1));
+            }
+            catch
+            {
+                foreach (var file in Directory.EnumerateFiles(TestUtils.MethodTestDir, "*.log", SearchOption.AllDirectories))
+                {
+                    TestContext.Out.WriteLine(file);
+                    TestContext.Out.WriteLine(await File.ReadAllTextAsync(file));
+                }
+                throw;
+            }
+            finally
+            {
+                await cancellation.CancelAsync();
+                await receiver.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            }
+        }
+
+        [Test]
+        public void FullOptionsRejectComponentSwitches()
+        {
+            Assert.Throws<ArgumentException>(() => FullOptions.Parse(["send", "--source-prefix", "existing"]));
+            Assert.Throws<ArgumentException>(() => FullOptions.Parse(["receive", "--ack-delay-us", "1000"]));
+            Assert.Throws<ArgumentException>(() => FullOptions.Parse(["receive", "--write-buffers-concurrently", "invalid"]));
+        }
+
+        [Test]
+        public void PhaseMetricsAreUnavailableUntilSuccessfulPublication()
+        {
+            var timing = new ReplicaBenchmarkTiming();
+            Assert.That(timing.GetMetrics()[0].Value, Is.EqualTo("unavailable"));
+            Assert.That(timing.GetMetrics()[2].Value, Is.EqualTo("unavailable"));
+            var started = Stopwatch.GetTimestamp();
+            timing.RecordShipment(started, 4096);
+            timing.RecordRecovery(started);
+            Assert.That(timing.GetMetrics()[1].Value, Is.EqualTo("4096"));
+            Assert.That(timing.GetMetrics()[0].Value, Is.Not.EqualTo("unavailable"));
+            Assert.That(timing.GetMetrics()[2].Value, Is.Not.EqualTo("unavailable"));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task ShipmentMetricsPublishOnlyAfterAllReadersSucceed(bool fail)
+        {
+            var timing = new ReplicaBenchmarkTiming();
+            if (fail)
+                timing.RecordShipment(Stopwatch.GetTimestamp(), 4096);
+            var previous = timing.GetMetrics()[1].Value;
+            using var driver = new SnapshotTransmissionDriver(null, TimeSpan.FromSeconds(1), benchmarkTiming: timing);
+            driver.AddReader(new ScriptedSnapshotSource(null));
+            driver.AddReader(new ScriptedSnapshotSource(() =>
+            {
+                Assert.That(timing.GetMetrics()[1].Value, Is.EqualTo(previous));
+                if (fail)
+                    throw new IOException("Shipment failed.");
+            }));
+            if (fail)
+                Assert.ThrowsAsync<IOException>(() => driver.SendCheckpointAsync());
+            else
+                await driver.SendCheckpointAsync();
+            Assert.That(timing.GetMetrics()[1].Value, Is.EqualTo(fail ? previous : "1024"),
+                "Successful shipment bytes include padding, not just logical source length.");
+        }
+
+        private sealed class ScriptedSnapshotSource(Action transmit) : ISnapshotReader, ISnapshotTransmitSource, ISnapshotDataSource
+        {
+            public ISnapshotDataSource DataSource => this;
+            public CheckpointFileType Type => default;
+            public Guid Token => Guid.Empty;
+            public long StartOffset => 128;
+            public long EndOffset => StartOffset + 1;
+            public long CurrentOffset { get; private set; } = 128;
+            public bool HasNextChunk => false;
+            public IEnumerable<ISnapshotTransmitSource> GetTransmitSources() => [this];
+            public Task<DataSourceReadResult> ReadNextChunkAsync(CancellationToken cancellationToken = default)
+                => throw new NotSupportedException();
+            public Task TransmitAsync(GarnetClientSession gcs, TimeSpan timeout, CancellationToken cancellationToken = default)
+            {
+                CurrentOffset = StartOffset + 512;
+                transmit?.Invoke();
+                return Task.CompletedTask;
+            }
+            public void Dispose() { }
         }
 
         [TestCase("receive --output .", 0L)]

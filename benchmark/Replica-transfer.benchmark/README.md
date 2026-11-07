@@ -1,12 +1,150 @@
 # Replica-transfer benchmark
 
-## Scenarios
+## Production scenario (default)
 
-`send` and `receive` currently default to `--scenario transfer-only`.
-The selector also recognizes `--scenario full`, reserved for the
-production-driver follow-up; selecting it currently fails explicitly.
-`generate` remains transfer-only. This commit is a buildable rollback
-point before introducing real-server orchestration and phase timing.
+`send` and `receive` default to `--scenario full`. Each runner starts its own
+**disposable, real Garnet server** from `--server`, a DLL or executable. The two
+paths may point to different builds: their dependencies and checkpoint formats
+are never loaded into the same process. Use an isolated, trusted private test
+network; neither the runner control channel nor these test servers provide TLS
+or authentication. Public/wildcard bind addresses are rejected.
+
+Create existing parent directories on the desired source/destination storage,
+build `main\GarnetServer` and the benchmark in Release, then run:
+
+```powershell
+# Receiver: selected replica version, separate server port from control port.
+dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll receive --server E:\build-new\GarnetServer.dll --output F:\replica-bench --server-port 7011 --write-buffers 2 --write-buffers-concurrently true
+
+# Sender: selected primary version; defaults to one 16-MiB/depth-4 case.
+dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll send --server E:\build-old\GarnetServer.dll --output E:\primary-bench --server-port 7012 --data-size 512m --csv .\full-results.csv
+```
+
+For two hosts, set receiver `--bind` to its private IP, sender `--bind` to the
+primary's private IP, and sender `--host` to the receiver IP. `--port` selects the
+runner control endpoint (default 7010), not the Garnet server endpoint.
+`--runs` on receive must equal distinct sender `--chunks`/`--depths` pairs times
+`--repeats`. Full defaults: one repeat/run, 300-second total run deadline,
+one replica buffer, sequential writes. Both endpoints require `--server` and
+`--output`. Full mode rejects component-only switches, including artificial ACK
+delay, offline source prefixes and `--buffered`/`--device`. Full uses the real
+server `--device-type RandomAccess|Native|FileStream`, default `RandomAccess` on
+both nodes. Windows Native devices require short parent paths for checkpoints.
+
+Every case starts fresh nodes in new `full-send-<guid>`/`full-receive-<guid>`
+directories. The primary is populated through RESP with reproducible seeded
+ASCII values, alternating strings and hashes, and takes its own checkpoint.
+Population and validation use bounded batches of 128 requests outside timing.
+Logical payload is exactly `--data-size`; records, objects and checkpoint files
+add overhead. Both nodes use 64-MiB log memory, 1-MiB pages, 64-MiB log segments,
+16-MiB index, real storage and AOF, with diskless sync disabled. Launch arguments
+and stdout/stderr are retained per run.
+The runner waits for its child server's own readiness banner before connecting;
+it does not identify an owned server merely by finding an occupied port.
+
+Timing starts immediately before `CLUSTER REPLICATE ... SYNC` and ends when a
+new post-attach marker is readable on the replica. Population, preparatory SAVE
+and exhaustive logical verification are outside timing. The marker measures
+AOF catch-up and read visibility, **not fsync/crash durability**. The runner
+verifies replica recovery status, all logical values, and checkpoint files in
+the fresh replica's directory; no replacement receiver processes checkpoint
+data. Failed/incompatible runs are explicit CSV failures and return nonzero.
+
+For version comparisons, regenerate the deterministic dataset and checkpoints
+for every build/scenario. The normal production wire transfer necessarily
+ships the primary's checkpoint; the benchmark does not share/preinstall its
+files or open them using another build outside that protocol. Compatibility
+with arbitrary old builds is not promised: missing required startup options
+or incompatible replication protocols fail explicitly. No restart on old
+on-disk data, automatic build installation, or production-server attachment is
+performed. Files are retained, and only processes launched by the runner are
+terminated.
+
+If an older replica does not expose a buffer/policy option and the caller did
+not explicitly request it, the runner uses that build's own default, emits an
+`UNAVAILABLE` diagnostic, and records unavailable policy fields rather than
+inventing equivalent settings. Explicitly requested unsupported settings fail.
+
+### Production phase timing
+
+`--phase-timing true` on either runner sets
+`GARNET_REPLICA_BENCH_PHASE_TIMING=1` on its owned server. Supporting builds
+expose the most recent successful checkpoint shipment duration/payload byte
+count and replica recovery duration in `INFO REPLICATION` as
+`benchmark_checkpoint_transfer_ms`, `benchmark_checkpoint_bytes` and
+`benchmark_recovery_ms`. Older/uninstrumented builds report unavailable fields.
+Enable it on both runners for both phases.
+
+Instrumentation uses a timestamp pair per complete shipment/recovery, counts
+bytes at file boundaries, and publishes bounded state after success. It adds
+no per-chunk measurements, allocations, logging, locks or I/O, and metrics are
+collected after timing. Durations use each process's own monotonic clock.
+`barrier_seconds` is post-attach marker visibility, not an inferred recovery
+phase; phase durations need not add up to total sync time. CSV records both
+server identities, build SHA-256 fingerprints (managed/native binaries and
+dependency/runtime manifests), policy, payload, phases and
+verification status.
+
+Before treating phase timing as performance-neutral on a deployment, compare
+paired, rotated Release runs with it disabled/enabled and identical settings.
+Use a 1% material-regression boundary and report uncertainty; a noisy single
+pair cannot establish negligible overhead.
+
+Release controls on GCRAZCDL0014 (2026-11-06), using 2-GiB logical datasets,
+16-MiB chunks, depth 4, two concurrent replica buffers, RandomAccess devices,
+an OS-disk primary and temporary-disk replica, gave:
+
+| Pair/order | Timing off: full sync (s) | Timing on: full sync (s) | On: shipment (s) | On: recovery (s) |
+| --- | ---: | ---: | ---: | ---: |
+| Off/on | 6.314 | 6.447 | 5.813 | 0.333 |
+| On/off | 6.288 | 6.152 | 5.560 | 0.296 |
+| Off/on | 6.075 | 6.203 | 5.551 | 0.347 |
+
+All six runs passed exhaustive verification and used the same server fingerprint,
+`7836A72A78F1998440C4EA771A12FC5B079F21D3CDD09B9C98F34ECBF5074136`.
+Files were fresh; no cache eviction was performed. Mean paired change was +0.68%,
+but the three-pair 95% Student-t interval was -5.45% through +6.81%:
+**these full runs do not establish a less-than-1% end-to-end regression bound**.
+An isolated warmed Release control of the actual shipment/recovery recorder
+methods, including both caller timestamp reads, measured 156-182 ns and 32
+allocated bytes per combined publication. It excludes file-boundary accounting
+and full-system effects; it is not a substitute for the full-run uncertainty.
+Timing remains opt-in and disabled by default.
+
+### Production versus component data flow
+
+```mermaid
+flowchart LR
+    FP["Full runner: fresh real primary, RESP population, SAVE"]:::driver
+    SP["Production checkpoint negotiation and multi-file driver"]:::prod
+    FS["FileDataSource / FileTransmitSource / GarnetClientSession"]:::shared
+    NET["TCP checkpoint commands"]:::shared
+    RP["Production NetworkHandler / RespServerSession / ClusterSession"]:::prod
+    RH["ReceiveCheckpointHandler / production device factory"]:::prod
+    SINK["OverlappedFileDataSink or FileDataSink / device writes"]:::shared
+    DONE["Production EOF, metadata, recovery, AOF catch-up"]:::prod
+    END["Full runner: marker barrier, logical verification"]:::driver
+    TS["Component sender: one offline generated file, hash, BEGIN"]:::replacement
+    TR["Component TcpListener / Protocol / Receiver.Transfer / direct device creation"]:::replacement
+    TA["Component ordered acknowledgements / artificial delay / SHA-256"]:::replacement
+    FP --> SP --> FS --> NET --> RP --> RH --> SINK --> DONE --> END
+    TS --> FS
+    NET --> TR --> SINK
+    SINK --> TA
+    classDef shared fill:#d8f3dc,stroke:#238636
+    classDef prod fill:#dbeafe,stroke:#2563eb
+    classDef replacement fill:#ffedd5,stroke:#ea580c
+    classDef driver fill:#f3e8ff,stroke:#9333ea
+```
+
+Green is shared implementation, blue is production orchestration, orange is
+component replacement, and purple is the full benchmark driver. Component
+throughput isolates file shipping; it does not certify full production throughput.
+Full mode includes strings, objects, metadata and recovery; the component's
+single string HLOG is not an identical logical workload. Use production phase
+measurements, not subtraction between scenarios, to attribute costs.
+On one host, source reads and destination writes can share storage bandwidth,
+even on different guest disks. Record placement/cache settings when comparing.
 
 ## Transfer-only component scenario
 

@@ -191,7 +191,7 @@ Tuning guidance and memory costs are in the [operator guide](../../cluster/repli
 | `ReceiveCheckpointHandler` | Routes requests to sinks and waits for end-of-file completion | Overlapped writes |
 | `OverlappedFileDataSink` | Bounded queued writes, sequential or concurrent, with an end-of-file barrier | Overlapped writes |
 | `RespClusterReplicationCommands.cs` (`NetworkClusterSnapshotData`) | Inline acceptance replies and end-of-file completion | Overlapped writes |
-| `benchmark/Replica-transfer.benchmark` | Component file-transfer driver with an explicit scenario selector | #2334; overlapped writes |
+| `benchmark/Replica-transfer.benchmark` | Real-server full-sync driver; optional component file-transfer driver | #2334; overlapped writes |
 
 ### Tests and measurement
 
@@ -207,7 +207,9 @@ Tuning guidance and memory costs are in the [operator guide](../../cluster/repli
 | `ReplicaTransferBenchmarkTests` | The benchmark's options, checkpoint generation and ACK-delay precision |
 | `ClusterRedirectTests.ClusterSlotErrorsOverflowingTheResponseBufferAreAllDelivered` | The `ClusterSession` send-size fix |
 
-The [replica-transfer benchmark](https://github.com/microsoft/garnet/tree/main/benchmark/Replica-transfer.benchmark) defaults to `--scenario transfer-only`: it shares the file sender and sinks but replaces receiver parsing, orchestration, device creation and reply scheduling. It supports `--ack-delay-us` for controlled component experiments. The selector reserves `--scenario full` for a subsequent production-driver implementation; that scenario currently fails explicitly. Same-host source reads and destination writes can share host storage bandwidth, so separate guest disks do not guarantee isolated I/O.
+The [replica-transfer benchmark](https://github.com/microsoft/garnet/tree/main/benchmark/Replica-transfer.benchmark) defaults to `--scenario full`: separate real primary/replica processes, independently selected builds, version-owned fresh checkpoints, real negotiation/transfer/recovery/AOF catch-up, and logical verification. `--scenario transfer-only` retains the shared file sender/sinks but replaces receiver parsing, orchestration, device creation and reply scheduling; only that component mode supports `--ack-delay-us`. Its README includes the production/component flowchart and timing boundaries. Same-host source reads and destination writes can share host storage bandwidth, so separate guest disks do not guarantee isolated I/O.
+
+Optional production phase instrumentation is enabled by `GARNET_REPLICA_BENCH_PHASE_TIMING=1` (the runner's `--phase-timing true`). It records only whole-shipment/recovery timestamps and file-boundary byte counts, with bounded last-successful state exposed through `INFO REPLICATION` after timing. It adds no work to chunk loops. Uninstrumented/older builds have unavailable phase fields; mixed-version compatibility is tested, not assumed. Confirm negligible instrumentation overhead with paired Release controls before interpreting fine performance differences.
 
 ## Diskless Attach/Sync Details
 

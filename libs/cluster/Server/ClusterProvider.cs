@@ -279,6 +279,8 @@ namespace Garnet.cluster
                         replicationInfo.Add(new($"slave{i}", replicaInfo[i].ToString()));
                 }
             }
+            if (replicationManager.BenchmarkTiming != null)
+                replicationInfo.AddRange(replicationManager.BenchmarkTiming.GetMetrics());
             return [.. replicationInfo];
         }
 

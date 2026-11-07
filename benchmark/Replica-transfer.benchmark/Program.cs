@@ -16,9 +16,15 @@ internal static class Program
             if (args.Length == 0 || args.Contains("--help"))
             {
                 Console.WriteLine("""
-                    Standalone checkpoint-file transfer benchmark (NOT a Garnet server).
-                    [--scenario transfer-only|full] Default: transfer-only.
-                    Full is reserved for the production-driver follow-up and is not implemented yet.
+                    Replica benchmark. Default scenario: full (real, disposable Garnet servers).
+                    Full: send|receive --server <server DLL or executable> --output <existing directory>
+                          [--scenario full] [--server-port 7011] [--bind 127.0.0.1]
+                          [--host 127.0.0.1] [--port 7010] [--data-size 512m]
+                          [--chunks 16m] [--depths 4] [--repeats 1] [--runs 1]
+                          [--write-buffers 1] [--write-buffers-concurrently false]
+                          [--phase-timing false] [--csv <new file>] [--timeout-seconds 300]
+                          [--device-type RandomAccess|Native|FileStream]
+                    Component: explicitly pass --scenario transfer-only.
                     receive --output <existing directory> [--bind 127.0.0.1] [--port 7010]
                             [--runs 1] [--max-chunk 16m] [--ack-delay-us 0] [--write-buffers 1]
                             [--write-buffers-concurrently false]
@@ -47,7 +53,7 @@ internal static class Program
             try
             {
                 if (SelectScenario(args) == "full")
-                    throw new NotSupportedException("The full production scenario is not implemented yet; use --scenario transfer-only.");
+                    await FullReplication.RunAsync(FullOptions.Parse(args), stop.Token);
                 else
                 {
                     var options = Options.Parse(args);
@@ -77,7 +83,7 @@ internal static class Program
         var selectors = args.Select((value, index) => (value, index)).Where(pair => pair.value == "--scenario").ToArray();
         if (selectors.Length > 1)
             throw new ArgumentException("Repeated --scenario.");
-        var scenario = selectors.Length == 0 ? "transfer-only"
+        var scenario = selectors.Length == 0 ? (args[0] == "generate" ? "transfer-only" : "full")
             : selectors[0].index + 1 < args.Length ? args[selectors[0].index + 1] : "";
         if (scenario is not ("full" or "transfer-only") || (args[0] == "generate" && scenario != "transfer-only"))
             throw new ArgumentException("--scenario must be full or transfer-only; generate is transfer-only.");

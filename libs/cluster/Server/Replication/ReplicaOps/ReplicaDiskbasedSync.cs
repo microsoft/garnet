@@ -20,6 +20,7 @@ namespace Garnet.cluster
     internal sealed partial class ReplicationManager : IDisposable
     {
         public ReceiveCheckpointHandler recvCheckpointHandler = null;
+        internal readonly ReplicaBenchmarkTiming BenchmarkTiming = ReplicaBenchmarkTiming.Create();
         CheckpointEntry cEntry;
 
         /// <summary>
@@ -302,6 +303,7 @@ namespace Garnet.cluster
             ref AofAddress recoveredReplicationOffset,
             out ReadOnlySpan<byte> errorMessage)
         {
+            var recoveryStarted = BenchmarkTiming == null ? 0 : Stopwatch.GetTimestamp();
             try
             {
                 errorMessage = [];
@@ -363,6 +365,7 @@ namespace Garnet.cluster
                 // This is necessary to ensure that the stored procedure can perform write operations if needed
                 clusterProvider.replicationManager.aofProcessor.SetInternalWriteSession();
 
+                BenchmarkTiming?.RecordRecovery(recoveryStarted);
                 return this.replicationOffset;
             }
             catch (Exception ex)
