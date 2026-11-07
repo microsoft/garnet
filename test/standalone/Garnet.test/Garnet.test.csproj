@@ -57,6 +57,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\benchmark\Resp.benchmark\Resp.benchmark.csproj" Aliases="RespBenchmark" />
     <ProjectReference Include="..\..\..\libs\client\Garnet.client.csproj" />
     <ProjectReference Include="..\..\..\libs\common\Garnet.common.csproj" />
     <ProjectReference Include="..\..\..\libs\host\Garnet.host.csproj" />

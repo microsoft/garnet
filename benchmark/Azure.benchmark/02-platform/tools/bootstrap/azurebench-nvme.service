@@ -1,0 +1,14 @@
+[Unit]
+Description=Prepare AzureBench local NVMe storage
+Requires=systemd-udev-settle.service
+After=local-fs.target systemd-udev-settle.service
+Before=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/pwsh -NoLogo -NoProfile -NonInteractive -File /opt/deploy-actions/setup-nvme.ps1 --if-present
+RemainAfterExit=yes
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

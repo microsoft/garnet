@@ -44,6 +44,10 @@ run while the manifest still contains placeholder values.
 
 ## Quick Start
 
+Storage uses Entra ID only (Shared Key/SAS disabled). See [README-RBAC.md](README-RBAC.md)
+for the roles and PIM elevation needed to publish tools and grant VMSS storage
+access, and run `01-resources/validate-storage-rbac.ps1 -rg <rg>` to verify them.
+
 ```powershell
 # 1. Deploy infrastructure (network + storage + Key Vault + keys)
 # See 01-resources/README.md.
@@ -56,9 +60,14 @@ pwsh .\01-resources\deploy-common-resources.ps1 `
   --rg testrg `
   --location southcentralus
 
-# 2. Publish the tools bundle before creating any VMSS
+# 2. Manually activate Owner on the resource group in Azure Portal PIM, then grant
+# publisher access. See README-RBAC.md. This grant persists after PIM expires.
+pwsh .\01-resources\grant-perms.ps1 -rg testrg
+
+# Publish the tools bundle before creating any VMSS
 # This requires the storage account from step 1. VM provisioning cannot fetch
-# /home/guser/tools when tools.tar.gz has not been uploaded.
+# /home/guser/tools when tools.tar.gz has not been uploaded. Shared Key is disabled,
+# so the uploader needs Storage Blob Data Contributor on the account or container.
 pwsh .\02-platform\manage-vmss.ps1 `
   --rg testrg `
   --action publish-tools
@@ -66,23 +75,28 @@ pwsh .\02-platform\manage-vmss.ps1 `
 # 3. Deploy server and client VMSS
 # See 02-platform/README.md. DeploymentName identifies the Azure deployment
 # record; the VMSS resource name comes from the vmssName Bicep parameter.
+# -GrantStorageAccess gives the VMSS managed identity Storage Blob Data Reader so
+# instances can download the tools bundle; this script requires active
+# Owner on the resource group (manually activated through Azure Portal PIM).
 pwsh .\02-platform\manage-vmss.ps1 `
   --rg testrg `
   --action create `
   --deploymentrole server `
-  --deploymentname server-deployment
+  --deploymentname server-deployment `
+  --grantstorageaccess
 
 pwsh .\02-platform\manage-vmss.ps1 `
   --rg testrg `
   --action create `
   --deploymentrole client `
-  --deploymentname client-deployment
+  --deploymentname client-deployment `
+  --grantstorageaccess
 
 # Alternatively, deploy the VMSS directly through Azure CLI:
 az deployment group create --resource-group <rg> --template-file 02-platform\vmss.bicep `
-  --parameters @02-platform\vmss-parameters.json --parameters vmssName=<server-name> deploymentRole=server instanceCount=<n>
+  --parameters @02-platform\vmss-parameters.json --parameters vmssName=<server-name> deploymentRole=server instanceCount=<n> storageAccountName=<storage> grantStorageAccess=true
 az deployment group create --resource-group <rg> --template-file 02-platform\vmss.bicep `
-  --parameters @02-platform\vmss-parameters.json --parameters vmssName=<client-name> deploymentRole=client instanceCount=<n>
+  --parameters @02-platform\vmss-parameters.json --parameters vmssName=<client-name> deploymentRole=client instanceCount=<n> storageAccountName=<storage> grantStorageAccess=true
 
 # 4. Set up and start Garnet on the server VMs
 # serverhost identifies the coordinator VM. This example starts one Garnet
@@ -99,10 +113,47 @@ pwsh .\03-workload\cluster.ps1 `
 # To start Garnet with TLS instead, add --tls and use:
 # --conf 02-platform/tools/config/garnet/garnet-cache-tls.conf
 
+# For a diskless cluster, use --icount 1 and:
+# --conf 02-platform/tools/config/garnet/garnet-cluster-diskless.conf
+# mcluster.ps1 sizes LogMemorySize as floor(VM RAM * 0.8) minus the 1 GiB AOF.
+# Storage and metadata use null devices; diskless replication is enabled.
+# Runtime logs go to /dev/shm (verified tmpfs); config staging still writes files.
+# Shipping and replay lag are each bounded to 256 MiB to throttle slow replicas
+# before the AOF buffer wraps. This is volatile storage, not durable replication;
+# restart or replica disconnection can require a full sync.
+
 # 5. Run benchmark from client VMs -> see 03-workload/README.md
 pwsh .\03-workload\bench\resp-bench.ps1 `
-  --configfile .\03-workload\bench\bench.conf
+  --configfile .\03-workload\bench\bench-cluster.conf `
+  -ClientHosts vm0.myclient.example.com
 ```
+
+RESP workload `.conf` files are native JSON consumed by `Resp.benchmark` itself;
+SSH placement stays outside them. Memtier keeps its key=value format.
+
+### Declarative alternative to steps 4-5
+
+For a single VMSS with three VMs, the supplied templates declare `vm0` as primary,
+`vm1` as replica, and `vm2` as benchmark client. Review the templates and their
+referenced configurations before running. **`create` cleans existing data on the
+declared server instances.**
+
+```powershell
+# Create the declared cluster, then run one benchmark instance on vm2.
+pwsh .\03-workload\cluster.ps1 --action create `
+  --definition .\templates\cluster-explicit.template.json `
+  --rg <resource-group> --vmssname <vmss-name>
+
+pwsh .\03-workload\benchmark.ps1 `
+  --definition .\templates\benchmark-cluster.json `
+  --rg <resource-group> --vmssname <vmss-name> --verbose
+```
+
+Omit `--vmssname` to select interactively from the resource group's VMSS.
+See [declarative cluster definitions](03-workload/README.md#declarative-cluster-definitions)
+and [declarative benchmarks](03-workload/README.md#declarative-benchmarks) for
+template schemas, separate client/server VMSS, dry runs, stop commands, and
+configuration migration.
 
 > **VM provisioning takes time:** A newly created VMSS instance may accept SSH before
 > cloud-init has finished downloading and installing the tools bundle. Wait for

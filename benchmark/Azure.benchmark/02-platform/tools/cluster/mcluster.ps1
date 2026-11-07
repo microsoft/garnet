@@ -23,6 +23,8 @@ param(
     [string]$ConfContent,
     [string]$ConfName,
     [int]$Nodes = 0,
+    [ValidateRange(0, 65535)][int]$BasePort = 0,
+    [switch]$InstanceOnly,
     [switch]$NoCluster,
     [switch]$Tls,
     [switch]$Clean,
@@ -47,6 +49,8 @@ if ($Help -or -not $Action) {
     Write-Host "  -ConfContent Base64 config content shipped from the caller (decoded to a temp file); highest precedence"
     Write-Host "  -ConfName    Leaf filename to use when writing -ConfContent (default: shipped.conf)"
     Write-Host "  -Nodes       Number of instances to manage"
+    Write-Host "  -BasePort    Override the configured starting port"
+    Write-Host "  -InstanceOnly Limit stopping and cleanup to -Nodes instances from the base port"
     Write-Host "  -NoCluster   Disable cluster mode in generated configs"
     Write-Host "  -Tls         Enable Garnet TLS using role-specific Key Vault material"
     Write-Host "  -Clean       Remove cluster directory before starting"
@@ -69,6 +73,10 @@ if (Test-Path $configFile) {
 # Defaults if config.env not loaded
 if (-not $IFACE) { $IFACE = "eth1" }
 if (-not $BASE_PORT) { $BASE_PORT = 7000 } else { $BASE_PORT = [int]$BASE_PORT }
+if ($BasePort -gt 0) { $BASE_PORT = $BasePort }
+if ($InstanceOnly -and (-not $System -or $Nodes -le 0 -or $BASE_PORT + $Nodes - 1 -gt 65535)) {
+    throw '-InstanceOnly requires -System, a positive -Nodes count, and valid ports.'
+}
 if (-not $DEPLOY_USER) { $DEPLOY_USER = "guser" }
 if (-not $RAMDISK_DIR) { $RAMDISK_DIR = "/mnt/ramdisk" }
 if (-not $NVME_DIR) { $NVME_DIR = "/mnt/nvme" }
@@ -120,6 +128,26 @@ function Get-Eth1Ip {
     throw "ERROR: Could not determine $IFACE IP"
 }
 
+function Get-GarnetLogMemorySize {
+    param([string]$AofMemorySize)
+
+    $memInfo = Get-Content -LiteralPath '/proc/meminfo' -Raw
+    if ($memInfo -notmatch '(?m)^MemTotal:\s+(\d+)\s+kB\s*$') {
+        throw 'Cannot determine total VM memory from /proc/meminfo.'
+    }
+    $totalMemoryBytes = [decimal]$Matches[1] * 1KB
+    if ($AofMemorySize -notmatch '^(\d+)([kmgt]?)$') {
+        throw "Unsupported AofMemorySize for VM-sized log memory: $AofMemorySize"
+    }
+    $units = @{ '' = 1; k = 1KB; m = 1MB; g = 1GB; t = 1TB }
+    $aofMemoryBytes = [decimal]$Matches[1] * $units[$Matches[2].ToLowerInvariant()]
+    $logMemoryBytes = [long][decimal]::Floor($totalMemoryBytes * [decimal]0.8 - $aofMemoryBytes)
+    if ($logMemoryBytes -lt 64MB) {
+        throw 'VM memory remaining after the 20% reserve and AOF buffer is below the 64 MiB log minimum.'
+    }
+    return [string]$logMemoryBytes
+}
+
 function Resolve-Config {
     param([string]$Sys, [int]$Count, [string]$ConfPath, [string]$ConfB64, [string]$ConfLeaf)
 
@@ -148,6 +176,14 @@ function Resolve-Config {
 
     # Check if the configuration uses ramdisk and ensure directories exist
     $sourceContent = Get-Content $sourceFile -Raw
+    if ($Sys -eq 'garnet' -and $sourceContent.Contains('$logMemorySize')) {
+        if ($Count -ne 1) {
+            throw 'VM-sized log memory requires exactly one Garnet instance per VM.'
+        }
+        $memorySettings = ($sourceContent -replace '\$port', $BASE_PORT) | ConvertFrom-Json
+        $logMemorySize = Get-GarnetLogMemorySize -AofMemorySize $memorySettings.AofMemorySize
+        $sourceContent = $sourceContent.Replace('$logMemorySize', $logMemorySize)
+    }
     $configEnablesTls = $sourceContent -match '"EnableTLS"\s*:\s*true'
     if ($Sys -eq 'garnet' -and $configEnablesTls -and -not $Tls) {
         throw "Configuration enables TLS; pass -Tls so certificate material is provisioned."
@@ -197,30 +233,40 @@ function Resolve-Config {
 
         if ($Sys -eq "garnet") {
             $content = $content -replace '"EnableCluster":\s*true', "`"EnableCluster`": $ClusterMode"
-            if ($Tls) {
+            if ($Tls -or $BasePort -gt 0) {
                 try {
                     $garnetConfig = $content | ConvertFrom-Json
                 } catch {
-                    throw "Garnet TLS configuration is not valid JSON: $($_.Exception.Message)"
+                    throw "Garnet configuration is not valid JSON: $($_.Exception.Message)"
                 }
-                $tlsProperties = [ordered]@{
-                    EnableTLS                     = $true
-                    CertFileName                  = $tlsSettings.CertFileName
-                    CertPassword                  = $tlsSettings.CertPassword
-                    CertificateRefreshFrequency   = 0
-                    ClientCertificateRequired     = $false
-                    ServerCertificateRequired     = $true
-                    IssuerCertificatePath         = $tlsSettings.IssuerCertificatePath
-                    ClusterTlsClientTargetHost    = $tlsSettings.TargetHost
+                if ($BasePort -gt 0) {
+                    $garnetConfig | Add-Member -NotePropertyName Port -NotePropertyValue $port -Force
+                    $garnetConfig | Add-Member -NotePropertyName EnableCluster -NotePropertyValue ($ClusterMode -eq 'true') -Force
                 }
-                foreach ($entry in $tlsProperties.GetEnumerator()) {
-                    $garnetConfig | Add-Member -NotePropertyName $entry.Key -NotePropertyValue $entry.Value -Force
+                if ($Tls) {
+                    $tlsProperties = [ordered]@{
+                        EnableTLS                     = $true
+                        CertFileName                  = $tlsSettings.CertFileName
+                        CertPassword                  = $tlsSettings.CertPassword
+                        CertificateRefreshFrequency   = 0
+                        ClientCertificateRequired     = $false
+                        ServerCertificateRequired     = $true
+                        IssuerCertificatePath         = $tlsSettings.IssuerCertificatePath
+                        ClusterTlsClientTargetHost    = $tlsSettings.TargetHost
+                    }
+                    foreach ($entry in $tlsProperties.GetEnumerator()) {
+                        $garnetConfig | Add-Member -NotePropertyName $entry.Key -NotePropertyValue $entry.Value -Force
+                    }
                 }
                 $content = $garnetConfig | ConvertTo-Json -Depth 20
             }
             Set-Content -Path "$portDir/garnet.conf" -Value $content -NoNewline
             if ($Tls) { chmod 0600 "$portDir/garnet.conf" }
         } else {
+            if ($BasePort -gt 0) {
+                if ($content -match '(?m)^port\s+') { $content = $content -replace '(?m)^port\s+.*', "port $port" }
+                else { $content += "`nport $port`n" }
+            }
             # Handle cluster-enabled for valkey
             if ($content -match '(?m)^cluster-enabled') {
                 $clusterVal = if ($ClusterMode -eq "true") { "cluster-enabled yes" } else { "cluster-enabled no" }
@@ -258,6 +304,24 @@ function Start-Valkey {
     }
 }
 
+function Get-GarnetRuntimeDirectory {
+    param([string]$ConfigPath, [string]$DefaultDirectory)
+    $settings = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
+    if ($settings.CheckpointDir -and ([string]$settings.CheckpointDir).StartsWith('/dev/shm/', [StringComparison]::Ordinal)) {
+        $fileSystem = & findmnt -n -o FSTYPE --target /dev/shm
+        if ($LASTEXITCODE -ne 0 -or "$fileSystem".Trim() -ne 'tmpfs') {
+            throw '/dev/shm is not mounted as tmpfs; refusing to write diskless runtime output to disk.'
+        }
+        return [string]$settings.CheckpointDir
+    }
+    if ($settings.LogDir -and ([string]$settings.LogDir).StartsWith("$($NVME_DIR.TrimEnd('/'))/", [StringComparison]::Ordinal)) {
+        & mountpoint -q $NVME_DIR
+        if ($LASTEXITCODE -ne 0) { throw "NVMe mount $NVME_DIR is unavailable; refusing to write to the OS disk." }
+        return [string]$settings.LogDir
+    }
+    return $DefaultDirectory
+}
+
 function Start-Garnet {
     param([int]$Count)
     $clusterDir = "$HOME/garnet-cluster"
@@ -275,14 +339,29 @@ function Start-Garnet {
         $running = bash -c "pgrep -f 'GarnetServer.*/${port}/garnet.conf'" 2>$null
         if ($running) { Write-Host "  Port ${port}: already running (skipped)" -ForegroundColor DarkGray; continue }
 
-        Set-Location $dir
-        bash -c "nohup GarnetServer --config-import-path=$conf > $dir/garnet.log 2> $dir/garnet.err &"
+        $runtimeDir = Get-GarnetRuntimeDirectory -ConfigPath $conf -DefaultDirectory $dir
+        New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
+        Set-Location $runtimeDir
+        bash -c "nohup GarnetServer --config-import-path='$conf' > '$runtimeDir/garnet.log' 2> '$runtimeDir/garnet.err' &"
         Write-Host "  Port ${port}: started" -ForegroundColor Cyan
     }
 }
 
 function Clean-System {
-    param([string]$Sys)
+    param([string]$Sys, [int]$Count = 0)
+    if ($Count -gt 0) {
+        for ($i = 0; $i -lt $Count; $i++) {
+            $port = $BASE_PORT + $i
+            foreach ($root in @($HOME, $RAMDISK_DIR, $NVME_DIR, '/dev/shm')) {
+                $directory = "$root/$Sys-cluster/$port"
+                if (Test-Path -LiteralPath $directory -PathType Container) {
+                    Remove-Item -LiteralPath $directory -Recurse -Force
+                    Write-Host "  Removed $directory"
+                }
+            }
+        }
+        return
+    }
     if ($Sys -eq "garnet" -or [string]::IsNullOrEmpty($Sys)) {
         $garnetDir = "$HOME/garnet-cluster"
         if (Test-Path $garnetDir) {
@@ -323,59 +402,42 @@ function Clean-System {
     }
 }
 
-function Stop-System {
+function Get-SystemProcessIds {
     param([string]$Sys, [int]$Count)
-    if ($Sys -eq "garnet") {
-        if ($Count -gt 0) {
-            for ($i = 0; $i -lt $Count; $i++) {
-                $port = $BASE_PORT + $i
-                $raw = bash -c "pgrep -f 'GarnetServer.*/${port}/garnet.conf'" 2>$null
-                $procId = if ($raw) { $raw.Trim() } else { "" }
-                if ($procId) { bash -c "kill $procId"; Write-Host "  Garnet port ${port}: stopped (pid $procId)" }
-                else { Write-Host "  Garnet port ${port}: not running" -ForegroundColor DarkGray }
-            }
-        } else {
-            $raw = bash -c "pgrep -f GarnetServer" 2>$null
-            $procIds = if ($raw) { $raw.Trim() -split "`n" | Where-Object { $_ } } else { @() }
-            if ($procIds) {
-                foreach ($p in $procIds) {
-                    $portMatch = bash -c "ps -p $p -o args= 2>/dev/null" | Select-String -Pattern '/(\d+)/garnet\.conf'
-                    $port = if ($portMatch) { $portMatch.Matches[0].Groups[1].Value } else { "?" }
-                    bash -c "kill $p"
-                    Write-Host "  GarnetServer port ${port}: stopped (pid $p)"
-                }
-            } else {
-                Write-Host "  No GarnetServer running." -ForegroundColor DarkGray
-            }
-        }
+    $patterns = @()
+    if ($Count -le 0) {
+        $patterns = @($(if ($Sys -eq 'garnet') { '[G]arnetServer' } else { '[v]alkey-server' }))
     } else {
-        if ($Count -gt 0) {
-            for ($i = 0; $i -lt $Count; $i++) {
-                $port = $BASE_PORT + $i
-                $raw = bash -c "pgrep -f 'valkey-server.*:${port}'" 2>$null
-                $procId = if ($raw) { $raw.Trim() } else { "" }
-                if ($procId) { bash -c "kill $procId"; Write-Host "  Valkey port ${port}: stopped (pid $procId)" }
-                else { Write-Host "  Valkey port ${port}: not running" -ForegroundColor DarkGray }
-            }
-        } else {
-            $raw = bash -c "pgrep -f valkey-server" 2>$null
-            $procIds = if ($raw) { $raw.Trim() -split "`n" | Where-Object { $_ } } else { @() }
-            if ($procIds) {
-                foreach ($p in $procIds) {
-                    $portMatch = bash -c "ps -p $p -o args= 2>/dev/null" | Select-String -Pattern ':(\d+)'
-                    $port = if ($portMatch) { $portMatch.Matches[0].Groups[1].Value } else { "?" }
-                    bash -c "kill $p"
-                    Write-Host "  valkey-server port ${port}: stopped (pid $p)"
-                }
-            } else {
-                Write-Host "  No valkey-server running." -ForegroundColor DarkGray
-            }
+        for ($i = 0; $i -lt $Count; $i++) {
+            $port = $BASE_PORT + $i
+            $patterns += if ($Sys -eq 'garnet') {
+                '[G]arnetServer.*' + [regex]::Escape("$HOME/garnet-cluster/$port/garnet.conf") + '([[:space:]]|$)'
+            } else { "[v]alkey-server.*:${port}([[:space:]]|$)" }
+        }
+    }
+    foreach ($pattern in $patterns) {
+        $output = @(& pgrep -f -- $pattern)
+        if ($LASTEXITCODE -eq 1) { continue }
+        if ($LASTEXITCODE -ne 0) { throw "Process lookup failed for $Sys (exit $LASTEXITCODE)." }
+        foreach ($line in $output) {
+            if ($line -notmatch '^\d+$') { throw "Invalid process ID from pgrep: $line" }
+            [int]$line
         }
     }
 }
 
+function Stop-System {
+    param([string]$Sys, [int]$Count)
+    $processIds = @(Get-SystemProcessIds -Sys $Sys -Count $Count)
+    foreach ($processId in $processIds) {
+        Stop-Process -Id $processId -Force -ErrorAction Stop
+        Write-Host "  $Sys stopped (pid $processId)"
+    }
+    if (-not $processIds.Count) { Write-Host "  No matching $Sys instances running." -ForegroundColor DarkGray }
+}
+
 function Confirm-Stopped {
-    param([string]$Sys, [int]$TimeoutSec = 15)
+    param([string]$Sys, [int]$TimeoutSec = 15, [int]$Count = 0)
     $patterns = @()
     if ($Sys -eq "garnet" -or [string]::IsNullOrEmpty($Sys)) { $patterns += "GarnetServer" }
     if ($Sys -eq "valkey" -or [string]::IsNullOrEmpty($Sys)) { $patterns += "valkey-server" }
@@ -383,18 +445,17 @@ function Confirm-Stopped {
         $deadline = (Get-Date).AddSeconds($TimeoutSec)
         $procIds = @()
         do {
-            $raw = bash -c "pgrep -f $pat" 2>$null
-            $procIds = if ($raw) { $raw.Trim() -split "`n" | Where-Object { $_ } } else { @() }
+            $targetSystem = if ($pat -eq 'GarnetServer') { 'garnet' } else { 'valkey' }
+            $procIds = @(Get-SystemProcessIds -Sys $targetSystem -Count $Count)
             if ($procIds.Count -eq 0) { break }
             Start-Sleep -Milliseconds 500
         } while ((Get-Date) -lt $deadline)
 
         if ($procIds.Count -gt 0) {
             Write-Host "  $pat still running after ${TimeoutSec}s; sending SIGKILL..." -ForegroundColor Yellow
-            foreach ($p in $procIds) { bash -c "kill -9 $p" 2>$null }
+            foreach ($p in $procIds) { Stop-Process -Id $p -Force -ErrorAction Stop }
             Start-Sleep -Milliseconds 500
-            $raw = bash -c "pgrep -f $pat" 2>$null
-            $procIds = if ($raw) { $raw.Trim() -split "`n" | Where-Object { $_ } } else { @() }
+            $procIds = @(Get-SystemProcessIds -Sys $targetSystem -Count $Count)
             if ($procIds.Count -gt 0) {
                 throw "Failed to stop all $pat processes; aborting clean to avoid deleting data under a live process."
             }
@@ -407,17 +468,18 @@ function Confirm-Stopped {
 # termination before any data is removed, so a live process can never keep
 # running against deleted files.
 function Stop-And-Confirm {
-    param([string]$Sys)
+    param([string]$Sys, [int]$Count = 0)
     if ([string]::IsNullOrEmpty($Sys)) {
         Stop-System -Sys "valkey" -Count 0
         Stop-System -Sys "garnet" -Count 0
     } else {
-        Stop-System -Sys $Sys -Count 0
+        Stop-System -Sys $Sys -Count $Count
     }
-    Confirm-Stopped -Sys $Sys
+    Confirm-Stopped -Sys $Sys -Count $Count
 }
 
 # Main logic
+$cleanupCount = if ($InstanceOnly) { $Nodes } else { 0 }
 switch ($Action) {
     "start" {
         if (-not $System) { throw "Usage: mcluster.ps1 -Action start -System <system> (-Conf <path> | -ConfContent <b64>) -Nodes <n>" }
@@ -434,9 +496,9 @@ switch ($Action) {
 
         if ($Clean) {
             Write-Host "Stopping $System instances before clean..."
-            Stop-And-Confirm -Sys $System
+            Stop-And-Confirm -Sys $System -Count $cleanupCount
             Write-Host "Cleaning $System cluster directory..."
-            Clean-System -Sys $System
+            Clean-System -Sys $System -Count $cleanupCount
         }
 
         Pull-Configs
@@ -448,6 +510,10 @@ switch ($Action) {
     }
 
     "stop" {
+        if ($InstanceOnly) {
+            Stop-And-Confirm -Sys $System -Count $Nodes
+            return
+        }
         if (-not $System) {
             Write-Host "Stopping all instances..."
             Stop-System -Sys "valkey" -Count 0
@@ -460,9 +526,9 @@ switch ($Action) {
 
     "clean" {
         Write-Host "Stopping instances before clean..."
-        Stop-And-Confirm -Sys $System
+        Stop-And-Confirm -Sys $System -Count $cleanupCount
         Write-Host "Cleaning cluster directories..."
-        Clean-System -Sys $System
+        Clean-System -Sys $System -Count $cleanupCount
         Write-Host "Done." -ForegroundColor Green
     }
 
@@ -493,9 +559,9 @@ switch ($Action) {
 
         if ($Clean) {
             Write-Host "Stopping $System instances before clean..."
-            Stop-And-Confirm -Sys $System
+            Stop-And-Confirm -Sys $System -Count $cleanupCount
             Write-Host "Cleaning $System cluster directory..."
-            Clean-System -Sys $System
+            Clean-System -Sys $System -Count $cleanupCount
         }
 
         Pull-Configs
@@ -509,7 +575,8 @@ switch ($Action) {
             $dir = "$clusterDir/$port"
             if ($System -eq "garnet") {
                 $conf = "$dir/garnet.conf"
-                Write-Host "  cd $dir && GarnetServer --config-import-path=$conf" -ForegroundColor Yellow
+                $runtimeDir = Get-GarnetRuntimeDirectory -ConfigPath $conf -DefaultDirectory $dir
+                Write-Host "  cd $runtimeDir && GarnetServer --config-import-path=$conf" -ForegroundColor Yellow
             } else {
                 $conf = "$dir/valkey.conf"
                 Write-Host "  cd $dir && valkey-server $conf" -ForegroundColor Yellow

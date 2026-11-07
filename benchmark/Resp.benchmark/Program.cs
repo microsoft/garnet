@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Net;
-using CommandLine;
 using Garnet.client;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -64,7 +63,7 @@ namespace Resp.benchmark
             Console.WriteLine($"ClientType used for benchmarking: {opts.Client}");
             if (opts.Online)
             {
-                Console.WriteLine($"Pool: {opts.Pool}");
+                Console.WriteLine($"UseFixedWorkerPool: {opts.UseFixedWorkerPool}");
                 Console.WriteLine($"OpWorkload {String.Join(',', opts.OpWorkload)}");
                 Console.WriteLine($"OpPercent {String.Join(',', opts.OpPercent)}");
                 if (opts.Ttl > 0)
@@ -162,15 +161,15 @@ namespace Resp.benchmark
                     return true;
                 }
 
-                if (opts.Client == ClientType.LightClient && opts.Pool)
+                if (opts.Client == ClientType.LightClient && opts.UseFixedWorkerPool && (!opts.ClusterBench || opts.UseParallelFanOut))
                 {
-                    Console.WriteLine("Pooling of LightClient is not supported");
+                    Console.WriteLine("--use-fixed-worker-pool is not supported for LightClient in this mode");
                     return true;
                 }
 
-                if (opts.ClientHistogram && opts.Pool)
+                if (opts.ClientHistogram && opts.UseFixedWorkerPool)
                 {
-                    Console.WriteLine("Client hisogram and pool are not supported at the same time.");
+                    Console.WriteLine("Client histogram and --use-fixed-worker-pool are not supported at the same time.");
                     return true;
                 }
             }
@@ -213,14 +212,19 @@ namespace Resp.benchmark
             return false;
         }
 
-        static void Main(string[] args)
+        static int Main(string[] args)
         {
-            ParserResult<Options> result = Parser.Default.ParseArguments<Options>(args);
-            if (result.Tag == ParserResultType.NotParsed) return;
-            var opts = result.MapResult(o => o, xs => new Options());
+            if (!Options.TryParse(args, out var opts, out var exitGracefully))
+                return exitGracefully ? 0 : 1;
 
             if (DisabledFeatures(opts))
-                return;
+                return 1;
+
+            if (opts.ValidateConfig)
+            {
+                Console.WriteLine("Benchmark configuration is valid.");
+                return 0;
+            }
 
             if (opts.CertPasswordFile != null)
             {
@@ -231,7 +235,7 @@ namespace Resp.benchmark
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Unable to read certificate password file: {ex.Message}");
-                    return;
+                    return 1;
                 }
             }
 
@@ -259,6 +263,7 @@ namespace Resp.benchmark
                 RunBasicCommandsBenchmark(opts);
 
             pc?.Stop();
+            return 0;
         }
 
         static void WaitForServer(Options opts)
