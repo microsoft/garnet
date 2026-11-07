@@ -1,0 +1,28 @@
+{
+  "id": "welcome/news",
+  "title": "News",
+  "description": "Below we provide links to news articles, blog posts, and discussions about Garnet:",
+  "source": "@site/docs/welcome/news.md",
+  "sourceDirName": "welcome",
+  "slug": "/welcome/news",
+  "permalink": "/garnet/docs/welcome/news",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/welcome/news.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "news",
+    "sidebar_label": "News",
+    "title": "News"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Intro",
+    "permalink": "/garnet/docs/"
+  },
+  "next": {
+    "title": "Features",
+    "permalink": "/garnet/docs/welcome/features"
+  }
+}

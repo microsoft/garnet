@@ -1,0 +1,28 @@
+{
+  "id": "dev/cluster/overview",
+  "title": "Cluster Overview",
+  "description": "The cluster is designed and implemented as an independent plugin component within the standalone Garnet server.",
+  "source": "@site/docs/dev/cluster/overview.md",
+  "sourceDirName": "dev/cluster",
+  "slug": "/dev/cluster/overview",
+  "permalink": "/garnet/docs/dev/cluster/overview",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/cluster/overview.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "overview",
+    "sidebar_label": "Cluster Overview",
+    "title": "Cluster Overview"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Collection Broker",
+    "permalink": "/garnet/docs/dev/collection-broker"
+  },
+  "next": {
+    "title": "Sharding",
+    "permalink": "/garnet/docs/dev/cluster/sharding"
+  }
+}
