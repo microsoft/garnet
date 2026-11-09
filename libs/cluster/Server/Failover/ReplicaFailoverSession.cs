@@ -25,7 +25,17 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="nodeId">Id of node to create connection for</param>
         /// <returns></returns>
-        private async Task<GarnetClient> CreateConnectionAsync(string nodeId)
+        private Task<GarnetClient> CreateConnectionAsync(string nodeId)
+            => CreateConnectionAsync(nodeId, failoverTimeout, cts.Token);
+
+        /// <summary>
+        /// Helper method to establish connection towards remote node
+        /// </summary>
+        /// <param name="nodeId">Id of node to create connection for</param>
+        /// <param name="timeout">Upper bound for establishing the connection</param>
+        /// <param name="token">Token used to cancel connection establishment</param>
+        /// <returns></returns>
+        private async Task<GarnetClient> CreateConnectionAsync(string nodeId, TimeSpan timeout, CancellationToken token)
         {
             var endpoint = oldConfig.GetEndpointFromNodeId(nodeId);
             var client = new GarnetClient(
@@ -37,7 +47,7 @@ namespace Garnet.cluster
             try
             {
                 if (!client.IsConnected)
-                    await client.ReconnectAsync().WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
+                    await client.ReconnectAsync().WaitAsync(timeout, token).ConfigureAwait(false);
 
                 return client;
             }
@@ -85,6 +95,9 @@ namespace Garnet.cluster
 
                 // Wait for replica to catch up
                 status = FailoverStatus.WAITING_FOR_SYNC;
+#if DEBUG
+                await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Failover_Pause_Waiting_For_Sync).ConfigureAwait(false);
+#endif
                 while (primaryReplicationOffset.AnyGreater(clusterProvider.replicationManager.ReplicationOffset))
                 {
                     cts.Token.ThrowIfCancellationRequested();
@@ -292,10 +305,76 @@ namespace Garnet.cluster
             => status is FailoverStatus.WAITING_FOR_SYNC or FailoverStatus.TAKING_OVER_AS_PRIMARY;
 
         /// <summary>
+        /// Maximum number of attempts to reset the primary after a failed failover.
+        /// </summary>
+        const int ResetPrimaryMaxAttempts = 5;
+
+        /// <summary>
+        /// Restore the old primary after a failed failover that it had already accepted.
+        /// The failover token is not used because it is already cancelled when the failover was aborted;
+        /// only server shutdown stops the reset early. A lost connection to the primary is re-established
+        /// on each attempt.
+        /// </summary>
+        /// <param name="shutdownToken">Token signalled on server shutdown</param>
+        /// <returns>True if the primary acknowledged the reset, false otherwise</returns>
+        private async Task<bool> ResetPrimaryAsync(CancellationToken shutdownToken)
+        {
+            var primaryId = oldConfig.LocalNodePrimaryId;
+            var attemptTimeout = clusterTimeout > TimeSpan.Zero ? clusterTimeout : failoverTimeout;
+            var backoff = TimeSpan.FromMilliseconds(100);
+
+            for (var attempt = 1; attempt <= ResetPrimaryMaxAttempts; attempt++)
+            {
+                try
+                {
+                    if (primaryClient == null || !primaryClient.IsConnected)
+                    {
+                        primaryClient?.Dispose();
+                        primaryClient = await CreateConnectionAsync(primaryId, attemptTimeout, shutdownToken).ConfigureAwait(false);
+                    }
+
+                    if (primaryClient != null)
+                    {
+                        _ = await primaryClient.ExecuteClusterFailStopWritesAsync(Array.Empty<byte>()).WaitAsync(attemptTimeout, shutdownToken).ConfigureAwait(false);
+                        logger?.LogWarning("Reset primary {primaryId} after failed failover (attempt {attempt})", primaryId, attempt);
+                        return true;
+                    }
+                }
+                catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Attempt {attempt} to reset primary {primaryId} failed", attempt, primaryId);
+                    primaryClient?.Dispose();
+                    primaryClient = null;
+                }
+
+                if (attempt == ResetPrimaryMaxAttempts)
+                    break;
+
+                try
+                {
+                    await Task.Delay(backoff, shutdownToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                backoff *= 2;
+            }
+
+            logger?.LogError("Failed to reset primary {primaryId} after failed failover — cluster may be in an incoherent state", primaryId);
+            return false;
+        }
+
+        /// <summary>
         /// REPLICA main failover task
         /// </summary>
+        /// <param name="shutdownToken">Token signalled on server shutdown; used to bound the primary reset on failure</param>
         /// <returns></returns>
-        public async Task<bool> BeginAsyncReplicaFailoverAsync()
+        public async Task<bool> BeginAsyncReplicaFailoverAsync(CancellationToken shutdownToken = default)
         {
             // FORCE and TAKEOVER skip primary coordination and replication catch-up.
             // An external coordinator authorizes and serializes promotions; Garnet does not perform voting.
@@ -337,18 +416,8 @@ namespace Garnet.cluster
                 // in an incoherent state where no node owns the slots.
                 if (PrimaryNeedsReset() && !failoverSucceeded)
                 {
-                    try
-                    {
-                        logger?.LogWarning("Attempting to reset primary after failed failover");
-                        if (primaryClient != null)
-                        {
-                            _ = await primaryClient.ExecuteClusterFailStopWritesAsync(Array.Empty<byte>()).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        logger?.LogError(ex, "Failed to reset primary after failed failover — cluster may be in an incoherent state");
-                    }
+                    logger?.LogWarning("Attempting to reset primary after failed failover");
+                    _ = await ResetPrimaryAsync(shutdownToken).ConfigureAwait(false);
                 }
 
                 primaryClient?.Dispose();
