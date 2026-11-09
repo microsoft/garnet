@@ -53,7 +53,7 @@ function Resolve-ClusterNodes {
 
     $assigned = [System.Collections.Generic.HashSet[int]]::new()
     foreach ($primary in $primaries) {
-        if ($primary.Slots -isnot [array] -or $primary.Slots.Count -eq 0) { throw "Missing slot ranges for $($primary.Vm)." }
+        if ($primary.Slots -isnot [array]) { throw "Missing slot ranges for $($primary.Vm)." }
         foreach ($range in $primary.Slots) {
             if ($range -isnot [array] -or $range.Count -ne 2) { throw "Invalid slot range for $($primary.Vm)." }
             foreach ($value in $range) {
@@ -232,7 +232,7 @@ function New-ClusterTopology {
         if ($id -notmatch '^[a-fA-F0-9]{40}$' -or $id -in $ids.Values) { throw "Invalid or duplicate node ID for $($node.Vm): $id" }
         $ids[$node.Vm] = $id
     }
-    foreach ($node in $Nodes | Where-Object Role -eq 'Primary') {
+    foreach ($node in $Nodes | Where-Object { $_.Role -eq 'Primary' -and $_.Slots.Count -gt 0 }) {
         $arguments = @('CLUSTER', 'ADDSLOTSRANGE')
         foreach ($range in $node.Slots) { $arguments += @([string]$range[0], [string]$range[1]) }
         Invoke-ClusterCommand -Cli $Cli -Node $node -Arguments $arguments -ExpectOk | Out-Null

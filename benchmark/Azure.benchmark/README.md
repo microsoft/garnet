@@ -155,6 +155,9 @@ and [declarative benchmarks](03-workload/README.md#declarative-benchmarks) for
 template schemas, separate client/server VMSS, dry runs, stop commands, and
 configuration migration.
 
+For a two-primary diskless cluster, multi-GB single-key SET preload, and measured
+slot transfers, see the [migration experiment](experiments/migration/README.md).
+
 > **VM provisioning takes time:** A newly created VMSS instance may accept SSH before
 > cloud-init has finished downloading and installing the tools bundle. Wait for
 > provisioning to complete before starting cluster or benchmark operations. On an

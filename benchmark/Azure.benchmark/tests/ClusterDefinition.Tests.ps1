@@ -35,7 +35,7 @@ function Get-Eth1Ip { throw 'Get-Eth1Ip must be mocked' }
 
 Describe 'Declarative cluster validation' {
     BeforeEach {
-        $script:definition = Get-Content (Join-Path $benchmarkDir 'templates\cluster-explicit.template.json') -Raw | ConvertFrom-Json
+        $script:definition = Get-Content (Join-Path $benchmarkDir 'templates\cluster-explicit.json') -Raw | ConvertFrom-Json
         $script:definition.PSObject.Properties.Remove('Primaries')
         $script:definition.PSObject.Properties.Remove('Replicas')
         $script:definition | Add-Member VmDomain 'd128ldsv6.australiaeast.cloudapp.azure.com'
@@ -66,6 +66,17 @@ Describe 'Declarative cluster validation' {
     It 'supports multiple explicit ranges on a primary' {
         $nodes = '[{"Vm":"vm0","Role":"Primary","Slots":[[0,99],[200,16383]]},{"Vm":"vm1","Role":"Primary","Slots":[[100,199]]}]' | ConvertFrom-Json
         @(Resolve-ClusterNodes -Nodes $nodes).Count | Should Be 2
+    }
+
+    It 'allows an explicitly slotless migration target but rejects missing slots and incomplete coverage' {
+        $nodes = '[{"Vm":"vm0","Role":"Primary","Slots":[[0,16383]]},{"Vm":"vm1","Role":"Primary","Slots":[]}]' | ConvertFrom-Json
+        $resolved = @(Resolve-ClusterNodes -Nodes $nodes)
+        $resolved[1].Slots.Count | Should Be 0
+        $nodes[1].Slots = $null
+        { Resolve-ClusterNodes -Nodes $nodes } | Should Throw 'Missing slot ranges'
+        $nodes[0].Slots = @()
+        $nodes[1].Slots = @()
+        { Resolve-ClusterNodes -Nodes $nodes } | Should Throw 'cover all 16384'
     }
 
     It 'rejects invalid declarations before any remote work (<Case>)' -TestCases @(
@@ -112,7 +123,7 @@ Describe 'Declarative cluster validation' {
 
 Describe 'Grouped cluster definitions' {
     BeforeEach {
-        $script:definition = Get-Content (Join-Path $benchmarkDir 'templates\cluster-explicit.template.json') -Raw | ConvertFrom-Json
+        $script:definition = Get-Content (Join-Path $benchmarkDir 'templates\cluster-explicit.json') -Raw | ConvertFrom-Json
         $script:definition.InstanceConfig = 'instance.conf'
         '{}' | Set-Content (Join-Path $TestDrive 'instance.conf')
     }
@@ -122,7 +133,7 @@ Describe 'Grouped cluster definitions' {
         @{ Mode = 'auto' }
     ) {
         param($Mode)
-        $cluster = Read-ClusterDefinition -Path (Join-Path $benchmarkDir "templates\cluster-$Mode.template.json") -RequireInstanceConfig
+        $cluster = Read-ClusterDefinition -Path (Join-Path $benchmarkDir "templates\cluster-$Mode.json") -RequireInstanceConfig
         $cluster.Nodes.Count | Should Be 2
         $cluster.Nodes[0].Vm | Should Be 'vm0'
         $cluster.Nodes[0].Role | Should Be 'Primary'
@@ -149,6 +160,28 @@ Describe 'Grouped cluster definitions' {
         $cluster.Nodes.Count | Should Be 3
         $cluster.Nodes[0].Slots.Count | Should Be 2
         ($cluster.Nodes[1].Slots[0] -join ',') | Should Be '100,199'
+    }
+
+    It 'creates a slotless primary without issuing an empty ADDSLOTSRANGE command' {
+        $script:definition.Primaries = '[{"VMs":["vm0"],"Slots":[[0,16383]]},{"VMs":["vm1"],"Slots":[]}]' | ConvertFrom-Json
+        $script:definition.Replicas = @()
+        $nodes = (Read-ClusterDefinition -Path (Write-TestClusterDefinition)).Nodes
+        $nodes[0].Ip = '10.0.0.4'
+        $nodes[1].Ip = '10.0.0.5'
+        Mock Invoke-ClusterCommand {
+            if (($Arguments -join ' ') -eq 'CLUSTER MYID') {
+                if ($Node.Vm -eq 'vm0') { 'a' * 40 } else { 'b' * 40 }
+            } else { 'OK' }
+        }
+        Mock Confirm-ClusterTopology {}
+        New-ClusterTopology -Nodes $nodes -Cli (Get-ClusterCli -System garnet)
+        Assert-MockCalled Invoke-ClusterCommand -Times 1 -Exactly -Scope It -ParameterFilter {
+            ($Arguments -join ' ') -eq 'CLUSTER ADDSLOTSRANGE 0 16383' -and $Node.Vm -eq 'vm0'
+        }
+        Assert-MockCalled Invoke-ClusterCommand -Times 0 -Exactly -Scope It -ParameterFilter {
+            $Arguments[1] -eq 'ADDSLOTSRANGE' -and $Node.Vm -eq 'vm1'
+        }
+        Assert-MockCalled Confirm-ClusterTopology -Times 1 -Exactly -Scope It
     }
 
     It 'supports <Mode> replicas for a primary-only cluster' -TestCases @(
@@ -196,7 +229,7 @@ Describe 'Grouped cluster definitions' {
 
 Describe 'Declared cluster orchestration' {
     BeforeEach {
-        $script:cluster = Read-ClusterDefinition -Path (Join-Path $benchmarkDir 'templates\cluster-explicit.template.json') -RequireInstanceConfig
+        $script:cluster = Read-ClusterDefinition -Path (Join-Path $benchmarkDir 'templates\cluster-explicit.json') -RequireInstanceConfig
         foreach ($node in $script:cluster.Nodes) {
             $node | Add-Member HostName "$($node.Vm).d128ldsv6.australiaeast.cloudapp.azure.com"
         }
@@ -424,7 +457,7 @@ Describe 'Cluster driver entry points' {
             userKeys = @('missing-key', 'test-key.pub')
             vmKeys = 'test-vm-key'
         } | ConvertTo-Json | Set-Content (Join-Path $securityDir 'manifest.json')
-        $legacyDefinition = Get-Content (Join-Path $benchmarkDir 'templates\cluster-explicit.template.json') -Raw | ConvertFrom-Json
+        $legacyDefinition = Get-Content (Join-Path $benchmarkDir 'templates\cluster-explicit.json') -Raw | ConvertFrom-Json
         $legacyDefinition | Add-Member VmDomain 'd128ldsv6.australiaeast.cloudapp.azure.com'
         $legacyDefinition | Add-Member SshUser 'guser'
         $legacyDefinition.InstanceConfig = Join-Path $benchmarkDir '02-platform\tools\config\garnet\garnet-cluster-diskless.conf'
@@ -493,7 +526,7 @@ Describe 'Cluster driver entry points' {
         $selectionArguments = @{}
         if ($Selection -eq 'explicit') { $selectionArguments.VmssName = 'deployment'; $selectionArguments.NonInteractive = $true }
         & (Join-Path $TestDrive '03-workload\cluster.ps1') -Action $Operation `
-            -Definition (Join-Path $benchmarkDir 'templates\cluster-explicit.template.json') `
+            -Definition (Join-Path $benchmarkDir 'templates\cluster-explicit.json') `
             -rg test -SshKey $script:keyPath @selectionArguments
         $global:ClusterTestWireCommands.Count | Should Be $Expected
         Assert-MockCalled az -Times 3 -Exactly -Scope It

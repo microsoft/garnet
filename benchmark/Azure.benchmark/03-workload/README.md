@@ -163,6 +163,9 @@ explicit ranges require exactly one VM in the group. All VMs in a replica group
 replicate its scalar `Primary`. Replicas can be omitted or an empty array.
 Groups expand into the existing per-node representation. Existing `Nodes`
 definitions remain supported, but cannot be combined with grouped definitions.
+An explicit `"Slots": []` declares a primary without slots, for example a
+migration destination. Omitting `Slots` is still invalid, and the other primaries
+must cover every slot.
 
 Cluster examples run one server instance per VM. Primary slot assignments must
 cover `0..16383` without overlaps or gaps; replicas reference a declared primary
@@ -231,6 +234,13 @@ is printed even without `-Verbose`. This is not a stream of Garnet server logs.
 `-Detail`/`-Monitor` apply to RESP, `-SkipLoad` to memtier, and `-Tls` to either.
 Memtier still performs its normal load phase unless skipped by the flag or profile.
 Dry runs resolve Azure inventory and the target address, but do not launch workloads.
+
+## MIGRATE SLOTS stress workflow
+
+The [migration experiment](../experiments/migration/README.md) consolidates the
+runner, two-primary cluster declaration, benchmark declaration, and preload
+profile. It compares initial SET insertion with measured slot transfers using
+the existing declarative cluster and benchmark runners.
 
 ## Run Benchmarks
 

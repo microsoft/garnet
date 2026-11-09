@@ -2,6 +2,133 @@ $benchmarkDir = Split-Path -Parent $PSScriptRoot
 . (Join-Path $benchmarkDir '03-workload\bench\utils.ps1')
 function az { throw 'Azure CLI must be mocked' }
 function ssh { throw 'SSH must be mocked' }
+function Redis { throw 'Redis must be mocked' }
+
+$tokens = $null
+$errors = $null
+$workflowAst = [Management.Automation.Language.Parser]::ParseFile(
+    (Join-Path $benchmarkDir 'experiments\migration\run.ps1'), [ref]$tokens, [ref]$errors)
+if ($errors.Count) { throw ($errors | Out-String) }
+$configFunction = $workflowAst.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'New-MigrationInstanceConfig'
+}, $true)
+Invoke-Expression $configFunction.Extent.Text
+$loadFunction = $workflowAst.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-MigrationLoadMetrics'
+}, $true)
+Invoke-Expression $loadFunction.Extent.Text
+$profileFunction = $workflowAst.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'New-MigrationLoadConfig'
+}, $true)
+Invoke-Expression $profileFunction.Extent.Text
+Describe 'Migration experiment resources' {
+    It 'resolves the consolidated benchmark and cluster declarations' {
+        . (Join-Path $benchmarkDir '02-platform\tools\cluster\cluster-utils.ps1')
+        $experimentDir = Join-Path $benchmarkDir 'experiments\migration'
+        $benchmark = Read-BenchmarkDefinition -Path (Join-Path $experimentDir 'benchmark.json')
+        $benchmark.InstanceConfig | Should Be (Join-Path $experimentDir 'preload.conf')
+        $cluster = Read-ClusterDefinition -Path (Join-Path $experimentDir 'cluster.json') -RequireInstanceConfig
+        $cluster.InstanceConfig | Should Be (Join-Path $benchmarkDir '02-platform\tools\config\garnet\garnet-cluster-diskless.conf')
+        $cluster.Nodes[0].Slots[0][1] | Should Be 16383
+        $cluster.Nodes[1].Slots.Count | Should Be 0
+    }
+
+    It 'generates the <ValueLength>-byte preload with <Threads> workers from one profile' -TestCases @(
+        @{ ValueLength = 8; Threads = 1; Keys = 67108864 }
+        @{ ValueLength = 256; Threads = 8; Keys = 8388608 }
+        @{ ValueLength = 1024; Threads = 64; Keys = 2097152 }
+    ) {
+        param($ValueLength, $Threads, $Keys)
+        $text = Get-Content (Join-Path $benchmarkDir 'experiments\migration\preload.conf') -Raw
+        $profile = New-MigrationLoadConfig $text $ValueLength $Threads
+        $profile.ValueLength | Should Be $ValueLength
+        $profile.DbSize | Should Be $Keys
+        $profile.LoadThreads | Should Be $Threads
+        $profile.NumThreads.Count | Should Be 1
+        $profile.NumThreads[0] | Should Be $Threads
+        $profile.LSet | Should Be $true
+        $profile.BatchSize[0] | Should Be 4096
+    }
+}
+Describe 'Initial migration preload timing' {
+    It 'uses SET execution time rather than buffer generation or subsequent GET time' {
+        $text = @'
+Loading time: 20 secs
+Operation type: SET
+Num threads: 16
+[Total time]: 2,000.00ms for 1,000.00 ops
+[Throughput]: 500.00 ops/sec
+Operation type: GET
+Num threads: 16
+[Total time]: 1,000.00ms for 30,000.00 ops
+'@
+        $result = Get-MigrationLoadMetrics $text 1000
+        $result.Seconds | Should Be 2
+        $result.OpsPerSecond | Should Be 500
+        $result.Threads | Should Be 16
+    }
+
+    It 'rejects missing SET timing' {
+        { Get-MigrationLoadMetrics 'Loading time: 2 secs' 1000 } | Should Throw 'exactly one'
+    }
+
+    It 'rejects an incomplete preload operation count' {
+        { Get-MigrationLoadMetrics "Operation type: SET`nNum threads: 16`n[Total time]: 100.00ms for 99.00 ops" 100 } |
+            Should Throw 'operation count'
+    }
+}
+Describe 'Migration configuration overrides' {
+    It 'preserves server placeholders and applies each migration mode' -TestCases @(
+        @{ Tasks = 1; Fast = $false }, @{ Tasks = 8; Fast = $false }, @{ Tasks = 64; Fast = $false }
+        @{ Tasks = 1; Fast = $true }, @{ Tasks = 8; Fast = $true }, @{ Tasks = 64; Fast = $true }
+    ) {
+        param($Tasks, $Fast)
+        $text = '{"Port":$port,"LogMemorySize":"$logMemorySize"}'
+        $result = New-MigrationInstanceConfig $text $Tasks $Fast
+        $result.Contains('$port') | Should Be $true
+        $result.Contains('$logMemorySize') | Should Be $true
+        $parsed = $result.Replace('$port', '7000') | ConvertFrom-Json
+        $parsed.ParallelMigrateTaskCount | Should Be $Tasks
+        $parsed.FastMigrate | Should Be $Fast
+        $parsed.MigrateBatchSize | Should Be 262143
+    }
+
+    It 'applies a 4096-key migration collection batch' {
+        $parsed = New-MigrationInstanceConfig '{"Port":7000}' 64 $true 4096 | ConvertFrom-Json
+        $parsed.MigrateBatchSize | Should Be 4096
+    }
+
+    It 'rejects duplicate settings instead of creating ambiguous JSON' {
+        { New-MigrationInstanceConfig '{"FastMigrate":false}' 8 $true } | Should Throw 'already declares'
+    }
+}
+$measureText = $workflowAst.Find({
+    param($node)
+    $node -is [Management.Automation.Language.StringConstantExpressionAst] -and $node.Value.Contains('function Count(')
+}, $true).Value
+$measureAst = [Management.Automation.Language.Parser]::ParseInput(
+    [regex]::Replace($measureText, '__[A-Z]+__', '1'), [ref]$tokens, [ref]$errors)
+if ($errors.Count) { throw ($errors | Out-String) }
+$countFunction = $measureAst.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Count'
+}, $true)
+Set-Item Function:script:Count ([scriptblock]::Create($countFunction.Body.Extent.Text.Trim('{', '}')))
+
+Describe 'Migration measurement key-count validation' {
+    It 'reads large database counts without narrowing to Int32' {
+        Mock Redis { '3000000000' }
+        Count '10.0.0.4' | Should Be 3000000000
+    }
+
+    It 'rejects nonnumeric database replies' {
+        Mock Redis { 'not a count' }
+        { Count '10.0.0.4' } | Should Throw 'Invalid DBSIZE'
+    }
+}
 
 Describe 'Declarative benchmark validation' {
     BeforeEach {
