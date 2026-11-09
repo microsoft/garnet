@@ -491,6 +491,112 @@ namespace Garnet.test.cluster
             context.logger.LogDebug("1. ClusterRedirectMessageTest done");
         }
 
+        [TestCase(1, 262144, 64, false)]
+        [TestCase(1, 262144, 64, true)]
+        [TestCase(8, 557056, 1024, false)]
+        [TestCase(8, 557056, 1024, true)]
+        [TestCase(16, 557056, 1024, false)]
+        [TestCase(16, 557056, 1024, true)]
+        [CancelAfter(testTimeout)]
+        [Category("CLUSTER")]
+        public async Task ClusterMigrateSlotsAcrossScanBoundaries(int workers, int keyCount, int valueLength, bool fastMigrate, CancellationToken cancellationToken)
+        {
+            context.CreateInstances(2, useTLS: UseTLS, memorySize: "1g", pageSize: "32m", lowMemory: true);
+            foreach (var options in context.nodeOptions)
+            {
+                options.ParallelMigrateTaskCount = workers;
+                options.FastMigrate = fastMigrate;
+            }
+            context.CreateConnection(useTLS: UseTLS);
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], addslot: true, logger: context.logger));
+            context.clusterTestUtils.SetConfigEpoch(0, 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(1, 2, logger: context.logger);
+            context.clusterTestUtils.Meet(0, 1, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(0, 1, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(1, 0, logger: context.logger);
+
+            var source = context.clusterTestUtils.GetGarnetClientSession(0, useTLS: UseTLS);
+            var target = context.clusterTestUtils.GetGarnetClientSession(1, useTLS: UseTLS);
+            var value = new string('x', valueLength);
+            var pending = new Task<string>[512];
+            for (var start = 0; start < keyCount; start += pending.Length)
+            {
+                for (var i = 0; i < pending.Length; i++)
+                    pending[i] = source.ExecuteAsync("SET", (start + i).ToString().PadLeft(8, 'X'), value);
+                var responses = await Task.WhenAll(pending).WaitAsync(cancellationToken).ConfigureAwait(false);
+                foreach (var response in responses)
+                    ClassicAssert.AreEqual("OK", response);
+            }
+            ClassicAssert.AreEqual(keyCount.ToString(), await source.ExecuteAsync("DBSIZE").WaitAsync(cancellationToken).ConfigureAwait(false));
+
+            context.clusterTestUtils.MigrateSlotsIndex(0, 1, [0, 16383], range: true, logger: context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(0, cancellationToken, logger: context.logger);
+
+            ClassicAssert.AreEqual("0", await source.ExecuteAsync("DBSIZE").WaitAsync(cancellationToken).ConfigureAwait(false));
+            ClassicAssert.AreEqual(keyCount.ToString(), await target.ExecuteAsync("DBSIZE").WaitAsync(cancellationToken).ConfigureAwait(false));
+            for (var start = 0; start < keyCount; start += pending.Length)
+            {
+                for (var i = 0; i < pending.Length; i++)
+                    pending[i] = target.ExecuteAsync("GET", (start + i).ToString().PadLeft(8, 'X'));
+                var responses = await Task.WhenAll(pending).WaitAsync(cancellationToken).ConfigureAwait(false);
+                for (var i = 0; i < responses.Length; i++)
+                    ClassicAssert.AreEqual(value, responses[i], $"Key {start + i} was not migrated intact");
+            }
+        }
+
+        [TestCase(1, (1 << 18) + 2, "1m")]
+        [TestCase(8, 4099, "4k")]
+        [TestCase(64, 4099, "4k")]
+        [CancelAfter(testTimeout)]
+        [Category("CLUSTER")]
+        public async Task ClusterMigrateSlotsPreservesKeysAcrossRepeatedScans(int parallelTasks, int keyCount, string pageSize, CancellationToken cancellationToken)
+        {
+            context.CreateInstances(2, useTLS: UseTLS, pageSize: pageSize, lowMemory: true, memorySize: "256m");
+            foreach (var options in context.nodeOptions)
+                options.ParallelMigrateTaskCount = parallelTasks;
+            context.CreateConnection(useTLS: UseTLS);
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], addslot: true, logger: context.logger));
+            context.clusterTestUtils.SetConfigEpoch(0, 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(1, 2, logger: context.logger);
+            context.clusterTestUtils.Meet(0, 1, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(0, 1, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(1, 0, logger: context.logger);
+
+            var sourceIndex = 0;
+            var targetIndex = 1;
+            var source = context.clusterTestUtils.GetGarnetClientSession(sourceIndex, useTLS: UseTLS);
+            const string prefix = "{migration-batch}key";
+            const string value = "12345678";
+            for (var start = 0; start < keyCount; start += 512)
+            {
+                var writes = new Task<string>[Math.Min(512, keyCount - start)];
+                for (var i = 0; i < writes.Length; i++)
+                    writes[i] = source.ExecuteAsync("SET", prefix + (start + i), value);
+                Assert.That(await Task.WhenAll(writes).WaitAsync(cancellationToken), Is.All.EqualTo("OK"));
+            }
+
+            for (var iteration = 0; iteration < 3; iteration++)
+            {
+                var slot = ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(prefix));
+                context.clusterTestUtils.MigrateSlots(context.clusterTestUtils.GetEndPoint(sourceIndex),
+                    context.clusterTestUtils.GetEndPoint(targetIndex), [slot], logger: context.logger);
+                context.clusterTestUtils.WaitForMigrationCleanup(sourceIndex, cancellationToken, logger: context.logger);
+                context.clusterTestUtils.WaitForSlotOwnership(targetIndex,
+                    context.clusterTestUtils.GetLocalNodeId(targetIndex), [slot, slot], logger: context.logger);
+
+                var target = context.clusterTestUtils.GetGarnetClientSession(targetIndex, useTLS: UseTLS);
+                Assert.That(await target.ExecuteAsync("DBSIZE").WaitAsync(cancellationToken), Is.EqualTo(keyCount.ToString()));
+                for (var start = 0; start < keyCount; start += 512)
+                {
+                    var reads = new Task<string>[Math.Min(512, keyCount - start)];
+                    for (var i = 0; i < reads.Length; i++)
+                        reads[i] = target.ExecuteAsync("GET", prefix + (start + i));
+                    Assert.That(await Task.WhenAll(reads).WaitAsync(cancellationToken), Is.All.EqualTo(value));
+                }
+                (sourceIndex, targetIndex) = (targetIndex, sourceIndex);
+            }
+        }
+
         [Test, Order(6)]
         [Category("CLUSTER")]
         public void ClusterMigratePreservesEtag([Values] bool expiry, [Values(32, 8192)] int valueLength)

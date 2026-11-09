@@ -88,8 +88,9 @@ namespace Garnet.cluster
             /// </summary>
             /// <param name="currentAddress"></param>
             /// <param name="endAddress"></param>
-            public void Scan(ref long currentAddress, long endAddress)
-                => localServerSession.BasicGarnetApi.IterateStore(ref storeScan, ref currentAddress, endAddress, endAddress,
+            /// <param name="maxAddress">Snapshot boundary for newer versions across all worker ranges.</param>
+            public void Scan(ref long currentAddress, long endAddress, long maxAddress)
+                => localServerSession.BasicGarnetApi.IterateStore(ref storeScan, ref currentAddress, endAddress, maxAddress,
                     includeTombstones: true);
 
             /// <summary>
@@ -198,7 +199,7 @@ namespace Garnet.cluster
                     var current = cursor;
                     // Build Sketch
                     migrateOperation.sketch.SetStatus(SketchStatus.INITIALIZING);
-                    migrateOperation.Scan(ref current, workerEndAddress);
+                    migrateOperation.Scan(ref current, workerEndAddress, workerEndAddress);
 
                     // Stop if no keys have been found
                     if (migrateOperation.sketch.argSliceVector.IsEmpty) break;

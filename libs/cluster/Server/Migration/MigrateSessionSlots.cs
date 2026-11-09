@@ -207,12 +207,16 @@ namespace Garnet.cluster
                 await Task.Yield();
 
                 var migrateOperation = this.migrateOperation[taskId];
-                var range = (tailAddress - beginAddress) / clusterProvider.storeWrapper.serverOptions.ParallelMigrateTaskCount;
-                var workerStartAddress = beginAddress + (taskId * range);
-                var workerEndAddress = beginAddress + ((taskId + 1) * range);
-
-                workerStartAddress = workerStartAddress - (2 * pageSize) > 0 ? workerStartAddress - (2 * pageSize) : 0;
-                workerEndAddress = workerEndAddress + (2 * pageSize) < storeTailAddress ? workerEndAddress + (2 * pageSize) : storeTailAddress;
+                var taskCount = this.migrateOperation.Length;
+                var range = (tailAddress - beginAddress) / taskCount;
+                var pageMask = ~((long)pageSize - 1);
+                // Disjoint page-aligned ranges begin at valid records and avoid concurrent copies of the same record.
+                var workerStartAddress = Math.Max(beginAddress, (beginAddress + taskId * range) & pageMask);
+                var workerEndAddress = taskId == taskCount - 1
+                    ? tailAddress
+                    : Math.Max(beginAddress, (beginAddress + (taskId + 1) * range) & pageMask);
+                if (workerStartAddress >= workerEndAddress)
+                    return true;
                 if (!await migrateOperation.InitializeAsync().ConfigureAwait(false))
                     return false;
 
@@ -223,7 +227,7 @@ namespace Garnet.cluster
                     var current = cursor;
                     // Build Sketch
                     migrateOperation.sketch.SetStatus(SketchStatus.INITIALIZING);
-                    migrateOperation.Scan(ref current, workerEndAddress);
+                    migrateOperation.Scan(ref current, workerEndAddress, tailAddress);
 
                     // Stop if no keys have been found
                     if (migrateOperation.sketch.argSliceVector.IsEmpty) break;

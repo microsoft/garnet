@@ -28,7 +28,7 @@ namespace Garnet.cluster
             public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 where TSourceLogRecord : ISourceLogRecord
             {
-                cursorRecordResult = CursorRecordResult.Accept; // default; not used here
+                cursorRecordResult = CursorRecordResult.Accept;
 
                 migrateOperation.ThrowIfCancelled();
 
@@ -40,7 +40,10 @@ namespace Garnet.cluster
                 {
                     // Migrating a Vector Set element
                     if (migrateOperation.ContainsNamespace(srcLogRecord.NamespaceBytes) && !migrateOperation.sketch.TryHashAndStore(srcLogRecord.NamespaceBytes, srcLogRecord.KeyBytes))
-                        return false;
+                    {
+                        cursorRecordResult = CursorRecordResult.EndBatch | CursorRecordResult.RetryLastRecord;
+                        return true;
+                    }
                 }
                 else
                 {
@@ -66,7 +69,8 @@ namespace Garnet.cluster
                         }
                         else if (!migrateOperation.sketch.TryHashAndStore(key))
                         {
-                            return false;
+                            cursorRecordResult = CursorRecordResult.EndBatch | CursorRecordResult.RetryLastRecord;
+                            return true;
                         }
                     }
                 }
