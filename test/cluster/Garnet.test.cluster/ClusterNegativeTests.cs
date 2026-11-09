@@ -48,7 +48,7 @@ namespace Garnet.test.cluster
         [Test, Order(1)]
         [Category("CLUSTER")]
         [TestCase("bumpepoch", new int[] { 1, 2, 3 })]
-        [TestCase("failover", new int[] { 3, 4 })]
+        [TestCase("failover", new int[] { 4, 5 })]
         [TestCase("forget", new int[] { 0, 3, 4 })]
         [TestCase("info", new int[] { 1, 2, 3 })]
         [TestCase("help", new int[] { 1, 2, 3 })]
