@@ -1,8 +1,9 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,6 +16,16 @@ namespace Garnet.cluster
 {
     internal sealed partial class FailoverSession : IDisposable
     {
+        /// <summary>
+        /// How long the replication offset may stay unchanged before checking that the replication stream is still active
+        /// </summary>
+        static readonly TimeSpan ReplicationLivenessCheckInterval = TimeSpan.FromSeconds(1);
+
+        /// <summary>
+        /// Upper bound for querying the primary's replication state when diagnosing a failed sync
+        /// </summary>
+        static readonly TimeSpan PrimaryStateQueryTimeout = TimeSpan.FromSeconds(5);
+
         /// <summary>
         /// Connection to primary if reachable
         /// </summary>
@@ -98,24 +109,150 @@ namespace Garnet.cluster
 #if DEBUG
                 await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Failover_Pause_Waiting_For_Sync).ConfigureAwait(false);
 #endif
-                while (primaryReplicationOffset.AnyGreater(clusterProvider.replicationManager.ReplicationOffset))
-                {
-                    cts.Token.ThrowIfCancellationRequested();
-                    // Fail if upper bound time for failover has been reached
-                    if (FailoverTimeout)
-                    {
-                        logger?.LogError("AwaitReplicationSync timed out failoverStart");
-                        return false;
-                    }
-                    await Task.Yield();
-                }
-
-                return true;
+                return await WaitForReplicationSyncAsync(primaryReplicationOffset).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "PauseWritesAndWaitForSync Error");
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Wait until the local replication offset reaches the offset the primary returned on FAILSTOPWRITES.
+        /// The primary has stopped writes and demoted itself at this point, so a lost replication stream cannot be
+        /// re-established; the wait fails early when the stream is gone or the offset stops advancing.
+        /// </summary>
+        /// <param name="targetOffset">Primary AOF tail address returned by FAILSTOPWRITES</param>
+        /// <returns>True if the replica caught up, false otherwise</returns>
+        private async Task<bool> WaitForReplicationSyncAsync(AofAddress targetOffset)
+        {
+            var lastOffset = clusterProvider.replicationManager.ReplicationOffset;
+            var lastProgressTimestamp = Stopwatch.GetTimestamp();
+            var lastLivenessCheckTimestamp = lastProgressTimestamp;
+
+            while (true)
+            {
+                var currentOffset = clusterProvider.replicationManager.ReplicationOffset;
+                if (!targetOffset.AnyGreater(currentOffset))
+                    return true;
+
+                string reason = null;
+                if (cts.Token.IsCancellationRequested)
+                {
+                    reason = "failover was cancelled";
+                }
+                else if (FailoverTimeout)
+                {
+                    reason = $"failover timeout of {failoverTimeout} was reached";
+                }
+                else if (!currentOffset.EqualsAll(lastOffset))
+                {
+                    lastOffset = currentOffset;
+                    lastProgressTimestamp = Stopwatch.GetTimestamp();
+                }
+                else if (Stopwatch.GetElapsedTime(lastProgressTimestamp) >= ReplicationLivenessCheckInterval &&
+                         Stopwatch.GetElapsedTime(lastLivenessCheckTimestamp) >= ReplicationLivenessCheckInterval)
+                {
+                    lastLivenessCheckTimestamp = Stopwatch.GetTimestamp();
+                    if (!IsReplicationStreamActive())
+                        reason = "replication stream from the primary is not active";
+                    else if (clusterTimeout > TimeSpan.Zero && Stopwatch.GetElapsedTime(lastProgressTimestamp) >= clusterTimeout)
+                        reason = $"replication offset made no progress for {clusterTimeout}";
+                }
+
+                if (reason != null)
+                {
+                    await LogReplicationSyncStateAsync(reason, targetOffset, currentOffset, lastProgressTimestamp).ConfigureAwait(false);
+                    return false;
+                }
+
+                await Task.Yield();
+            }
+        }
+
+        /// <summary>
+        /// Whether any session is currently receiving the AOF stream from the primary.
+        /// </summary>
+        private bool IsReplicationStreamActive()
+        {
+            foreach (var server in clusterProvider.storeWrapper.Servers)
+            {
+                if (server is not GarnetServerBase garnetServer)
+                    continue;
+
+                foreach (var session in garnetServer.ActiveClusterSessions())
+                {
+                    if (session.IsReplicating)
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Log the state of replication when the wait for sync stops before the replica caught up.
+        /// </summary>
+        private async Task LogReplicationSyncStateAsync(string reason, AofAddress targetOffset, AofAddress replicaOffset, long lastProgressTimestamp)
+        {
+            var replicationManager = clusterProvider.replicationManager;
+            var linkStatus = clusterProvider.clusterManager.GetPrimaryLinkStatus(clusterProvider.clusterManager.CurrentConfig);
+            var primaryState = await GetPrimaryReplicationStateAsync().ConfigureAwait(false);
+
+            logger?.LogError(
+                "Stopped waiting for replication sync: {reason}. " +
+                "TargetOffset (primary tail at FAILSTOPWRITES): {targetOffset}, ReplicaOffset: {replicaOffset}, LastProgress: {sinceProgress} ago, " +
+                "ReplicationStreamActive: {streamActive}, Recovering: {recovering} ({recoveryStatus}), PrimaryGossipLink: {linkStatus} (last io {lastIo}s ago), " +
+                "Primary: {primaryState}",
+                reason,
+                targetOffset,
+                replicaOffset,
+                Stopwatch.GetElapsedTime(lastProgressTimestamp),
+                IsReplicationStreamActive(),
+                replicationManager.IsRecovering,
+                replicationManager.currentRecoveryStatus,
+                linkStatus[0].Value,
+                linkStatus[1].Value,
+                primaryState);
+        }
+
+        /// <summary>
+        /// Query the primary for its replication state, or describe why it cannot be reached.
+        /// </summary>
+        private async Task<string> GetPrimaryReplicationStateAsync()
+        {
+            if (primaryClient == null || !primaryClient.IsConnected)
+                return "unreachable (connection to primary is closed)";
+
+            try
+            {
+                var info = await primaryClient.ExecuteForStringResultAsync("INFO", ["REPLICATION"]).WaitAsync(PrimaryStateQueryTimeout).ConfigureAwait(false);
+                var lines = info.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                // A demoted primary reports its replica-side offset; its AOF tail is the target offset since writes are stopped
+                var isPrimary = Array.IndexOf(lines, "role:master") >= 0;
+                var state = new StringBuilder();
+                foreach (var line in lines)
+                {
+                    if (line.StartsWith("role:", StringComparison.Ordinal) ||
+                        line.StartsWith("connected_slaves:", StringComparison.Ordinal) ||
+                        line.StartsWith("sync_driver_count:", StringComparison.Ordinal) ||
+                        (isPrimary && line.StartsWith("master_repl_offset:", StringComparison.Ordinal)) ||
+                        (line.StartsWith("slave", StringComparison.Ordinal) && line.Length > 5 && char.IsAsciiDigit(line[5])))
+                    {
+                        if (state.Length > 0)
+                            _ = state.Append(", ");
+                        _ = state.Append(line);
+                    }
+                }
+                return state.ToString();
+            }
+            catch (Exception ex)
+            {
+                // Drop the connection so a later reset of the primary starts from a fresh one
+                primaryClient.Dispose();
+                primaryClient = null;
+                return $"unreachable ({ex.GetType().Name}: {ex.Message})";
             }
         }
 
