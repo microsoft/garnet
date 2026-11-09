@@ -1075,6 +1075,47 @@ namespace Garnet.test.cluster
             }
         }
 
+        [Test, Order(16), CancelAfter(testTimeout)]
+        [Category("REPLICATION")]
+        public void ClusterFailoverDefaultWithTimeoutCompletes(CancellationToken cancellationToken)
+        {
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+
+            context.CreateInstances(2, disableObjects: true, enableAOF: true, timeout: timeout);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+            context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
+
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength: 32, kvpairCount: 16, primaryIndex);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+
+            // Coordinated failover with an explicit TIMEOUT
+            resp = (string)context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(replicaIndex), "CLUSTER", ["FAILOVER", "TIMEOUT", 30], logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+
+            while (true)
+            {
+                var infoItem = context.clusterTestUtils.GetReplicationInfo(replicaIndex,
+                    [ReplicationInfoItem.LAST_FAILOVER_STATE], logger: context.logger);
+                if (infoItem[0].Item2.Equals("failover-completed"))
+                    break;
+                ClassicAssert.AreNotEqual("failover-aborted", infoItem[0].Item2, "Failover with TIMEOUT should not abort");
+                ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for failover to complete");
+            }
+
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(replicaIndex, logger: context.logger).Value);
+        }
+
         [Test, Order(17), CancelAfter(testTimeout)]
         [Category("CLUSTER")]
         public void ClusterGossipSurvivesFailedRound()
