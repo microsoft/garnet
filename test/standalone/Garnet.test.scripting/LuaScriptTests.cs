@@ -2797,6 +2797,35 @@ return cjson.encode(nested)");
         }
 
         [Test]
+        public void CMsgPackUnpackExcessiveNesting()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            // Regression test: cmsgpack.unpack recursed once per nested MessagePack array/map with no
+            // depth limit, so a small payload with many nested one-element arrays could raise an
+            // uncatchable StackOverflowException and crash the server process.
+            //
+            // 0x91 (decimal 145) is a fixarray sigil for a single-element array; repeating it nests
+            // one level deeper each time. 0xC0 (decimal 192) terminates the nesting with a nil.
+            const int NestingDepth = 50_000;
+            var payload = new StringBuilder();
+            _ = payload.Append('\'');
+            for (var i = 0; i < NestingDepth; i++)
+            {
+                _ = payload.Append("\\145");
+            }
+            _ = payload.Append("\\192");
+            _ = payload.Append('\'');
+
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return cmsgpack.unpack({payload})"));
+            ClassicAssert.True(exc.Message.Contains("too many nested"));
+
+            // The server must still be alive and responsive after rejecting the oversized payload
+            ClassicAssert.AreEqual("PONG", (string)db.Execute("PING"));
+        }
+
+        [Test]
         public void Struct()
         {
             // Redis struct.pack/unpack/size is a subset of Lua's string.pack/unpack/packsize; so just testing for basic functionality
