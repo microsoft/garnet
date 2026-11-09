@@ -316,6 +316,10 @@ namespace Garnet
         [Option("cluster-timeout", Required = false, HelpText = "Cluster node timeout is the amount of seconds a node must be unreachable.")]
         public int ClusterTimeout { get; set; }
 
+        [IntRangeValidation(1, int.MaxValue)]
+        [Option("failover-reset-primary-attempts", Required = false, HelpText = "Maximum number of attempts a replica makes to restore the old primary after a failed CLUSTER FAILOVER that the primary had already accepted.")]
+        public int FailoverResetPrimaryAttempts { get; set; }
+
         [IntRangeValidation(-1, int.MaxValue)]
         [Option("cluster-config-flush-frequency", Required = false, HelpText = "How frequently to flush cluster config unto disk to persist updates. =-1: never (memory only), =0: immediately (every update performs flush), >0: frequency in ms")]
         public int ClusterConfigFlushFrequencyMs { get; set; }
@@ -979,6 +983,7 @@ namespace Garnet
                 GossipDelay = GossipDelay,
                 GossipClientSwapGraceSecs = GossipClientSwapGraceSecs,
                 ClusterTimeout = ClusterTimeout,
+                FailoverResetPrimaryAttempts = FailoverResetPrimaryAttempts,
                 ClusterConfigFlushFrequencyMs = ClusterConfigFlushFrequencyMs,
                 FastCommitThrottleFreq = FastCommitThrottleFreq,
                 NetworkSendThrottleMax = NetworkSendThrottleMax,

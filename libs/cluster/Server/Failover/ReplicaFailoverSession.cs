@@ -305,11 +305,6 @@ namespace Garnet.cluster
             => status is FailoverStatus.WAITING_FOR_SYNC or FailoverStatus.TAKING_OVER_AS_PRIMARY;
 
         /// <summary>
-        /// Maximum number of attempts to reset the primary after a failed failover.
-        /// </summary>
-        const int ResetPrimaryMaxAttempts = 5;
-
-        /// <summary>
         /// Restore the old primary after a failed failover that it had already accepted.
         /// The failover token is not used because it is already cancelled when the failover was aborted;
         /// only server shutdown stops the reset early. A lost connection to the primary is re-established
@@ -322,8 +317,9 @@ namespace Garnet.cluster
             var primaryId = oldConfig.LocalNodePrimaryId;
             var attemptTimeout = clusterTimeout > TimeSpan.Zero ? clusterTimeout : failoverTimeout;
             var backoff = TimeSpan.FromMilliseconds(100);
+            var maxAttempts = Math.Max(1, clusterProvider.serverOptions.FailoverResetPrimaryAttempts);
 
-            for (var attempt = 1; attempt <= ResetPrimaryMaxAttempts; attempt++)
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
                 try
                 {
@@ -351,7 +347,7 @@ namespace Garnet.cluster
                     primaryClient = null;
                 }
 
-                if (attempt == ResetPrimaryMaxAttempts)
+                if (attempt == maxAttempts)
                     break;
 
                 try

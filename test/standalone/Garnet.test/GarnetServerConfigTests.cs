@@ -191,6 +191,21 @@ namespace Garnet.test
         }
 
         [Test]
+        public void FailoverResetPrimaryAttemptsOptionParsing()
+        {
+            var ok = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual(5, options.GetServerOptions().FailoverResetPrimaryAttempts);
+
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--failover-reset-primary-attempts", "2"], out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual(2, options.GetServerOptions().FailoverResetPrimaryAttempts);
+
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--failover-reset-primary-attempts", "0"], out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(ok, "at least one reset attempt is required");
+        }
+
+        [Test]
         public void NativeAllocatorOptionParsing()
         {
             // Default: native allocator off (fully managed).
