@@ -19,7 +19,7 @@ namespace Garnet.cluster
         public List<(PinnedSpanByte, bool)> Keys { private set; get; }
         public SketchStatus Status { private set; get; }
 
-        public Sketch(int keyCount = 1 << 20)
+        public Sketch(int keyCount = 1 << 20, int maxBatchSize = 1 << 18)
         {
             if (!(keyCount > 0 && (keyCount & (keyCount - 1)) == 0))
                 throw new GarnetException($"{nameof(Sketch)} size should be power of 2!");
@@ -27,7 +27,7 @@ namespace Garnet.cluster
             bitmap = GC.AllocateArray<byte>(keyCount >> 3, pinned: true);
             Status = SketchStatus.INITIALIZING;
             Keys = [];
-            argSliceVector = new();
+            argSliceVector = new(maxBatchSize);
         }
 
         #region sketchMethods

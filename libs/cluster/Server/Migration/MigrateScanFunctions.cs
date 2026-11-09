@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading;
 using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
@@ -13,10 +14,16 @@ namespace Garnet.cluster
         internal sealed unsafe class StoreScan : IScanIteratorFunctions
         {
             readonly MigrateOperation migrateOperation;
+            readonly Sketch destination;
+            readonly bool keysOnly;
+            readonly CancellationToken cancellationToken;
 
-            internal StoreScan(MigrateOperation migrateOperation)
+            internal StoreScan(MigrateOperation migrateOperation, Sketch destination = null, CancellationToken cancellationToken = default)
             {
                 this.migrateOperation = migrateOperation;
+                this.destination = destination;
+                keysOnly = destination != null;
+                this.cancellationToken = cancellationToken;
             }
 
             public bool OnStart(long beginAddress, long endAddress) => true;
@@ -31,6 +38,8 @@ namespace Garnet.cluster
                 cursorRecordResult = CursorRecordResult.Accept;
 
                 migrateOperation.ThrowIfCancelled();
+                cancellationToken.ThrowIfCancellationRequested();
+                var sketch = destination ?? migrateOperation.sketch;
 
                 // Do not send key if it is expired
                 if (!srcLogRecord.Info.Tombstone && ClusterSession.Expired(in srcLogRecord))
@@ -39,7 +48,7 @@ namespace Garnet.cluster
                 if (srcLogRecord.HasNamespace)
                 {
                     // Migrating a Vector Set element
-                    if (migrateOperation.ContainsNamespace(srcLogRecord.NamespaceBytes) && !migrateOperation.sketch.TryHashAndStore(srcLogRecord.NamespaceBytes, srcLogRecord.KeyBytes))
+                    if (migrateOperation.ContainsNamespace(srcLogRecord.NamespaceBytes) && !sketch.TryHashAndStore(srcLogRecord.NamespaceBytes, srcLogRecord.KeyBytes))
                     {
                         cursorRecordResult = CursorRecordResult.EndBatch | CursorRecordResult.RetryLastRecord;
                         return true;
@@ -53,12 +62,12 @@ namespace Garnet.cluster
                     // Check if key belongs to slot that is being migrated and if it can be added to our buffer
                     if (migrateOperation.Contains(slot))
                     {
-                        if (srcLogRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
+                        if (!keysOnly && srcLogRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
                         {
                             // RangeIndex keys need out-of-band migration (snapshot + chunks)
                             migrateOperation.AddRangeIndexKey(key.ToArray());
                         }
-                        else if (srcLogRecord.RecordType == VectorManager.RecordType)
+                        else if (!keysOnly && srcLogRecord.RecordType == VectorManager.RecordType)
                         {
                             // We can't delete the vector set _yet_ nor can we migrate it, 
                             // we just need to remember it to migrate once the associated namespaces are all moved over
@@ -67,7 +76,7 @@ namespace Garnet.cluster
                             DateTime? expiration = srcLogRecord.DataHeader.HasExpiration ? new DateTime(srcLogRecord.Expiration, DateTimeKind.Utc) : null;
                             migrateOperation.EncounteredVectorSet(key.ToArray(), srcLogRecord.ValueSpan.ToArray(), expiration);
                         }
-                        else if (!migrateOperation.sketch.TryHashAndStore(key))
+                        else if (!sketch.TryHashAndStore(key))
                         {
                             cursorRecordResult = CursorRecordResult.EndBatch | CursorRecordResult.RetryLastRecord;
                             return true;

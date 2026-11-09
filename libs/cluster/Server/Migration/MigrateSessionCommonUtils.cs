@@ -100,6 +100,20 @@ namespace Garnet.cluster
 
             var acc = output.Accumulator;
 
+            if (transferOption == TransferOption.SLOTS)
+            {
+                if (acc.RecordType == VectorManager.RecordType)
+                {
+                    operation.EncounteredVectorSet(key.ToArray(), acc.VectorIndexValue, acc.VectorIndexExpiration);
+                    return new(true);
+                }
+                if (acc.RecordType == RangeIndexManager.RangeIndexRecordType)
+                {
+                    operation.AddRangeIndexKey(key.ToArray());
+                    return new(true);
+                }
+            }
+
             // Fully-inline record: SpanByteAndMemory holds the whole record. Send it whole (or chunked if it is unusually large).
             if (acc.IsEmpty)
             {

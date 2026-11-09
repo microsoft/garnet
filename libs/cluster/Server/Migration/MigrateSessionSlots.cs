@@ -104,9 +104,10 @@ namespace Garnet.cluster
                     i++;
                 }
 
+                var allRunners = Task.WhenAll(migrateOperationRunners);
                 try
                 {
-                    var scanResults = await Task.WhenAll(migrateOperationRunners).WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+                    var scanResults = await allRunners.WaitAsync(_timeout, cancellationToken).ConfigureAwait(false);
                     if (!scanResults.All(static x => x))
                     {
                         logger?.LogWarning("Aborting migration due to ScanStoreTask failure");
@@ -194,8 +195,20 @@ namespace Garnet.cluster
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "{CreateAndRunMigrateTasks}: {beginAddress} {tailAddress} {pageSize}", nameof(CreateAndRunMigrateTasksAsync), beginAddress, tailAddress, pageSize);
-                    await _cts.CancelAsync().ConfigureAwait(false);
+                    if (!cancellationToken.IsCancellationRequested)
+                        await _cts.CancelAsync().ConfigureAwait(false);
                     return false;
+                }
+                finally
+                {
+                    try
+                    {
+                        await allRunners.ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "Migration workers failed while joining");
+                    }
                 }
 
                 return true;
@@ -220,45 +233,8 @@ namespace Garnet.cluster
                 if (!await migrateOperation.InitializeAsync().ConfigureAwait(false))
                     return false;
 
-                var cursor = workerStartAddress;
                 logger?.LogWarning("<{taskId}> migrate scan range [{workerStartAddress}, {workerEndAddress}]", taskId, workerStartAddress, workerEndAddress);
-                while (true)
-                {
-                    var current = cursor;
-                    // Build Sketch
-                    migrateOperation.sketch.SetStatus(SketchStatus.INITIALIZING);
-                    migrateOperation.Scan(ref current, workerEndAddress, tailAddress);
-
-                    // Stop if no keys have been found
-                    if (migrateOperation.sketch.argSliceVector.IsEmpty) break;
-
-                    logger?.LogWarning("[{taskId}> Scan from {cursor} to {current} and discovered {count} keys",
-                        taskId, cursor, current, migrateOperation.sketch.argSliceVector.Count);
-
-                    // Transition EPSM to MIGRATING
-                    migrateOperation.sketch.SetStatus(SketchStatus.TRANSMITTING);
-                    await WaitForConfigPropagationAsync().ConfigureAwait(false);
-
-                    // Transmit all keys gathered
-                    if (!await migrateOperation.TransmitSlotsAsync().ConfigureAwait(false))
-                    {
-                        logger?.LogWarning("[{taskId}> TransmitSlots failed for {cursor} to {current} (with {count} keys)", taskId, cursor, current, migrateOperation.sketch.argSliceVector.Count);
-                        return false;
-                    }
-
-                    // Transition EPSM to DELETING
-                    migrateOperation.sketch.SetStatus(SketchStatus.DELETING);
-                    await WaitForConfigPropagationAsync().ConfigureAwait(false);
-
-                    // Deleting keys (Currently gathering keys from push-scan and deleting them outside)
-                    migrateOperation.DeleteKeys();
-
-                    // Clear keys from buffer
-                    migrateOperation.sketch.Clear();
-                    cursor = current;
-                }
-
-                return true;
+                return await migrateOperation.MigrateSlotsAsync(workerStartAddress, workerEndAddress, tailAddress).ConfigureAwait(false);
             }
         }
     }

@@ -340,6 +340,13 @@ namespace Garnet.cluster
 
             if (!applied)
                 logger?.LogError("Failed to apply migration batch; source must retain its keys");
+#if DEBUG
+            if (ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.Migration_Before_Batch_Response))
+            {
+                ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Migration_Before_Batch_Response);
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Migration_Before_Batch_Response);
+            }
+#endif
             var response = applied ? CmdStrings.RESP_OK : "-ERR Failed to apply migration batch\r\n"u8;
             while (!RespWriteUtils.TryWriteDirect(response, ref dcurr, dend))
                 SendAndReset();

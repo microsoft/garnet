@@ -19,7 +19,7 @@ namespace Garnet.cluster
             if (transferOption == TransferOption.KEYS)
                 return clusterSession.UnsafeBumpAndWaitForEpochTransitionAsync();
             else if (transferOption == TransferOption.SLOTS)
-                return clusterProvider.BumpAndWaitForEpochTransitionAsync();
+                return clusterProvider.BumpAndWaitForEpochTransitionAsync(cancellationToken);
             else
                 throw new GarnetException($"MigrateSession Invalid TransferOption {transferOption}");
         }
@@ -38,26 +38,29 @@ namespace Garnet.cluster
             if (!_sslots.Contains(slot))
                 return true;
 
-            var state = SketchStatus.INITIALIZING;
+            var canAccess = true;
             foreach (var migrateTask in migrateOperation)
             {
-                if (migrateTask.sketch.Probe(key, out state))
-                    goto found;
+                if (!migrateTask.sketch.Probe(key, out var state))
+                    continue;
+
+                // A permissive Bloom-filter match must not mask another worker's protected batch.
+                switch (state)
+                {
+                    case SketchStatus.INITIALIZING:
+                    case SketchStatus.MIGRATED:
+                        break;
+                    case SketchStatus.TRANSMITTING:
+                        canAccess &= readOnly;
+                        break;
+                    case SketchStatus.DELETING:
+                        return false;
+                    default:
+                        throw new GarnetException($"Invalid KeyMigrationStatus: {state}");
+                }
             }
 
-            return true;
-
-        found:
-            // NOTE:
-            // Caller responsible for spin-wait
-            // Check definition of KeyMigrationStatus for more info
-            return state switch
-            {
-                SketchStatus.INITIALIZING or SketchStatus.MIGRATED => true,// Both reads and write commands can access key if it exists
-                SketchStatus.TRANSMITTING => readOnly, // If key exists read commands can access key but write commands will be delayed
-                SketchStatus.DELETING => false, // Neither read or write commands can access key
-                _ => throw new GarnetException($"Invalid KeyMigrationStatus: {state}")
-            };
+            return canAccess;
         }
     }
 }

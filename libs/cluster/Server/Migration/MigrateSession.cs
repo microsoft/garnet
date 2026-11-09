@@ -48,6 +48,7 @@ namespace Garnet.cluster
 
         readonly HashSet<int> _sslots;
         readonly CancellationTokenSource _cts = new();
+        readonly CancellationToken cancellationToken;
 
         HashSet<ulong> _namespaces;
         FrozenDictionary<ulong, ulong> _namespaceMap;
@@ -148,6 +149,7 @@ namespace Garnet.cluster
             this._sslots = _slots;
             this._slotRanges = GetRanges();
             this.transferOption = transferOption;
+            cancellationToken = _cts.Token;
             clusterProvider.serverOptions.ValidateMigrationOptions();
 
             Status = MigrateState.PENDING;

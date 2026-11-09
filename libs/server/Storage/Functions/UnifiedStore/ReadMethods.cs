@@ -200,6 +200,12 @@ namespace Garnet.server
             //   - object value     -> accumulator (serialized into a chunk list; may exceed 2 GB).
             var acc = output.Accumulator ??= new MigrationChunkWriterAccumulator();
             acc.Reset();
+            acc.RecordType = srcLogRecord.RecordType;
+            if (srcLogRecord.RecordType == VectorManager.RecordType)
+            {
+                acc.VectorIndexValue = srcLogRecord.ValueSpan.ToArray();
+                acc.VectorIndexExpiration = srcLogRecord.DataHeader.HasExpiration ? new DateTime(srcLogRecord.Expiration, DateTimeKind.Utc) : null;
+            }
 
             acc.InlineLength = DiskLogRecord.SerializeInlinePortionForMigration(in srcLogRecord, functionsState.memoryPool, ref output.SpanByteAndMemory);
 

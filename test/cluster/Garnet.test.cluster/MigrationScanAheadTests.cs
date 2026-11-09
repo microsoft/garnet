@@ -1,0 +1,283 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
+using System.Text;
+using System.Threading.Tasks;
+using Garnet.client;
+using Garnet.cluster;
+using Garnet.common;
+using NUnit.Framework;
+
+#if DEBUG
+using System.Linq;
+using System.Threading;
+using Garnet.server;
+using Tsavorite.core;
+#endif
+
+namespace Garnet.test.cluster
+{
+    [TestFixture, NonParallelizable]
+    internal class MigrationScanAheadTests : TestBase
+    {
+        ClusterTestContext context;
+        ClusterProvider provider;
+        MigrateSession session;
+        MigrateSession.MigrateOperation operation;
+        GarnetClientSession source;
+        GarnetClientSession target;
+        Task<bool> migration;
+
+        [SetUp]
+        public void Setup()
+        {
+            context = new ClusterTestContext();
+            context.Setup([]);
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            operation?.Dispose();
+            session?.Dispose();
+#if DEBUG
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead);
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Before_Batch_Response);
+#endif
+            try
+            {
+                if (migration != null)
+                {
+                    try
+                    {
+                        await migration.WaitAsync(TimeSpan.FromSeconds(10));
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Cancellation joins the prefetched scan before releasing its storage session.
+                    }
+                }
+            }
+            finally
+            {
+                context.TearDown();
+#if DEBUG
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead);
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Migration_Before_Batch_Response);
+#endif
+            }
+        }
+
+        static string Key(int index) => $"{{scan-ahead}}{index:D2}";
+
+        async Task CreateOperationAsync(int depth, bool copy = false, int keyCount = 14, bool prepare = true)
+        {
+            context.CreateInstances(2, lowMemory: true, memorySize: "32m", pageSize: "16k",
+                migrationSendBufferSize: "16k", migrationPipelineDepth: depth);
+            context.CreateConnection();
+            foreach (var options in context.nodeOptions)
+                options.ParallelMigrateTaskCount = 1;
+            Assert.That(context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], addslot: true), Is.EqualTo("OK"));
+            context.clusterTestUtils.SetConfigEpoch(0, 1);
+            context.clusterTestUtils.SetConfigEpoch(1, 2);
+            context.clusterTestUtils.Meet(0, 1);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(0, 1);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(1, 0);
+
+            source = context.clusterTestUtils.GetGarnetClientSession(0);
+            target = context.clusterTestUtils.GetGarnetClientSession(1);
+            for (var start = 0; start < keyCount; start += 512)
+            {
+                var writes = new Task<string>[Math.Min(512, keyCount - start)];
+                for (var i = 0; i < writes.Length; i++)
+                    writes[i] = source.ExecuteAsync("SET", Key(start + i), $"value-{start + i}");
+                Assert.That(await Task.WhenAll(writes).WaitAsync(TimeSpan.FromSeconds(10)), Is.All.EqualTo("OK"));
+            }
+
+            provider = (ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider;
+            if (!prepare)
+                return;
+            var sourceId = context.clusterTestUtils.GetLocalNodeId(0);
+            var targetId = context.clusterTestUtils.GetLocalNodeId(1);
+            var endpoint = context.clusterTestUtils.GetEndPoint(1);
+            var slot = HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(Key(0)));
+            session = new MigrateSession(null, provider, endpoint.Address.ToString(), endpoint.Port, targetId,
+                null, null, sourceId, copy, false, 10000, [slot], null, TransferOption.SLOTS);
+            Assert.That(await session.TrySetSlotRangesAsync(sourceId, MigrateState.IMPORT), Is.True);
+            Assert.That(session.TryPrepareLocalForMigration(), Is.True);
+            operation = new MigrateSession.MigrateOperation(session, batchSize: 8);
+            Assert.That(await operation.InitializeAsync(), Is.True);
+        }
+
+        Task<bool> StartMigration()
+        {
+            var log = provider.storeWrapper.store.Log;
+            return migration = operation.MigrateSlotsAsync(log.BeginAddress, log.TailAddress, log.TailAddress);
+        }
+
+        async Task<string> TargetAsync(params string[] command)
+        {
+            Assert.That(await target.ExecuteAsync("ASKING"), Is.EqualTo("OK"));
+            return await target.ExecuteAsync(command);
+        }
+
+        [Test]
+        public async Task TransfersAcrossSmallBatches([Values(1, 3)] int depth, [Values] bool copy)
+        {
+            await CreateOperationAsync(depth, copy);
+            Assert.That(await StartMigration().WaitAsync(TimeSpan.FromSeconds(20)), Is.True);
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo(copy ? "14" : "0"));
+            Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo("14"));
+            for (var i = 0; i < 14; i++)
+                Assert.That(await TargetAsync("GET", Key(i)), Is.EqualTo($"value-{i}"));
+        }
+
+        [Test]
+        public async Task EmptyScanCompletesWithoutShipping()
+        {
+            await CreateOperationAsync(3, keyCount: 0);
+            Assert.That(await StartMigration().WaitAsync(TimeSpan.FromSeconds(10)), Is.True);
+            Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo("0"));
+        }
+
+#if DEBUG
+        static async Task WaitForPauseAsync(ExceptionInjectionType injection, CancellationToken token)
+        {
+            while (ExceptionInjectionHelper.IsEnabled(injection))
+                await Task.Delay(10, token);
+        }
+
+        async Task PauseOverlappingStagesAsync(int depth, CancellationToken token)
+        {
+            await CreateOperationAsync(depth);
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead);
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Before_Batch_Response);
+            _ = StartMigration();
+            await Task.WhenAll(
+                WaitForPauseAsync(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead, token),
+                WaitForPauseAsync(ExceptionInjectionType.Migration_Before_Batch_Response, token));
+            Assert.That(migration.IsCompleted, Is.False);
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("14"), "Unacknowledged keys must not be deleted");
+            Assert.That(operation.sketch.Status, Is.EqualTo(SketchStatus.TRANSMITTING));
+            var activeKeys = operation.sketch.argSliceVector.Select(item => Encoding.ASCII.GetString(item.KeyBytes.ReadOnlySpan)).ToArray();
+            Assert.That(activeKeys, Is.EqualTo(Enumerable.Range(0, 7).Select(Key)));
+        }
+
+        unsafe void RecreateKey(int index, string value, bool hash = false)
+        {
+            using var mutations = new LocalServerSession(provider.storeWrapper);
+            var keyBytes = Encoding.ASCII.GetBytes(Key(index));
+            var valueBytes = Encoding.ASCII.GetBytes(value);
+            fixed (byte* keyPtr = keyBytes, valuePtr = valueBytes, fieldPtr = "field"u8)
+            {
+                var key = PinnedSpanByte.FromPinnedPointer(keyPtr, keyBytes.Length);
+                var data = PinnedSpanByte.FromPinnedPointer(valuePtr, valueBytes.Length);
+                // Model an already-admitted mutation; new network creates redirect while the slot is migrating.
+                var status = hash
+                    ? mutations.BasicGarnetApi.HashSet(key, PinnedSpanByte.FromPinnedPointer(fieldPtr, 5), data, out _)
+                    : mutations.BasicGarnetApi.SET(key, data);
+                Assert.That(status, Is.EqualTo(GarnetStatus.OK));
+            }
+        }
+
+        unsafe bool KeyExists(int index)
+        {
+            using var reads = new LocalServerSession(provider.storeWrapper);
+            var bytes = Encoding.ASCII.GetBytes(Key(index));
+            fixed (byte* ptr = bytes)
+                return reads.BasicGarnetApi.EXISTS(PinnedSpanByte.FromPinnedPointer(ptr, bytes.Length)) == GarnetStatus.OK;
+        }
+
+        unsafe bool CanAccessKey(int index, bool readOnly)
+        {
+            var bytes = Encoding.ASCII.GetBytes(Key(index));
+            fixed (byte* ptr = bytes)
+                return provider.migrationManager.CanAccessKey(PinnedSpanByte.FromPinnedPointer(ptr, bytes.Length),
+                    HashSlotUtils.HashSlot(bytes), readOnly);
+        }
+
+        [Test]
+        [CancelAfter(60000)]
+        public async Task RegisteredMigrationProtectsOnlyActiveBatch(CancellationToken cancellationToken)
+        {
+            const int batchSize = (1 << 18) - 1;
+            const int keyCount = batchSize + 7;
+            await CreateOperationAsync(3, keyCount: keyCount, prepare: false);
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead);
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Before_Batch_Response);
+            var slot = HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(Key(0)));
+            context.clusterTestUtils.MigrateSlotsIndex(0, 1, [slot]);
+            await Task.WhenAll(
+                WaitForPauseAsync(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead, cancellationToken),
+                WaitForPauseAsync(ExceptionInjectionType.Migration_Before_Batch_Response, cancellationToken));
+
+            Assert.That(CanAccessKey(0, readOnly: false), Is.False);
+            Assert.That(CanAccessKey(0, readOnly: true), Is.True);
+            // Bloom-filter false positives may conservatively protect some keys in the pending batch.
+            var pendingKey = Enumerable.Range(batchSize, 7).First(index => CanAccessKey(index, readOnly: false));
+            Assert.That(await source.ExecuteAsync("SET", Key(pendingKey), "updated-after-prefetch")
+                .WaitAsync(cancellationToken), Is.EqualTo("OK"));
+
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead);
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Before_Batch_Response);
+            context.clusterTestUtils.WaitForMigrationCleanup(0, cancellationToken);
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("0"));
+            Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo(keyCount.ToString()));
+            Assert.That(await target.ExecuteAsync("GET", Key(pendingKey)), Is.EqualTo("updated-after-prefetch"));
+        }
+
+        [TestCase(1)]
+        [TestCase(3)]
+        [CancelAfter(30000)]
+        public async Task PrefetchedKeysReadCurrentValuesOnlyAfterProtection(int depth, CancellationToken cancellationToken)
+        {
+            await PauseOverlappingStagesAsync(depth, cancellationToken);
+            var grownValue = new string('x', 128 * 1024);
+            RecreateKey(7, grownValue);
+            Assert.That(await source.ExecuteAsync("DEL", Key(8)), Is.EqualTo("1"));
+            Assert.That(await source.ExecuteAsync("DEL", Key(9)), Is.EqualTo("1"));
+            RecreateKey(9, "recreated");
+            Assert.That(await source.ExecuteAsync("DEL", Key(10)), Is.EqualTo("1"));
+            RecreateKey(10, "hash-value", hash: true);
+            Assert.That(await source.ExecuteAsync("PEXPIRE", Key(11), "1"), Is.EqualTo("1"));
+            Assert.That(() => KeyExists(11), Is.False.After(5000).PollEvery(10));
+            Assert.That(await source.ExecuteAsync("PEXPIRE", Key(12), "300000"), Is.EqualTo("1"));
+            Assert.That(await source.ExecuteAsync("PERSIST", Key(12)), Is.EqualTo("1"));
+            Assert.That(await source.ExecuteAsync("SET", Key(13), "updated"), Is.EqualTo("OK"));
+
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead);
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Before_Batch_Response);
+            Assert.That(await migration.WaitAsync(cancellationToken), Is.True);
+
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("0"));
+            Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo("12"));
+            for (var i = 0; i < 7; i++)
+                Assert.That(await TargetAsync("GET", Key(i)), Is.EqualTo($"value-{i}"));
+            Assert.That(await TargetAsync("GET", Key(7)), Is.EqualTo(grownValue));
+            Assert.That(await TargetAsync("GET", Key(8)), Is.Null);
+            Assert.That(await TargetAsync("GET", Key(9)), Is.EqualTo("recreated"));
+            Assert.That(await TargetAsync("HGET", Key(10), "field"), Is.EqualTo("hash-value"));
+            Assert.That(await TargetAsync("GET", Key(11)), Is.Null);
+            Assert.That(await TargetAsync("GET", Key(12)), Is.EqualTo("value-12"));
+            Assert.That(await TargetAsync("PTTL", Key(12)), Is.EqualTo("-1"));
+            Assert.That(await TargetAsync("GET", Key(13)), Is.EqualTo("updated"));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        [CancelAfter(30000)]
+        public async Task CancellationOrDisconnectJoinsScanAheadAndRetainsUnacknowledgedKeys(bool cancel, CancellationToken cancellationToken)
+        {
+            await PauseOverlappingStagesAsync(3, cancellationToken);
+            if (cancel)
+                session.Dispose();
+            else
+                operation.Dispose();
+            Assert.That(await migration.WaitAsync(cancellationToken), Is.False);
+            Assert.That(session.Status, Is.EqualTo(MigrateState.FAIL));
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("14"));
+        }
+#endif
+    }
+}

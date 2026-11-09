@@ -18,7 +18,8 @@ namespace Garnet.cluster
     {
         internal sealed partial class MigrateOperation
         {
-            public readonly Sketch sketch;
+            Sketch activeSketch;
+            public Sketch sketch => Volatile.Read(ref activeSketch);
             public readonly List<byte[]> keysToDelete;
             public StoreScan storeScan;
 
@@ -28,10 +29,13 @@ namespace Garnet.cluster
             readonly MigrateSession session;
             readonly GarnetClientSession gcs;
             readonly LocalServerSession localServerSession;
+            readonly int batchSize;
             readonly Task<string>[] pendingResponses;
             int responseHead;
             int responseCount;
             int disposed;
+            int activeWorkers;
+            int localSessionDisposed;
 
             public GarnetClientSession Client => gcs;
 
@@ -41,7 +45,7 @@ namespace Garnet.cluster
 
             public IEnumerable<byte[]> RangeIndexKeys => rangeIndexKeysToMigrate.Keys;
 
-            public void ThrowIfCancelled() => session._cts.Token.ThrowIfCancellationRequested();
+            public void ThrowIfCancelled() => session.cancellationToken.ThrowIfCancellationRequested();
 
             public bool Contains(int slot) => session._sslots.Contains(slot);
 
@@ -65,10 +69,11 @@ namespace Garnet.cluster
             public MigrateOperation(MigrateSession session, Sketch sketch = null, int batchSize = 1 << 18)
             {
                 this.session = session;
+                this.batchSize = batchSize;
                 pendingResponses = new Task<string>[session.clusterProvider.serverOptions.MigrationPipelineDepth];
                 gcs = session.GetGarnetClient();
                 localServerSession = session.GetLocalSession();
-                this.sketch = sketch ?? new(keyCount: batchSize << 2);
+                activeSketch = sketch ?? new(keyCount: batchSize << 2, maxBatchSize: batchSize);
                 storeScan = new StoreScan(this);
                 keysToDelete = [];
                 vectorSetsIndexKeysToMigrate = new(ByteArrayComparer.Instance);
@@ -91,7 +96,8 @@ namespace Garnet.cluster
                 try
                 {
                     gcs.Dispose();
-                    localServerSession.Dispose();
+                    if (Volatile.Read(ref activeWorkers) == 0)
+                        DisposeLocalSession();
                 }
                 finally
                 {
@@ -103,6 +109,12 @@ namespace Garnet.cluster
                             ObserveResponseFault(response);
                     }
                 }
+            }
+
+            void DisposeLocalSession()
+            {
+                if (Interlocked.Exchange(ref localSessionDisposed, 1) == 0)
+                    localServerSession.Dispose();
             }
 
             static void ObserveResponseFault(Task<string> response)
@@ -141,7 +153,7 @@ namespace Garnet.cluster
 
                     try
                     {
-                        var resp = await response.WaitAsync(session._timeout, session._cts.Token).ConfigureAwait(false);
+                        var resp = await response.WaitAsync(session._timeout, session.cancellationToken).ConfigureAwait(false);
                         Volatile.Write(ref pendingResponses[responseHead], null);
                         responseHead = (responseHead + 1) % pendingResponses.Length;
                         responseCount--;
@@ -319,6 +331,8 @@ namespace Garnet.cluster
                     return;
                 if (session.transferOption == TransferOption.SLOTS)
                 {
+                    var vectorKeys = vectorSetsIndexKeysToMigrate.GetAlternateLookup<ReadOnlySpan<byte>>();
+                    var rangeKeys = rangeIndexKeysToMigrate.GetAlternateLookup<ReadOnlySpan<byte>>();
                     foreach (var (ns, key, hasNs) in sketch.argSliceVector)
                     {
                         if (hasNs)
@@ -328,6 +342,8 @@ namespace Garnet.cluster
                         }
                         else
                         {
+                            if (vectorKeys.ContainsKey(key.ReadOnlySpan) || rangeKeys.ContainsKey(key.ReadOnlySpan))
+                                continue;
                             _ = localServerSession.BasicGarnetApi.DELETE(key);
                         }
                     }
