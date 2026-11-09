@@ -2193,7 +2193,7 @@ namespace Garnet.server
 
                 try
                 {
-                    if (!TryDecode(this, ref data, out var constStrErrId))
+                    if (!TryDecode(this, ref data, 0, out var constStrErrId))
                     {
                         return LuaWrappedError(0, constStrErrId);
                     }
@@ -2222,8 +2222,15 @@ namespace Garnet.server
             return decodedCount + 2;
 
             // Decode a msg pack
-            static bool TryDecode(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
+            static bool TryDecode(LuaRunner self, ref ReadOnlySpan<byte> data, int depth, out int constStrErrId)
             {
+                if (depth > RespLimits.MaxNestingDepth)
+                {
+                    // Match Redis max decoding depth, and avoid unbounded recursion into nested arrays/maps
+                    constStrErrId = self.constStrs.FoundTooManyNested;
+                    return false;
+                }
+
                 var sigil = data[0];
                 data = data[1..];
 
@@ -2253,11 +2260,11 @@ namespace Garnet.server
                     case 0xC5: goto case 0xDA;
                     case 0xC6: goto case 0xDB;
                     // <= 15 element arrays are handled below
-                    case 0xDC: return TryDecodeMidArray(self, ref data, out constStrErrId);
-                    case 0xDD: return TryDecodeLargeArray(self, ref data, out constStrErrId);
+                    case 0xDC: return TryDecodeMidArray(self, ref data, depth, out constStrErrId);
+                    case 0xDD: return TryDecodeLargeArray(self, ref data, depth, out constStrErrId);
                     // <= 15 pair maps are handled below
-                    case 0xDE: return TryDecodeMidMap(self, ref data, out constStrErrId);
-                    case 0xDF: return TryDecodeLargeMap(self, ref data, out constStrErrId);
+                    case 0xDE: return TryDecodeMidMap(self, ref data, depth, out constStrErrId);
+                    case 0xDF: return TryDecodeLargeMap(self, ref data, depth, out constStrErrId);
 
                     default:
                         if ((sigil & 0b1000_0000) == 0)
@@ -2274,11 +2281,11 @@ namespace Garnet.server
                         }
                         else if ((sigil & 0b1111_0000) == 0b1001_0000)
                         {
-                            return TryDecodeSmallArray(self, sigil, ref data, out constStrErrId);
+                            return TryDecodeSmallArray(self, sigil, ref data, depth, out constStrErrId);
                         }
                         else if ((sigil & 0b1111_0000) == 0b1000_0000)
                         {
-                            return TryDecodeSmallMap(self, sigil, ref data, out constStrErrId);
+                            return TryDecodeSmallMap(self, sigil, ref data, depth, out constStrErrId);
                         }
 
                         self.logger?.LogError("Unexpected MsgPack sigil {sigil}", sigil);
@@ -2512,7 +2519,7 @@ namespace Garnet.server
             }
 
             // Decode an array with <= 15 items, moving past it in data and pushing it to the stack
-            static bool TryDecodeSmallArray(LuaRunner self, byte sigil, ref ReadOnlySpan<byte> data, out int constStrErrId)
+            static bool TryDecodeSmallArray(LuaRunner self, byte sigil, ref ReadOnlySpan<byte> data, int depth, out int constStrErrId)
             {
                 // Space for the temporary item
                 const int NeededStackSpace = 1;
@@ -2535,7 +2542,7 @@ namespace Garnet.server
                 for (var i = 1; i <= len; i++)
                 {
                     // Push the element onto the stack
-                    if (!TryDecode(self, ref data, out constStrErrId))
+                    if (!TryDecode(self, ref data, depth + 1, out constStrErrId))
                     {
                         return false;
                     }
@@ -2548,7 +2555,7 @@ namespace Garnet.server
             }
 
             // Decode an array with <= 65,535 items, moving past it in data and pushing it to the stack
-            static bool TryDecodeMidArray(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
+            static bool TryDecodeMidArray(LuaRunner self, ref ReadOnlySpan<byte> data, int depth, out int constStrErrId)
             {
                 // Space for the temporary item
                 const int NeededStackSpace = 1;
@@ -2572,7 +2579,7 @@ namespace Garnet.server
                 for (var i = 1; i <= len; i++)
                 {
                     // Push the element onto the stack
-                    if (!TryDecode(self, ref data, out constStrErrId))
+                    if (!TryDecode(self, ref data, depth + 1, out constStrErrId))
                     {
                         return false;
                     }
@@ -2585,7 +2592,7 @@ namespace Garnet.server
             }
 
             // Decode an array with <= 4,294,967,295 items, moving past it in data and pushing it to the stack
-            static bool TryDecodeLargeArray(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
+            static bool TryDecodeLargeArray(LuaRunner self, ref ReadOnlySpan<byte> data, int depth, out int constStrErrId)
             {
                 // Space for the temporary item
                 const int NeededStackSpace = 1;
@@ -2617,7 +2624,7 @@ namespace Garnet.server
                 for (var i = 1; i <= len; i++)
                 {
                     // Push the element onto the stack
-                    if (!TryDecode(self, ref data, out constStrErrId))
+                    if (!TryDecode(self, ref data, depth + 1, out constStrErrId))
                     {
                         return false;
                     }
@@ -2630,7 +2637,7 @@ namespace Garnet.server
             }
 
             // Decode an map with <= 15 key-value pairs, moving past it in data and pushing it to the stack
-            static bool TryDecodeSmallMap(LuaRunner self, byte sigil, ref ReadOnlySpan<byte> data, out int constStrErrId)
+            static bool TryDecodeSmallMap(LuaRunner self, byte sigil, ref ReadOnlySpan<byte> data, int depth, out int constStrErrId)
             {
                 // Reserve extra space for the 
                 // Space for the temporary key & value
@@ -2656,13 +2663,13 @@ namespace Garnet.server
                 for (var i = 1; i <= len; i++)
                 {
                     // Push the key onto the stack
-                    if (!TryDecode(self, ref data, out constStrErrId))
+                    if (!TryDecode(self, ref data, depth + 1, out constStrErrId))
                     {
                         return false;
                     }
 
                     // Push the value onto the stack
-                    if (!TryDecode(self, ref data, out constStrErrId))
+                    if (!TryDecode(self, ref data, depth + 1, out constStrErrId))
                     {
                         return false;
                     }
@@ -2677,7 +2684,7 @@ namespace Garnet.server
             }
 
             // Decode a map with <= 65,535 key-value pairs, moving past it in data and pushing it to the stack
-            static bool TryDecodeMidMap(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
+            static bool TryDecodeMidMap(LuaRunner self, ref ReadOnlySpan<byte> data, int depth, out int constStrErrId)
             {
                 // Reserve extra space for the 
                 // Space for the temporary key & value
@@ -2704,13 +2711,13 @@ namespace Garnet.server
                 for (var i = 1; i <= len; i++)
                 {
                     // Push the key onto the stack
-                    if (!TryDecode(self, ref data, out constStrErrId))
+                    if (!TryDecode(self, ref data, depth + 1, out constStrErrId))
                     {
                         return false;
                     }
 
                     // Push the value onto the stack
-                    if (!TryDecode(self, ref data, out constStrErrId))
+                    if (!TryDecode(self, ref data, depth + 1, out constStrErrId))
                     {
                         return false;
                     }
@@ -2724,7 +2731,7 @@ namespace Garnet.server
             }
 
             // Decode a map with <= 4,294,967,295 key-value pairs, moving past it in data and pushing it to the stack
-            static bool TryDecodeLargeMap(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
+            static bool TryDecodeLargeMap(LuaRunner self, ref ReadOnlySpan<byte> data, int depth, out int constStrErrId)
             {
                 // Reserve extra space for the 
                 // Space for the temporary key & value
@@ -2759,13 +2766,13 @@ namespace Garnet.server
                 for (var i = 1; i <= len; i++)
                 {
                     // Push the key onto the stack
-                    if (!TryDecode(self, ref data, out constStrErrId))
+                    if (!TryDecode(self, ref data, depth + 1, out constStrErrId))
                     {
                         return false;
                     }
 
                     // Push the value onto the stack
-                    if (!TryDecode(self, ref data, out constStrErrId))
+                    if (!TryDecode(self, ref data, depth + 1, out constStrErrId))
                     {
                         return false;
                     }

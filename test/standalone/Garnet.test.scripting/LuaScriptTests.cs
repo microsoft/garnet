@@ -2797,6 +2797,72 @@ return cjson.encode(nested)");
         }
 
         [Test]
+        public void CMsgPackUnpackExcessiveNesting()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            // Regression test: cmsgpack.unpack recursed once per nested MessagePack array/map element
+            // (including both the key and the value of a map pair) with no depth limit, so a small
+            // payload with many nested one-element containers could raise an uncatchable
+            // StackOverflowException and crash the server process. Each container size and - for maps
+            // - each of the key/value recursion paths is a distinct call site in
+            // LuaRunner.CMsgPackUnpack, so every one is exercised below: losing the depth increment at
+            // any single call site must reintroduce the crash and be caught by its matching case.
+            const int NestingDepth = 50_000;
+
+            // (sigil for a 1-element container, is it a map, nest through the key instead of the value)
+            (byte[] Sigil, bool IsMap, bool ViaKey)[] cases =
+            [
+                ([0x91], false, false), // fixarray
+                ([0xDC, 0x00, 0x01], false, false), // array16
+                ([0xDD, 0x00, 0x00, 0x00, 0x01], false, false), // array32
+                ([0x81], true, true), // fixmap, via key
+                ([0x81], true, false), // fixmap, via value
+                ([0xDE, 0x00, 0x01], true, true), // map16, via key
+                ([0xDE, 0x00, 0x01], true, false), // map16, via value
+                ([0xDF, 0x00, 0x00, 0x00, 0x01], true, true), // map32, via key
+                ([0xDF, 0x00, 0x00, 0x00, 0x01], true, false), // map32, via value
+            ];
+
+            foreach (var (sigil, isMap, viaKey) in cases)
+            {
+                var payload = new List<byte>();
+                for (var i = 0; i < NestingDepth; i++)
+                {
+                    payload.AddRange(sigil);
+                    if (isMap && !viaKey)
+                    {
+                        payload.Add(0x00); // trivial key, so nesting continues through the value
+                    }
+                }
+                payload.Add(0xC0); // terminate the nested chain with a nil
+                if (isMap && viaKey)
+                {
+                    payload.AddRange(Enumerable.Repeat((byte)0x00, NestingDepth)); // trivial value at each unwound level
+                }
+
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(payload)})"));
+                ClassicAssert.True(exc.Message.Contains("too many nested"));
+            }
+
+            // The server must still be alive and responsive after rejecting the oversized payloads
+            ClassicAssert.AreEqual("PONG", (string)db.Execute("PING"));
+
+            static string ToLuaString(List<byte> data)
+            {
+                var ret = new StringBuilder();
+                _ = ret.Append('\'');
+                foreach (var b in data)
+                {
+                    _ = ret.Append('\\').Append(b);
+                }
+                _ = ret.Append('\'');
+                return ret.ToString();
+            }
+        }
+
+        [Test]
         public void Struct()
         {
             // Redis struct.pack/unpack/size is a subset of Lua's string.pack/unpack/packsize; so just testing for basic functionality
