@@ -191,18 +191,21 @@ namespace Garnet.test
         }
 
         [Test]
-        public void FailoverResetPrimaryAttemptsOptionParsing()
+        public void FailoverResetPrimaryTimeoutOptionParsing()
         {
             var ok = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
             ClassicAssert.IsTrue(ok);
-            ClassicAssert.AreEqual(5, options.GetServerOptions().FailoverResetPrimaryAttempts);
+            ClassicAssert.AreEqual(60, options.GetServerOptions().FailoverResetPrimaryTimeout);
 
-            ok = ServerSettingsManager.TryParseCommandLineArguments(["--failover-reset-primary-attempts", "2"], out options, out _, out _, out _, silentMode: true);
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--failover-reset-primary-timeout", "2"], out options, out _, out _, out _, silentMode: true);
             ClassicAssert.IsTrue(ok);
-            ClassicAssert.AreEqual(2, options.GetServerOptions().FailoverResetPrimaryAttempts);
+            ClassicAssert.AreEqual(2, options.GetServerOptions().FailoverResetPrimaryTimeout);
 
-            ok = ServerSettingsManager.TryParseCommandLineArguments(["--failover-reset-primary-attempts", "0"], out _, out _, out _, out _, silentMode: true);
-            ClassicAssert.IsFalse(ok, "at least one reset attempt is required");
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--failover-reset-primary-timeout", "0"], out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(ok, "the reset budget must be positive");
+
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--failover-reset-primary-timeout", "2147484"], out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(ok, "the reset budget must fit a CancellationTokenSource timeout");
         }
 
         [Test]

@@ -47,7 +47,7 @@ namespace Garnet.cluster
             try
             {
                 if (!client.IsConnected)
-                    await client.ReconnectAsync().WaitAsync(timeout, token).ConfigureAwait(false);
+                    await client.ReconnectAsync((int)Math.Min(timeout.TotalMilliseconds, int.MaxValue), token).ConfigureAwait(false);
 
                 return client;
             }
@@ -306,37 +306,45 @@ namespace Garnet.cluster
 
         /// <summary>
         /// Restore the old primary after a failed failover that it had already accepted.
-        /// The failover token is not used because it is already cancelled when the failover was aborted;
-        /// only server shutdown stops the reset early. A lost connection to the primary is re-established
-        /// on each attempt.
+        /// The failover token is not used because it is already cancelled when the failover was aborted.
+        /// Attempts are retried with capped exponential backoff until the primary acknowledges the reset,
+        /// the reset budget (<see cref="GarnetServerOptions.FailoverResetPrimaryTimeout"/>) expires, or the server shuts down.
+        /// A lost connection to the primary is re-established on each attempt.
         /// </summary>
         /// <param name="shutdownToken">Token signalled on server shutdown</param>
         /// <returns>True if the primary acknowledged the reset, false otherwise</returns>
         private async Task<bool> ResetPrimaryAsync(CancellationToken shutdownToken)
         {
             var primaryId = oldConfig.LocalNodePrimaryId;
+            var budget = TimeSpan.FromSeconds(Math.Max(1, clusterProvider.serverOptions.FailoverResetPrimaryTimeout));
             var attemptTimeout = clusterTimeout > TimeSpan.Zero ? clusterTimeout : failoverTimeout;
-            var backoff = TimeSpan.FromMilliseconds(100);
-            var maxAttempts = Math.Max(1, clusterProvider.serverOptions.FailoverResetPrimaryAttempts);
+            if (attemptTimeout > budget)
+                attemptTimeout = budget;
+            var backoff = new ExponentialBackoff(TimeSpan.FromMilliseconds(100), TimeSpan.FromSeconds(5));
 
-            for (var attempt = 1; attempt <= maxAttempts; attempt++)
+            using var budgetCts = CancellationTokenSource.CreateLinkedTokenSource(shutdownToken);
+            budgetCts.CancelAfter(budget);
+
+            for (var attempt = 1; ; attempt++)
             {
                 try
                 {
                     if (primaryClient == null || !primaryClient.IsConnected)
                     {
                         primaryClient?.Dispose();
-                        primaryClient = await CreateConnectionAsync(primaryId, attemptTimeout, shutdownToken).ConfigureAwait(false);
+                        primaryClient = await CreateConnectionAsync(primaryId, attemptTimeout, budgetCts.Token).ConfigureAwait(false);
                     }
 
                     if (primaryClient != null)
                     {
-                        _ = await primaryClient.ExecuteClusterFailStopWritesAsync(Array.Empty<byte>()).WaitAsync(attemptTimeout, shutdownToken).ConfigureAwait(false);
+                        using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(budgetCts.Token);
+                        attemptCts.CancelAfter(attemptTimeout);
+                        _ = await primaryClient.ExecuteClusterFailStopWritesAsync(Array.Empty<byte>(), attemptCts.Token).ConfigureAwait(false);
                         logger?.LogWarning("Reset primary {primaryId} after failed failover (attempt {attempt})", primaryId, attempt);
                         return true;
                     }
                 }
-                catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
+                catch (OperationCanceledException) when (budgetCts.IsCancellationRequested)
                 {
                     break;
                 }
@@ -347,21 +355,18 @@ namespace Garnet.cluster
                     primaryClient = null;
                 }
 
-                if (attempt == maxAttempts)
-                    break;
-
                 try
                 {
-                    await Task.Delay(backoff, shutdownToken).ConfigureAwait(false);
+                    await Task.Delay(backoff.RecordFailure(), budgetCts.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
                     break;
                 }
-                backoff *= 2;
             }
 
-            logger?.LogError("Failed to reset primary {primaryId} after failed failover — cluster may be in an incoherent state", primaryId);
+            logger?.LogError("Failed to reset primary {primaryId} after failed failover within {budget} ({reason}) — cluster may be in an incoherent state",
+                primaryId, budget, shutdownToken.IsCancellationRequested ? "server shutdown" : "reset budget expired");
             return false;
         }
 
