@@ -2796,33 +2796,134 @@ return cjson.encode(nested)");
             }
         }
 
-        [Test]
-        public void CMsgPackUnpackExcessiveNesting()
+        // Each container size (fixarray/array16/array32, fixmap/map16/map32) and - for maps - each of
+        // the key and value recursion paths is a distinct call site in LuaRunner.CMsgPackUnpack, so
+        // each is exercised separately below: losing the depth increment at any single one of those
+        // call sites must reintroduce the crash and be caught by its matching case.
+        public enum NestedContainerKind
+        {
+            FixArray,
+            Array16,
+            Array32,
+            FixMapViaKey,
+            FixMapViaValue,
+            Map16ViaKey,
+            Map16ViaValue,
+            Map32ViaKey,
+            Map32ViaValue,
+        }
+
+        [TestCase(NestedContainerKind.FixArray)]
+        [TestCase(NestedContainerKind.Array16)]
+        [TestCase(NestedContainerKind.Array32)]
+        [TestCase(NestedContainerKind.FixMapViaKey)]
+        [TestCase(NestedContainerKind.FixMapViaValue)]
+        [TestCase(NestedContainerKind.Map16ViaKey)]
+        [TestCase(NestedContainerKind.Map16ViaValue)]
+        [TestCase(NestedContainerKind.Map32ViaKey)]
+        [TestCase(NestedContainerKind.Map32ViaValue)]
+        public void CMsgPackUnpackExcessiveNesting(NestedContainerKind kind)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            // Regression test: cmsgpack.unpack recursed once per nested MessagePack array/map with no
-            // depth limit, so a small payload with many nested one-element arrays could raise an
-            // uncatchable StackOverflowException and crash the server process.
-            //
-            // 0x91 (decimal 145) is a fixarray sigil for a single-element array; repeating it nests
-            // one level deeper each time. 0xC0 (decimal 192) terminates the nesting with a nil.
+            // Regression test: cmsgpack.unpack recursed once per nested MessagePack array/map element
+            // (including both the key and the value of a map pair) with no depth limit, so a small
+            // payload with many nested one-element containers could raise an uncatchable
+            // StackOverflowException and crash the server process.
             const int NestingDepth = 50_000;
-            var payload = new StringBuilder();
-            _ = payload.Append('\'');
-            for (var i = 0; i < NestingDepth; i++)
-            {
-                _ = payload.Append("\\145");
-            }
-            _ = payload.Append("\\192");
-            _ = payload.Append('\'');
 
-            var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return cmsgpack.unpack({payload})"));
+            byte[] sigil;
+            var isMap = false;
+            var viaKey = false;
+            switch (kind)
+            {
+                case NestedContainerKind.FixArray:
+                    sigil = [0x91]; // fixarray, len 1
+                    break;
+                case NestedContainerKind.Array16:
+                    sigil = [0xDC, 0x00, 0x01]; // array16, len 1
+                    break;
+                case NestedContainerKind.Array32:
+                    sigil = [0xDD, 0x00, 0x00, 0x00, 0x01]; // array32, len 1
+                    break;
+                case NestedContainerKind.FixMapViaKey:
+                case NestedContainerKind.FixMapViaValue:
+                    sigil = [0x81]; // fixmap, len 1
+                    isMap = true;
+                    viaKey = kind is NestedContainerKind.FixMapViaKey;
+                    break;
+                case NestedContainerKind.Map16ViaKey:
+                case NestedContainerKind.Map16ViaValue:
+                    sigil = [0xDE, 0x00, 0x01]; // map16, len 1
+                    isMap = true;
+                    viaKey = kind is NestedContainerKind.Map16ViaKey;
+                    break;
+                case NestedContainerKind.Map32ViaKey:
+                case NestedContainerKind.Map32ViaValue:
+                    sigil = [0xDF, 0x00, 0x00, 0x00, 0x01]; // map32, len 1
+                    isMap = true;
+                    viaKey = kind is NestedContainerKind.Map32ViaKey;
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(kind));
+            }
+
+            var payload = new List<byte>();
+            if (!isMap)
+            {
+                // Nest through successive array elements: [sigil]*D + nil
+                for (var i = 0; i < NestingDepth; i++)
+                {
+                    payload.AddRange(sigil);
+                }
+                payload.Add(0xC0);
+            }
+            else if (viaKey)
+            {
+                // Nest through the key of each pair; the value is a trivial scalar emitted on unwind,
+                // after the key chain has already terminated: [sigil]*D + nil + [0x00]*D
+                for (var i = 0; i < NestingDepth; i++)
+                {
+                    payload.AddRange(sigil);
+                }
+                payload.Add(0xC0);
+                for (var i = 0; i < NestingDepth; i++)
+                {
+                    payload.Add(0x00);
+                }
+            }
+            else
+            {
+                // Nest through the value of each pair; the key is a trivial scalar emitted before
+                // descending into the next level: ([sigil] + 0x00)*D + nil
+                for (var i = 0; i < NestingDepth; i++)
+                {
+                    payload.AddRange(sigil);
+                    payload.Add(0x00);
+                }
+                payload.Add(0xC0);
+            }
+
+            var luaString = ToLuaString(payload);
+
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return cmsgpack.unpack({luaString})"));
             ClassicAssert.True(exc.Message.Contains("too many nested"));
 
             // The server must still be alive and responsive after rejecting the oversized payload
             ClassicAssert.AreEqual("PONG", (string)db.Execute("PING"));
+
+            static string ToLuaString(List<byte> data)
+            {
+                var ret = new StringBuilder();
+                _ = ret.Append('\'');
+                foreach (var b in data)
+                {
+                    _ = ret.Append('\\').Append(b);
+                }
+                _ = ret.Append('\'');
+                return ret.ToString();
+            }
         }
 
         [Test]
