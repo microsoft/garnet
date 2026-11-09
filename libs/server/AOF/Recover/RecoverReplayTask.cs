@@ -45,8 +45,7 @@ namespace Garnet.server
                             replaySublog,
                             replayBatchContext.Record,
                             replayBatchContext.RecordLength,
-                            replayBatchContext.CurrentAddress,
-                            replayBatchContext.IsProtected);
+                            replayBatchContext.CurrentAddress);
                     }
                 }
                 catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
@@ -92,8 +91,7 @@ namespace Garnet.server
             TsavoriteLog replaySublog,
             byte* record,
             int recordLength,
-            long currentAddress,
-            bool isProtected)
+            long currentAddress)
         {
             var ptr = record;
             var maxSequenceNumber = 0L;
@@ -134,7 +132,8 @@ namespace Garnet.server
                     {
                         TsavoriteLogRecoveryInfo info = new();
                         info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
-                        replaySublog.UnsafeCommitMetadataOnly(info, isProtected);
+                        // The leader protects the input, not this worker's epoch operations.
+                        replaySublog.UnsafeCommitMetadataOnly(info, isProtected: false);
                     }
                     entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
                 }

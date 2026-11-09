@@ -68,7 +68,6 @@ namespace Garnet.cluster
                         var recordLength = replayBatchContext.RecordLength;
                         var currentAddress = replayBatchContext.CurrentAddress;
                         var nextAddress = replayBatchContext.NextAddress;
-                        var isProtected = replayBatchContext.IsProtected;
                         var ptr = record;
                         var pulseSequenceNumber = replayDriver.StagedPulseSequenceNumber;
 
@@ -101,7 +100,8 @@ namespace Garnet.cluster
                                     {
                                         TsavoriteLogRecoveryInfo info = new();
                                         info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
-                                        replaySublog.UnsafeCommitMetadataOnly(info, isProtected);
+                                        // The leader protects the input, not this worker's epoch operations.
+                                        replaySublog.UnsafeCommitMetadataOnly(info, isProtected: false);
                                     }
                                     entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
                                 }
