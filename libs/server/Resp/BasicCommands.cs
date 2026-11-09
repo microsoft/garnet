@@ -783,14 +783,27 @@ namespace Garnet.server
             if (!getValue)
             {
                 var status = storageApi.SET_Conditional(key, ref input);
+                var overwroteNonString = false;
 
-                // Type already stored in key which requires an explicit delete
-                if (status == GarnetStatus.WRONGTYPE)
+                // Type already stored in key: NX leaves it as is, other variants delete it and set unconditionally
+                if (status == GarnetStatus.WRONGTYPE && cmd != RespCommand.SETEXNX)
                 {
                     using (txnManager.PromoteToTransaction(TransactionStoreTypes.Main | TransactionStoreTypes.Object, key, LockType.Exclusive))
                     {
-                        _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
+                        // Recheck under the lock, as the key may have changed
                         status = storageSession.SET_Conditional(key, ref input, ref storageSession.stringTransactionalContext);
+                        if (status == GarnetStatus.WRONGTYPE)
+                        {
+                            _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
+                            input.header.cmd = cmd switch
+                            {
+                                RespCommand.SETEXXX => RespCommand.SETEXNX,
+                                RespCommand.SETKEEPTTLXX => RespCommand.SETKEEPTTL,
+                                _ => cmd,
+                            };
+                            status = storageSession.SET_Conditional(key, ref input, ref storageSession.stringTransactionalContext);
+                            overwroteNonString = true;
+                        }
                     }
                 }
 
@@ -802,7 +815,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    var ok = status != GarnetStatus.NOTFOUND;
+                    var ok = overwroteNonString || status != GarnetStatus.NOTFOUND;
 
                     // the status returned for SETEXNX as NOTFOUND is the expected status in the happy path, so flip the ok flag
                     if (cmd == RespCommand.SETEXNX)
