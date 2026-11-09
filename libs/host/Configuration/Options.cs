@@ -172,6 +172,10 @@ namespace Garnet
         [Option("pmt", Required = false, HelpText = "Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used.")]
         public int ParallelMigrateTaskCount { get; set; }
 
+        [MemorySizeValidation(isRequired: false)]
+        [Option("migrate-send-buffer-size", Required = false, HelpText = "Migration client send-buffer size, independent of log page size (rounds down to a power of 2; at least 1k and below 2g). Defaults to log page size. Larger records are chunked.")]
+        public string MigrationSendBufferSize { get; set; }
+
         [OptionValidation]
         [Option("fast-migrate", Required = false, HelpText = "When migrating slots 1. write directly to network buffer to avoid unnecessary copies, 2. do not wait for ack from target before sending next batch of keys.")]
         public bool? FastMigrate { get; set; }
@@ -974,6 +978,7 @@ namespace Garnet
                 EnableCluster = EnableCluster.GetValueOrDefault(),
                 CleanClusterConfig = CleanClusterConfig.GetValueOrDefault(),
                 ParallelMigrateTaskCount = ParallelMigrateTaskCount,
+                MigrationSendBufferSize = MigrationSendBufferSize,
                 FastMigrate = FastMigrate.GetValueOrDefault(),
                 AuthSettings = GetAuthenticationSettings(logger),
                 AclStrictCustomCommands = AclStrictCustomCommands.GetValueOrDefault(true),

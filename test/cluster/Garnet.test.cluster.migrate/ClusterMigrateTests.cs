@@ -1121,15 +1121,15 @@ namespace Garnet.test.cluster
             context.logger.LogDebug("15. ClusterSimpleMigrateKeysTest done");
         }
 
-        [Test, Order(100)]
+        [TestCase("16k", null)]
+        [TestCase("1m", "16k")]
+        [TestCase("4k", "64k")]
+        [Order(100)]
         [Category("CLUSTER")]
-        public void ClusterMigrateLargeValueChunked()
+        public void ClusterMigrateLargeValueChunked(string pageSize, string sendBufferSize)
         {
-            // A small page size gives a small migration send buffer (1 << PageSizeBits), so values larger than it are migrated
-            // via the chunked (MigrationRecordSpanType.ChunkedLogRecord) path: serialized to a buffer, sliced into chunks, then
-            // reassembled and deserialized on the target.
             context.logger.LogDebug("0. ClusterMigrateLargeValueChunked started");
-            context.CreateInstances(defaultShards, useTLS: UseTLS, pageSize: "16k", memorySize: "1m", lowMemory: true);
+            context.CreateInstances(defaultShards, useTLS: UseTLS, pageSize: pageSize, memorySize: "16m", lowMemory: true, migrationSendBufferSize: sendBufferSize);
             context.CreateConnection(useTLS: UseTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
@@ -1154,7 +1154,7 @@ namespace Garnet.test.cluster
                 keys.Add(newKey);
                 ClassicAssert.AreEqual(_workingSlot, ClusterTestUtils.HashSlot(newKey));
 
-                // 96 KB each, well beyond the 16 KB send buffer => several chunks per record. ASCII so GetKey's string round-trips.
+                // 96 KB exceeds every tested send buffer. ASCII so GetKey's string round-trips.
                 var value = new byte[96 * 1024];
                 for (var j = 0; j < value.Length; j++)
                     value[j] = (byte)('a' + ((i + j) % 26));

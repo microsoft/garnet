@@ -67,6 +67,18 @@ namespace Garnet.server
         public int ParallelMigrateTaskCount = 1;
 
         /// <summary>
+        /// Migration client send-buffer size, rounded down to a power of two. Null uses the log page size.
+        /// Records larger than the buffer are chunked.
+        /// </summary>
+        public string MigrationSendBufferSize = null;
+
+        /// <summary>
+        /// Resolve the migration send-buffer size independently of the log page size when configured.
+        /// </summary>
+        public int GetMigrationSendBufferSize()
+            => PowerOf2SizeOrDefault(MigrationSendBufferSize, 1 << PageSizeBits(), nameof(MigrationSendBufferSize));
+
+        /// <summary>
         /// When migrating slots 1. write directly to network buffer to avoid unecessary copies, 2. do not wait for ack from target before sending next batch of keys.
         /// </summary>
         public bool FastMigrate = false;

@@ -41,7 +41,7 @@ namespace Garnet.cluster
             this.logger = logger;
             this.migrationTaskStore = new MigrateSessionTaskStore(logger);
             this.clusterProvider = clusterProvider;
-            var sendBufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
+            var sendBufferSize = clusterProvider.serverOptions.GetMigrationSendBufferSize();
             this.networkBufferSettings = new NetworkBufferSettings(sendBufferSize, initialReceiveBufferSize);
             this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: PoolOwnerType.Migration, logger: logger);
 

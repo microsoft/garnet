@@ -305,6 +305,36 @@ namespace Garnet.test
                 $"Properties in {typeof(Options)} should not use {nameof(OptionAttribute)}.{nameof(OptionAttribute.Default)}. All default values should be specified in defaults.conf.");
         }
 
+        [TestCase("32m", null, 33554432)]
+        [TestCase("1m", null, 1048576)]
+        [TestCase("32m", "16k", 16384)]
+        [TestCase("4k", "64k", 65536)]
+        [TestCase("32m", "48k", 32768)]
+        public void MigrationSendBufferSizeOptions(string pageSize, string sendBufferSize, int expectedBytes)
+        {
+            var args = new List<string> { "--page", pageSize };
+            if (sendBufferSize != null)
+                args.AddRange(["--migrate-send-buffer-size", sendBufferSize]);
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(args.ToArray(), out var options, out _, out _, out _, silentMode: true), Is.True);
+            var serverOptions = options.GetServerOptions();
+            Assert.That(serverOptions.GetMigrationSendBufferSize(), Is.EqualTo(expectedBytes));
+            Assert.That(serverOptions.PageSize, Is.EqualTo(pageSize));
+            if (sendBufferSize != null)
+            {
+                serverOptions.PageSize = "8m";
+                Assert.That(serverOptions.GetMigrationSendBufferSize(), Is.EqualTo(expectedBytes));
+            }
+        }
+
+        [TestCase("0")]
+        [TestCase("512")]
+        [TestCase("2g")]
+        public void MigrationSendBufferSizeRejectsInvalidSize(string sendBufferSize)
+        {
+            var serverOptions = new GarnetServerOptions { MigrationSendBufferSize = sendBufferSize };
+            Assert.Throws<GarnetException>(() => serverOptions.GetMigrationSendBufferSize());
+        }
+
         [Test]
         public void ClusterPeerEndpointOptions()
         {
