@@ -4,7 +4,10 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Net.Sockets;
+using System.Text;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -627,6 +630,68 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "*-1";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void TxnWatchInsideMultiIsNotReplayed()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Newlines);
+            var watchInMulti = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_WATCH_IN_MULTI)}\r\n";
+
+            AssertExecute(lightClientRequest, "MULTI", "+OK\r\n");
+            AssertExecute(lightClientRequest, "SET txn-key 1", "+QUEUED\r\n");
+            AssertExecute(lightClientRequest, "WATCH other-key", watchInMulti);
+            AssertExecute(lightClientRequest, "EXEC", "*1\r\n+OK\r\n");
+            AssertExecute(lightClientRequest, "PING", "+PONG\r\n");
+            AssertExecute(lightClientRequest, "GET txn-key", "$1\r\n1\r\n");
+        }
+
+        [Test]
+        [TestCase("FOOBAR x")]
+        [TestCase("CLIENT FOO")]
+        public void TxnUnknownCommandAbortsTransaction(string command)
+        {
+            using var lightClientRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Newlines);
+            var execAbort = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_EXEC_ABORT)}\r\n";
+
+            AssertExecute(lightClientRequest, "MULTI", "+OK\r\n");
+            AssertExecute(lightClientRequest, "SET txn-key 1", "+QUEUED\r\n");
+
+            var response = lightClientRequest.Execute(command, 1);
+            ClassicAssert.IsTrue(response.StartsWith("-ERR unknown"), $"Unexpected reply to {command}: {response}");
+
+            AssertExecute(lightClientRequest, "EXEC", execAbort);
+            AssertExecute(lightClientRequest, "PING", "+PONG\r\n");
+            AssertExecute(lightClientRequest, "GET txn-key", "$-1\r\n");
+        }
+
+        [Test]
+        public void TxnBlankLineDoesNotAbortTransaction()
+        {
+            using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+            socket.Connect(TestUtils.EndPoint);
+            socket.ReceiveTimeout = 10_000;
+
+            _ = socket.Send(Encoding.ASCII.GetBytes("*1\r\n$5\r\nMULTI\r\n*3\r\n$3\r\nSET\r\n$7\r\ntxn-key\r\n$1\r\n1\r\n\r\n*1\r\n$4\r\nEXEC\r\n"));
+
+            var expected = "+OK\r\n+QUEUED\r\n*1\r\n+OK\r\n";
+            var buffer = new byte[expected.Length];
+            var received = 0;
+            while (received < buffer.Length)
+            {
+                var read = socket.Receive(buffer, received, buffer.Length - received, SocketFlags.None);
+                if (read == 0)
+                    break;
+                received += read;
+            }
+
+            ClassicAssert.AreEqual(expected, Encoding.ASCII.GetString(buffer, 0, received));
+        }
+
+        private static void AssertExecute(LightClientRequest lightClientRequest, string command, string expectedResponse)
+        {
+            var response = lightClientRequest.Execute(command, expectedResponse.Count(c => c == '\n'));
+            ClassicAssert.AreEqual(expectedResponse, response, $"Unexpected reply to {command}");
         }
     }
 }

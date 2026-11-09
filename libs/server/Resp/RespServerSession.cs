@@ -733,6 +733,13 @@ namespace Garnet.server
                     break;
                 }
 
+                // WATCH is rejected inside MULTI, so EXEC does not replay it
+                if (txnManager.state == TxnState.Running && cmd is (RespCommand.WATCH or RespCommand.WATCHMS or RespCommand.WATCHOS))
+                {
+                    _origReadHead = readHead = endReadHead;
+                    continue;
+                }
+
                 // Check ACL permissions for the command
                 if (cmd != RespCommand.INVALID)
                 {
@@ -799,6 +806,10 @@ namespace Garnet.server
                             while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOSCRIPT, ref dcurr, dend))
                                 SendAndReset();
                         }
+
+                        // Abort the transaction if the command was rejected while queuing
+                        if (txnManager.state == TxnState.Started)
+                            txnManager.Abort();
 
                         // Track rejected command (ACL or script permission failure)
                         commandStats?.IncrementRejected(cmd);
