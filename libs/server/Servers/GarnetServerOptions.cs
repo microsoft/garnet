@@ -79,9 +79,26 @@ namespace Garnet.server
             => PowerOf2SizeOrDefault(MigrationSendBufferSize, 1 << PageSizeBits(), nameof(MigrationSendBufferSize));
 
         /// <summary>
-        /// When migrating slots 1. write directly to network buffer to avoid unecessary copies, 2. do not wait for ack from target before sending next batch of keys.
+        /// Maximum unacknowledged migration batches per worker, from 1 to 64.
+        /// Values above one require FastMigrate to be disabled on both nodes.
+        /// </summary>
+        public int MigrationPipelineDepth = 1;
+
+        /// <summary>
+        /// Acknowledge received migration batches before applying them. Requires MigrationPipelineDepth to be one.
         /// </summary>
         public bool FastMigrate = false;
+
+        /// <summary>
+        /// Validate migration settings for nodes using matching configurations.
+        /// </summary>
+        public void ValidateMigrationOptions()
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(MigrationPipelineDepth, 1);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(MigrationPipelineDepth, 64);
+            if (MigrationPipelineDepth > 1 && FastMigrate)
+                throw new GarnetException($"{nameof(MigrationPipelineDepth)} above one requires {nameof(FastMigrate)} to be disabled on both nodes.");
+        }
 
         /// <summary>
         /// Authentication settings

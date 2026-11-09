@@ -834,7 +834,8 @@ namespace Garnet.test
             int replicaDiskBasedSyncPipelineDepth = 4,
             int replicaDiskBasedSyncWriteBuffers = 1,
             bool replicaDiskBasedSyncWriteBuffersConcurrently = false,
-            string migrationSendBufferSize = null)
+            string migrationSendBufferSize = null,
+            int migrationPipelineDepth = 1)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -912,6 +913,7 @@ namespace Garnet.test
                     replicaDiskBasedSyncWriteBuffersConcurrently: replicaDiskBasedSyncWriteBuffersConcurrently);
 
                 opts[i].MigrationSendBufferSize = migrationSendBufferSize;
+                opts[i].MigrationPipelineDepth = migrationPipelineDepth;
 
                 ClassicAssert.IsNotNull(opts);
 

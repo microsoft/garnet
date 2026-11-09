@@ -176,8 +176,12 @@ namespace Garnet
         [Option("migrate-send-buffer-size", Required = false, HelpText = "Migration client send-buffer size, independent of log page size (rounds down to a power of 2; at least 1k and below 2g). Defaults to log page size. Larger records are chunked.")]
         public string MigrationSendBufferSize { get; set; }
 
+        [IntRangeValidation(1, 64)]
+        [Option("migrate-pipeline-depth", Required = false, HelpText = "Maximum unacknowledged migration batches per worker, from 1 to 64 (1 disables pipelining). Use matching configurations on both nodes; values above 1 require --fast-migrate to be disabled.")]
+        public int MigrationPipelineDepth { get; set; }
+
         [OptionValidation]
-        [Option("fast-migrate", Required = false, HelpText = "When migrating slots 1. write directly to network buffer to avoid unnecessary copies, 2. do not wait for ack from target before sending next batch of keys.")]
+        [Option("fast-migrate", Required = false, HelpText = "Acknowledge received migration batches before applying them. Requires --migrate-pipeline-depth 1.")]
         public bool? FastMigrate { get; set; }
 
         [Option("auth", Required = false, HelpText = "Authentication mode of Garnet. This impacts how AUTH command is processed and how clients are authenticated against Garnet. Value options: NoAuth, Password, Aad, ACL")]
@@ -830,6 +834,15 @@ namespace Garnet
                 }
             }
 
+            if (MigrationPipelineDepth > 1 && FastMigrate.GetValueOrDefault())
+            {
+                invalidOptions.Add(nameof(MigrationPipelineDepth));
+                invalidOptions.Add(nameof(FastMigrate));
+                logger?.LogError("{pipelineDepth} above one requires {fastMigrate} to be disabled on both nodes.",
+                    nameof(MigrationPipelineDepth), nameof(FastMigrate));
+                isValid = false;
+            }
+
             return isValid;
         }
 
@@ -979,6 +992,7 @@ namespace Garnet
                 CleanClusterConfig = CleanClusterConfig.GetValueOrDefault(),
                 ParallelMigrateTaskCount = ParallelMigrateTaskCount,
                 MigrationSendBufferSize = MigrationSendBufferSize,
+                MigrationPipelineDepth = MigrationPipelineDepth,
                 FastMigrate = FastMigrate.GetValueOrDefault(),
                 AuthSettings = GetAuthenticationSettings(logger),
                 AclStrictCustomCommands = AclStrictCustomCommands.GetValueOrDefault(true),

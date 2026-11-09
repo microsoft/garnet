@@ -154,21 +154,21 @@ namespace Garnet.cluster
                                 VectorManager.SerializeMigratedIndexKey(serializeBufferArr, key, value, expiration);
 
                                 if (gcs.NeedsInitialization)
-                                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: true);
+                                    SetMigrateHeader(gcs, isVectorSets: true);
 
                                 while (!gcs.TryWriteRecordSpan(serializeBufferArr.AsSpan()[..neededSpace], MigrationRecordSpanType.VectorSetIndex, out var task))
                                 {
-                                    if (!await HandleMigrateTaskResponseAsync(task).ConfigureAwait(false))
+                                    if (!await migrateOperation[0].HandleMigrateTaskResponseAsync(task).ConfigureAwait(false))
                                     {
                                         logger?.LogCritical("Failed to migrate Vector Set key {key} during migration", SpanByte.ToShortString(key));
                                         return false;
                                     }
 
-                                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: true);
+                                    SetMigrateHeader(gcs, isVectorSets: true);
                                 }
 
                                 // Force a flush before doing the delete, in case that fails
-                                if (!await HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer()).ConfigureAwait(false))
+                                if (!await migrateOperation[0].HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer(), drain: true).ConfigureAwait(false))
                                 {
                                     logger?.LogCritical("Flush failed before deletion of Vector Set {key} duration migration", SpanByte.ToShortString(key));
                                     return false;

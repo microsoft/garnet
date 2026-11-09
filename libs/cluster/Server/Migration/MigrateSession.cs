@@ -148,6 +148,7 @@ namespace Garnet.cluster
             this._sslots = _slots;
             this._slotRanges = GetRanges();
             this.transferOption = transferOption;
+            clusterProvider.serverOptions.ValidateMigrationOptions();
 
             Status = MigrateState.PENDING;
 
@@ -173,6 +174,9 @@ namespace Garnet.cluster
                 authUsername: _username,
                 authPassword: _passwd,
                 logger: logger);
+
+        private void SetMigrateHeader(GarnetClientSession client, bool isVectorSets = false)
+            => client.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets);
 
         public LocalServerSession GetLocalSession()
             => new(clusterProvider.storeWrapper);

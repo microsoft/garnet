@@ -94,13 +94,20 @@ namespace Garnet.cluster
 
             var buffer = new Span<byte>(payloadStartPtr, (int)(payloadEndPtr - payloadStartPtr)).ToArray();
 
+            var applied = true;
             if (clusterProvider.serverOptions.FastMigrate)
-                _ = Task.Run(() => Process(basicGarnetApi, buffer, replaceOption, vectorSetOption));
+                _ = Task.Run(() =>
+                {
+                    if (!Process(basicGarnetApi, buffer, replaceOption, vectorSetOption))
+                        logger?.LogError("Failed to apply queued migration batch");
+                });
             else
-                Process(basicGarnetApi, buffer, replaceOption, vectorSetOption);
+                applied = Process(basicGarnetApi, buffer, replaceOption, vectorSetOption);
 
-            void Process(BasicGarnetApi basicGarnetApi, byte[] input, bool replaceOption, bool vectorSetOption)
+            bool Process(BasicGarnetApi basicGarnetApi, byte[] input, bool replaceOption, bool vectorSetOption)
             {
+                if (input.Length < sizeof(int))
+                    return false;
                 var currentConfig = clusterProvider.clusterManager.CurrentConfig;
                 byte migrateState = 0;
 
@@ -111,6 +118,8 @@ namespace Garnet.cluster
 
                     var keyCount = *(int*)payloadPtr;
                     payloadPtr += sizeof(int);
+                    if (keyCount < 0)
+                        return false;
                     var i = 0;
 
                     TrackImportProgress(keyCount, keyCount == 0);
@@ -125,11 +134,13 @@ namespace Garnet.cluster
                             // Vector Sets need special handling
                             while (i < keyCount)
                             {
+                                if (payloadPtr >= payloadEndPtr)
+                                    return false;
                                 var kind = (MigrationRecordSpanType)(*payloadPtr);
                                 payloadPtr++;
 
                                 if (!RespReadUtils.GetSerializedRecordSpan(out var payloadRaw, ref payloadPtr, payloadEndPtr))
-                                    return;
+                                    return false;
 
                                 if (kind != MigrationRecordSpanType.VectorSetIndex)
                                     throw new InvalidOperationException($"Unexpected {nameof(MigrationRecordSpanType)}: {kind}");
@@ -159,6 +170,8 @@ namespace Garnet.cluster
                         {
                             while (i < keyCount)
                             {
+                                if (payloadPtr >= payloadEndPtr)
+                                    return false;
                                 var kind = (MigrationRecordSpanType)(*payloadPtr);
                                 payloadPtr++;
 
@@ -168,13 +181,13 @@ namespace Garnet.cluster
                                     // [int chunkLength | continuation][chunk bytes]. GetSerializedRecordSpan cannot read these
                                     // because the continuation flag makes the length read as negative.
                                     if (payloadPtr + sizeof(int) > payloadEndPtr)
-                                        return;
+                                        return false;
                                     var rawChunkLength = *(int*)payloadPtr;
                                     payloadPtr += sizeof(int);
                                     var moreChunksFollow = (rawChunkLength & ChunkedRecordConstants.ContinuationFlag) != 0;
                                     var chunkLength = rawChunkLength & ~ChunkedRecordConstants.ContinuationFlag;
                                     if (chunkLength < 0 || payloadPtr + chunkLength > payloadEndPtr)
-                                        return;
+                                        return false;
                                     var chunkSpan = new ReadOnlySpan<byte>(payloadPtr, chunkLength);
                                     payloadPtr += chunkLength;
 
@@ -219,7 +232,7 @@ namespace Garnet.cluster
                                 }
 
                                 if (!RespReadUtils.GetSerializedRecordSpan(out var payloadRaw, ref payloadPtr, payloadEndPtr))
-                                    return;
+                                    return false;
 
                                 // An error has occurred
                                 if (migrateState > 0)
@@ -321,10 +334,14 @@ namespace Garnet.cluster
                             diskLogRecord.Dispose();
                         }
                     }
+                    return migrateState == 0 && payloadPtr == payloadEndPtr;
                 }
             }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+            if (!applied)
+                logger?.LogError("Failed to apply migration batch; source must retain its keys");
+            var response = applied ? CmdStrings.RESP_OK : "-ERR Failed to apply migration batch\r\n"u8;
+            while (!RespWriteUtils.TryWriteDirect(response, ref dcurr, dend))
                 SendAndReset();
 
             return true;

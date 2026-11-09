@@ -74,6 +74,21 @@ Any setting in Garnet can be also configured by specifying a command line argume
 If the setting is also specified in the configuration file, it will be overridden by the value specified in the command line. 
 For all available command line settings, run `GarnetServer.exe -h` or `GarnetServer.exe -help`, or refer to the complete Garnet settings [list](#configurable-settings).
 
+## Migration pipelining
+
+Set `MigrationPipelineDepth` in `garnet.conf`, or use `--migrate-pipeline-depth`, to control the maximum number of unacknowledged migration batches per worker. The default is `1` (no pipelining); valid values are `1` through `64`.
+
+Use matching configurations on the source and target. Depths above `1` require `FastMigrate=false` on both nodes so acknowledgments confirm batch processing before source keys are deleted. For example:
+
+```json
+{
+  "MigrationPipelineDepth": 4,
+  "FastMigrate": false
+}
+```
+
+Pipelining uses the existing `CLUSTER MIGRATE` wire format without additional arguments.
+
 ## Configurable Settings
 
 | `garnet.conf`<br/>keyword | Command line keyword(s) | Type | Valid Values | Description |
@@ -112,7 +127,8 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **EnableCluster** | ```--cluster``` | ```bool``` |  | Enable cluster. |
 | **CleanClusterConfig** | ```--clean-cluster-config``` | ```bool``` |  | Start with clean cluster config. |
 | **ParallelMigrateTaskCount** | ```--pmt``` | ```int``` | Integer in range:<br/>[0, 16384] | Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used. |
-| **FastMigrate** | ```--fast-migrate``` | ```bool``` |  | When migrating slots 1. write directly to network buffer to avoid unnecessary copies, 2. do not wait for ack from target before sending next batch of keys. |
+| **MigrationPipelineDepth** | ```--migrate-pipeline-depth``` | ```int``` | Integer in range:<br/>[1, 64] | Maximum unacknowledged migration batches per worker (default: 1). Values above 1 require FastMigrate=false on both nodes. |
+| **FastMigrate** | ```--fast-migrate``` | ```bool``` |  | Acknowledge received migration batches before applying them. Requires MigrationPipelineDepth=1. |
 | **AuthenticationMode** | ```--auth``` | ```GarnetAuthenticationMode``` | NoAuth, Password, Aad, ACL, AclWithAad | Authentication mode of Garnet. This impacts how AUTH command is processed and how clients are authenticated against Garnet. Value options: NoAuth, Password, Aad, ACL |
 | **Password** | ```--password``` | ```string``` |  | Authentication string for password authentication. |
 | **ClusterUsername** | ```--cluster-username``` | ```string``` |  | Username to authenticate intra-cluster communication with. |

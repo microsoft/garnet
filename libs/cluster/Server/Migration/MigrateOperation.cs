@@ -5,6 +5,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.server;
@@ -27,6 +28,10 @@ namespace Garnet.cluster
             readonly MigrateSession session;
             readonly GarnetClientSession gcs;
             readonly LocalServerSession localServerSession;
+            readonly Task<string>[] pendingResponses;
+            int responseHead;
+            int responseCount;
+            int disposed;
 
             public GarnetClientSession Client => gcs;
 
@@ -60,6 +65,7 @@ namespace Garnet.cluster
             public MigrateOperation(MigrateSession session, Sketch sketch = null, int batchSize = 1 << 18)
             {
                 this.session = session;
+                pendingResponses = new Task<string>[session.clusterProvider.serverOptions.MigrationPipelineDepth];
                 gcs = session.GetGarnetClient();
                 localServerSession = session.GetLocalSession();
                 this.sketch = sketch ?? new(keyCount: batchSize << 2);
@@ -79,8 +85,83 @@ namespace Garnet.cluster
 
             public void Dispose()
             {
-                gcs.Dispose();
-                localServerSession.Dispose();
+                if (Interlocked.Exchange(ref disposed, 1) != 0)
+                    return;
+
+                try
+                {
+                    gcs.Dispose();
+                    localServerSession.Dispose();
+                }
+                finally
+                {
+                    // The worker alone owns the ring indices; disposal only observes published tasks.
+                    for (var i = 0; i < pendingResponses.Length; i++)
+                    {
+                        var response = Volatile.Read(ref pendingResponses[i]);
+                        if (response != null)
+                            ObserveResponseFault(response);
+                    }
+                }
+            }
+
+            static void ObserveResponseFault(Task<string> response)
+                => _ = response.ContinueWith(static task => _ = task.Exception, CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+
+            /// <summary>
+            /// Track batch responses in order, waiting when the fixed pipeline window fills.
+            /// </summary>
+            /// <param name="task">The response for a newly sent batch, or null if no batch was sent.</param>
+            /// <param name="drain">Wait for every outstanding response before deleting keys or handing off slots.</param>
+            public async Task<bool> HandleMigrateTaskResponseAsync(Task<string> task, bool drain = false)
+            {
+                if (task != null)
+                {
+                    if (responseCount == pendingResponses.Length)
+                        throw new InvalidOperationException("Migration response window is full.");
+
+                    // A full fence pairs publication with disposal so late faults are always observed.
+                    _ = Interlocked.Exchange(ref pendingResponses[(responseHead + responseCount) % pendingResponses.Length], task);
+                    responseCount++;
+                    if (Volatile.Read(ref disposed) != 0)
+                    {
+                        ObserveResponseFault(task);
+                        session.logger?.LogError("Cannot track migration response after operation disposal");
+                        session.Status = MigrateState.FAIL;
+                        return false;
+                    }
+                }
+
+                while (responseCount > 0)
+                {
+                    var response = Volatile.Read(ref pendingResponses[responseHead]);
+                    if (!drain && responseCount < pendingResponses.Length && !response.IsCompleted)
+                        break;
+
+                    try
+                    {
+                        var resp = await response.WaitAsync(session._timeout, session._cts.Token).ConfigureAwait(false);
+                        Volatile.Write(ref pendingResponses[responseHead], null);
+                        responseHead = (responseHead + 1) % pendingResponses.Length;
+                        responseCount--;
+
+                        if (!resp.Equals("OK", StringComparison.Ordinal))
+                        {
+                            session.logger?.LogError("ClusterMigrate Keys failed with error:{error}.", resp);
+                            session.Status = MigrateState.FAIL;
+                            return false;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        session.logger?.LogError(ex, "An error has occurred");
+                        session.Status = MigrateState.FAIL;
+                        return false;
+                    }
+                }
+
+                return true;
             }
 
             /// <summary>
@@ -114,19 +195,19 @@ namespace Garnet.cluster
                         if (hasNs)
                         {
                             // Migrating Vector Set element data
-                            if (!await session.WriteOrSendRecordAsync(gcs, localServerSession, ns, key, ref vectorInput, ref vectorOutput, out _).ConfigureAwait(false))
+                            if (!await session.WriteOrSendRecordAsync(this, ns, key, ref vectorInput, ref vectorOutput, out _).ConfigureAwait(false))
                                 return false;
                         }
                         else
                         {
                             // Migrating everything else
-                            if (!await session.WriteOrSendRecordAsync(gcs, localServerSession, key, ref input, ref output, out _).ConfigureAwait(false))
+                            if (!await session.WriteOrSendRecordAsync(this, key, ref input, ref output, out _).ConfigureAwait(false))
                                 return false;
                         }
                     }
 
                     // Flush final data in client buffer
-                    if (!await session.HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer()).ConfigureAwait(false))
+                    if (!await HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer(), drain: true).ConfigureAwait(false))
                         return false;
                 }
                 finally
@@ -158,7 +239,7 @@ namespace Garnet.cluster
                         if (shouldSkipKey(keys[i].Item1))
                             continue;
 
-                        if (!await session.WriteOrSendRecordAsync(gcs, localServerSession, keys[i].Item1, ref input, ref output, out var status).ConfigureAwait(false))
+                        if (!await session.WriteOrSendRecordAsync(this, keys[i].Item1, ref input, ref output, out var status).ConfigureAwait(false))
                             return false;
 
                         // If key was FOUND, mark it for deletion
@@ -167,7 +248,7 @@ namespace Garnet.cluster
                     }
 
                     // Flush final data in client buffer
-                    if (!await session.HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer()).ConfigureAwait(false))
+                    if (!await HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer(), drain: true).ConfigureAwait(false))
                         return false;
                 }
                 finally

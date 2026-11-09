@@ -101,17 +101,17 @@ namespace Garnet.cluster
                             VectorManager.SerializeMigratedIndexKey(serializeBufferArr.AsSpan(), key, value, expiration);
 
                             if (gcs.NeedsInitialization)
-                                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: true);
+                                SetMigrateHeader(gcs, isVectorSets: true);
 
                             while (!gcs.TryWriteRecordSpan(serializeBufferArr.AsSpan()[..neededSpace], MigrationRecordSpanType.VectorSetIndex, out var task))
                             {
-                                if (!await HandleMigrateTaskResponseAsync(task).ConfigureAwait(false))
+                                if (!await migrateTask.HandleMigrateTaskResponseAsync(task).ConfigureAwait(false))
                                 {
                                     logger?.LogCritical("Failed to migrate Vector Set key {key} during migration", SpanByte.ToShortString(key));
                                     return false;
                                 }
 
-                                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: true);
+                                SetMigrateHeader(gcs, isVectorSets: true);
                             }
                         }
                     }
@@ -120,7 +120,7 @@ namespace Garnet.cluster
                         ArrayPool<byte>.Shared.Return(serializeBufferArr);
                     }
 
-                    if (!await HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer()).ConfigureAwait(false))
+                    if (!await migrateTask.HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer(), drain: true).ConfigureAwait(false))
                     {
                         logger?.LogCritical("Final flush after Vector Set migration failed");
                         return false;

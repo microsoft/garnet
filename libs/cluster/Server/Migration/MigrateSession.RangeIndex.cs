@@ -55,7 +55,7 @@ namespace Garnet.cluster
                         return false;
                     }
 
-                    if (!await WriteOrSendRecordSpanAsync(sessionClient, MigrationRecordSpanType.SerializedRangeIndexStream, buffer.AsSpan(0, payloadLen)).ConfigureAwait(false))
+                    if (!await WriteOrSendRecordSpanAsync(migrateOperation, MigrationRecordSpanType.SerializedRangeIndexStream, buffer.AsSpan(0, payloadLen)).ConfigureAwait(false))
                     {
                         transmitActivity.OnError("Failed to write chunk");
                         logger?.LogError("TransmitRangeIndexAsync: failed to write chunk for key {key}", Encoding.UTF8.GetString(keyBytes));
@@ -66,7 +66,7 @@ namespace Garnet.cluster
                 }
 
                 // Force flush and await ACK
-                if (!await HandleMigrateTaskResponseAsync(sessionClient.SendAndResetIterationBuffer()).ConfigureAwait(false))
+                if (!await migrateOperation.HandleMigrateTaskResponseAsync(sessionClient.SendAndResetIterationBuffer(), drain: true).ConfigureAwait(false))
                 {
                     transmitActivity.OnError("Flush failed");
                     logger?.LogError("TransmitRangeIndexAsync: flush failed for key {key}", Encoding.UTF8.GetString(keyBytes));
