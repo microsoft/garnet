@@ -5,6 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -84,9 +86,237 @@ namespace Garnet.test.cluster
             Assert.That(FullReplication.Info("# Replication\r\nrole:slave\r\nmaster_sync_in_progress:False\r\n")["role"], Is.EqualTo("slave"));
         }
 
+        private static readonly string[] LinuxIoProfile =
+        [
+            "--device-type", "Native", "--device-io-backend", "Uring", "--device-completion-threads", "16",
+            "--device-io-contexts", "256", "--device-queue-depth", "256", "--device-throttle-limit", "4096",
+            "--device-aio-max-devices", "32"
+        ];
+
+        [TestCase("send")]
+        [TestCase("receive")]
+        public void FullLinuxIoProfileDefaultsAndBothServerRoles(string role)
+        {
+            string[] common = [role, "--scenario", "full", "--server", typeof(Program).Assembly.Location,
+                "--output", TestContext.CurrentContext.TestDirectory];
+            var defaults = FullOptions.Parse(common, linux: true);
+            var explicitOptions = FullOptions.Parse([.. common, .. LinuxIoProfile], linux: true);
+            Assert.That(defaults.Device, Is.EqualTo(explicitOptions.Device));
+            var arguments = new List<string>();
+            var supported = DeviceSettings.Switches.Select(name => name[2..]).ToHashSet();
+            explicitOptions.Device.AddServerArguments(arguments, supported, linux: true);
+            Assert.That(arguments, Has.Count.EqualTo(14));
+            foreach (var (name, value) in explicitOptions.Device.ServerArguments(linux: true))
+            {
+                var index = Array.IndexOf(LinuxIoProfile, name);
+                Assert.That(value, Is.EqualTo(LinuxIoProfile[index + 1]));
+            }
+            Assert.That(explicitOptions.Device.NativeOptions.IoBackend, Is.EqualTo(NativeStorageDevice.IoBackend.Uring));
+            Assert.That(explicitOptions.Device.NativeOptions.NumIoContexts, Is.EqualTo(256));
+            Assert.That(explicitOptions.Device.NativeOptions.QueueDepth, Is.EqualTo(256));
+            Assert.That(FullOptions.Parse(common, linux: false).Device.Type, Is.EqualTo(DeviceType.RandomAccess));
+            foreach (var name in DeviceSettings.Switches)
+            {
+                var missing = supported.Where(value => value != name[2..]).ToHashSet();
+                Assert.Throws<ArgumentException>(() => defaults.Device.AddServerArguments(new List<string>(), missing, linux: true));
+            }
+            Assert.Throws<ArgumentException>(() => FullOptions.Parse([.. common, "--device-type", "RandomAccess"], linux: true));
+            Assert.Throws<ArgumentException>(() => FullOptions.Parse([.. common, .. LinuxIoProfile], linux: false));
+        }
+
+        [TestCase("receive", "--device")]
+        [TestCase("receive", "--device-type")]
+        [TestCase("generate", "--device")]
+        [TestCase("generate", "--device-type")]
+        public void LinuxNativeComponentBackendDefaultsToUring(string role, string deviceSwitch)
+        {
+            string[] common = [role, "--output", ".", deviceSwitch, "Native"];
+            var settings = BenchmarkOptions.Parse(common, linux: true).Device;
+            Assert.That(settings.Backend, Is.EqualTo(NativeStorageDevice.IoBackend.Uring));
+            Assert.That(settings.NativeOptions.IoBackend, Is.EqualTo(NativeStorageDevice.IoBackend.Uring));
+            Assert.That(settings.Identity(linux: true), Does.Contain("device-io-backend=Uring"));
+            Assert.That(settings.CompletionThreads, Is.EqualTo(4));
+            Assert.That(settings.IoContexts, Is.Zero);
+            Assert.That(settings.QueueDepth, Is.Zero);
+            var arguments = new List<string>();
+            settings.AddServerArguments(arguments, DeviceSettings.Switches.Select(name => name[2..]).ToHashSet(), linux: true);
+            Assert.That(arguments[arguments.IndexOf("--device-io-backend") + 1], Is.EqualTo("Uring"));
+            foreach (var backend in new[] { "Default", "Libaio", "Uring" })
+                Assert.That(BenchmarkOptions.Parse([.. common, "--device-io-backend", backend], linux: true).Device.Backend.ToString(),
+                    Is.EqualTo(backend));
+            var windows = BenchmarkOptions.Parse(common, linux: false).Device;
+            Assert.That(windows.Backend, Is.EqualTo(NativeStorageDevice.IoBackend.Default));
+            Assert.That(windows.ServerArguments(linux: false).Any(pair => pair.Name == "--device-io-backend"), Is.False);
+            Assert.That(BenchmarkOptions.Parse([role, "--output", "."], linux: true).Device.Type, Is.EqualTo(DeviceType.RandomAccess));
+        }
+
+        [TestCase("--device-completion-threads", "0")]
+        [TestCase("--device-completion-threads", "65")]
+        [TestCase("--device-io-contexts", "-1")]
+        [TestCase("--device-io-contexts", "4097")]
+        [TestCase("--device-queue-depth", "32769")]
+        [TestCase("--device-throttle-limit", "65537")]
+        [TestCase("--device-aio-max-devices", "0")]
+        [TestCase("--device-aio-max-devices", "4097")]
+        [TestCase("--device-queue-depth", "garbage")]
+        [TestCase("--device-io-backend", "123")]
+        [TestCase("--device-io-backend", "invalid")]
+        public void NativeIoBoundsAreSharedByFullAndComponent(string name, string value)
+        {
+            var values = new Dictionary<string, string> { ["--device-type"] = "Native", [name] = value };
+            Assert.Catch<ArgumentException>(() => DeviceSettings.Parse(values, full: true, linux: true));
+            Assert.Catch<ArgumentException>(() => DeviceSettings.Parse(values, full: false, linux: true));
+        }
+
+        [TestCase("Default")]
+        [TestCase("Libaio")]
+        [TestCase("Uring")]
+        public void NativeIoOverridesAndComponentFactoryAreUsed(string backend)
+        {
+            var settings = DeviceSettings.Parse(new()
+            {
+                ["--device-type"] = "Native",
+                ["--device-io-backend"] = backend,
+                ["--device-completion-threads"] = "64",
+                ["--device-io-contexts"] = "4096",
+                ["--device-queue-depth"] = "32768",
+                ["--device-throttle-limit"] = "65_536",
+                ["--device-aio-max-devices"] = "4096"
+            }, full: true, linux: true);
+            Assert.That(settings.CompletionThreads, Is.EqualTo(64));
+            Assert.That(settings.ThrottleLimit, Is.EqualTo(65536));
+            Assert.That(settings.NativeOptions.IoBackend.ToString(), Is.EqualTo(backend));
+            Assert.That(settings.Identity(linux: true), Does.Contain($"device-io-backend={backend}"));
+            foreach (var role in new[] { "receive", "generate" })
+            {
+                var options = BenchmarkOptions.Parse([role, "--output", ".", .. LinuxIoProfile], linux: true);
+                Assert.That(options.Device, Is.EqualTo(DeviceSettings.Parse(new(), full: true, linux: true)));
+            }
+            Assert.Throws<ArgumentException>(() => BenchmarkOptions.Parse(
+                ["send", "--source-prefix", "offline", .. LinuxIoProfile], linux: true),
+                "The Native component sender cannot open an immutable source read-only on Linux.");
+            Assert.Throws<ArgumentException>(() => BenchmarkOptions.Parse(
+                ["receive", "--output", ".", "--device", "Native", "--device-type", "Native"], linux: true));
+            Assert.That(BenchmarkOptions.Parse(["receive", "--output", ".", "--device", "Native"], linux: true).Device.Type,
+                Is.EqualTo(DeviceType.Native));
+        }
+
+        [Test]
+        public void ManagedComponentDevicesAndCheckpointFactoriesReceiveThrottle()
+        {
+            Directory.CreateDirectory(TestUtils.MethodTestDir);
+            var options = BenchmarkOptions.Parse(["generate", "--output", TestUtils.MethodTestDir,
+                "--device-type", "RandomAccess", "--device-throttle-limit", "512"], linux: false);
+            using var device = options.Device.CreateDevice(Path.Combine(TestUtils.MethodTestDir, "log"), buffered: false);
+            Assert.That(device, Is.TypeOf<RandomAccessLocalStorageDevice>());
+            Assert.That(device.ThrottleLimit, Is.EqualTo(512));
+            var factory = options.Device.CreateFactory(buffered: false).Create(TestUtils.MethodTestDir);
+            using var checkpointDevice = factory.Get(new FileDescriptor("checkpoint", "index"));
+            Assert.That(checkpointDevice, Is.TypeOf<RandomAccessLocalStorageDevice>());
+            Assert.That(checkpointDevice.ThrottleLimit, Is.EqualTo(512));
+        }
+
+        [Test]
+        public void NativeZeroValuesRetainDeviceDefaultsAndRejectIgnoredTuning()
+        {
+            var values = new Dictionary<string, string>
+            {
+                ["--device-type"] = "Native",
+                ["--device-io-contexts"] = "0",
+                ["--device-queue-depth"] = "0",
+                ["--device-throttle-limit"] = "0"
+            };
+            var options = DeviceSettings.Parse(values, full: true, linux: true);
+            Assert.That(options.NativeOptions.NumIoContexts, Is.Zero);
+            Assert.That(options.NativeOptions.QueueDepth, Is.Zero);
+            Assert.That(options.ThrottleLimit, Is.Zero);
+            values["--device-type"] = "RandomAccess";
+            Assert.Throws<ArgumentException>(() => DeviceSettings.Parse(values, full: false, linux: true));
+            foreach (var name in DeviceSettings.Switches.Where(name => name is not ("--device-type" or "--device-io-backend")))
+            {
+                values = new() { ["--device-type"] = "Native", [name] = "-1" };
+                Assert.Catch<ArgumentException>(() => DeviceSettings.Parse(values, full: true, linux: true));
+            }
+        }
+
+        [TestCase(Protocol.Magic, 6)]
+        [TestCase(Protocol.LegacyMagic, 5)]
+        public async Task ComponentHandshakePreservesLegacyReplyAndReportsNewIoIdentity(string magic, int fields)
+        {
+            Directory.CreateDirectory(TestUtils.MethodTestDir);
+            var options = BenchmarkOptions.Parse(["receive", "--output", TestUtils.MethodTestDir,
+                "--port", ClusterTestContext.Port.ToString(), "--device-throttle-limit", "512"]);
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            var receiver = Receiver.RunAsync(options, cancellation.Token);
+            try
+            {
+                using var client = await FullReplication.ConnectAsync(new IPEndPoint(IPAddress.Loopback, options.Port), cancellation.Token);
+                var hello = (await FullReplication.CommandAsync(client, cancellation.Token, magic)).Split('|');
+                Assert.That(hello, Has.Length.EqualTo(fields));
+                Assert.That(hello[0], Is.EqualTo(magic));
+                if (fields == 6)
+                    Assert.That(hello[5], Is.EqualTo(options.Device.Identity(OperatingSystem.IsLinux())));
+            }
+            finally
+            {
+                await cancellation.CancelAsync();
+                await receiver.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            }
+        }
+
         [TestCase(false)]
         [TestCase(true)]
-        public async Task FullScenarioUsesRealServerProcessesAndFreshCheckpoints(bool concurrently)
+        public void BenchmarkTimingStartupArgumentsAndLegacyBuilds(bool enabled)
+        {
+            var start = new ProcessStartInfo();
+            start.Environment["GARNET_REPLICA_BENCH_PHASE_TIMING"] = "1";
+            OwnedServer.ConfigureTiming(start, new() { "repl-enable-benchmark-timing" }, enabled);
+            Assert.That(start.ArgumentList, Is.EqualTo((string[])["--repl-enable-benchmark-timing", enabled ? "true" : "false"]));
+            Assert.That(start.Environment.ContainsKey("GARNET_REPLICA_BENCH_PHASE_TIMING"), Is.False);
+            var older = new ProcessStartInfo();
+            if (enabled)
+                Assert.Throws<ArgumentException>(() => OwnedServer.ConfigureTiming(older, new(), enabled));
+            else
+                OwnedServer.ConfigureTiming(older, new(), enabled);
+            Assert.That(older.ArgumentList, Is.Empty);
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void BenchmarkTimingManagerCapturesStartupAndIgnoresEnvironment(bool enabled)
+        {
+            var prior = Environment.GetEnvironmentVariable("GARNET_REPLICA_BENCH_PHASE_TIMING");
+            try
+            {
+                Environment.SetEnvironmentVariable("GARNET_REPLICA_BENCH_PHASE_TIMING", "1");
+                using var server = new GarnetServer(new Garnet.server.GarnetServerOptions
+                {
+                    EnableCluster = true,
+                    EnableAOF = true,
+                    EndPoints = [new IPEndPoint(IPAddress.Loopback, ClusterTestContext.Port)],
+                    LogMemorySize = "16m",
+                    PageSize = "1m",
+                    IndexMemorySize = "1m",
+                    CheckpointDir = TestUtils.MethodTestDir,
+                    ReplicaEnableBenchmarkTiming = enabled
+                });
+                var provider = (ClusterProvider)server.Provider.StoreWrapper.clusterProvider;
+                var recorder = provider.replicationManager.BenchmarkTiming;
+                Assert.That(recorder != null, Is.EqualTo(enabled));
+                provider.serverOptions.ReplicaEnableBenchmarkTiming = !enabled;
+                Assert.That(provider.replicationManager.BenchmarkTiming, Is.SameAs(recorder));
+                Assert.That(ReplicaBenchmarkTiming.Create(false), Is.Null);
+                Assert.That(ReplicaBenchmarkTiming.Create(true), Is.Not.Null);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("GARNET_REPLICA_BENCH_PHASE_TIMING", prior);
+            }
+        }
+
+        [TestCase(false, false)]
+        [TestCase(true, true)]
+        public async Task FullScenarioUsesRealServerProcessesAndFreshCheckpoints(bool concurrently, bool phaseTiming)
         {
             Directory.CreateDirectory(TestUtils.MethodTestDir);
             var root = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
@@ -102,11 +332,13 @@ namespace Garnet.test.cluster
             var port = ClusterTestContext.Port;
             var receive = FullOptions.Parse(["receive", "--server", server, "--output", TestUtils.MethodTestDir,
                 "--port", port.ToString(), "--server-port", (port + 1).ToString(), "--write-buffers", "2",
-                "--write-buffers-concurrently", concurrently.ToString(), "--phase-timing", "true", "--timeout-seconds", "60"]);
+                "--write-buffers-concurrently", concurrently.ToString(), "--phase-timing", phaseTiming.ToString(), "--timeout-seconds", "60",
+                "--device-throttle-limit", "512"]);
             var csv = Path.Combine(TestUtils.MethodTestDir, "full.csv");
             var send = FullOptions.Parse(["send", "--server", server, "--output", TestUtils.MethodTestDir,
                 "--port", port.ToString(), "--server-port", (port + 2).ToString(), "--data-size", "4m",
-                "--chunks", "128k", "--depths", "2", "--phase-timing", "true", "--timeout-seconds", "60", "--csv", csv]);
+                "--chunks", "128k", "--depths", "2", "--phase-timing", phaseTiming.ToString(), "--timeout-seconds", "60", "--csv", csv,
+                "--device-throttle-limit", "512"]);
             using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(90));
             var receiver = FullReplication.RunAsync(receive, cancellation.Token);
             try
@@ -115,7 +347,18 @@ namespace Garnet.test.cluster
                 await receiver;
                 var result = await File.ReadAllTextAsync(csv);
                 Assert.That(result, Does.Contain("\"full\",\"verified\""));
-                Assert.That(result, Does.Not.Contain("unavailable"));
+                if (phaseTiming)
+                    Assert.That(result, Does.Not.Contain("unavailable"));
+                else
+                    Assert.That(result, Does.Contain("unavailable"));
+                Assert.That(result, Does.Contain("primary_io,replica_io"));
+                Assert.That(result, Does.Contain("device-throttle-limit=512"));
+                foreach (var launch in Directory.EnumerateFiles(TestUtils.MethodTestDir, "launch.json", SearchOption.AllDirectories))
+                {
+                    var arguments = await File.ReadAllTextAsync(launch);
+                    Assert.That(arguments, Does.Contain("\"--device-throttle-limit\",\"512\""));
+                    Assert.That(arguments, Does.Contain($"\"--repl-enable-benchmark-timing\",\"{(phaseTiming ? "true" : "false")}\""));
+                }
                 var fingerprints = Regex.Matches(result, "\"([0-9A-F]{64})\"");
                 Assert.That(fingerprints, Has.Count.EqualTo(2));
                 Assert.That(fingerprints[0].Value, Is.EqualTo(fingerprints[1].Value));
@@ -332,7 +575,8 @@ namespace Garnet.test.cluster
                 "--port", port, "--runs", "2", "--write-buffers", writeBuffers.ToString(), "--timeout-seconds", "20",
                 "--ack-delay-us", "1000", "--write-buffers-concurrently", concurrently.ToString()]);
             var senderOptions = BenchmarkOptions.Parse(["send", "--source-prefix", sourcePrefix, "--host", "127.0.0.1",
-                "--port", port, "--chunks", "4k", "--depths", "1,3", "--repeats", "1", "--timeout-seconds", "20"]);
+                "--port", port, "--chunks", "4k", "--depths", "1,3", "--repeats", "1", "--timeout-seconds", "20",
+                "--csv", Path.Combine(TestUtils.MethodTestDir, "component.csv")]);
             using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var receiver = Receiver.RunAsync(receiverOptions, cancellation.Token);
             try
@@ -343,6 +587,10 @@ namespace Garnet.test.cluster
                 Assert.That(files, Has.Length.EqualTo(2));
                 foreach (var file in files)
                     Assert.That(await File.ReadAllBytesAsync(file), Is.EqualTo(data));
+                var csv = await File.ReadAllTextAsync(senderOptions.Csv);
+                Assert.That(csv, Does.Contain("source_io,receiver_io"));
+                Assert.That(csv, Does.Contain(senderOptions.Device.Identity(OperatingSystem.IsLinux())));
+                Assert.That(csv, Does.Contain(receiverOptions.Device.Identity(OperatingSystem.IsLinux())));
             }
             finally
             {

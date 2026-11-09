@@ -86,6 +86,7 @@ namespace Garnet.server
         REPL_DISK_BASED_SYNC_PIPELINE_DEPTH,
         // Startup-only replica write policy, exposed read-only.
         REPL_DISK_BASED_SYNC_WRITE_BUFFERS_CONCURRENTLY,
+        REPL_ENABLE_BENCHMARK_TIMING,
     }
 
     public enum ServerConfigGroupType : int

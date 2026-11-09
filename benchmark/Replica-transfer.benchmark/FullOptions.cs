@@ -4,16 +4,42 @@
 using System.Globalization;
 using System.Net;
 using Garnet.server;
-using Tsavorite.core;
 
 namespace ReplicaTransfer.benchmark;
 
+/// <summary>
+/// Validated settings for one runner and its separately launched server build.
+/// Sender cases select the wire transfer shape; replica write policy is local to the receiver.
+/// </summary>
+/// <param name="Role">Send (primary driver) or receive (replica controller).</param>
+/// <param name="Server">Absolute DLL/executable path to the independently selected server build.</param>
+/// <param name="Output">Existing storage parent for fresh, retained per-run directories.</param>
+/// <param name="Bind">Private/loopback IP for this runner's owned server and receiver control listener.</param>
+/// <param name="Host">Receiver IP used by the sender for control and replica connections.</param>
+/// <param name="Port">Runner control port, separate from server RESP ports.</param>
+/// <param name="ServerPort">RESP port of this runner's owned primary or replica.</param>
+/// <param name="DataSize">Total logical value bytes, excluding key, record and checkpoint overhead.</param>
+/// <param name="Repeats">Fresh sender runs per distinct chunk/depth case.</param>
+/// <param name="Runs">Number of connections the receiver serves before exiting.</param>
+/// <param name="WriteBuffers">Replica's bounded queued/in-flight chunk count; zero selects synchronous writes.</param>
+/// <param name="Concurrently">Permit parallel positional writes independently of the buffer count.</param>
+/// <param name="PhaseTiming">Opt in the owned process at startup to whole-shipment/recovery timing.</param>
+/// <param name="Timeout">Whole-run deadline including preparation and verification outside measured sync.</param>
+/// <param name="Csv">Optional new results file; an existing path is not overwritten.</param>
+/// <param name="Cases">Distinct effective chunk-byte sizes and bounded pipeline depths.</param>
+/// <param name="WriteBuffersSpecified">Reject missing external-build support rather than use an implicit default.</param>
+/// <param name="ConcurrentlySpecified">Reject unsupported explicit policy rather than guess the build's default.</param>
+/// <param name="Device">Startup device configuration forwarded to this runner's owned server.</param>
 internal sealed record FullOptions(
     string Role, string Server, string Output, IPAddress Bind, IPAddress Host, int Port, int ServerPort,
     long DataSize, int Repeats, int Runs, int WriteBuffers, bool Concurrently, bool PhaseTiming,
-    TimeSpan Timeout, string Csv, (int Chunk, int Depth)[] Cases, bool WriteBuffersSpecified, bool ConcurrentlySpecified, DeviceType DeviceType)
+    TimeSpan Timeout, string Csv, (int Chunk, int Depth)[] Cases, bool WriteBuffersSpecified, bool ConcurrentlySpecified,
+    DeviceSettings Device)
 {
-    internal static FullOptions Parse(string[] args)
+    /// <summary>Resolves role-specific options without starting servers or creating storage.</summary>
+    /// <param name="args">Role followed by unique option/value pairs for the full scenario.</param>
+    /// <param name="linux">Optional platform override for parsing tests; null uses the current OS.</param>
+    internal static FullOptions Parse(string[] args, bool? linux = null)
     {
         if (args.Length == 0 || args[0] is not ("send" or "receive") || Program.SelectScenario(args) != "full")
             throw new ArgumentException("Full scenario requires send or receive.");
@@ -22,7 +48,7 @@ internal sealed record FullOptions(
         string[] specific = args[0] == "send"
             ? ["--host", "--data-size", "--chunks", "--depths", "--repeats", "--csv"]
             : ["--runs", "--write-buffers", "--write-buffers-concurrently"];
-        var allowed = common.Concat(specific).ToHashSet(StringComparer.Ordinal);
+        var allowed = common.Concat(specific).Concat(DeviceSettings.Switches).ToHashSet(StringComparer.Ordinal);
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         for (var i = 1; i < args.Length; i += 2)
             if (!allowed.Contains(args[i]) || i + 1 == args.Length || !values.TryAdd(args[i], args[i + 1]))
@@ -42,6 +68,8 @@ internal sealed record FullOptions(
                 throw new ArgumentException($"{key} must be true or false.");
             return value;
         }
+
+        // Control and RESP endpoints are separate; both must stay on the trusted test network.
         var bind = PrivateAddress(Get("--bind", "127.0.0.1"));
         var host = PrivateAddress(Get("--host", "127.0.0.1"));
         var port = Number("--port", 7010, 1, 65535);
@@ -54,9 +82,9 @@ internal sealed record FullOptions(
         var output = Path.GetFullPath(Required("--output"));
         if (!Directory.Exists(output))
             throw new DirectoryNotFoundException(output);
-        if (!Enum.TryParse<DeviceType>(Get("--device-type", "RandomAccess"), true, out var device) ||
-            device is not (DeviceType.RandomAccess or DeviceType.Native or DeviceType.FileStream))
-            throw new ArgumentException("--device-type must be RandomAccess, Native, or FileStream.");
+
+        // Device defaults are runner/platform-specific, while transfer normalization belongs to Garnet.
+        var device = DeviceSettings.Parse(values, full: true, linux ?? OperatingSystem.IsLinux());
         if (!ServerOptions.TryParseSize(Get("--data-size", "512m"), out var size) || size < (16 << 10) || size > (64L << 30))
             throw new ArgumentException("--data-size must be 16k through 64g.");
         var cases = new List<(int, int)>();
@@ -79,6 +107,8 @@ internal sealed record FullOptions(
             values.ContainsKey("--write-buffers"), values.ContainsKey("--write-buffers-concurrently"), device);
     }
 
+    /// <summary>Restricts unauthenticated test endpoints to loopback or explicit private IPs.</summary>
+    /// <param name="text">IP literal; DNS names and wildcard/public addresses are rejected.</param>
     internal static IPAddress PrivateAddress(string text)
     {
         if (!IPAddress.TryParse(text, out var address))

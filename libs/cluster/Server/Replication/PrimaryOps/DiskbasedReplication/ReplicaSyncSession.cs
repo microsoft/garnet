@@ -138,6 +138,7 @@ namespace Garnet.cluster
                 {
                     logger?.LogInformation("Sending main store checkpoint {version} {storeHlogToken} {storeIndexToken} to replica", localEntry.metadata.storeVersion, localEntry.metadata.storeHlogToken, localEntry.metadata.storeIndexToken);
 
+                    // Borrow the manager's startup recorder; a null value keeps shipment timing disabled.
                     using var checkpointTransmissionDriver = new SnapshotTransmissionDriver(gcs, storeWrapper.serverOptions.ReplicaSyncTimeout, logger,
                         clusterProvider.replicationManager.BenchmarkTiming);
                     checkpointTransmissionDriver.AddReader(new TsavoriteSnapshotReader(clusterProvider, localEntry, hlog_size, index_size,

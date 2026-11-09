@@ -40,6 +40,28 @@ namespace Garnet.test
 
         [TestCase(false)]
         [TestCase(true)]
+        public void BenchmarkTimingConfiguration(bool enabled)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments([], out var defaults, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(defaults.GetServerOptions().ReplicaEnableBenchmarkTiming, Is.False);
+            Assert.That(new GarnetServerOptions().ReplicaEnableBenchmarkTiming, Is.False);
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-enable-benchmark-timing", enabled.ToString()],
+                out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.GetServerOptions().ReplicaEnableBenchmarkTiming, Is.EqualTo(enabled));
+            var json = JsonSerializer.Serialize(new { ReplicaEnableBenchmarkTiming = enabled });
+            Assert.That(TryParseGarnetConfOptions(json, out var configured, out _, out _), Is.True);
+            Assert.That(configured.GetServerOptions().ReplicaEnableBenchmarkTiming, Is.EqualTo(enabled));
+        }
+
+        [Test]
+        public void InvalidBenchmarkTimingFlagIsRejected()
+            => Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-enable-benchmark-timing", "invalid"],
+                out _, out _, out _, out _, silentMode: true), Is.False);
+
+        [TestCase(false)]
+        [TestCase(true)]
         public void DiskBasedSyncConcurrentWriteConfiguration(bool concurrently)
         {
             Assert.That(ServerSettingsManager.TryParseCommandLineArguments(

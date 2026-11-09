@@ -10,8 +10,9 @@ namespace ReplicaTransfer.benchmark;
 
 internal sealed class Protocol
 {
-    // The handshake reports write policy as well as buffer count; incompatible peers fail explicitly.
-    internal const string Magic = "CHECKPOINT_BENCH_V5";
+    // V6 adds device identity; the receiver still accepts V5 callers without that field.
+    internal const string Magic = "CHECKPOINT_BENCH_V6";
+    internal const string LegacyMagic = "CHECKPOINT_BENCH_V5";
     private readonly NetworkStream stream;
     private readonly TimeSpan timeout;
     private readonly int maxFrame;

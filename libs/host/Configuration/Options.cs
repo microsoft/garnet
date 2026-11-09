@@ -506,6 +506,10 @@ namespace Garnet
         [Option("repl-disk-based-sync-write-buffers-concurrently", Required = false, HelpText = "Issue disk-based Tsavorite checkpoint writes concurrently when the replica has more than one write buffer (default false). Does not change buffer limits or EOF completion. Set on the replica; requires restart.")]
         public bool? ReplicaDiskBasedSyncWriteBuffersConcurrently { get; set; }
 
+        [OptionValidation]
+        [Option("repl-enable-benchmark-timing", Required = false, HelpText = "Experimental whole disk-based checkpoint shipment/recovery metrics on cluster nodes (default false). No per-chunk counters; independent of DEBUG authorization. Requires restart; read-only CONFIG GET.")]
+        public bool? ReplicaEnableBenchmarkTiming { get; set; }
+
         [IntRangeValidation(0, int.MaxValue)]
         [Option("repl-diskless-sync-delay", Required = false, HelpText = "Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.")]
         public int ReplicaDisklessSyncDelay { get; set; }
@@ -1059,6 +1063,7 @@ namespace Garnet
                 ReplicaDiskBasedSyncPipelineDepth = ReplicaDiskBasedSyncPipelineDepth,
                 ReplicaDiskBasedSyncWriteBuffers = ReplicaDiskBasedSyncWriteBuffers,
                 ReplicaDiskBasedSyncWriteBuffersConcurrently = ReplicaDiskBasedSyncWriteBuffersConcurrently.Value,
+                ReplicaEnableBenchmarkTiming = ReplicaEnableBenchmarkTiming.Value,
                 ReplicaAttachTimeout = ReplicaAttachTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(ReplicaAttachTimeout),
                 ReplicaDisklessSyncFullSyncAofThreshold = ReplicaDisklessSyncFullSyncAofThreshold,
                 UseAofNullDevice = UseAofNullDevice.GetValueOrDefault(),

@@ -18,6 +18,7 @@ internal static class Sender
     {
         var sourcePrefix = options.SourcePrefix ?? await CheckpointGenerator.RunAsync(options, token);
         var sourcePath = sourcePrefix + ".0";
+
         // Generation is complete before opening the immutable source for the sweep.
         await using var sourceGuard = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
         var length = sourceGuard.Length;
@@ -32,7 +33,7 @@ internal static class Sender
             if (options.Csv != null)
             {
                 csv = new StreamWriter(new FileStream(options.Csv, FileMode.CreateNew, FileAccess.Write, FileShare.Read), Encoding.UTF8);
-                await csv.WriteLineAsync("utc,token,repeat,chunk_bytes,pipeline_depth,completed_bytes,completed_chunks,elapsed_seconds,MB_per_second,ack_delay_us,receiver_write_buffers,send_buffer_bytes,source_device,source_buffered,sha256,scenario,receiver_concurrently");
+                await csv.WriteLineAsync("utc,token,repeat,chunk_bytes,pipeline_depth,completed_bytes,completed_chunks,elapsed_seconds,MB_per_second,ack_delay_us,receiver_write_buffers,send_buffer_bytes,source_device,source_buffered,sha256,scenario,receiver_concurrently,source_io,receiver_io");
                 await csv.FlushAsync(token);
             }
             Console.WriteLine($"Source={sourcePath}; bytes={length}; SHA256={hash}; {options.Cases.Length * (long)options.Repeats} runs; device={options.DeviceType}, buffered={options.Buffered}.");
@@ -42,8 +43,7 @@ internal static class Sender
                 {
                     token.ThrowIfCancellationRequested();
                     var id = Guid.NewGuid();
-                    var device = Devices.CreateLogDevice(sourcePrefix, deviceType: options.DeviceType,
-                        readOnly: true, deleteOnClose: false, disableFileBuffering: !options.Buffered);
+                    var device = options.Device.CreateDevice(sourcePrefix, options.Buffered, readOnly: true);
                     var pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
                     using var completion = new SemaphoreSlim(0);
                     FileTransmitSource transmitter = null;
@@ -61,12 +61,13 @@ internal static class Sender
                         using var close = token.Register(client.CloseConnection);
                         await client.ConnectAsync(checked((int)options.Timeout.TotalMilliseconds), token);
                         var hello = (await ExecuteAsync(client, options.Timeout, token, Protocol.Magic)).Split('|');
-                        Receiver.Require(hello.Length == 5 && hello[0] == Protocol.Magic,
+                        Receiver.Require(hello.Length == 6 && hello[0] == Protocol.Magic,
                             "Peer is not the standalone benchmark receiver. Do not use a Garnet server port.");
                         var ackDelayUs = long.Parse(hello[1], CultureInfo.InvariantCulture);
                         var maxChunk = int.Parse(hello[2], CultureInfo.InvariantCulture);
                         var writeBuffers = int.Parse(hello[3], CultureInfo.InvariantCulture);
                         var concurrently = bool.Parse(hello[4]);
+                        var receiverIo = hello[5];
                         Receiver.Require(chunk <= maxChunk, "Chunk exceeds receiver --max-chunk.");
                         Receiver.Require(ackDelayUs < options.Timeout.TotalMilliseconds * 1000, "Receiver ACK delay exceeds sender timeout.");
                         var begin = await ExecuteAsync(client, options.Timeout, token, "BEGIN", id.ToString(),
@@ -91,7 +92,7 @@ internal static class Sender
                         if (csv != null)
                         {
                             await csv.WriteLineAsync(FormattableString.Invariant(
-                                $"{DateTimeOffset.UtcNow:O},{id},{repeat},{chunk},{depth},{length},{verified[2]},{seconds:F9},{rate:F6},{ackDelayUs},{writeBuffers},{sendBufferSize},{options.DeviceType},{options.Buffered},{hash},transfer-only,{concurrently}"));
+                                $"{DateTimeOffset.UtcNow:O},{id},{repeat},{chunk},{depth},{length},{verified[2]},{seconds:F9},{rate:F6},{ackDelayUs},{writeBuffers},{sendBufferSize},{options.DeviceType},{options.Buffered},{hash},transfer-only,{concurrently},{options.Device.Identity(OperatingSystem.IsLinux())},{receiverIo}"));
                             await csv.FlushAsync(token);
                         }
                     }

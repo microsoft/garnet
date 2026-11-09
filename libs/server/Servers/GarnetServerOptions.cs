@@ -714,6 +714,13 @@ namespace Garnet.server
         public bool ReplicaDiskBasedSyncWriteBuffersConcurrently;
 
         /// <summary>
+        /// Experimental whole disk-based checkpoint shipment/recovery metrics on cluster nodes.
+        /// Default false leaves the recorder null. Captured once per replication manager; requires restart.
+        /// No per-chunk counters; independent of DEBUG command authorization.
+        /// </summary>
+        public bool ReplicaEnableBenchmarkTiming;
+
+        /// <summary>
         /// Validate the pipeline depth and its maximum outstanding payload budget.
         /// </summary>
         public int GetReplicaDiskBasedSyncPipelineDepth()

@@ -185,6 +185,9 @@ namespace Garnet.server
             RegisterReadOnly(ServerConfigType.REPL_DISK_BASED_SYNC_WRITE_BUFFERS_CONCURRENTLY,
                 "repl-disk-based-sync-write-buffers-concurrently", ConfigKind.Bool,
                 static o => o.ReplicaDiskBasedSyncWriteBuffersConcurrently ? "yes" : "no");
+            RegisterReadOnly(ServerConfigType.REPL_ENABLE_BENCHMARK_TIMING,
+                "repl-enable-benchmark-timing", ConfigKind.Bool,
+                static o => o.ReplicaEnableBenchmarkTiming ? "yes" : "no");
 
             // Read-only AOF parameters resolved directly from the startup options. These describe the
             // physical AOF layout or startup-only toggles and require a restart to change, so CONFIG SET

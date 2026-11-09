@@ -4,8 +4,10 @@
 
 `send` and `receive` default to `--scenario full`. Each runner starts its own
 **disposable, real Garnet server** from `--server`, a DLL or executable. The two
-paths may point to different builds: their dependencies and checkpoint formats
-are never loaded into the same process. Use an isolated, trusted private test
+paths must select the same Garnet build on **both nodes within each pass**.
+Compare reference/reference and candidate/candidate in separate passes, using
+one runner build throughout. Each server's dependencies and checkpoint formats
+remain isolated in its own process. Use an isolated, trusted private test
 network; neither the runner control channel nor these test servers provide TLS
 or authentication. Public/wildcard bind addresses are rejected.
 
@@ -13,11 +15,11 @@ Create existing parent directories on the desired source/destination storage,
 build `main\GarnetServer` and the benchmark in Release, then run:
 
 ```powershell
-# Receiver: selected replica version, separate server port from control port.
-dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll receive --server E:\build-new\GarnetServer.dll --output F:\replica-bench --server-port 7011 --write-buffers 2 --write-buffers-concurrently true
+# Receiver: selected build on both nodes, separate server port from control port.
+dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll receive --server E:\build-candidate\GarnetServer.dll --output F:\replica-bench --server-port 7011 --write-buffers 2 --write-buffers-concurrently true
 
-# Sender: selected primary version; defaults to one 16-MiB/depth-4 case.
-dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll send --server E:\build-old\GarnetServer.dll --output E:\primary-bench --server-port 7012 --data-size 512m --csv .\full-results.csv
+# Sender: same selected build; defaults to one 16-MiB/depth-4 case.
+dotnet benchmark\Replica-transfer.benchmark\bin\Release\net10.0\Replica-transfer.benchmark.dll send --server E:\build-candidate\GarnetServer.dll --output E:\primary-bench --server-port 7012 --data-size 512m --csv .\full-results.csv
 ```
 
 For two hosts, set receiver `--bind` to its private IP, sender `--bind` to the
@@ -28,8 +30,63 @@ runner control endpoint (default 7010), not the Garnet server endpoint.
 one replica buffer, sequential writes. Both endpoints require `--server` and
 `--output`. Full mode rejects component-only switches, including artificial ACK
 delay, offline source prefixes and `--buffered`/`--device`. Full uses the real
-server `--device-type RandomAccess|Native|FileStream`, default `RandomAccess` on
-both nodes. Windows Native devices require short parent paths for checkpoints.
+server `--device-type RandomAccess|Native|FileStream`. Full mode on Linux
+requires Native and defaults to the issue-report Native/Uring profile below;
+an explicit conflicting type fails. Windows keeps its RandomAccess default
+and existing Native/FileStream behavior. Windows Native devices require short
+parent paths for checkpoints.
+
+### Linux native I/O profile
+
+Both `send` and `receive` accept the existing Garnet server switch names.
+Linux full defaults match this profile, explicitly forwarded to **both owned
+servers**, including the storage/AOF/checkpoint factories:
+
+| Switch | Linux full default | Bounds / meaning |
+| --- | --- | --- |
+| `--device-type` | `Native` | Required on Linux full; no managed fallback |
+| `--device-io-backend` | `Uring` | `Default` (= Libaio), `Libaio`, or `Uring` |
+| `--device-completion-threads` | `16` | 1-64 completion drain threads |
+| `--device-io-contexts` | `256` | 0-4096 kernel contexts/rings; 0 = device default |
+| `--device-queue-depth` | `256` | 0-32768 events per ring; 0 = device default |
+| `--device-throttle-limit` | `4096` | 0-65536 per-device in-flight limit; 0 = device default |
+| `--device-aio-max-devices` | `32` | 1-4096 target devices sharing the global Libaio budget; ignored by Uring |
+
+Native tuning except throttle is Linux-only and requires Native. Explicit
+backend/numeric overrides are allowed for controlled experiments; the Linux
+Native type requirement remains. These are startup settings, not runtime CONFIG
+changes. Bounds match the existing host options. The native device can raise a
+positive ring count below its drainer count; zero retains device-owned defaults.
+Libaio may cap default queue reservations against `fs.aio-max-nr`; record its
+diagnostics. Do not interpret a configured zero as a measured kernel queue size.
+No SQPOLL behavior is changed by this profile.
+
+For Linux, use the native library and its existing libaio/liburing dependencies
+(the shipped Uring-enabled library requires `liburing.so.2`). Kernel permissions
+must permit io_uring. Unsupported server switches, unavailable native libraries,
+backend initialization failures, and process startup errors fail the run; the
+runner does not substitute RandomAccess or Libaio. Every forwarded I/O option
+must be exposed by the selected external build, including profile defaults.
+Windows does not forward Linux-only switches and uses zero/default throttle
+unless overridden.
+
+Example two consoles on one Linux host, with existing `/mnt/primary/bench`,
+`/mnt/replica/bench`, and `/mnt/results` parents (adapt to local storage).
+The explicit profile must appear on **both** commands:
+
+```sh
+# Console 1: replica. Run first.
+dotnet benchmark/Replica-transfer.benchmark/bin/Release/net10.0/Replica-transfer.benchmark.dll receive --scenario full --server main/GarnetServer/bin/Release/net10.0/GarnetServer.dll --output /mnt/replica/bench --bind 127.0.0.1 --port 7010 --server-port 7011 --runs 1 --write-buffers 2 --write-buffers-concurrently true --phase-timing false --timeout-seconds 600 --device-type Native --device-io-backend Uring --device-completion-threads 16 --device-io-contexts 256 --device-queue-depth 256 --device-throttle-limit 4096 --device-aio-max-devices 32
+
+# Console 2: primary. Choose a NEW CSV name for every invocation.
+dotnet benchmark/Replica-transfer.benchmark/bin/Release/net10.0/Replica-transfer.benchmark.dll send --scenario full --server main/GarnetServer/bin/Release/net10.0/GarnetServer.dll --output /mnt/primary/bench --bind 127.0.0.1 --host 127.0.0.1 --port 7010 --server-port 7012 --data-size 2g --chunks 16m --depths 4 --repeats 1 --csv /mnt/results/native-uring-pair1.csv --phase-timing false --timeout-seconds 600 --device-type Native --device-io-backend Uring --device-completion-threads 16 --device-io-contexts 256 --device-queue-depth 256 --device-throttle-limit 4096 --device-aio-max-devices 32
+```
+
+For two hosts, change both binds to their private IPs and sender host to the
+replica IP. Continue to use isolated trusted test endpoints, fresh version-owned
+run directories, and separately selected server builds. Do not reuse historical
+RandomAccess measurements as Native/Uring results: **this new profile has not
+been performance-evaluated by the prior controls below**.
 
 Every case starts fresh nodes in new `full-send-<guid>`/`full-receive-<guid>`
 directories. The primary is populated through RESP with reproducible seeded
@@ -51,7 +108,10 @@ the fresh replica's directory; no replacement receiver processes checkpoint
 data. Failed/incompatible runs are explicit CSV failures and return nonzero.
 
 For version comparisons, regenerate the deterministic dataset and checkpoints
-for every build/scenario. The normal production wire transfer necessarily
+for every build/scenario. Select the reference build on BOTH nodes for each
+reference pass, then the candidate build on BOTH nodes for each candidate pass;
+do not mix Garnet versions within a replication pair. On separate hosts, adapt
+each local `--server` path to that same selected build. The normal production wire transfer necessarily
 ships the primary's checkpoint; the benchmark does not share/preinstall its
 files or open them using another build outside that protocol. Compatibility
 with arbitrary old builds is not promised: missing required startup options
@@ -60,20 +120,31 @@ on-disk data, automatic build installation, or production-server attachment is
 performed. Files are retained, and only processes launched by the runner are
 terminated.
 
-If an older replica does not expose a buffer/policy option and the caller did
+Older-build handling supports homogeneous reference/reference passes, not a
+mixed-version replication comparison. If the reference build's replica does
+not expose a buffer/policy option and the caller did
 not explicitly request it, the runner uses that build's own default, emits an
 `UNAVAILABLE` diagnostic, and records unavailable policy fields rather than
 inventing equivalent settings. Explicitly requested unsupported settings fail.
 
 ### Production phase timing
 
-`--phase-timing true` on either runner sets
-`GARNET_REPLICA_BENCH_PHASE_TIMING=1` on its owned server. Supporting builds
+`--phase-timing true` on either runner passes the experimental startup option
+`--repl-enable-benchmark-timing true` to its owned server. Supporting builds
 expose the most recent successful checkpoint shipment duration/payload byte
 count and replica recovery duration in `INFO REPLICATION` as
 `benchmark_checkpoint_transfer_ms`, `benchmark_checkpoint_bytes` and
-`benchmark_recovery_ms`. Older/uninstrumented builds report unavailable fields.
+`benchmark_recovery_ms`. Older/uninstrumented reference builds report unavailable
+fields even when both nodes use that same build.
 Enable it on both runners for both phases.
+
+The server option defaults to false and captures one optional recorder per
+replication manager at startup; changing it requires restart. It is independent
+of DEBUG authorization and read-only through `CONFIG GET`/`CONFIG GET *`.
+The runner passes true/false explicitly to supporting builds. For older builds
+without the option, timing false omits it and retains unavailable metrics;
+timing true fails before server startup. Legacy environment activation is not
+supported, and the runner removes any inherited legacy timing variable.
 
 Instrumentation uses a timestamp pair per complete shipment/recovery, counts
 bytes at file boundaries, and publishes bounded state after success. It adds
@@ -83,14 +154,17 @@ collected after timing. Durations use each process's own monotonic clock.
 phase; phase durations need not add up to total sync time. CSV records both
 server identities, build SHA-256 fingerprints (managed/native binaries and
 dependency/runtime manifests), policy, payload, phases and
-verification status.
+verification status. Appended `primary_io`/`replica_io` CSV fields record each
+node's forwarded device/backend/numeric configuration; `launch.json` retains
+the actual server arguments. Full control protocol V2 requires both runners
+to support this identity, avoiding missing peer settings in paired results.
 
 Before treating phase timing as performance-neutral on a deployment, compare
 paired, rotated Release runs with it disabled/enabled and identical settings.
 Use a 1% material-regression boundary and report uncertainty; a noisy single
 pair cannot establish negligible overhead.
 
-Release controls on GCRAZCDL0014 (2026-11-06), using 2-GiB logical datasets,
+Release controls on a Linux Azure VM (2026-11-06), using 2-GiB logical datasets,
 16-MiB chunks, depth 4, two concurrent replica buffers, RandomAccess devices,
 an OS-disk primary and temporary-disk replica, gave:
 
@@ -145,6 +219,70 @@ single string HLOG is not an identical logical workload. Use production phase
 measurements, not subtraction between scenarios, to attribute costs.
 On one host, source reads and destination writes can share storage bandwidth,
 even on different guest disks. Record placement/cache settings when comparing.
+
+## Automating comparisons
+
+Each receive/send invocation pair measures one pass; a script or agent supplies the loop, rotation, cleanup and statistics. Timing numbers below are from one test machine (64-core AMD EPYC 7702P, 256 GiB RAM, Windows Server 2025, primary and replica on separate NVMe SSDs, loopback).
+
+### Settings and order
+
+- Reference settings: `--data-size 2g`, `--chunks 16m` and `--depths 4` on the sender; `--write-buffers 2 --write-buffers-concurrently true` on the receiver; `--timeout-seconds 600` on both. The Windows measurements below used `--device-type RandomAccess`. Linux full runs use the Native/Uring profile above on both servers; record that difference rather than treating the Windows observations as Linux measurements.
+- Run the plans below in order: the cost of a server change with timing off, then the phase-timing cost, then the sweeps. Between compared conditions, change only one factor: build, timing or write policy.
+- Use one runner build for every condition: the newer build, if the reference predates the full scenario.
+- Each runner's deadline covers startup, the control connection, population, SAVE, sync and verification, not just the measured interval; 600 s left a wide margin on the test machine (see Time and disk). If you need more, raise both runners' timeouts equally (at most 3600 s) and record the change.
+
+### One pass
+
+1. Check that the control and server ports (default 7010, 7011, 7012) are idle. `TIME_WAIT` entries left by the previous pass don't block a new listener; anything else does.
+2. Start `receive` first, with its output redirected to a log. In full mode it prints nothing before accepting, so wait until its control port is listening and owned by the receiver's process (on Windows, `Get-NetTCPConnection -LocalPort <port> -State Listen`).
+3. Start `send` immediately. It fails at once if the receiver isn't listening yet, and any delay consumes the receiver's deadline.
+4. When the sender exits, wait for the receiver: up to 2 minutes after a successful sender. After a failed sender, give it 30 seconds, then kill its process tree; if the sender never connected, the receiver would otherwise wait out its whole deadline.
+5. Accept the pass only if both runners exit 0 and the CSV row's `status` is `verified`. Record failed passes; don't drop them silently.
+6. Record the pass's CSV and its new `full-send-*` and `full-receive-*` directories (compare directory listings before and after), then clean up as described below.
+
+Run one untimed warm-up pass before a plan. Give every pass a new CSV.
+
+### Plans
+
+| Plan | Conditions | Order |
+| --- | --- | --- |
+| Cost of a server change | Reference vs. candidate build, the same build on both nodes, `--phase-timing false` | Pair *p*: reference first when *p* is odd, candidate first when even |
+| Phase-timing cost | Candidate build, `--phase-timing false` vs. `true` | Same alternation |
+| Write buffers × policy | `--write-buffers` 1, 2 and 4 × `--write-buffers-concurrently` false and true, with `--phase-timing true` throughout for the shipment and recovery phases | Each round starts one condition later than the previous round |
+| Component comparison | The same buffers × policy with `--scenario transfer-only` (send and receive default to full) and `--ack-delay-us 0`, matching full mode's loopback | Run a second set in reverse order, so ordering can't explain a difference |
+
+For the component runs, `generate` the source checkpoint once and reuse it with `--source-prefix`.
+Linux Native component sources cannot be opened read-only; an explicitly managed
+component source is a different I/O condition, not a like-for-like Native primary
+comparison. Do not silently change the device to make this plan run.
+
+One buffer with `--write-buffers-concurrently true` runs the same code as sequential writes. Keep it in sweeps as an A/A control: its difference shows the noise floor.
+
+### Analysis
+
+- Paired change: (candidate `sync_seconds` ÷ reference `sync_seconds` − 1) × 100. Report every pair, the mean, the SD and the Student-t 95% interval, mean ± t(n−1) × SD ÷ √n. In sweeps, pair conditions by round.
+- Shipment throughput: `checkpoint_bytes` ÷ `checkpoint_transfer_ms`, with timing on. Compare that, not `sync_seconds`, with transfer-only MB/s, and don't subtract one scenario's time from the other's.
+- Keep slow outliers in the primary result, and label any exclusion as post hoc.
+- A mean change below 1% doesn't establish a 1% bound; the interval must lie within it. Add pairs until it does, or report the interval you reached.
+- Budget samples from the noise. On the test machine, with 2 GiB of data, 16 MiB chunks and depth 4:
+  - the paired SD was about 3–4%, or 8% including occasional slow runs;
+  - six pairs gave about ±3.6%, and bounding ±1% would take about 70–280 pairs;
+  - six rounds of the policy sweep gave paired intervals of ±3% to ±9%.
+
+### Time and disk
+
+- On the test machine, a 2 GiB pass took about 83 s: 3 s of startup, 24 s of population and SAVE, 2 s of measured sync and 59 s of exhaustive verification.
+- The benchmark deletes nothing. A 2 GiB full pass leaves about 2.05 GiB in each of its two run directories (92 passes left 365 GiB), and the transfer-only receiver keeps every received copy.
+- After a pass is verified and both runners have exited, delete the `log` and `checkpoints` directories inside that pass's own `full-send-<guid>` and `full-receive-<guid>` directories, and keep `launch.json`, `stdout.log` and `stderr.log`. In transfer-only mode, delete each verified `checkpoint-bench-<id>` directory. Keep everything from failed passes, and never delete the parent directories.
+- Before each pass, check that each output volume has at least 3 × `--data-size` free.
+
+### Environment
+
+- Build the reference and candidate servers in separate worktrees, and never copy their outputs into one directory.
+- `GarnetServer` rolls forward to the newest installed major runtime (`rollForward: LatestMajor`; prereleases are never chosen), but the runner doesn't. Check which `coreclr.dll` (Windows) or `libcoreclr.so` (Linux) a running server has loaded and record it, so that server and component runs aren't compared across runtimes.
+- Hold source and destination placement, device type and machine load constant within a comparison.
+- Fresh run directories don't mean cold caches; record whether any cache eviction was used.
+- Besides what the Build section lists, record the run order.
 
 ## Transfer-only component scenario
 
@@ -302,7 +440,23 @@ paths.
 | send / receive | `--port` | `7010` | Dedicated benchmark port |
 | send / receive | `--timeout-seconds` | `30` | Connect, command, I/O, verification, and receiver accept/read timeout (1–3600 seconds) |
 | all | `--device` | `RandomAccess` | Real Tsavorite local device: `RandomAccess`, `Native`, or `FileStream` |
+| all component modes | `--device-type` | `RandomAccess` | Alias for `--device`; selecting both names fails |
 | all | `--buffered` | `false` | Request OS-buffered device I/O; backend/platform support varies |
+
+The component modes also accept the six native tuning switches listed above.
+Linux Native component devices default to Uring when `--device-io-backend` is
+omitted; explicit `Default` selects Libaio, and explicit `Libaio`/`Uring` overrides
+remain supported. Other component tuning defaults remain 4 drainers,
+0 contexts/depth/throttle and 32 AIO devices, not the Linux full numeric profile.
+These settings affect the real generated log,
+checkpoint devices and receiver sink. Set Native explicitly for Linux component
+generation/receiving. Linux's component sender still rejects Native because its
+offline source must be opened read-only and Native lacks that support; do not
+silently use managed I/O for a requested Native source. Use full mode for a
+Native/Uring primary and replica, or explicitly use a managed component source.
+Component CSV appends `source_io`/`receiver_io`. V6 reports receiver I/O identity;
+the new receiver also accepts legacy V5 callers with their original five-field
+reply, but new senders require V6 receivers rather than inventing missing settings.
 
 Integer options (`--port`, `--runs`, `--repeats`, `--timeout-seconds`,
 `--ack-delay-us` and `--write-buffers`) accept C#-style digit separators, for example

@@ -123,6 +123,7 @@ namespace Garnet.cluster
         public ReplicationManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
             var opts = clusterProvider.serverOptions;
+            BenchmarkTiming = ReplicaBenchmarkTiming.Create(opts.ReplicaEnableBenchmarkTiming);
             this.logger = logger;
             this.clusterProvider = clusterProvider;
             this.storeWrapper = clusterProvider.storeWrapper;

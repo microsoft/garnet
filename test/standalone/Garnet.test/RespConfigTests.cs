@@ -59,6 +59,32 @@ namespace Garnet.test
 
         [TestCase(false)]
         [TestCase(true)]
+        public void BenchmarkTimingIsReadOnlyConfiguration(bool enabled)
+        {
+            server.Dispose();
+            server = new GarnetServer(new GarnetServerOptions
+            {
+                EndPoints = [TestUtils.EndPoint],
+                LogMemorySize = "16m",
+                PageSize = "1m",
+                IndexMemorySize = "1m",
+                CheckpointDir = TestUtils.MethodTestDir,
+                ReplicaEnableBenchmarkTiming = enabled
+            });
+            server.Start();
+            const string name = "repl-enable-benchmark-timing";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var before = (string[])db.Execute("CONFIG", "GET", name);
+            Assert.That(before, Is.EqualTo([name, enabled ? "yes" : "no"]));
+            Assert.That((string[])db.Execute("CONFIG", "GET", "*"), Does.Contain(name));
+            Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", name, enabled ? "no" : "yes"));
+            Assert.That((string[])db.Execute("CONFIG", "GET", name), Is.EqualTo(before));
+            Assert.That(server.Provider.StoreWrapper.serverOptions.ReplicaEnableBenchmarkTiming, Is.EqualTo(enabled));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
         public void ConcurrentCheckpointWritesAreReadOnlyConfiguration(bool concurrently)
         {
             if (concurrently)

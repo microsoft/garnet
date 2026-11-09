@@ -52,8 +52,10 @@ internal static class Receiver
         try
         {
             var hello = await protocol.ReadAsync(abort.Token);
-            Require(hello.Length == 1 && Text(hello[0]) == Protocol.Magic, "Expected benchmark-only handshake.");
-            await replies.EnqueueAsync($"{Protocol.Magic}|{options.AckDelayUs}|{options.MaxChunk}|{options.WriteBuffers}|{options.WriteBuffersConcurrently}", false, abort.Token);
+            Require(hello.Length == 1 && Text(hello[0]) is Protocol.Magic or Protocol.LegacyMagic, "Expected benchmark-only handshake.");
+            var magic = Text(hello[0]);
+            var identity = magic == Protocol.Magic ? $"|{options.Device.Identity(OperatingSystem.IsLinux())}" : "";
+            await replies.EnqueueAsync($"{magic}|{options.AckDelayUs}|{options.MaxChunk}|{options.WriteBuffers}|{options.WriteBuffersConcurrently}{identity}", false, abort.Token);
 
             var begin = await protocol.ReadAsync(abort.Token);
             Require(begin.Length == 6 && Text(begin[0]) == "BEGIN", "Expected BEGIN token bytes chunk depth sha256.");
@@ -168,8 +170,7 @@ internal static class Receiver
             var path = prefix + ".0";
             // Reserve the exact file with CreateNew before handing it to the device's OpenOrCreate path.
             using (var reservation = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { }
-            var device = Devices.CreateLogDevice(prefix, deviceType: options.DeviceType,
-                deleteOnClose: false, disableFileBuffering: !options.Buffered);
+            var device = options.Device.CreateDevice(prefix, options.Buffered);
             SectorAlignedBufferPool pool = null;
             SemaphoreSlim writeCompletion = null;
             try

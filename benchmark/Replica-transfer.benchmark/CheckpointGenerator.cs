@@ -22,8 +22,9 @@ internal static class CheckpointGenerator
         using (var reservation = new FileStream(prefix + ".0", FileMode.CreateNew, FileAccess.Write, FileShare.None)) { }
         Console.WriteLine($"Generating checkpoint: value-payload-bytes={options.DataSize}; directory={directory}; preparation is NOT timed.");
         Guid checkpoint;
-        using (var device = Devices.CreateLogDevice(prefix, deviceType: options.DeviceType,
-            deleteOnClose: false, disableFileBuffering: !options.Buffered))
+        using (var device = options.Device.CreateDevice(prefix, options.Buffered))
+        using (var checkpointManager = new DeviceLogCommitCheckpointManager(options.Device.CreateFactory(options.Buffered),
+            new DefaultCheckpointNamingScheme(Path.Combine(directory, "checkpoints"))))
         using (var store = new TsavoriteKV<GeneratedStoreFunctions, SpanByteAllocator<GeneratedStoreFunctions>>(new()
         {
             IndexSize = 1 << 26,
@@ -31,7 +32,7 @@ internal static class CheckpointGenerator
             PageSize = 1 << 20,
             LogMemorySize = 1 << 26,
             SegmentSize = 1L << 40,
-            CheckpointDir = Path.Combine(directory, "checkpoints")
+            CheckpointManager = checkpointManager
         }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance),
             (settings, functions) => new(settings, functions)))
         {

@@ -24,6 +24,11 @@ internal static class Program
                           [--write-buffers 1] [--write-buffers-concurrently false]
                           [--phase-timing false] [--csv <new file>] [--timeout-seconds 300]
                           [--device-type RandomAccess|Native|FileStream]
+                    Linux full defaults: --device-type Native --device-io-backend Uring
+                          --device-completion-threads 16 --device-io-contexts 256
+                          --device-queue-depth 256 --device-throttle-limit 4096 --device-aio-max-devices 32
+                    Native tuning is Linux-only; Windows defaults remain RandomAccess.
+                    Linux Native component devices also default to Uring; explicit Default selects Libaio.
                     Component: explicitly pass --scenario transfer-only.
                     receive --output <existing directory> [--bind 127.0.0.1] [--port 7010]
                             [--runs 1] [--max-chunk 16m] [--ack-delay-us 0] [--write-buffers 1]
@@ -108,11 +113,12 @@ internal sealed class Options
     internal int WriteBuffers { get; private init; }
     internal bool WriteBuffersConcurrently { get; private init; }
     internal TimeSpan Timeout { get; private init; }
-    internal DeviceType DeviceType { get; private init; }
+    internal DeviceType DeviceType => Device.Type;
+    internal DeviceSettings Device { get; private init; }
     internal bool Buffered { get; private init; }
     internal (int Chunk, int Depth)[] Cases { get; private init; }
 
-    internal static Options Parse(string[] args)
+    internal static Options Parse(string[] args, bool? linux = null)
     {
         var mode = args[0];
         if (mode is not ("send" or "receive" or "generate"))
@@ -126,7 +132,7 @@ internal sealed class Options
             "receive" => ["--output", "--bind", "--port", "--timeout-seconds", "--runs", "--max-chunk", "--ack-delay-us", "--write-buffers", "--write-buffers-concurrently"],
             _ => ["--output", "--data-size"]
         };
-        var allowed = common.Concat(specific).ToHashSet(StringComparer.Ordinal);
+        var allowed = common.Concat(specific).Concat(DeviceSettings.Switches).ToHashSet(StringComparer.Ordinal);
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         for (var i = 1; i < args.Length; i += 2)
         {
@@ -147,11 +153,9 @@ internal sealed class Options
             return result;
         }
 
-        var device = Enum.Parse<DeviceType>(Get("--device", "RandomAccess"), ignoreCase: true);
-        if (device is not (DeviceType.RandomAccess or DeviceType.Native or DeviceType.FileStream))
-            throw new ArgumentException("--device must be RandomAccess, Native, or FileStream (real local storage only).");
-        if (mode == "send" && device == DeviceType.Native && !OperatingSystem.IsWindows())
-            throw new ArgumentException("Native source devices do not support read-only opens on this platform; use RandomAccess.");
+        var device = DeviceSettings.Parse(values, full: false, linux ?? OperatingSystem.IsLinux());
+        if (mode == "send" && device.Type == DeviceType.Native && (linux ?? !OperatingSystem.IsWindows()))
+            throw new ArgumentException("Native component source devices do not support read-only opens on this platform; use RandomAccess or full.");
 
         if (mode == "send" && (Get("--source-prefix") == null) == (Get("--generate") == null))
             throw new ArgumentException("Specify exactly one of --source-prefix and --generate.");
@@ -199,7 +203,7 @@ internal sealed class Options
             WriteBuffers = Number("--write-buffers", 1, 0, GarnetServerOptions.ReplicaDiskBasedSyncWriteBuffersMax),
             WriteBuffersConcurrently = bool.Parse(Get("--write-buffers-concurrently", "false")),
             Timeout = timeout,
-            DeviceType = device,
+            Device = device,
             Buffered = bool.Parse(Get("--buffered", "false")),
             Cases = cases.Distinct().ToArray()
         };
