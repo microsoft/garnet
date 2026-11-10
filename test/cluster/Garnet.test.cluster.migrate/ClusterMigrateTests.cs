@@ -492,16 +492,13 @@ namespace Garnet.test.cluster
             context.logger.LogDebug("1. ClusterRedirectMessageTest done");
         }
 
-        [TestCase(1, 262144, 64, false)]
-        [TestCase(1, 262144, 64, true)]
-        [TestCase(8, 557056, 1024, false)]
-        [TestCase(8, 557056, 1024, true)]
-        [TestCase(16, 557056, 1024, false)]
-        [TestCase(16, 557056, 1024, true)]
+        [TestCase(1, 262144, 64)]
+        [TestCase(8, 557056, 1024)]
+        [TestCase(16, 557056, 1024)]
         [CancelAfter(testTimeout)]
         [Category("CLUSTER")]
-        public async Task ClusterMigrateSlotsAcrossScanBoundaries(int workers, int keyCount, int valueLength, bool fastMigrate, CancellationToken cancellationToken)
-            => await VerifySlotMigrationAsync(workers, keyCount, valueLength, fastMigrate, 1, "32m", cancellationToken);
+        public async Task ClusterMigrateSlotsAcrossScanBoundaries(int workers, int keyCount, int valueLength, CancellationToken cancellationToken)
+            => await VerifySlotMigrationAsync(workers, keyCount, valueLength, 1, "32m", cancellationToken);
 
         [TestCase(1, (1 << 18) + 2, "1m")]
         [TestCase(8, 4099, "4k")]
@@ -563,16 +560,13 @@ namespace Garnet.test.cluster
         [CancelAfter(testTimeout)]
         [Category("CLUSTER")]
         public async Task ClusterMigrateSlotsPipelined(int workers, int depth, CancellationToken cancellationToken)
-            => await VerifySlotMigrationAsync(workers, 557056, 8, false, depth, "64k", cancellationToken);
+            => await VerifySlotMigrationAsync(workers, 557056, 8, depth, "64k", cancellationToken);
 
-        private async Task VerifySlotMigrationAsync(int workers, int keyCount, int valueLength, bool fastMigrate, int depth, string pageSize, CancellationToken cancellationToken)
+        private async Task VerifySlotMigrationAsync(int workers, int keyCount, int valueLength, int depth, string pageSize, CancellationToken cancellationToken)
         {
             context.CreateInstances(2, useTLS: UseTLS, memorySize: "1g", pageSize: pageSize, lowMemory: true, migrationPipelineDepth: depth);
             foreach (var options in context.nodeOptions)
-            {
                 options.ParallelMigrateTaskCount = workers;
-                options.FastMigrate = fastMigrate;
-            }
             context.CreateConnection(useTLS: UseTLS);
             ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], addslot: true, logger: context.logger));
             context.clusterTestUtils.SetConfigEpoch(0, 1, logger: context.logger);
@@ -599,15 +593,6 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForMigrationCleanup(0, cancellationToken, logger: context.logger);
 
             ClassicAssert.AreEqual("0", await source.ExecuteAsync("DBSIZE").WaitAsync(cancellationToken).ConfigureAwait(false));
-            if (fastMigrate)
-            {
-                // FastMigrate acknowledges queued work, which can outlive sender cleanup.
-                Assert.That(() =>
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    return context.clusterTestUtils.DBSize(1, context.logger);
-                }, Is.EqualTo(keyCount).After(10000).PollEvery(20));
-            }
             ClassicAssert.AreEqual(keyCount.ToString(), await target.ExecuteAsync("DBSIZE").WaitAsync(cancellationToken).ConfigureAwait(false));
             for (var start = 0; start < keyCount; start += pending.Length)
             {
@@ -638,11 +623,9 @@ namespace Garnet.test.cluster
 
         [Test]
         [Category("CLUSTER")]
-        public void ClusterMigrateRejectsExtraArgument([Values] bool fastMigrate)
+        public void ClusterMigrateRejectsExtraArgument()
         {
             context.CreateInstances(2, useTLS: UseTLS);
-            foreach (var options in context.nodeOptions)
-                options.FastMigrate = fastMigrate;
             context.CreateConnection(useTLS: UseTLS);
             var server = context.clusterTestUtils.GetServer(1);
             var sourceId = context.clusterTestUtils.GetLocalNodeId(0);

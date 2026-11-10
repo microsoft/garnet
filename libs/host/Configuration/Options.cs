@@ -169,7 +169,7 @@ namespace Garnet
         public bool? CleanClusterConfig { get; set; }
 
         [IntRangeValidation(0, 16384)]
-        [Option("pmt", Required = false, HelpText = "Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used.")]
+        [Option("parallel-migrate-task-count", Required = false, HelpText = "Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used.")]
         public int ParallelMigrateTaskCount { get; set; }
 
         [MemorySizeValidation(isRequired: false)]
@@ -177,12 +177,8 @@ namespace Garnet
         public string MigrationSendBufferSize { get; set; }
 
         [IntRangeValidation(1, 64)]
-        [Option("migrate-pipeline-depth", Required = false, HelpText = "Maximum unacknowledged migration batches per worker, from 1 to 64 (1 disables pipelining). Use matching configurations on both nodes; values above 1 require --fast-migrate to be disabled.")]
+        [Option("migrate-pipeline-depth", Required = false, HelpText = "Maximum unacknowledged migration batches per worker, from 1 to 64 (1 disables pipelining). Batches are processed synchronously before acknowledgment.")]
         public int MigrationPipelineDepth { get; set; }
-
-        [OptionValidation]
-        [Option("fast-migrate", Required = false, HelpText = "Acknowledge received migration batches before applying them. Requires --migrate-pipeline-depth 1.")]
-        public bool? FastMigrate { get; set; }
 
         [Option("auth", Required = false, HelpText = "Authentication mode of Garnet. This impacts how AUTH command is processed and how clients are authenticated against Garnet. Value options: NoAuth, Password, Aad, ACL")]
         public GarnetAuthenticationMode AuthenticationMode { get; set; }
@@ -834,15 +830,6 @@ namespace Garnet
                 }
             }
 
-            if (MigrationPipelineDepth > 1 && FastMigrate.GetValueOrDefault())
-            {
-                invalidOptions.Add(nameof(MigrationPipelineDepth));
-                invalidOptions.Add(nameof(FastMigrate));
-                logger?.LogError("{pipelineDepth} above one requires {fastMigrate} to be disabled on both nodes.",
-                    nameof(MigrationPipelineDepth), nameof(FastMigrate));
-                isValid = false;
-            }
-
             return isValid;
         }
 
@@ -993,7 +980,6 @@ namespace Garnet
                 ParallelMigrateTaskCount = ParallelMigrateTaskCount,
                 MigrationSendBufferSize = MigrationSendBufferSize,
                 MigrationPipelineDepth = MigrationPipelineDepth,
-                FastMigrate = FastMigrate.GetValueOrDefault(),
                 AuthSettings = GetAuthenticationSettings(logger),
                 AclStrictCustomCommands = AclStrictCustomCommands.GetValueOrDefault(true),
                 EnableAOF = EnableAOF.GetValueOrDefault(),

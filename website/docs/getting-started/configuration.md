@@ -78,12 +78,11 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 
 Set `MigrationPipelineDepth` in `garnet.conf`, or use `--migrate-pipeline-depth`, to control the maximum number of unacknowledged migration batches per worker. The default is `1` (no pipelining); valid values are `1` through `64`.
 
-Use matching configurations on the source and target. Depths above `1` require `FastMigrate=false` on both nodes so acknowledgments confirm batch processing before source keys are deleted. For example:
+Migration batches are processed synchronously before acknowledgment. Pipelining overlaps sending with processing without changing acknowledgment semantics. For example:
 
 ```json
 {
-  "MigrationPipelineDepth": 4,
-  "FastMigrate": false
+  "MigrationPipelineDepth": 4
 }
 ```
 
@@ -126,9 +125,8 @@ Pipelining uses the existing `CLUSTER MIGRATE` wire format without additional ar
 | **DisableObjects** | ```--no-obj``` | ```bool``` |  | Disable support for data structure objects. |
 | **EnableCluster** | ```--cluster``` | ```bool``` |  | Enable cluster. |
 | **CleanClusterConfig** | ```--clean-cluster-config``` | ```bool``` |  | Start with clean cluster config. |
-| **ParallelMigrateTaskCount** | ```--pmt``` | ```int``` | Integer in range:<br/>[0, 16384] | Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used. |
-| **MigrationPipelineDepth** | ```--migrate-pipeline-depth``` | ```int``` | Integer in range:<br/>[1, 64] | Maximum unacknowledged migration batches per worker (default: 1). Values above 1 require FastMigrate=false on both nodes. |
-| **FastMigrate** | ```--fast-migrate``` | ```bool``` |  | Acknowledge received migration batches before applying them. Requires MigrationPipelineDepth=1. |
+| **ParallelMigrateTaskCount** | ```--parallel-migrate-task-count``` | ```int``` | Integer in range:<br/>[0, 16384] | Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used. |
+| **MigrationPipelineDepth** | ```--migrate-pipeline-depth``` | ```int``` | Integer in range:<br/>[1, 64] | Maximum unacknowledged migration batches per worker (default: 1). Batches are processed synchronously before acknowledgment. |
 | **AuthenticationMode** | ```--auth``` | ```GarnetAuthenticationMode``` | NoAuth, Password, Aad, ACL, AclWithAad | Authentication mode of Garnet. This impacts how AUTH command is processed and how clients are authenticated against Garnet. Value options: NoAuth, Password, Aad, ACL |
 | **Password** | ```--password``` | ```string``` |  | Authentication string for password authentication. |
 | **ClusterUsername** | ```--cluster-username``` | ```string``` |  | Username to authenticate intra-cluster communication with. |

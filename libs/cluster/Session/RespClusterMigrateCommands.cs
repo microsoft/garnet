@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
 using Garnet.server;
@@ -92,19 +91,10 @@ namespace Garnet.cluster
             var replaceOption = replace.EqualsUpperCaseSpanIgnoringCase("T"u8);
             var vectorSetOption = vectorSet.EqualsUpperCaseSpanIgnoringCase("T"u8);
 
-            var buffer = new Span<byte>(payloadStartPtr, (int)(payloadEndPtr - payloadStartPtr)).ToArray();
+            // Consume the receive buffer synchronously; reassemblers own any fragments retained across commands.
+            var applied = Process(basicGarnetApi, new ReadOnlySpan<byte>(payloadStartPtr, (int)(payloadEndPtr - payloadStartPtr)), replaceOption, vectorSetOption);
 
-            var applied = true;
-            if (clusterProvider.serverOptions.FastMigrate)
-                _ = Task.Run(() =>
-                {
-                    if (!Process(basicGarnetApi, buffer, replaceOption, vectorSetOption))
-                        logger?.LogError("Failed to apply queued migration batch");
-                });
-            else
-                applied = Process(basicGarnetApi, buffer, replaceOption, vectorSetOption);
-
-            bool Process(BasicGarnetApi basicGarnetApi, byte[] input, bool replaceOption, bool vectorSetOption)
+            bool Process(BasicGarnetApi basicGarnetApi, ReadOnlySpan<byte> input, bool replaceOption, bool vectorSetOption)
             {
                 if (input.Length < sizeof(int))
                     return false;

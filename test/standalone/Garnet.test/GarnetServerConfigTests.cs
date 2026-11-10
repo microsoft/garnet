@@ -344,28 +344,24 @@ namespace Garnet.test
             {
                 Assert.That(ServerSettingsManager.TryParseCommandLineArguments(["--migrate-pipeline-depth", depth], out var options, out _, out _, out _, silentMode: true), Is.True);
                 Assert.That(options.GetServerOptions().MigrationPipelineDepth, Is.EqualTo(int.Parse(depth)));
-                Assert.That(ServerSettingsManager.TryParseCommandLineArguments(["--migrate-pipeline-depth", depth, "--fast-migrate"], out _, out var invalidOptions, out _, out _, silentMode: true), Is.EqualTo(depth == "1"));
-                if (depth != "1")
-                    Assert.That(invalidOptions, Does.Contain(nameof(Options.MigrationPipelineDepth)).And.Contain(nameof(Options.FastMigrate)));
             }
             foreach (var depth in new[] { "0", "-1", "65" })
                 Assert.That(ServerSettingsManager.TryParseCommandLineArguments(["--migrate-pipeline-depth", depth], out _, out _, out _, out _, silentMode: true), Is.False);
         }
 
-        [TestCase(1, true, true)]
-        [TestCase(4, false, true)]
-        [TestCase(4, true, false)]
-        [TestCase(0, false, false)]
-        [TestCase(65, false, false)]
-        public void MigrationPipelineConfiguration(int depth, bool fastMigrate, bool valid)
+        [TestCase(1, true)]
+        [TestCase(4, true)]
+        [TestCase(64, true)]
+        [TestCase(0, false)]
+        [TestCase(65, false)]
+        public void MigrationPipelineConfiguration(int depth, bool valid)
         {
-            var json = JsonSerializer.Serialize(new { MigrationPipelineDepth = depth, FastMigrate = fastMigrate });
+            var json = JsonSerializer.Serialize(new { MigrationPipelineDepth = depth });
             Assert.That(TryParseGarnetConfOptions(json, out var options, out _, out _), Is.EqualTo(valid));
             if (valid)
             {
                 var serverOptions = options.GetServerOptions();
                 Assert.That(serverOptions.MigrationPipelineDepth, Is.EqualTo(depth));
-                Assert.That(serverOptions.FastMigrate, Is.EqualTo(fastMigrate));
                 Assert.DoesNotThrow(serverOptions.ValidateMigrationOptions);
             }
         }
@@ -378,12 +374,24 @@ namespace Garnet.test
             Assert.Throws<ArgumentOutOfRangeException>(() => new GarnetServer(options));
         }
 
-        [Test]
-        public void MigrationPipelineRejectsFastServer()
+        [TestCase("0", true)]
+        [TestCase("1", true)]
+        [TestCase("16", true)]
+        [TestCase("16384", true)]
+        [TestCase("-1", false)]
+        [TestCase("16385", false)]
+        public void ParallelMigrateTaskOptions(string count, bool valid)
         {
-            var options = new GarnetServerOptions { MigrationPipelineDepth = 4, FastMigrate = true };
-            var error = Assert.Throws<GarnetException>(() => new GarnetServer(options));
-            Assert.That(error.Message, Does.Contain(nameof(GarnetServerOptions.FastMigrate)));
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(["--parallel-migrate-task-count", count], out var options, out _, out _, out _, silentMode: true), Is.EqualTo(valid));
+            if (valid)
+                Assert.That(options.GetServerOptions().ParallelMigrateTaskCount, Is.EqualTo(int.Parse(count)));
+        }
+
+        [TestCase("--pmt", "16")]
+        [TestCase("--fast-migrate", "true")]
+        public void RemovedMigrationOptionsAreRejected(string option, string value)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments([option, value], out _, out _, out _, out _, silentMode: true), Is.False);
         }
 
         [Test]

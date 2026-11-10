@@ -2874,7 +2874,9 @@ namespace Garnet.test.cluster
             ClassicAssert.True(forgingClient.TryWriteRecordSpan(disklogPayload, MigrationRecordSpanType.LogRecord, out var task));
             ClassicAssert.IsNull(task);
 
-            ClassicAssert.AreEqual("OK", await forgingClient.SendAndResetIterationBuffer().ConfigureAwait(false));
+            var error = Assert.ThrowsAsync<Exception>(async () =>
+                await forgingClient.SendAndResetIterationBuffer().WaitAsync(cancellation).ConfigureAwait(false));
+            Assert.That(error.Message, Does.Contain("Failed to apply migration batch"));
 
             var setSlotOwnedRes = context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "NODE", targetNodeId);
             ClassicAssert.AreEqual("OK", setSlotOwnedRes);
