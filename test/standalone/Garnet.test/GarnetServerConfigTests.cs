@@ -350,6 +350,38 @@ namespace Garnet.test
         }
 
         [TestCase(null)]
+        [TestCase(1)]
+        [TestCase(256)]
+        [TestCase(512)]
+        [TestCase(int.MaxValue)]
+        public void MigrationDeleteBatchSizeOptions(int? batchSize)
+        {
+            string[] args = batchSize.HasValue ? ["--migrate-delete-batch-size", batchSize.Value.ToString()] : [];
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.GetServerOptions().MigrationDeleteBatchSize, Is.EqualTo(batchSize.GetValueOrDefault(256)));
+        }
+
+        [TestCase(1)]
+        [TestCase(512)]
+        public void MigrationDeleteBatchSizeConfiguration(int batchSize)
+        {
+            var json = JsonSerializer.Serialize(new { MigrationDeleteBatchSize = batchSize });
+            Assert.That(TryParseGarnetConfOptions(json, out var options, out _, out _), Is.True);
+            Assert.That(options.GetServerOptions().MigrationDeleteBatchSize, Is.EqualTo(batchSize));
+        }
+
+        [TestCase(0)]
+        [TestCase(-1)]
+        public void MigrationDeleteBatchSizeRejectsInvalidSize(int batchSize)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(["--migrate-delete-batch-size", batchSize.ToString()], out _, out _, out _, out _, silentMode: true), Is.False);
+            var json = JsonSerializer.Serialize(new { MigrationDeleteBatchSize = batchSize });
+            Assert.That(TryParseGarnetConfOptions(json, out _, out _, out _), Is.False);
+            var options = new GarnetServerOptions { MigrationDeleteBatchSize = batchSize };
+            Assert.Throws<ArgumentOutOfRangeException>(() => new GarnetServer(options));
+        }
+
+        [TestCase(null)]
         [TestCase(true)]
         [TestCase(false)]
         public void ScanAheadMigrationOptions(bool? enabled)

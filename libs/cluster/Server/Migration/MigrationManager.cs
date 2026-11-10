@@ -51,6 +51,7 @@ namespace Garnet.cluster
             logger?.LogInformation("ParallelMigrateTasks:{ParallelMigrateTasks}", clusterProvider.serverOptions.ParallelMigrateTaskCount);
             logger?.LogInformation("UseScanAheadMigration:{UseScanAheadMigration}", clusterProvider.serverOptions.UseScanAheadMigration);
             logger?.LogInformation("MigrationPipelineDepth:{MigrationPipelineDepth}", clusterProvider.serverOptions.MigrationPipelineDepth);
+            logger?.LogInformation("MigrationDeleteBatchSize:{MigrationDeleteBatchSize}", clusterProvider.serverOptions.MigrationDeleteBatchSize);
             logger?.LogInformation("ServerOptions.LoggingFrequency:{LoggingFrequency}", clusterProvider.serverOptions.LoggingFrequency);
             logger?.LogInformation("StoreWrapper.LoggingFrequency:{LoggingFrequency}", clusterProvider.storeWrapper.loggingFrequency);
         }

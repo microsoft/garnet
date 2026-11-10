@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Text;
@@ -30,6 +31,7 @@ namespace Garnet.cluster
             readonly GarnetClientSession gcs;
             readonly LocalServerSession localServerSession;
             readonly int batchSize;
+            readonly int deleteBatchSize;
             readonly Task<string>[] pendingResponses;
             int responseHead;
             int responseCount;
@@ -70,6 +72,7 @@ namespace Garnet.cluster
             {
                 this.session = session;
                 this.batchSize = batchSize;
+                deleteBatchSize = session.clusterProvider.serverOptions.MigrationDeleteBatchSize;
                 pendingResponses = new Task<string>[session.clusterProvider.serverOptions.MigrationPipelineDepth];
                 gcs = session.GetGarnetClient();
                 localServerSession = session.GetLocalSession();
@@ -329,34 +332,65 @@ namespace Garnet.cluster
             {
                 if (session._copyOption)
                     return;
-                if (session.transferOption == TransferOption.SLOTS)
+                var keyCount = session.transferOption == TransferOption.SLOTS ? sketch.argSliceVector.Count : sketch.Keys.Count;
+                if (keyCount == 0)
+                    return;
+                var deleteBatchCapacity = Math.Min(deleteBatchSize, keyCount);
+                const int MaxStackDeleteBatchSize = 256;
+                PinnedSpanByte[] rented = null;
+                Span<PinnedSpanByte> deleteBatch = deleteBatchCapacity <= MaxStackDeleteBatchSize
+                    ? stackalloc PinnedSpanByte[deleteBatchCapacity]
+                    : (rented = ArrayPool<PinnedSpanByte>.Shared.Rent(deleteBatchCapacity)).AsSpan(0, deleteBatchCapacity);
+                try
                 {
-                    var vectorKeys = vectorSetsIndexKeysToMigrate.GetAlternateLookup<ReadOnlySpan<byte>>();
-                    var rangeKeys = rangeIndexKeysToMigrate.GetAlternateLookup<ReadOnlySpan<byte>>();
-                    foreach (var (ns, key, hasNs) in sketch.argSliceVector)
+                    var deleteCount = 0;
+                    if (session.transferOption == TransferOption.SLOTS)
                     {
-                        if (hasNs)
+                        var vectorKeys = vectorSetsIndexKeysToMigrate.GetAlternateLookup<ReadOnlySpan<byte>>();
+                        var rangeKeys = rangeIndexKeysToMigrate.GetAlternateLookup<ReadOnlySpan<byte>>();
+                        foreach (var (ns, key, hasNs) in sketch.argSliceVector)
                         {
-                            // Namespace'd keys are deleted as part after migration completes
-                            continue;
-                        }
-                        else
-                        {
-                            if (vectorKeys.ContainsKey(key.ReadOnlySpan) || rangeKeys.ContainsKey(key.ReadOnlySpan))
+                            if (hasNs)
+                            {
+                                // Namespace'd keys are deleted as part after migration completes
                                 continue;
-                            _ = localServerSession.BasicGarnetApi.DELETE(key);
+                            }
+                            else
+                            {
+                                if (vectorKeys.ContainsKey(key.ReadOnlySpan) || rangeKeys.ContainsKey(key.ReadOnlySpan))
+                                    continue;
+                                deleteBatch[deleteCount++] = key;
+                                if (deleteCount == deleteBatch.Length)
+                                {
+                                    localServerSession.DeleteKeys(deleteBatch);
+                                    deleteCount = 0;
+                                }
+                            }
                         }
                     }
-                }
-                else
-                {
-                    var keys = sketch.Keys;
-                    for (var i = 0; i < keys.Count; i++)
+                    else
                     {
-                        // Do not delete the key if it is not marked for deletion because it has not been transmitted to the target node
-                        if (keys[i].Item2)
-                            _ = localServerSession.BasicGarnetApi.DELETE(keys[i].Item1);
+                        var keys = sketch.Keys;
+                        for (var i = 0; i < keys.Count; i++)
+                        {
+                            // Do not delete the key if it is not marked for deletion because it has not been transmitted to the target node
+                            if (!keys[i].Item2)
+                                continue;
+                            deleteBatch[deleteCount++] = keys[i].Item1;
+                            if (deleteCount == deleteBatch.Length)
+                            {
+                                localServerSession.DeleteKeys(deleteBatch);
+                                deleteCount = 0;
+                            }
+                        }
                     }
+                    if (deleteCount > 0)
+                        localServerSession.DeleteKeys(deleteBatch[..deleteCount]);
+                }
+                finally
+                {
+                    if (rented != null)
+                        ArrayPool<PinnedSpanByte>.Shared.Return(rented);
                 }
             }
 

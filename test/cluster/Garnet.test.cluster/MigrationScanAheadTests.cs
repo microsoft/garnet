@@ -7,12 +7,12 @@ using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.cluster;
 using Garnet.common;
+using Garnet.server;
 using NUnit.Framework;
 
 #if DEBUG
 using System.Linq;
 using System.Threading;
-using Garnet.server;
 using Tsavorite.core;
 #endif
 
@@ -71,7 +71,7 @@ namespace Garnet.test.cluster
 
         static string Key(int index) => $"{{scan-ahead}}{index:D2}";
 
-        async Task CreateOperationAsync(int depth, bool copy = false, int keyCount = 14, bool prepare = true, bool useScanAheadMigration = true)
+        async Task CreateOperationAsync(int depth, bool copy = false, int keyCount = 14, bool prepare = true, bool useScanAheadMigration = true, int batchSize = 8, int deleteBatchSize = 256)
         {
             context.CreateInstances(2, lowMemory: true, memorySize: "32m", pageSize: "16k",
                 migrationSendBufferSize: "16k", migrationPipelineDepth: depth);
@@ -80,6 +80,7 @@ namespace Garnet.test.cluster
             {
                 options.ParallelMigrateTaskCount = 1;
                 options.UseScanAheadMigration = useScanAheadMigration;
+                options.MigrationDeleteBatchSize = deleteBatchSize;
             }
             Assert.That(context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], addslot: true), Is.EqualTo("OK"));
             context.clusterTestUtils.SetConfigEpoch(0, 1);
@@ -109,7 +110,7 @@ namespace Garnet.test.cluster
                 null, null, sourceId, copy, false, 10000, [slot], null, TransferOption.SLOTS);
             Assert.That(await session.TrySetSlotRangesAsync(sourceId, MigrateState.IMPORT), Is.True);
             Assert.That(session.TryPrepareLocalForMigration(), Is.True);
-            operation = new MigrateSession.MigrateOperation(session, batchSize: 8);
+            operation = new MigrateSession.MigrateOperation(session, batchSize: batchSize);
             Assert.That(await operation.InitializeAsync(), Is.True);
         }
 
@@ -134,6 +135,53 @@ namespace Garnet.test.cluster
             Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo("14"));
             for (var i = 0; i < 14; i++)
                 Assert.That(await TargetAsync("GET", Key(i)), Is.EqualTo($"value-{i}"));
+        }
+
+        [TestCase(255, false, 256)]
+        [TestCase(256, false, 256)]
+        [TestCase(257, false, 256)]
+        [TestCase(513, false, 256)]
+        [TestCase(513, true, 512)]
+        [TestCase(513, false, 1)]
+        [TestCase(513, false, 64)]
+        [TestCase(513, false, 512)]
+        [TestCase(513, false, int.MaxValue)]
+        public async Task TransfersAcrossDeletionBatchBoundaries(int keyCount, bool copy, int deleteBatchSize)
+        {
+            await CreateOperationAsync(3, copy, keyCount: keyCount, batchSize: 1024, deleteBatchSize: deleteBatchSize);
+            Assert.That(await StartMigration().WaitAsync(TimeSpan.FromSeconds(20)), Is.True);
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo(copy ? keyCount.ToString() : "0"));
+            Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo(keyCount.ToString()));
+            for (var i = 0; i < keyCount; i++)
+                Assert.That(await TargetAsync("GET", Key(i)), Is.EqualTo($"value-{i}"));
+        }
+
+        [TestCase(256)]
+        [TestCase(512)]
+        public async Task DeleteSlotsSkipsNamespacedAndDeferredKeysAcrossBatches(int deleteBatchSize)
+        {
+            const int keyCount = 260;
+            await CreateOperationAsync(3, keyCount: keyCount, batchSize: 512, deleteBatchSize: deleteBatchSize);
+            var vectorKey = Encoding.ASCII.GetBytes(Key(127));
+            var rangeKey = Encoding.ASCII.GetBytes(Key(258));
+            operation.EncounteredVectorSet(vectorKey, [], null);
+            operation.AddRangeIndexKey(rangeKey);
+            for (var i = 0; i < keyCount; i++)
+            {
+                var key = Encoding.ASCII.GetBytes(Key(i));
+                Assert.That(i == 1
+                    ? operation.sketch.TryHashAndStore([1], key)
+                    : operation.sketch.TryHashAndStore(key), Is.True);
+            }
+
+            operation.DeleteKeys();
+
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("3"));
+            foreach (var (_, key, hasNamespace) in operation.sketch.argSliceVector)
+            {
+                var retained = hasNamespace || key.ReadOnlySpan.SequenceEqual(vectorKey) || key.ReadOnlySpan.SequenceEqual(rangeKey);
+                Assert.That(operation.LocalSession.BasicGarnetApi.EXISTS(key), Is.EqualTo(retained ? GarnetStatus.OK : GarnetStatus.NOTFOUND));
+            }
         }
 
         [Test]

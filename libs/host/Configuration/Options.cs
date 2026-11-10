@@ -184,6 +184,10 @@ namespace Garnet
         [Option("migrate-pipeline-depth", Required = false, HelpText = "Maximum unacknowledged migration batches per worker, from 1 to 64 (1 disables pipelining). Batches are processed synchronously before acknowledgment.")]
         public int MigrationPipelineDepth { get; set; }
 
+        [IntRangeValidation(1, int.MaxValue)]
+        [Option("migrate-delete-batch-size", Required = false, HelpText = "Maximum eligible source keys deleted per epoch-protected migration scope (positive integer, default: 256). Larger values hold epoch protection longer.")]
+        public int MigrationDeleteBatchSize { get; set; }
+
         [Option("auth", Required = false, HelpText = "Authentication mode of Garnet. This impacts how AUTH command is processed and how clients are authenticated against Garnet. Value options: NoAuth, Password, Aad, ACL")]
         public GarnetAuthenticationMode AuthenticationMode { get; set; }
 
@@ -985,6 +989,7 @@ namespace Garnet
                 UseScanAheadMigration = UseScanAheadMigration.GetValueOrDefault(),
                 MigrationSendBufferSize = MigrationSendBufferSize,
                 MigrationPipelineDepth = MigrationPipelineDepth,
+                MigrationDeleteBatchSize = MigrationDeleteBatchSize,
                 AuthSettings = GetAuthenticationSettings(logger),
                 AclStrictCustomCommands = AclStrictCustomCommands.GetValueOrDefault(true),
                 EnableAOF = EnableAOF.GetValueOrDefault(),

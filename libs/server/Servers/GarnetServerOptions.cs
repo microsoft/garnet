@@ -90,12 +90,18 @@ namespace Garnet.server
         public int MigrationPipelineDepth = 1;
 
         /// <summary>
+        /// Maximum eligible source keys deleted per epoch-protected migration scope. Must be positive.
+        /// </summary>
+        public int MigrationDeleteBatchSize = 256;
+
+        /// <summary>
         /// Validate migration settings.
         /// </summary>
         public void ValidateMigrationOptions()
         {
             ArgumentOutOfRangeException.ThrowIfLessThan(MigrationPipelineDepth, 1);
             ArgumentOutOfRangeException.ThrowIfGreaterThan(MigrationPipelineDepth, 64);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(MigrationDeleteBatchSize);
         }
 
         /// <summary>

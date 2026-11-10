@@ -3,9 +3,12 @@
 
 using System;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using Garnet.cluster;
+using Garnet.server;
 using NUnit.Framework;
+using Tsavorite.core;
 
 namespace Garnet.test.cluster
 {
@@ -34,13 +37,38 @@ namespace Garnet.test.cluster
             context.TearDown();
         }
 
-        void CreateOperation(int depth)
+        void CreateOperation(int depth, bool copy = false, int batchSize = 4, int deleteBatchSize = 256)
         {
             provider.serverOptions.MigrationPipelineDepth = depth;
+            provider.serverOptions.MigrationDeleteBatchSize = deleteBatchSize;
             var nodeId = provider.clusterManager.CurrentConfig.LocalNodeId;
             session = new MigrateSession(null, provider, "127.0.0.1", ClusterTestContext.Port,
-                nodeId, null, null, nodeId, false, false, 10000, [0], null, TransferOption.KEYS);
-            operation = new MigrateSession.MigrateOperation(session, batchSize: 4);
+                nodeId, null, null, nodeId, copy, false, 10000, [0], null, TransferOption.KEYS);
+            operation = new MigrateSession.MigrateOperation(session, batchSize: batchSize);
+        }
+
+        [TestCase(false, 256)]
+        [TestCase(true, 256)]
+        [TestCase(false, 300)]
+        public void DeleteKeysOnlyRemovesTransmittedEntriesAcrossBatches(bool copy, int deleteBatchSize)
+        {
+            CreateOperation(3, copy, batchSize: 1024, deleteBatchSize: deleteBatchSize);
+            for (var i = 0; i < 513; i++)
+                Assert.That(operation.sketch.TryHashAndStore(Encoding.ASCII.GetBytes($"delete-key-{i}")), Is.True);
+
+            var index = 0;
+            foreach (var (_, key, _) in operation.sketch.argSliceVector)
+            {
+                Assert.That(operation.LocalSession.BasicGarnetApi.SET(key, PinnedSpanByte.FromPinnedSpan("value"u8)), Is.EqualTo(GarnetStatus.OK));
+                operation.sketch.HashAndStore(key);
+                operation.sketch.Keys[index] = (key, index % 3 != 0);
+                index++;
+            }
+
+            operation.DeleteKeys();
+
+            foreach (var (key, transmitted) in operation.sketch.Keys)
+                Assert.That(operation.LocalSession.BasicGarnetApi.EXISTS(key), Is.EqualTo(copy || !transmitted ? GarnetStatus.OK : GarnetStatus.NOTFOUND));
         }
 
         static TaskCompletionSource<string>[] CreateResponses(int count)
