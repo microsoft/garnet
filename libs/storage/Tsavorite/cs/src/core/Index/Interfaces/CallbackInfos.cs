@@ -158,6 +158,12 @@ namespace Tsavorite.core
         public RMWAction Action { get; set; }
 
         /// <summary>
+        /// Whether this RMW has successfully published a tombstone, in place or in the hash chain.
+        /// Available to <see cref="ISessionFunctions{TInput, TOutput, TContext}.PostRMWOperation"/>.
+        /// </summary>
+        public bool TombstonePublished { get; internal set; }
+
+        /// <summary>
         /// User-defined byte of data associated with the operation
         /// </summary>
         public byte UserData { get; set; }

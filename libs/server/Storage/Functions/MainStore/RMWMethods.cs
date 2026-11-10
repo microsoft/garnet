@@ -1153,9 +1153,6 @@ namespace Garnet.server
             }
 
             functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
-            functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
-            if (functionsState.appendOnlyFile != null)
-                rmwInfo.UserData |= NeedAofLog;
             rmwInfo.Action = RMWAction.ExpireAndStop;
             return true;
         }
@@ -1813,12 +1810,27 @@ namespace Garnet.server
             return true;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool IsRmwDeleteCommand(RespCommand cmd) => cmd switch
+        {
+            RespCommand.DELIFEQ or RespCommand.DELEX or RespCommand.GETDEL or RespCommand.DELIFGREATER => true,
+            _ => false
+        };
+
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref StringInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
             where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor
         {
+            if (rmwInfo.TombstonePublished && rmwInfo.Action == RMWAction.ExpireAndStop
+                && IsRmwDeleteCommand(input.header.cmd))
+            {
+                functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+                if (functionsState.appendOnlyFile != null)
+                    rmwInfo.UserData |= NeedAofLog;
+            }
+
             if ((rmwInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
                 WriteLogRMW(key.KeyBytes, ref input, rmwInfo.Version, rmwInfo.SessionID, epochAccessor);
         }

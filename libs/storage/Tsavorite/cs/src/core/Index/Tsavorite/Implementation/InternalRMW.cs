@@ -166,6 +166,7 @@ namespace Tsavorite.core
 
                         srcLogRecord.InfoRef.SetTombstone();
                         srcLogRecord.InfoRef.SetModified();
+                        rmwInfo.TombstonePublished = true;
 
                         // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
                         // Otherwise an earlier record for this key could be reachable again.
@@ -427,6 +428,7 @@ namespace Tsavorite.core
                             // Elide from hei, and try to either do in-chain tombstoning or free list transfer. srcLogRecord is elidable so must be a memory LogRecord.
                             ref var inMemoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
                             HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref inMemoryLogRecord);
+                            rmwInfo.TombstonePublished = true;
                             // no new record created and hash entry is empty now
                             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Expired);
                         }
@@ -456,6 +458,7 @@ namespace Tsavorite.core
                         srcLogRecord.InfoRef.SetModified();
                         ref var inMemoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
                         HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref inMemoryLogRecord);
+                        rmwInfo.TombstonePublished = true;
                         return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired);
                     }
                     addTombstone = true;
@@ -596,6 +599,8 @@ namespace Tsavorite.core
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
+                rmwInfo.TombstonePublished = addTombstone;
+
                 // Track key overflow internally — session functions only track in-place value deltas.
                 if (newLogRecord.DataHeader.KeyIsOverflow)
                     hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
@@ -670,6 +675,7 @@ namespace Tsavorite.core
                         else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {
                             newLogRecord.InfoRef.SetTombstone();
+                            rmwInfo.TombstonePublished = true;
                             status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
                         }
                         else if (rmwInfo.Action == RMWAction.WrongType)
@@ -749,6 +755,7 @@ namespace Tsavorite.core
 
                 // Expiration with no insertion.
                 logRecord.InfoRef.SetTombstone();
+                rmwInfo.TombstonePublished = isIpu;
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
                 return true;
             }
@@ -780,6 +787,7 @@ namespace Tsavorite.core
                     {
                         // Expiration with no insertion.
                         logRecord.InfoRef.SetTombstone();
+                        rmwInfo.TombstonePublished = isIpu;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
                         return true;
                     }
@@ -790,7 +798,10 @@ namespace Tsavorite.core
             //  IPU: move to the NIU->allocate->IU path. Set tombstone so CreateNewRecordRMW uses InitialUpdater (doingCU=false).
             //  CU: caller invalidates allocation, retries operation as NIU->allocate->IU
             if (isIpu)
+            {
                 logRecord.InfoRef.SetTombstone();
+                rmwInfo.TombstonePublished = true;
+            }
             status = OperationStatus.SUCCESS;
             return false;
         }

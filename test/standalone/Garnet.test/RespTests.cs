@@ -17,6 +17,7 @@ using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test
 {
@@ -665,6 +666,100 @@ namespace Garnet.test
             await client.ExecuteAsync("MULTI");
             await client.ExecuteAsync("DIGEST", "key");
             ClassicAssert.IsNull(await client.ExecuteForArrayAsync("EXEC"));
+        }
+
+        [Test]
+        public async Task RmwDeleteUpdatesWatch([Values(0, 1, 2)] int storageRegion,
+            [Values("GETDEL", "DELIFGREATER")] string command, [Values] bool delete)
+        {
+            using var writer = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var client = TestUtils.GetGarnetClientSession();
+            client.Connect();
+            var db = writer.GetDatabase();
+            ClassicAssert.AreEqual(1, (long)db.Execute("SETWITHETAG", "key", "old"));
+            PrepareSetIfEqualRecord(storageRegion);
+            var key = command == "GETDEL" && !delete ? "missing" : "key";
+            await client.ExecuteAsync("WATCH", key);
+            if (command == "GETDEL")
+            {
+                var result = db.Execute(command, key);
+                if (delete)
+                    ClassicAssert.AreEqual("old", (string)result);
+                else
+                    ClassicAssert.IsTrue(result.IsNull);
+            }
+            else
+                ClassicAssert.AreEqual(delete ? 1 : 0, (long)db.Execute(command, key, delete ? 2 : 1));
+
+            await client.ExecuteAsync("MULTI");
+            await client.ExecuteAsync("PING");
+            var results = await client.ExecuteForArrayAsync("EXEC");
+            if (delete)
+                ClassicAssert.IsNull(results);
+            else
+                CollectionAssert.AreEqual(new[] { "PONG" }, results);
+        }
+
+        [TestCase("DELIFEQ", ExistOptions.IFEQ)]
+        [TestCase("DELEX", ExistOptions.IFEQ)]
+        [TestCase("DELEX", ExistOptions.IFNE)]
+        [TestCase("DELEX", ExistOptions.IFDEQ)]
+        [TestCase("DELEX", ExistOptions.IFDNE)]
+        public unsafe void ConditionalDeleteWaitsForPublication(string command, ExistOptions condition)
+        {
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
+            server.Start();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            db.StringSet("key", "old");
+            var wrapper = server.Provider.StoreWrapper;
+            var state = wrapper.CreateFunctionsState();
+            var functions = new MainSessionFunctions(state);
+            var rmwInfo = new RMWInfo { KeyHash = Tsavorite.core.Utility.HashBytes("key"u8) };
+            var version = state.watchVersionMap.ReadVersion(rmwInfo.KeyHash);
+            var aofTail = state.appendOnlyFile.Log.GetTailAddress(0);
+            var comparison = Encoding.UTF8.GetBytes(condition switch
+            {
+                ExistOptions.IFNE => "different",
+                ExistOptions.IFDEQ => DigestOf("old"),
+                ExistOptions.IFDNE => DigestOf("different"),
+                _ => "old"
+            });
+            fixed (byte* pointer = comparison)
+            {
+                SessionParseState args = default;
+                args.InitializeWithArguments([PinnedSpanByte.FromPinnedPointer(pointer, comparison.Length)]);
+                var input = new StringInput(command == "DELIFEQ" ? RespCommand.DELIFEQ : RespCommand.DELEX,
+                    ref args, arg1: (long)condition);
+                var output = new StringOutput();
+                try
+                {
+                    using var iterator = wrapper.store.Log.Scan(wrapper.store.Log.BeginAddress, wrapper.store.Log.TailAddress);
+                    ClassicAssert.IsTrue(iterator.GetNext());
+                    ClassicAssert.IsFalse(functions.NeedCopyUpdate(in iterator, ref input, ref output, ref rmwInfo));
+                    ClassicAssert.AreEqual(RMWAction.ExpireAndStop, rmwInfo.Action);
+                    ClassicAssert.AreEqual(version, state.watchVersionMap.ReadVersion(rmwInfo.KeyHash));
+                    ClassicAssert.AreEqual(0, rmwInfo.UserData);
+
+                    functions.PostRMWOperation((FixedSpanByteKey)"key"u8, ref input, ref rmwInfo, wrapper.store.epoch);
+                    ClassicAssert.AreEqual(aofTail, state.appendOnlyFile.Log.GetTailAddress(0));
+                    ClassicAssert.AreEqual(version, state.watchVersionMap.ReadVersion(rmwInfo.KeyHash));
+                }
+                finally
+                {
+                    output.Dispose();
+                }
+            }
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "key", "new", "IFEQ", "old"));
+            ClassicAssert.AreEqual("new", (string)db.StringGet("key"));
+            _ = server.Store.CommitAOFAsync(default).GetAwaiter().GetResult();
+            redis.Dispose();
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+            using var recovered = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            ClassicAssert.AreEqual("new", (string)recovered.GetDatabase().StringGet("key"));
         }
 
         private static string DigestOf(string value) => DigestOf(Encoding.UTF8.GetBytes(value));

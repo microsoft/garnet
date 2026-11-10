@@ -144,6 +144,53 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        public async Task AofRmwDeleteRecoverTestAsync([Values(0, 1, 2)] int storageRegion,
+            [Values("GETDEL", "DELIFGREATER")] string command)
+        {
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase();
+                ClassicAssert.AreEqual(1, (long)db.Execute("SETWITHETAG", "deleted", "old"));
+                ClassicAssert.AreEqual(1, (long)db.Execute("SETWITHETAG", "kept", "old"));
+                var store = server.Provider.StoreWrapper.store;
+                if (storageRegion == 1)
+                    store.Log.Flush(wait: true);
+                else if (storageRegion == 2)
+                    store.Log.FlushAndEvict(wait: true);
+
+                var aof = server.Provider.StoreWrapper.appendOnlyFile.Log;
+                var before = aof.GetTailAddress(0);
+                if (command == "GETDEL")
+                    ClassicAssert.IsTrue(db.Execute(command, "missing").IsNull);
+                else
+                {
+                    ClassicAssert.AreEqual(0, (long)db.Execute(command, "missing", 2));
+                    ClassicAssert.AreEqual(0, (long)db.Execute(command, "kept", 1));
+                }
+                ClassicAssert.AreEqual(before, aof.GetTailAddress(0), "No-op deletions must not append to AOF.");
+
+                if (command == "GETDEL")
+                    ClassicAssert.AreEqual("old", (string)db.Execute(command, "deleted"));
+                else
+                    ClassicAssert.AreEqual(1, (long)db.Execute(command, "deleted", 2));
+                ClassicAssert.IsFalse(db.KeyExists("deleted"));
+                ClassicAssert.Greater(aof.GetTailAddress(0), before, "A successful deletion must append to AOF.");
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase();
+                ClassicAssert.IsFalse(db.KeyExists("deleted"));
+                ClassicAssert.AreEqual("old", (string)db.StringGet("kept"));
+                ClassicAssert.IsFalse(db.KeyExists("missing"));
+            }
+        }
+
         private static string ComparisonFor(string condition, string value)
             => condition is "IFDEQ" or "IFDNE"
                 ? System.IO.Hashing.XxHash3.HashToUInt64(System.Text.Encoding.UTF8.GetBytes(value)).ToString("x16")
