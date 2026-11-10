@@ -49,6 +49,7 @@ namespace Garnet.cluster
             logger?.LogInformation("NetworkBufferSettings.initialReceiveBufferSize:{initialReceiveBufferSize}", networkBufferSettings.initialReceiveBufferSize);
             logger?.LogInformation("NetworkBufferSettings.maxReceiveBufferSize:{maxReceiveBufferSize}", networkBufferSettings.maxReceiveBufferSize);
             logger?.LogInformation("ParallelMigrateTasks:{ParallelMigrateTasks}", clusterProvider.serverOptions.ParallelMigrateTaskCount);
+            logger?.LogInformation("UseScanAheadMigration:{UseScanAheadMigration}", clusterProvider.serverOptions.UseScanAheadMigration);
             logger?.LogInformation("MigrationPipelineDepth:{MigrationPipelineDepth}", clusterProvider.serverOptions.MigrationPipelineDepth);
             logger?.LogInformation("ServerOptions.LoggingFrequency:{LoggingFrequency}", clusterProvider.serverOptions.LoggingFrequency);
             logger?.LogInformation("StoreWrapper.LoggingFrequency:{LoggingFrequency}", clusterProvider.storeWrapper.loggingFrequency);

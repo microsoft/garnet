@@ -349,6 +349,25 @@ namespace Garnet.test
                 Assert.That(ServerSettingsManager.TryParseCommandLineArguments(["--migrate-pipeline-depth", depth], out _, out _, out _, out _, silentMode: true), Is.False);
         }
 
+        [TestCase(null)]
+        [TestCase(true)]
+        [TestCase(false)]
+        public void ScanAheadMigrationOptions(bool? enabled)
+        {
+            string[] args = enabled.HasValue ? ["--use-scan-ahead-migration", enabled.Value.ToString()] : [];
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.GetServerOptions().UseScanAheadMigration, Is.EqualTo(enabled.GetValueOrDefault()));
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void ScanAheadMigrationConfiguration(bool enabled)
+        {
+            var json = JsonSerializer.Serialize(new { UseScanAheadMigration = enabled });
+            Assert.That(TryParseGarnetConfOptions(json, out var options, out _, out _), Is.True);
+            Assert.That(options.GetServerOptions().UseScanAheadMigration, Is.EqualTo(enabled));
+        }
+
         [TestCase(1, true)]
         [TestCase(4, true)]
         [TestCase(64, true)]

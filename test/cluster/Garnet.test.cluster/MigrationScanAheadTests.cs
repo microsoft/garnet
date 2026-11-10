@@ -71,13 +71,16 @@ namespace Garnet.test.cluster
 
         static string Key(int index) => $"{{scan-ahead}}{index:D2}";
 
-        async Task CreateOperationAsync(int depth, bool copy = false, int keyCount = 14, bool prepare = true)
+        async Task CreateOperationAsync(int depth, bool copy = false, int keyCount = 14, bool prepare = true, bool useScanAheadMigration = true)
         {
             context.CreateInstances(2, lowMemory: true, memorySize: "32m", pageSize: "16k",
                 migrationSendBufferSize: "16k", migrationPipelineDepth: depth);
             context.CreateConnection();
             foreach (var options in context.nodeOptions)
+            {
                 options.ParallelMigrateTaskCount = 1;
+                options.UseScanAheadMigration = useScanAheadMigration;
+            }
             Assert.That(context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], addslot: true), Is.EqualTo("OK"));
             context.clusterTestUtils.SetConfigEpoch(0, 1);
             context.clusterTestUtils.SetConfigEpoch(1, 2);
@@ -123,9 +126,9 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public async Task TransfersAcrossSmallBatches([Values(1, 3)] int depth, [Values] bool copy)
+        public async Task TransfersAcrossSmallBatches([Values(1, 3)] int depth, [Values] bool copy, [Values] bool useScanAheadMigration)
         {
-            await CreateOperationAsync(depth, copy);
+            await CreateOperationAsync(depth, copy, useScanAheadMigration: useScanAheadMigration);
             Assert.That(await StartMigration().WaitAsync(TimeSpan.FromSeconds(20)), Is.True);
             Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo(copy ? "14" : "0"));
             Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo("14"));
@@ -134,14 +137,56 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public async Task EmptyScanCompletesWithoutShipping()
+        public async Task EmptyScanCompletesWithoutShipping([Values] bool useScanAheadMigration)
         {
-            await CreateOperationAsync(3, keyCount: 0);
+            await CreateOperationAsync(3, keyCount: 0, useScanAheadMigration: useScanAheadMigration);
             Assert.That(await StartMigration().WaitAsync(TimeSpan.FromSeconds(10)), Is.True);
             Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo("0"));
         }
 
 #if DEBUG
+        [TestCase(1)]
+        [TestCase(3)]
+        [CancelAfter(30000)]
+        public async Task DisabledScanAheadWaitsForShippingBeforeScanning(int depth, CancellationToken cancellationToken)
+        {
+            await CreateOperationAsync(depth, useScanAheadMigration: false);
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead);
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Before_Batch_Response);
+            _ = StartMigration();
+            await WaitForPauseAsync(ExceptionInjectionType.Migration_Before_Batch_Response, cancellationToken);
+
+            Assert.That(ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead), Is.True);
+            Assert.That(migration.IsCompleted, Is.False);
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("14"));
+            RecreateKey(7, "updated-before-scan");
+
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Before_Batch_Response);
+            Assert.That(await migration.WaitAsync(cancellationToken), Is.True);
+            Assert.That(ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead), Is.True,
+                "Disabled scan-ahead must not launch a background scan");
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("0"));
+            Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo("14"));
+            Assert.That(await TargetAsync("GET", Key(7)), Is.EqualTo("updated-before-scan"));
+        }
+
+        [Test]
+        [CancelAfter(30000)]
+        public async Task DisabledScanAheadRetainsUnacknowledgedKeysOnCancellationOrDisconnect([Values] bool cancel, CancellationToken cancellationToken)
+        {
+            await CreateOperationAsync(3, useScanAheadMigration: false);
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Before_Batch_Response);
+            _ = StartMigration();
+            await WaitForPauseAsync(ExceptionInjectionType.Migration_Before_Batch_Response, cancellationToken);
+            if (cancel)
+                session.Dispose();
+            else
+                operation.Dispose();
+            Assert.That(await migration.WaitAsync(cancellationToken), Is.False);
+            Assert.That(session.Status, Is.EqualTo(MigrateState.FAIL));
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("14"));
+        }
+
         static async Task WaitForPauseAsync(ExceptionInjectionType injection, CancellationToken token)
         {
             while (ExceptionInjectionHelper.IsEnabled(injection))

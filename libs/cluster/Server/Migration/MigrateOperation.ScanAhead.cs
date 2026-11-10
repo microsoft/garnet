@@ -17,7 +17,7 @@ namespace Garnet.cluster
         internal sealed partial class MigrateOperation
         {
             /// <summary>
-            /// Gather the next key batch while the active batch is transmitted and acknowledged.
+            /// Migrate slot key batches, optionally gathering the next batch while the active batch is shipped.
             /// </summary>
             /// <param name="beginAddress">Start of this worker's disjoint scan range.</param>
             /// <param name="endAddress">End of this worker's scan range.</param>
@@ -28,6 +28,7 @@ namespace Garnet.cluster
                 try
                 {
                     ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+                    var useScanAheadMigration = session.clusterProvider.serverOptions.UseScanAheadMigration;
                     using var scanSession = session.GetLocalSession();
                     using var scanCancellation = CancellationTokenSource.CreateLinkedTokenSource(session.cancellationToken);
                     var token = scanCancellation.Token;
@@ -51,7 +52,7 @@ namespace Garnet.cluster
                             // The publication barrier also retires readers of the previous sketch.
                             retired.Clear();
                             var scanStart = cursor;
-                            scanTask = cursor < endAddress
+                            scanTask = useScanAheadMigration && cursor < endAddress
 #if DEBUG
                                 ? Task.Run(async () =>
                                 {
@@ -63,7 +64,7 @@ namespace Garnet.cluster
 #else
                                 ? Task.Run(() => ScanBatch(retired, scanStart), token)
 #endif
-                                : Task.FromResult(cursor);
+                                : null;
 
                             if (!await TransmitSlotsAsync().ConfigureAwait(false))
                                 return false;
@@ -77,7 +78,10 @@ namespace Garnet.cluster
                             DeleteKeys();
                             sketch.SetStatus(SketchStatus.MIGRATED);
 
-                            cursor = await scanTask.ConfigureAwait(false);
+                            if (scanTask != null)
+                                cursor = await scanTask.ConfigureAwait(false);
+                            else if (cursor < endAddress)
+                                cursor = ScanBatch(retired, scanStart);
                             scanTask = null;
                             pending = retired;
                         }

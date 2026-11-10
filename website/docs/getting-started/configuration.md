@@ -88,6 +88,8 @@ Migration batches are processed synchronously before acknowledgment. Pipelining 
 
 Pipelining uses the existing `CLUSTER MIGRATE` wire format without additional arguments.
 
+Slot migration finishes shipping, acknowledgments, and deletion before scanning the next batch by default. Set `UseScanAheadMigration` to `true` in `garnet.conf`, or pass `--use-scan-ahead-migration true`, to overlap discovery of the next key batch with shipping the current batch. This setting is independent of `ParallelMigrateTaskCount` and `MigrationPipelineDepth` and does not affect explicit-key migration.
+
 ## Configurable Settings
 
 | `garnet.conf`<br/>keyword | Command line keyword(s) | Type | Valid Values | Description |
@@ -126,6 +128,7 @@ Pipelining uses the existing `CLUSTER MIGRATE` wire format without additional ar
 | **EnableCluster** | ```--cluster``` | ```bool``` |  | Enable cluster. |
 | **CleanClusterConfig** | ```--clean-cluster-config``` | ```bool``` |  | Start with clean cluster config. |
 | **ParallelMigrateTaskCount** | ```--parallel-migrate-task-count``` | ```int``` | Integer in range:<br/>[0, 16384] | Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used. |
+| **UseScanAheadMigration** | ```--use-scan-ahead-migration``` | ```bool``` | true, false | Gather the next slot-migration key batch while shipping the active batch (default: false). When false, scan only after shipping and deletion complete. |
 | **MigrationPipelineDepth** | ```--migrate-pipeline-depth``` | ```int``` | Integer in range:<br/>[1, 64] | Maximum unacknowledged migration batches per worker (default: 1). Batches are processed synchronously before acknowledgment. |
 | **AuthenticationMode** | ```--auth``` | ```GarnetAuthenticationMode``` | NoAuth, Password, Aad, ACL, AclWithAad | Authentication mode of Garnet. This impacts how AUTH command is processed and how clients are authenticated against Garnet. Value options: NoAuth, Password, Aad, ACL |
 | **Password** | ```--password``` | ```string``` |  | Authentication string for password authentication. |

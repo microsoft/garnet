@@ -67,6 +67,11 @@ namespace Garnet.server
         public int ParallelMigrateTaskCount = 1;
 
         /// <summary>
+        /// Gather the next slot-migration key batch while the active batch is shipped.
+        /// </summary>
+        public bool UseScanAheadMigration = false;
+
+        /// <summary>
         /// Migration client send-buffer size, rounded down to a power of two. Null uses the log page size.
         /// Records larger than the buffer are chunked.
         /// </summary>
