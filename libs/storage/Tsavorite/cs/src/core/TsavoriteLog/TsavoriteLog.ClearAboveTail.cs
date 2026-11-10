@@ -190,7 +190,7 @@ namespace Tsavorite.core
             var sectorSize = (int)device.SectorSize;
             var segmented = device.SegmentSize > 0;
             var segmentSize = segmented ? device.SegmentSize : long.MaxValue;
-            var region = new DeviceRegion(device, sectorSize, (int)Math.Min(ClearIoChunkSize, segmentSize));
+            var region = new DeviceZeroRegion(device, sectorSize, (int)Math.Min(ClearIoChunkSize, segmentSize));
 
             long PageStart(long page) => page << pageSizeBits;
 
@@ -231,25 +231,57 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Reads and zeroes ranges of a device, one chunk at a time. Chunks are aligned to their size, which divides the segment
-        /// size, so no IO crosses a segment; <see cref="IDevice"/> maps each IO to the segment of its first byte.
+        /// Zeroes ranges of a device: <see cref="HasData"/> finds the data to zero, and <see cref="Zero"/> zeroes it. It writes
+        /// only zeros, except that <see cref="Zero"/> rewrites the sector holding the start of a range with its bytes below the
+        /// start unchanged.
         /// </summary>
-        sealed unsafe class DeviceRegion
+        /// <remarks>
+        /// Each IO is issued and waited for in turn, and covers at most one chunk. Chunks are aligned to their size, which divides
+        /// the segment size, so no IO crosses a segment; <see cref="IDevice"/> maps each IO to the segment of its first byte. One
+        /// thread uses an instance: each clearing creates its own, under <c>clearAboveTailLock</c>.
+        /// </remarks>
+        sealed unsafe class DeviceZeroRegion
         {
+            /// <summary>The device read and zeroed</summary>
             readonly IDevice device;
-            readonly int sectorSize;
-            readonly int chunkSize;
-            readonly SectorAlignedMemory buffer;
-            readonly SectorAlignedMemory zeros;
 
-            internal DeviceRegion(IDevice device, int sectorSize, int chunkSize)
+            /// <summary>
+            /// The device's sector size. Every IO starts and ends on a sector boundary, as unbuffered file IO requires.
+            /// </summary>
+            readonly int sectorSize;
+
+            /// <summary>
+            /// The largest IO, and the alignment that keeps each IO within one segment: a power of two, a multiple of the sector
+            /// size, that divides the segment size
+            /// </summary>
+            readonly int chunkSize;
+
+            /// <summary>
+            /// Where reads land: one chunk, sector-aligned. <see cref="Zero"/> also writes from it the sector it rewrites.
+            /// </summary>
+            readonly SectorAlignedMemory readBuffer;
+
+            /// <summary>
+            /// One chunk of zeros, sector-aligned: the source of every write except the sector that <see cref="Zero"/> rewrites
+            /// </summary>
+            readonly SectorAlignedMemory zeroBuffer;
+
+            /// <summary>
+            /// Allocate the buffers for reading and zeroing <paramref name="device"/>. They are pinned arrays that the garbage
+            /// collector frees, so nothing needs disposing.
+            /// </summary>
+            /// <param name="device">The device to read and zero</param>
+            /// <param name="sectorSize">The device's sector size</param>
+            /// <param name="chunkSize">The largest IO to issue: a power of two, a multiple of <paramref name="sectorSize"/>, that
+            /// divides the device's segment size if it has segments</param>
+            internal DeviceZeroRegion(IDevice device, int sectorSize, int chunkSize)
             {
                 this.device = device;
                 this.sectorSize = sectorSize;
                 this.chunkSize = chunkSize;
-                buffer = new SectorAlignedMemory(chunkSize, sectorSize);
-                zeros = new SectorAlignedMemory(chunkSize, sectorSize);
-                new Span<byte>(zeros.aligned_pointer, chunkSize).Clear();
+                readBuffer = new SectorAlignedMemory(chunkSize, sectorSize);
+                zeroBuffer = new SectorAlignedMemory(chunkSize, sectorSize);
+                new Span<byte>(zeroBuffer.aligned_pointer, chunkSize).Clear();
             }
 
             /// <summary>
@@ -263,7 +295,7 @@ namespace Tsavorite.core
                     var length = (int)(Math.Min(until, AlignDown(address, chunkSize) + chunkSize) - address);
                     Read(address, length);
                     var skip = (int)Math.Max(0, from - address);
-                    if (new ReadOnlySpan<byte>(buffer.aligned_pointer + skip, length - skip).IndexOfAnyExcept((byte)0) >= 0)
+                    if (new ReadOnlySpan<byte>(readBuffer.aligned_pointer + skip, length - skip).IndexOfAnyExcept((byte)0) >= 0)
                         return true;
                     address += length;
                 }
@@ -281,7 +313,7 @@ namespace Tsavorite.core
                 for (var end = until; end > wholeSectorsFrom;)
                 {
                     var start = Math.Max(wholeSectorsFrom, AlignDown(end - 1, chunkSize));
-                    Write(start, zeros.aligned_pointer, (int)(end - start));
+                    Write(start, zeroBuffer.aligned_pointer, (int)(end - start));
                     end = start;
                 }
 
@@ -289,25 +321,39 @@ namespace Tsavorite.core
                 {
                     var sector = wholeSectorsFrom - sectorSize;
                     Read(sector, sectorSize);
-                    new Span<byte>(buffer.aligned_pointer + (from - sector), (int)(wholeSectorsFrom - from)).Clear();
-                    Write(sector, buffer.aligned_pointer, sectorSize);
+                    new Span<byte>(readBuffer.aligned_pointer + (from - sector), (int)(wholeSectorsFrom - from)).Clear();
+                    Write(sector, readBuffer.aligned_pointer, sectorSize);
                 }
             }
 
+            /// <summary>
+            /// Round <paramref name="address"/> down to a multiple of <paramref name="alignment"/>, which must be a power of two
+            /// </summary>
             static long AlignDown(long address, long alignment) => address & ~(alignment - 1);
 
             /// <summary>
-            /// Read into the buffer. Bytes that were never written read as zero, whether the device reports them as a short read,
-            /// as the end of a file, or as a segment that does not exist.
+            /// Read <paramref name="length"/> bytes at <paramref name="address"/> into <see cref="readBuffer"/>, and wait for the
+            /// read. Bytes that were never written read as zero, whether the device reports them as a short read, as the end of a
+            /// file, or as a segment that does not exist. Any other failure throws <see cref="TsavoriteIOException"/>.
             /// </summary>
+            /// <param name="address">Where to read: sector-aligned</param>
+            /// <param name="length">How many bytes: whole sectors, within one chunk, so they fit in <see cref="readBuffer"/></param>
             void Read(long address, int length)
             {
-                new Span<byte>(buffer.aligned_pointer, length).Clear();
+                new Span<byte>(readBuffer.aligned_pointer, length).Clear();
                 var completion = new IoCompletion(isRead: true, address);
-                device.ReadAsync((ulong)address, (IntPtr)buffer.aligned_pointer, (uint)length, IoCompletion.Callback, completion);
+                device.ReadAsync((ulong)address, (IntPtr)readBuffer.aligned_pointer, (uint)length, IoCompletion.Callback, completion);
                 completion.Wait();
             }
 
+            /// <summary>
+            /// Write <paramref name="length"/> bytes from <paramref name="source"/> to the device at <paramref name="address"/>,
+            /// and wait for the write. A failure throws <see cref="TsavoriteIOException"/>.
+            /// </summary>
+            /// <param name="address">Where to write: sector-aligned</param>
+            /// <param name="source">The bytes to write: <see cref="zeroBuffer"/>, or <see cref="readBuffer"/> for the sector that
+            /// <see cref="Zero"/> rewrites</param>
+            /// <param name="length">How many bytes: whole sectors, within one chunk</param>
             void Write(long address, byte* source, int length)
             {
                 var completion = new IoCompletion(isRead: false, address);
@@ -315,13 +361,37 @@ namespace Tsavorite.core
                 completion.Wait();
             }
 
-            /// <summary>Completion of one device read or write</summary>
+            /// <summary>
+            /// One device read or write that the issuing thread waits for: the device calls <see cref="Callback"/> when the IO
+            /// completes, which records the outcome, and <see cref="Wait"/> blocks until then
+            /// </summary>
+            /// <param name="isRead">Whether the IO is a read</param>
+            /// <param name="address">The device address the IO starts at</param>
             sealed class IoCompletion(bool isRead, long address)
             {
+                /// <summary>
+                /// Completed by <see cref="Callback"/>, or faulted if the IO failed. RunContinuationsAsynchronously keeps any
+                /// continuation off the device's completion thread.
+                /// </summary>
                 readonly TaskCompletionSource done = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                /// <summary>Whether the IO is a read: for a read, finding nothing written where it starts is not an error</summary>
                 readonly bool isRead = isRead;
+
+                /// <summary>The device address the IO starts at, reported if it fails</summary>
                 readonly long address = address;
 
+                /// <summary>
+                /// The completion callback passed with every IO, with the IO's <see cref="IoCompletion"/> as its context. It
+                /// completes <see cref="done"/>, or faults it with a <see cref="TsavoriteIOException"/> if the IO failed. A read
+                /// that failed only because nothing was written where it started (<see cref="TsavoriteLogScanIterator.IsEndOfFile"/>)
+                /// succeeds, since <see cref="DeviceZeroRegion.Read"/> clears the buffer first and those bytes read as zero.
+                /// </summary>
+                /// <remarks>
+                /// The byte count is not checked: a short read leaves zeros in the rest of the buffer for the same reason, and a
+                /// write is complete when the device reports no error, as the log's page flushes assume. The delegate is static, so
+                /// issuing an IO allocates none.
+                /// </remarks>
                 internal static readonly DeviceIOCompletionCallback Callback = static (errorCode, numBytes, context, ioException) =>
                 {
                     var completion = (IoCompletion)context;
@@ -332,6 +402,9 @@ namespace Tsavorite.core
                             $"Device {(completion.isRead ? "read" : "write")} at address {completion.address} failed with error code {errorCode} while clearing above the tail", ioException));
                 };
 
+                /// <summary>
+                /// Block until the IO completes. If it failed, throws its <see cref="TsavoriteIOException"/>.
+                /// </summary>
                 internal void Wait() => done.Task.GetAwaiter().GetResult();
             }
         }
