@@ -28,6 +28,8 @@ namespace Garnet.cluster
 
             public bool OnStart(long beginAddress, long endAddress) => true;
 
+            public bool IncludeValues => !keysOnly;
+
             public void OnStop(bool completed, long numberOfRecords) { }
 
             public void OnException(Exception exception, long numberOfRecords) { }

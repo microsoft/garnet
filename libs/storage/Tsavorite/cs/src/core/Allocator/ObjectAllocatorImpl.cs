@@ -1605,7 +1605,8 @@ namespace Tsavorite.core
         internal override bool Scan<TScanFunctions>(TsavoriteKV<TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
                 long beginAddress, long endAddress, ref TScanFunctions scanFunctions, DiskScanBufferingMode scanBufferingMode)
         {
-            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, endAddress, epoch, scanBufferingMode, includeClosedRecords: false, logger: logger);
+            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, endAddress, epoch, scanBufferingMode,
+                includeClosedRecords: false, logger: logger, includeValues: scanFunctions.IncludeValues);
             return PushScanImpl(beginAddress, endAddress, ref scanFunctions, iter);
         }
 
@@ -1617,7 +1618,7 @@ namespace Tsavorite.core
                 bool resetCursor = true, bool includeTombstones = false)
         {
             using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, cursor, endAddress, epoch, GetScanCursorBufferingMode(count),
-                includeClosedRecords: maxAddress < long.MaxValue, logger: logger);
+                includeClosedRecords: maxAddress < long.MaxValue, logger: logger, includeValues: scanFunctions.IncludeValues);
             return ScanLookup<long, long, TScanFunctions, ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor,
                 maxAddress, resetCursor: resetCursor, includeTombstones: includeTombstones);
         }
