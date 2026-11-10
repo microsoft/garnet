@@ -236,9 +236,9 @@ namespace Tsavorite.core
         /// start unchanged.
         /// </summary>
         /// <remarks>
-        /// Each IO is issued and waited for in turn, and covers at most one chunk. Chunks are aligned to their size, which divides
-        /// the segment size, so no IO crosses a segment; <see cref="IDevice"/> maps each IO to the segment of its first byte. One
-        /// thread uses an instance: each clearing creates its own, under <c>clearAboveTailLock</c>.
+        /// Each IO is issued and waited for in turn, and covers at most one IO chunk. IO chunks are aligned to their size, which
+        /// divides the segment size, so no IO crosses a segment; <see cref="IDevice"/> maps each IO to the segment of its first
+        /// byte. One thread uses an instance: each clearing creates its own, under <c>clearAboveTailLock</c>.
         /// </remarks>
         sealed unsafe class DeviceZeroRegion
         {
@@ -254,15 +254,15 @@ namespace Tsavorite.core
             /// The largest IO, and the alignment that keeps each IO within one segment: a power of two, a multiple of the sector
             /// size, that divides the segment size
             /// </summary>
-            readonly int chunkSize;
+            readonly int ioChunkSize;
 
             /// <summary>
-            /// Where reads land: one chunk, sector-aligned. <see cref="Zero"/> also writes from it the sector it rewrites.
+            /// Where reads land: one IO chunk, sector-aligned. <see cref="Zero"/> also writes from it the sector it rewrites.
             /// </summary>
             readonly SectorAlignedMemory readBuffer;
 
             /// <summary>
-            /// One chunk of zeros, sector-aligned: the source of every write except the sector that <see cref="Zero"/> rewrites
+            /// One IO chunk of zeros, sector-aligned: the source of every write except the sector that <see cref="Zero"/> rewrites
             /// </summary>
             readonly SectorAlignedMemory zeroBuffer;
 
@@ -272,16 +272,16 @@ namespace Tsavorite.core
             /// </summary>
             /// <param name="device">The device to read and zero</param>
             /// <param name="sectorSize">The device's sector size</param>
-            /// <param name="chunkSize">The largest IO to issue: a power of two, a multiple of <paramref name="sectorSize"/>, that
+            /// <param name="ioChunkSize">The largest IO to issue: a power of two, a multiple of <paramref name="sectorSize"/>, that
             /// divides the device's segment size if it has segments</param>
-            internal DeviceZeroRegion(IDevice device, int sectorSize, int chunkSize)
+            internal DeviceZeroRegion(IDevice device, int sectorSize, int ioChunkSize)
             {
                 this.device = device;
                 this.sectorSize = sectorSize;
-                this.chunkSize = chunkSize;
-                readBuffer = new SectorAlignedMemory(chunkSize, sectorSize);
-                zeroBuffer = new SectorAlignedMemory(chunkSize, sectorSize);
-                new Span<byte>(zeroBuffer.aligned_pointer, chunkSize).Clear();
+                this.ioChunkSize = ioChunkSize;
+                readBuffer = new SectorAlignedMemory(ioChunkSize, sectorSize);
+                zeroBuffer = new SectorAlignedMemory(ioChunkSize, sectorSize);
+                new Span<byte>(zeroBuffer.aligned_pointer, ioChunkSize).Clear();
             }
 
             /// <summary>
@@ -292,7 +292,7 @@ namespace Tsavorite.core
             {
                 for (var address = AlignDown(from, sectorSize); address < until;)
                 {
-                    var length = (int)(Math.Min(until, AlignDown(address, chunkSize) + chunkSize) - address);
+                    var length = (int)(Math.Min(until, AlignDown(address, ioChunkSize) + ioChunkSize) - address);
                     Read(address, length);
                     var skip = (int)Math.Max(0, from - address);
                     if (new ReadOnlySpan<byte>(readBuffer.aligned_pointer + skip, length - skip).IndexOfAnyExcept((byte)0) >= 0)
@@ -312,7 +312,7 @@ namespace Tsavorite.core
                 var wholeSectorsFrom = AlignDown(from + sectorSize - 1, sectorSize);
                 for (var end = until; end > wholeSectorsFrom;)
                 {
-                    var start = Math.Max(wholeSectorsFrom, AlignDown(end - 1, chunkSize));
+                    var start = Math.Max(wholeSectorsFrom, AlignDown(end - 1, ioChunkSize));
                     Write(start, zeroBuffer.aligned_pointer, (int)(end - start));
                     end = start;
                 }
@@ -337,7 +337,7 @@ namespace Tsavorite.core
             /// file, or as a segment that does not exist. Any other failure throws <see cref="TsavoriteIOException"/>.
             /// </summary>
             /// <param name="address">Where to read: sector-aligned</param>
-            /// <param name="length">How many bytes: whole sectors, within one chunk, so they fit in <see cref="readBuffer"/></param>
+            /// <param name="length">How many bytes: whole sectors, within one IO chunk, so they fit in <see cref="readBuffer"/></param>
             void Read(long address, int length)
             {
                 new Span<byte>(readBuffer.aligned_pointer, length).Clear();
@@ -353,7 +353,7 @@ namespace Tsavorite.core
             /// <param name="address">Where to write: sector-aligned</param>
             /// <param name="source">The bytes to write: <see cref="zeroBuffer"/>, or <see cref="readBuffer"/> for the sector that
             /// <see cref="Zero"/> rewrites</param>
-            /// <param name="length">How many bytes: whole sectors, within one chunk</param>
+            /// <param name="length">How many bytes: whole sectors, within one IO chunk</param>
             void Write(long address, byte* source, int length)
             {
                 var completion = new IoCompletion(isRead: false, address);
