@@ -127,6 +127,16 @@ not explicitly request it, the runner uses that build's own default, emits an
 `UNAVAILABLE` diagnostic, and records unavailable policy fields rather than
 inventing equivalent settings. Explicitly requested unsupported settings fail.
 
+For an unmodified primary build without the chunk/depth options, select
+`send --server-transfer-defaults true` instead of `--chunks`/`--depths`.
+This explicitly omits both primary transfer options, including on builds that
+support them. The runner does not infer a physical transfer shape from its own
+defaults: CSV `chunk_bytes`/`depth` are `unavailable`, and
+`primary_transfer_configuration` is `server-defaults` rather than `configured`.
+Record any source-verified legacy defaults separately with the selected source
+revision. Without this selector, unsupported primary tuning fails before startup.
+The selector does not change the replica's independently selected write policy.
+
 ### Production phase timing
 
 `--phase-timing true` on either runner passes the experimental startup option
@@ -252,9 +262,10 @@ Run one untimed warm-up pass before a plan. Give every pass a new CSV.
 | Component comparison | The same buffers × policy with `--scenario transfer-only` (send and receive default to full) and `--ack-delay-us 0`, matching full mode's loopback | Run a second set in reverse order, so ordering can't explain a difference |
 
 For the component runs, `generate` the source checkpoint once and reuse it with `--source-prefix`.
-Linux Native component sources cannot be opened read-only; an explicitly managed
-component source is a different I/O condition, not a like-for-like Native primary
-comparison. Do not silently change the device to make this plan run.
+Linux Native component sources use read/write handles and only issue reads;
+record `source_read_only=false` and require successful final source verification.
+An explicitly managed source is a different I/O condition, not a like-for-like
+Native primary comparison. Do not silently substitute the device.
 
 One buffer with `--write-buffers-concurrently true` runs the same code as sequential writes. Keep it in sweeps as an A/A control: its difference shows the noise floor.
 
@@ -306,10 +317,14 @@ not the full Garnet server's network/session dispatch.
   `127.0.0.1:7010`. For two machines, bind an explicit private interface on an
   isolated, trusted test network; restrict the firewall to the sender. Do not
   bind a public interface, production interface, or `0.0.0.0`.
-- The source is an **offline, immutable file**, opened read-only after optional
-  checkpoint generation. Do not use existing files still being
+- The source is an **offline file that must remain unchanged**, opened after optional
+  checkpoint generation. Source device handles are read-only except for Linux Native.
+  Do not use existing files still being
   changed by a running server. A source file is kept open throughout the sweep,
   and every received file is checked against its original SHA-256 hash.
+  Source length and SHA-256 are checked again after the sweep, outside timing.
+  CSV rows are provisional until the sender exits successfully with
+  `SOURCE VERIFIED`; a failed final check invalidates the entire sweep.
   This is not a live-checkpoint locking mechanism: keeping the input offline
   and immutable is the caller's responsibility.
 - Tsavorite devices take a **segment prefix**, not a normal file name. To
@@ -448,13 +463,18 @@ Linux Native component devices default to Uring when `--device-io-backend` is
 omitted; explicit `Default` selects Libaio, and explicit `Libaio`/`Uring` overrides
 remain supported. Other component tuning defaults remain 4 drainers,
 0 contexts/depth/throttle and 32 AIO devices, not the Linux full numeric profile.
-These settings affect the real generated log,
-checkpoint devices and receiver sink. Set Native explicitly for Linux component
-generation/receiving. Linux's component sender still rejects Native because its
-offline source must be opened read-only and Native lacks that support; do not
-silently use managed I/O for a requested Native source. Use full mode for a
-Native/Uring primary and replica, or explicitly use a managed component source.
-Component CSV appends `source_io`/`receiver_io`. V6 reports receiver I/O identity;
+These settings affect the real generated log, checkpoint devices, source reader
+and receiver sink. Set Native explicitly on both component endpoints to measure
+Native/Uring without substituting managed device I/O. Linux Native source handles
+open read/write because NativeStorageDevice does not implement read-only opens.
+The sender issues only reads and disables delete-on-close; opening an existing
+file read/write does not truncate it. Use only offline, test-owned source files
+that remain unchanged throughout the sweep. The managed source guard is not a
+lock against other native writers on Linux, and even a read-only handle would
+not make the file globally immutable. Other supported devices/platforms retain
+read-only source opens.
+Component CSV appends `source_io`/`receiver_io` and `source_read_only`, which
+records the source device's actual requested access mode. V6 reports receiver I/O identity;
 the new receiver also accepts legacy V5 callers with their original five-field
 reply, but new senders require V6 receivers rather than inventing missing settings.
 
@@ -489,17 +509,17 @@ VERIFIED token=3937fa9c-9f90-46f4-9109-affda772588b repeat=1 chunk=4194304 depth
 
 The 64-MiB value payload produced a 68,177,920-byte checkpoint HLOG, including
 record/page overhead and padding. Output byte counts and rates use the physical
-file size. Checkpoint generation and both hash passes are outside the measured
+file size. Checkpoint generation and all source/destination hash checks are outside the measured
 interval. Prehashing and repeats can warm caches; use multiple repeats and your
 own devices/network before selecting parameters. The separate [historical
 results](RESULTS.md) used random-file inputs before checkpoint generation existed;
 they are not measurements of this generated checkpoint.
 
 `RandomAccess` is the portable default and uses actual Tsavorite device I/O.
-To match Windows native checkpoint I/O, set `--device Native` on both ends.
-On Linux, the native source device does not implement a read-only open, so the
-sender refuses it: use `RandomAccess` for the source, optionally `Native` on the
-receiver. `Native` requires its supported OS/native dependencies. Backends can
+To match native checkpoint device I/O, set `--device Native` on both ends.
+Linux Native uses a read/write source handle, with unchanged-source verification;
+Windows Native retains read-only source access.
+`Native` requires its supported OS/native dependencies. Backends can
 fall back from direct I/O to buffered I/O depending on the filesystem/platform;
 do not assume `--buffered false` proves cache bypass. Record the actual backend
 and buffering choices on **both machines**.

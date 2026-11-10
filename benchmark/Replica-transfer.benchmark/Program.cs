@@ -23,12 +23,15 @@ internal static class Program
                           [--chunks 16m] [--depths 4] [--repeats 1] [--runs 1]
                           [--write-buffers 1] [--write-buffers-concurrently false]
                           [--phase-timing false] [--csv <new file>] [--timeout-seconds 300]
+                          [--server-transfer-defaults true] (send only; excludes --chunks/--depths)
                           [--device-type RandomAccess|Native|FileStream]
                     Linux full defaults: --device-type Native --device-io-backend Uring
                           --device-completion-threads 16 --device-io-contexts 256
                           --device-queue-depth 256 --device-throttle-limit 4096 --device-aio-max-devices 32
                     Native tuning is Linux-only; Windows defaults remain RandomAccess.
                     Linux Native component devices also default to Uring; explicit Default selects Libaio.
+                    Linux Native component sources open read/write; use only offline, test-owned files.
+                    Source length and SHA-256 are verified before and after each component sweep.
                     Component: explicitly pass --scenario transfer-only.
                     receive --output <existing directory> [--bind 127.0.0.1] [--port 7010]
                             [--runs 1] [--max-chunk 16m] [--ack-delay-us 0] [--write-buffers 1]
@@ -115,6 +118,7 @@ internal sealed class Options
     internal TimeSpan Timeout { get; private init; }
     internal DeviceType DeviceType => Device.Type;
     internal DeviceSettings Device { get; private init; }
+    internal bool SourceReadOnly { get; private init; }
     internal bool Buffered { get; private init; }
     internal (int Chunk, int Depth)[] Cases { get; private init; }
 
@@ -154,9 +158,6 @@ internal sealed class Options
         }
 
         var device = DeviceSettings.Parse(values, full: false, linux ?? OperatingSystem.IsLinux());
-        if (mode == "send" && device.Type == DeviceType.Native && (linux ?? !OperatingSystem.IsWindows()))
-            throw new ArgumentException("Native component source devices do not support read-only opens on this platform; use RandomAccess or full.");
-
         if (mode == "send" && (Get("--source-prefix") == null) == (Get("--generate") == null))
             throw new ArgumentException("Specify exactly one of --source-prefix and --generate.");
         if (mode == "send" && Get("--data-size") != null && Get("--generate") == null)
@@ -204,6 +205,7 @@ internal sealed class Options
             WriteBuffersConcurrently = bool.Parse(Get("--write-buffers-concurrently", "false")),
             Timeout = timeout,
             Device = device,
+            SourceReadOnly = device.Type != DeviceType.Native || !(linux ?? OperatingSystem.IsLinux()),
             Buffered = bool.Parse(Get("--buffered", "false")),
             Cases = cases.Distinct().ToArray()
         };

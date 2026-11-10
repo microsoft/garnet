@@ -192,13 +192,56 @@ namespace Garnet.test.cluster
                 var options = BenchmarkOptions.Parse([role, "--output", ".", .. LinuxIoProfile], linux: true);
                 Assert.That(options.Device, Is.EqualTo(DeviceSettings.Parse(new(), full: true, linux: true)));
             }
-            Assert.Throws<ArgumentException>(() => BenchmarkOptions.Parse(
-                ["send", "--source-prefix", "offline", .. LinuxIoProfile], linux: true),
-                "The Native component sender cannot open an immutable source read-only on Linux.");
+            var sender = BenchmarkOptions.Parse(["send", "--source-prefix", "offline", .. LinuxIoProfile], linux: true);
+            Assert.That(sender.Device, Is.EqualTo(DeviceSettings.Parse(new(), full: true, linux: true)));
+            Assert.That(sender.SourceReadOnly, Is.False);
             Assert.Throws<ArgumentException>(() => BenchmarkOptions.Parse(
                 ["receive", "--output", ".", "--device", "Native", "--device-type", "Native"], linux: true));
             Assert.That(BenchmarkOptions.Parse(["receive", "--output", ".", "--device", "Native"], linux: true).Device.Type,
                 Is.EqualTo(DeviceType.Native));
+        }
+
+        [TestCase(true, "Native", false)]
+        [TestCase(false, "Native", true)]
+        [TestCase(true, "RandomAccess", true)]
+        [TestCase(false, "RandomAccess", true)]
+        [TestCase(true, "FileStream", true)]
+        [TestCase(false, "FileStream", true)]
+        public void ComponentSourceAccessModeIsExplicit(bool linux, string type, bool readOnly)
+        {
+            var options = BenchmarkOptions.Parse(["send", "--source-prefix", "offline", "--device-type", type], linux);
+            Assert.That(options.SourceReadOnly, Is.EqualTo(readOnly));
+        }
+
+        [TestCase("unchanged")]
+        [TestCase("contents")]
+        [TestCase("length")]
+        [TestCase("segment")]
+        public async Task ComponentSourceVerificationRejectsChangedInputs(string change)
+        {
+            Directory.CreateDirectory(TestUtils.MethodTestDir);
+            var prefix = Path.Combine(TestUtils.MethodTestDir, "source");
+            var data = new byte[4096];
+            await File.WriteAllBytesAsync(prefix + ".0", data);
+            var hash = await Receiver.HashAsync(prefix + ".0", data.Length, CancellationToken.None);
+            switch (change)
+            {
+                case "contents":
+                    data[0] = 1;
+                    await File.WriteAllBytesAsync(prefix + ".0", data);
+                    break;
+                case "length":
+                    await File.WriteAllBytesAsync(prefix + ".0", new byte[data.Length * 2]);
+                    break;
+                case "segment":
+                    await File.WriteAllBytesAsync(prefix + ".1", data);
+                    break;
+            }
+            if (change == "unchanged")
+                await Sender.VerifySourceAsync(prefix, data.Length, hash, TimeSpan.FromSeconds(5), CancellationToken.None);
+            else
+                Assert.ThrowsAsync<InvalidDataException>(() =>
+                    Sender.VerifySourceAsync(prefix, data.Length, hash, TimeSpan.FromSeconds(5), CancellationToken.None));
         }
 
         [Test]
@@ -266,6 +309,26 @@ namespace Garnet.test.cluster
 
         [TestCase(false)]
         [TestCase(true)]
+        public void FullPrimaryTransferDefaultsAreExplicit(bool defaults)
+        {
+            var supported = new HashSet<string> { "repl-disk-based-sync-chunk-size", "repl-disk-based-sync-pipeline-depth" };
+            var start = new ProcessStartInfo();
+            OwnedServer.ConfigureTransfer(start, supported, 16 << 20, 4, defaults);
+            Assert.That(start.ArgumentList, Is.EqualTo(defaults ? Array.Empty<string>() :
+                ["--repl-disk-based-sync-chunk-size", "16777216", "--repl-disk-based-sync-pipeline-depth", "4"]));
+            var older = new ProcessStartInfo();
+            if (defaults)
+                OwnedServer.ConfigureTransfer(older, new(), 16 << 20, 4, defaults);
+            else
+                Assert.Throws<ArgumentException>(() => OwnedServer.ConfigureTransfer(older, new(), 16 << 20, 4, defaults));
+            Assert.That(older.ArgumentList, Is.Empty);
+            foreach (var missing in supported)
+                Assert.Throws<ArgumentException>(() => OwnedServer.ConfigureTransfer(new(), supported.Where(name => name != missing).ToHashSet(),
+                    16 << 20, 4, serverDefaults: false));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
         public void BenchmarkTimingStartupArgumentsAndLegacyBuilds(bool enabled)
         {
             var start = new ProcessStartInfo();
@@ -314,9 +377,10 @@ namespace Garnet.test.cluster
             }
         }
 
-        [TestCase(false, false)]
-        [TestCase(true, true)]
-        public async Task FullScenarioUsesRealServerProcessesAndFreshCheckpoints(bool concurrently, bool phaseTiming)
+        [TestCase(false, false, false)]
+        [TestCase(true, true, false)]
+        [TestCase(false, false, true)]
+        public async Task FullScenarioUsesRealServerProcessesAndFreshCheckpoints(bool concurrently, bool phaseTiming, bool serverDefaults)
         {
             Directory.CreateDirectory(TestUtils.MethodTestDir);
             var root = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
@@ -335,10 +399,16 @@ namespace Garnet.test.cluster
                 "--write-buffers-concurrently", concurrently.ToString(), "--phase-timing", phaseTiming.ToString(), "--timeout-seconds", "60",
                 "--device-throttle-limit", "512"]);
             var csv = Path.Combine(TestUtils.MethodTestDir, "full.csv");
+            string[] transfer = serverDefaults ? ["--server-transfer-defaults", "true"] : ["--chunks", "128k", "--depths", "2"];
             var send = FullOptions.Parse(["send", "--server", server, "--output", TestUtils.MethodTestDir,
                 "--port", port.ToString(), "--server-port", (port + 2).ToString(), "--data-size", "4m",
-                "--chunks", "128k", "--depths", "2", "--phase-timing", phaseTiming.ToString(), "--timeout-seconds", "60", "--csv", csv,
-                "--device-throttle-limit", "512"]);
+                "--phase-timing", phaseTiming.ToString(), "--timeout-seconds", "60", "--csv", csv,
+                "--device-throttle-limit", "512", .. transfer]);
+            Assert.That(send.ServerTransferDefaults, Is.EqualTo(serverDefaults));
+            if (serverDefaults)
+                foreach (var name in new[] { "--chunks", "--depths" })
+                    Assert.Throws<ArgumentException>(() => FullOptions.Parse(["send", "--server", server,
+                        "--output", TestUtils.MethodTestDir, "--server-transfer-defaults", "true", name, "1"]));
             using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(90));
             var receiver = FullReplication.RunAsync(receive, cancellation.Token);
             try
@@ -352,6 +422,9 @@ namespace Garnet.test.cluster
                 else
                     Assert.That(result, Does.Contain("unavailable"));
                 Assert.That(result, Does.Contain("primary_io,replica_io"));
+                Assert.That(result, Does.Contain(serverDefaults ? "\"server-defaults\"" : "\"configured\""));
+                if (serverDefaults)
+                    Assert.That(result, Does.Contain("\"full\",\"verified\",\"unavailable\",\"unavailable\""));
                 Assert.That(result, Does.Contain("device-throttle-limit=512"));
                 foreach (var launch in Directory.EnumerateFiles(TestUtils.MethodTestDir, "launch.json", SearchOption.AllDirectories))
                 {
@@ -562,6 +635,15 @@ namespace Garnet.test.cluster
         [TestCase(2, true)]
         [TestCase(4, true)]
         public async Task TransfersAndVerifiesFileWithAcceptanceReplies(int writeBuffers, bool concurrently)
+            => await TransferAndVerifyAsync(writeBuffers, concurrently, "RandomAccess");
+
+        [TestCase("Libaio")]
+        [TestCase("Uring")]
+        [Platform("Linux")]
+        public async Task NativeComponentSourceReadsWithoutModification(string backend)
+            => await TransferAndVerifyAsync(2, true, "Native", backend);
+
+        private static async Task TransferAndVerifyAsync(int writeBuffers, bool concurrently, string deviceType, string backend = null)
         {
             var sourcePrefix = Path.Combine(TestUtils.MethodTestDir, "source");
             var destination = Path.Combine(TestUtils.MethodTestDir, "destination");
@@ -571,24 +653,32 @@ namespace Garnet.test.cluster
             await File.WriteAllBytesAsync(sourcePrefix + ".0", data);
 
             var port = ClusterTestContext.Port.ToString();
+            string[] deviceArguments = ["--device-type", deviceType];
+            if (backend != null)
+                deviceArguments = [.. deviceArguments, "--device-io-backend", backend, "--device-completion-threads", "2",
+                    "--device-io-contexts", "2", "--device-queue-depth", "64", "--device-throttle-limit", "128"];
             var receiverOptions = BenchmarkOptions.Parse(["receive", "--output", destination, "--bind", "127.0.0.1",
                 "--port", port, "--runs", "2", "--write-buffers", writeBuffers.ToString(), "--timeout-seconds", "20",
-                "--ack-delay-us", "1000", "--write-buffers-concurrently", concurrently.ToString()]);
+                "--ack-delay-us", "1000", "--write-buffers-concurrently", concurrently.ToString(), .. deviceArguments]);
             var senderOptions = BenchmarkOptions.Parse(["send", "--source-prefix", sourcePrefix, "--host", "127.0.0.1",
                 "--port", port, "--chunks", "4k", "--depths", "1,3", "--repeats", "1", "--timeout-seconds", "20",
-                "--csv", Path.Combine(TestUtils.MethodTestDir, "component.csv")]);
+                "--csv", Path.Combine(TestUtils.MethodTestDir, "component.csv"), .. deviceArguments]);
             using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var receiver = Receiver.RunAsync(receiverOptions, cancellation.Token);
             try
             {
                 await Sender.RunAsync(senderOptions, cancellation.Token);
                 await receiver;
+                Assert.That(await File.ReadAllBytesAsync(sourcePrefix + ".0"), Is.EqualTo(data));
                 var files = Directory.GetFiles(destination, "payload.0", SearchOption.AllDirectories);
                 Assert.That(files, Has.Length.EqualTo(2));
                 foreach (var file in files)
                     Assert.That(await File.ReadAllBytesAsync(file), Is.EqualTo(data));
                 var csv = await File.ReadAllTextAsync(senderOptions.Csv);
                 Assert.That(csv, Does.Contain("source_io,receiver_io"));
+                Assert.That(csv, Does.Contain("receiver_io,source_read_only"));
+                foreach (var row in File.ReadLines(senderOptions.Csv).Skip(1))
+                    Assert.That(row.Split(',')[^1], Is.EqualTo(senderOptions.SourceReadOnly.ToString()));
                 Assert.That(csv, Does.Contain(senderOptions.Device.Identity(OperatingSystem.IsLinux())));
                 Assert.That(csv, Does.Contain(receiverOptions.Device.Identity(OperatingSystem.IsLinux())));
             }

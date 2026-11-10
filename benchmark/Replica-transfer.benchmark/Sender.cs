@@ -19,7 +19,7 @@ internal static class Sender
         var sourcePrefix = options.SourcePrefix ?? await CheckpointGenerator.RunAsync(options, token);
         var sourcePath = sourcePrefix + ".0";
 
-        // Generation is complete before opening the immutable source for the sweep.
+        // The source stays offline; this managed guard does not exclude other native writers on Linux.
         await using var sourceGuard = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
         var length = sourceGuard.Length;
         Receiver.Require(length > 0, "Source must be nonempty.");
@@ -33,17 +33,17 @@ internal static class Sender
             if (options.Csv != null)
             {
                 csv = new StreamWriter(new FileStream(options.Csv, FileMode.CreateNew, FileAccess.Write, FileShare.Read), Encoding.UTF8);
-                await csv.WriteLineAsync("utc,token,repeat,chunk_bytes,pipeline_depth,completed_bytes,completed_chunks,elapsed_seconds,MB_per_second,ack_delay_us,receiver_write_buffers,send_buffer_bytes,source_device,source_buffered,sha256,scenario,receiver_concurrently,source_io,receiver_io");
+                await csv.WriteLineAsync("utc,token,repeat,chunk_bytes,pipeline_depth,completed_bytes,completed_chunks,elapsed_seconds,MB_per_second,ack_delay_us,receiver_write_buffers,send_buffer_bytes,source_device,source_buffered,sha256,scenario,receiver_concurrently,source_io,receiver_io,source_read_only");
                 await csv.FlushAsync(token);
             }
-            Console.WriteLine($"Source={sourcePath}; bytes={length}; SHA256={hash}; {options.Cases.Length * (long)options.Repeats} runs; device={options.DeviceType}, buffered={options.Buffered}.");
+            Console.WriteLine($"Source={sourcePath}; bytes={length}; SHA256={hash}; {options.Cases.Length * (long)options.Repeats} runs; device={options.DeviceType}, buffered={options.Buffered}, source-read-only={options.SourceReadOnly}.");
             foreach (var (chunk, depth) in options.Cases)
             {
                 for (var repeat = 1; repeat <= options.Repeats; repeat++)
                 {
                     token.ThrowIfCancellationRequested();
                     var id = Guid.NewGuid();
-                    var device = options.Device.CreateDevice(sourcePrefix, options.Buffered, readOnly: true);
+                    var device = options.Device.CreateDevice(sourcePrefix, options.Buffered, readOnly: options.SourceReadOnly);
                     var pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
                     using var completion = new SemaphoreSlim(0);
                     FileTransmitSource transmitter = null;
@@ -92,7 +92,7 @@ internal static class Sender
                         if (csv != null)
                         {
                             await csv.WriteLineAsync(FormattableString.Invariant(
-                                $"{DateTimeOffset.UtcNow:O},{id},{repeat},{chunk},{depth},{length},{verified[2]},{seconds:F9},{rate:F6},{ackDelayUs},{writeBuffers},{sendBufferSize},{options.DeviceType},{options.Buffered},{hash},transfer-only,{concurrently},{options.Device.Identity(OperatingSystem.IsLinux())},{receiverIo}"));
+                                $"{DateTimeOffset.UtcNow:O},{id},{repeat},{chunk},{depth},{length},{verified[2]},{seconds:F9},{rate:F6},{ackDelayUs},{writeBuffers},{sendBufferSize},{options.DeviceType},{options.Buffered},{hash},transfer-only,{concurrently},{options.Device.Identity(OperatingSystem.IsLinux())},{receiverIo},{options.SourceReadOnly}"));
                             await csv.FlushAsync(token);
                         }
                     }
@@ -106,12 +106,23 @@ internal static class Sender
                     }
                 }
             }
+            await VerifySourceAsync(sourcePrefix, length, hash, options.Timeout, token);
+            Console.WriteLine($"SOURCE VERIFIED bytes={length} SHA256={hash}; sweep results are valid.");
         }
         finally
         {
             if (csv != null)
                 await csv.DisposeAsync();
         }
+    }
+
+    internal static async Task VerifySourceAsync(string prefix, long length, string hash, TimeSpan timeout, CancellationToken token)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(timeout);
+        Receiver.Require(!File.Exists(prefix + ".1"), "Source became segmented; this sweep has no valid throughput results.");
+        var actual = await Receiver.HashAsync(prefix + ".0", length, deadline.Token);
+        Receiver.Require(actual == hash, "Source SHA-256 changed; this sweep has no valid throughput results.");
     }
 
     private static async Task<string> ExecuteAsync(GarnetClientSession client, TimeSpan timeout, CancellationToken token, params string[] command)

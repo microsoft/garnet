@@ -30,11 +30,12 @@ namespace ReplicaTransfer.benchmark;
 /// <param name="WriteBuffersSpecified">Reject missing external-build support rather than use an implicit default.</param>
 /// <param name="ConcurrentlySpecified">Reject unsupported explicit policy rather than guess the build's default.</param>
 /// <param name="Device">Startup device configuration forwarded to this runner's owned server.</param>
+/// <param name="ServerTransferDefaults">Leave primary transfer sizing to the selected build and report it as unavailable.</param>
 internal sealed record FullOptions(
     string Role, string Server, string Output, IPAddress Bind, IPAddress Host, int Port, int ServerPort,
     long DataSize, int Repeats, int Runs, int WriteBuffers, bool Concurrently, bool PhaseTiming,
     TimeSpan Timeout, string Csv, (int Chunk, int Depth)[] Cases, bool WriteBuffersSpecified, bool ConcurrentlySpecified,
-    DeviceSettings Device)
+    DeviceSettings Device, bool ServerTransferDefaults)
 {
     /// <summary>Resolves role-specific options without starting servers or creating storage.</summary>
     /// <param name="args">Role followed by unique option/value pairs for the full scenario.</param>
@@ -46,7 +47,7 @@ internal sealed record FullOptions(
         string[] common = ["--scenario", "--server", "--output", "--bind", "--port", "--server-port",
             "--timeout-seconds", "--phase-timing", "--device-type"];
         string[] specific = args[0] == "send"
-            ? ["--host", "--data-size", "--chunks", "--depths", "--repeats", "--csv"]
+            ? ["--host", "--data-size", "--chunks", "--depths", "--repeats", "--csv", "--server-transfer-defaults"]
             : ["--runs", "--write-buffers", "--write-buffers-concurrently"];
         var allowed = common.Concat(specific).Concat(DeviceSettings.Switches).ToHashSet(StringComparer.Ordinal);
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -68,6 +69,9 @@ internal sealed record FullOptions(
                 throw new ArgumentException($"{key} must be true or false.");
             return value;
         }
+        var serverTransferDefaults = Boolean("--server-transfer-defaults");
+        if (serverTransferDefaults && (values.ContainsKey("--chunks") || values.ContainsKey("--depths")))
+            throw new ArgumentException("--server-transfer-defaults true cannot be combined with --chunks or --depths.");
 
         // Control and RESP endpoints are separate; both must stay on the trusted test network.
         var bind = PrivateAddress(Get("--bind", "127.0.0.1"));
@@ -104,7 +108,7 @@ internal sealed record FullOptions(
             Boolean("--write-buffers-concurrently"), Boolean("--phase-timing"),
             TimeSpan.FromSeconds(Number("--timeout-seconds", 300, 1, 3600)),
             values.TryGetValue("--csv", out var csv) ? Path.GetFullPath(csv) : null, cases.Distinct().ToArray(),
-            values.ContainsKey("--write-buffers"), values.ContainsKey("--write-buffers-concurrently"), device);
+            values.ContainsKey("--write-buffers"), values.ContainsKey("--write-buffers-concurrently"), device, serverTransferDefaults);
     }
 
     /// <summary>Restricts unauthenticated test endpoints to loopback or explicit private IPs.</summary>

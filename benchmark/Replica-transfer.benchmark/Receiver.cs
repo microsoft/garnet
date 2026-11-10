@@ -134,7 +134,9 @@ internal static class Receiver
         await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
         Require(file.Length == expectedLength, $"File length is {file.Length}; expected {expectedLength}: {path}");
-        return Convert.ToHexString(await SHA256.HashDataAsync(file, token));
+        var hash = Convert.ToHexString(await SHA256.HashDataAsync(file, token));
+        Require(file.Length == expectedLength, $"File length changed during hashing: {path}");
+        return hash;
     }
 
     private static string Text(ArraySegment<byte> value) => Encoding.ASCII.GetString(value.AsSpan());

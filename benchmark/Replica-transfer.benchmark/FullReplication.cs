@@ -24,8 +24,8 @@ internal static class FullReplication
 {
     /// <summary>Identifies a wire-transfer case and acknowledges its verified completion.</summary>
     /// <param name="Protocol">Control protocol discriminator, separate from production replication.</param>
-    /// <param name="Chunk">Effective sender chunk size in bytes.</param>
-    /// <param name="Depth">Bounded sender pipeline depth.</param>
+    /// <param name="Chunk">Control-case chunk size; not a physical setting when the primary uses server defaults.</param>
+    /// <param name="Depth">Control-case depth; not a physical setting when the primary uses server defaults.</param>
     internal sealed record Request(string Protocol, int Chunk, int Depth);
 
     /// <summary>Reports the receiver's owned process identity and lifecycle stage.</summary>
@@ -120,7 +120,7 @@ internal static class FullReplication
     {
         await using var csv = options.Csv == null ? null : new StreamWriter(
             new FileStream(options.Csv, FileMode.CreateNew, FileAccess.Write, FileShare.Read), Encoding.UTF8);
-        const string header = "scenario,status,chunk_bytes,depth,write_buffers,concurrently,payload_bytes,keys,sync_seconds,barrier_seconds,primary_binary_sha256,replica_binary_sha256,checkpoint_transfer_ms,checkpoint_bytes,recovery_ms,phase_timing,primary_info,replica_info,error,primary_io,replica_io";
+        const string header = "scenario,status,chunk_bytes,depth,write_buffers,concurrently,payload_bytes,keys,sync_seconds,barrier_seconds,primary_binary_sha256,replica_binary_sha256,checkpoint_transfer_ms,checkpoint_bytes,recovery_ms,phase_timing,primary_info,replica_info,error,primary_io,replica_io,primary_transfer_configuration";
         if (csv != null)
             await csv.WriteLineAsync(header);
         foreach (var (chunk, depth) in options.Cases)
@@ -209,13 +209,16 @@ internal static class FullReplication
                     var primaryReplication = Info(await CommandAsync(primary.Client, ct, "INFO", "REPLICATION"));
                     await primary.DisposeAsync();
                     string Phase(Dictionary<string, string> values, string name) => values.GetValueOrDefault(name, "unavailable");
-                    await RowAsync(csv, ["full", "verified", chunk, depth, ready.WriteBuffers?.ToString(CultureInfo.InvariantCulture) ?? "unavailable",
+                    await RowAsync(csv, ["full", "verified",
+                        options.ServerTransferDefaults ? "unavailable" : chunk,
+                        options.ServerTransferDefaults ? "unavailable" : depth, ready.WriteBuffers?.ToString(CultureInfo.InvariantCulture) ?? "unavailable",
                         ready.Concurrently?.ToString() ?? "unavailable",
                         options.DataSize, keys, Stopwatch.GetElapsedTime(started, finished).TotalSeconds,
                         Stopwatch.GetElapsedTime(attached, finished).TotalSeconds, primary.BinaryHash, ready.BinaryHash,
                         Phase(primaryReplication, "benchmark_checkpoint_transfer_ms"), Phase(primaryReplication, "benchmark_checkpoint_bytes"),
                         Phase(fields, "benchmark_recovery_ms"), options.PhaseTiming, primaryInfo, ready.ServerInfo, "",
-                        options.Device.Identity(OperatingSystem.IsLinux()), ready.DeviceSettings]);
+                        options.Device.Identity(OperatingSystem.IsLinux()), ready.DeviceSettings,
+                        options.ServerTransferDefaults ? "server-defaults" : "configured"]);
 
                     async Task VerifyKeyAsync(int key)
                     {
@@ -229,10 +232,13 @@ internal static class FullReplication
                 catch (Exception ex)
                 {
                     // Preserve partial identity/error evidence, but propagate failure rather than claim throughput.
-                    await RowAsync(csv, ["full", "failed", chunk, depth, ready?.WriteBuffers, ready?.Concurrently,
+                    await RowAsync(csv, ["full", "failed",
+                        options.ServerTransferDefaults ? "unavailable" : chunk,
+                        options.ServerTransferDefaults ? "unavailable" : depth, ready?.WriteBuffers, ready?.Concurrently,
                         options.DataSize, keys, "", "", primary?.BinaryHash, ready?.BinaryHash, "unavailable",
                         "unavailable", "unavailable", options.PhaseTiming, "", ready?.ServerInfo, ex.Message,
-                        options.Device.Identity(OperatingSystem.IsLinux()), ready?.DeviceSettings]);
+                        options.Device.Identity(OperatingSystem.IsLinux()), ready?.DeviceSettings,
+                        options.ServerTransferDefaults ? "server-defaults" : "configured"]);
                     throw;
                 }
                 finally
@@ -445,12 +451,7 @@ internal sealed class OwnedServer : IAsyncDisposable
             start.ArgumentList.Add(arg);
         options.Device.AddServerArguments(start.ArgumentList, supported, OperatingSystem.IsLinux());
         if (options.Role == "send")
-        {
-            start.ArgumentList.Add("--repl-disk-based-sync-chunk-size");
-            start.ArgumentList.Add(chunk.ToString(CultureInfo.InvariantCulture));
-            start.ArgumentList.Add("--repl-disk-based-sync-pipeline-depth");
-            start.ArgumentList.Add(depth.ToString(CultureInfo.InvariantCulture));
-        }
+            ConfigureTransfer(start, supported, chunk, depth, options.ServerTransferDefaults);
         else
         {
             AddReplicaOption("repl-disk-based-sync-write-buffers", options.WriteBuffers.ToString(CultureInfo.InvariantCulture), options.WriteBuffersSpecified);
@@ -464,6 +465,7 @@ internal sealed class OwnedServer : IAsyncDisposable
             options.Server,
             Arguments = start.ArgumentList.ToArray(),
             options.PhaseTiming,
+            options.ServerTransferDefaults,
             UnavailableReplicaDefaults = options.Role == "receive" ? new[]
             {
                 "repl-disk-based-sync-write-buffers", "repl-disk-based-sync-write-buffers-concurrently"
@@ -514,6 +516,28 @@ internal sealed class OwnedServer : IAsyncDisposable
                 throw new ArgumentException($"Selected replica build does not support requested --{name}.");
             else
                 Console.Error.WriteLine($"UNAVAILABLE: selected replica build does not expose --{name}; its version-owned default is unreported.");
+        }
+    }
+
+    /// <summary>Preserves version-owned defaults only when explicitly selected; unsupported tuning fails before startup.</summary>
+    /// <param name="start">Selected primary's launch arguments.</param>
+    /// <param name="supported">Help-advertised option names without leading dashes.</param>
+    /// <param name="chunk">Requested normalized chunk bytes.</param>
+    /// <param name="depth">Requested pipeline depth.</param>
+    /// <param name="serverDefaults">Omit transfer options and leave physical sizing unreported.</param>
+    internal static void ConfigureTransfer(ProcessStartInfo start, HashSet<string> supported, int chunk, int depth, bool serverDefaults)
+    {
+        if (serverDefaults)
+        {
+            Console.Error.WriteLine("UNAVAILABLE: using the primary build's transfer defaults; chunk size and pipeline depth are unreported.");
+            return;
+        }
+        foreach (var (name, value) in new[] { ("repl-disk-based-sync-chunk-size", chunk), ("repl-disk-based-sync-pipeline-depth", depth) })
+        {
+            if (!supported.Contains(name))
+                throw new ArgumentException($"Selected primary build does not support --{name}; explicitly select --server-transfer-defaults true to use its unreported defaults.");
+            start.ArgumentList.Add("--" + name);
+            start.ArgumentList.Add(value.ToString(CultureInfo.InvariantCulture));
         }
     }
 
