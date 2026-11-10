@@ -248,10 +248,16 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test]
-        public async Task AShortReadIsZeroPadded()
+        [TestCase(0, 0)]
+        [TestCase(0, 512)]
+        [TestCase(100, 0)]
+        [TestCase(100, 100)]
+        [TestCase(100, 512)]
+        [TestCase(512, 0)]
+        [TestCase(512, 512)]
+        public async Task ReadsPreserveDataAndZeroPaddingWithOptionalByteCounts(int available, int reportedBytes)
         {
-            using var device = new ShortReadDevice(available: 100, fill: 1);
+            using var device = new ShortReadDevice(available, fill: 1, reportedBytes);
             var pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
             using var signal = new SemaphoreSlim(0);
             try
@@ -268,8 +274,8 @@ namespace Garnet.test.cluster
                 {
                     Assert.That(result.BytesRead, Is.EqualTo(512));
                     var data = result.Buffer.GetSlice(512).ToArray();
-                    Assert.That(data[..100], Is.All.EqualTo((byte)1));
-                    Assert.That(data[100..], Is.All.EqualTo((byte)0), "The unread tail of a short read is sent as zeros");
+                    Assert.That(data[..available], Is.All.EqualTo((byte)1));
+                    Assert.That(data[available..], Is.All.EqualTo((byte)0), "The unread tail of a short read is sent as zeros");
                 }
                 finally
                 {
@@ -295,14 +301,14 @@ namespace Garnet.test.cluster
         /// <summary>
         /// A device holding only <paramref name="available"/> bytes, so a longer read ends early, as at the end of a file.
         /// </summary>
-        private sealed class ShortReadDevice(int available, byte fill) : StorageDeviceBase("short", 512, Devices.CAPACITY_UNSPECIFIED)
+        private sealed class ShortReadDevice(int available, byte fill, int reportedBytes) : StorageDeviceBase("short", 512, Devices.CAPACITY_UNSPECIFIED)
         {
             public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
                 DeviceIOCompletionCallback callback, object context)
             {
                 var count = (int)Math.Min(readLength, (uint)available);
                 new Span<byte>((void*)destinationAddress, count).Fill(fill);
-                callback(0, (uint)count, context, null);
+                callback(0, (uint)reportedBytes, context, null);
             }
 
             public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,

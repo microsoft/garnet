@@ -390,6 +390,55 @@ namespace Garnet.test.cluster
 
         private static byte[] ChunkData(int index) => Enumerable.Repeat((byte)(index + 1), Chunk).ToArray();
 
+        [TestCase(false, 1u)]
+        [TestCase(false, 513u)]
+        [TestCase(true, 1u)]
+        [TestCase(true, 513u)]
+        public async Task AShortWriteWithNoDeviceErrorFailsCompletion(bool concurrently, uint bytesWritten)
+        {
+            var device = new GatedDevice();
+            var pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+            try
+            {
+                using var sink = CreateSink(device, pool, 2, concurrently: concurrently);
+                sink.WriteChunk(0, new byte[513]);
+                var write = await device.NextWriteAsync();
+                Assert.That(write.Data.Length, Is.EqualTo(1024), "The write includes sector padding");
+                write.Complete(bytesWritten: bytesWritten);
+                var error = Assert.ThrowsAsync<GarnetException>(sink.CompleteAsync);
+                Assert.That(error.Message, Does.StartWith($"Short write of {bytesWritten} bytes writing STORE_HLOG checkpoint file at address 0 (requested 1024 bytes)"));
+                Assert.That(Assert.Throws<GarnetException>(() => sink.WriteChunk(Chunk, ChunkData(1))), Is.SameAs(error));
+                Assert.That(device.Disposed, Is.True);
+            }
+            finally
+            {
+                pool.Free();
+            }
+        }
+
+        [TestCase(false, 0u)]
+        [TestCase(false, (uint)Chunk)]
+        [TestCase(true, 0u)]
+        [TestCase(true, (uint)Chunk)]
+        public async Task SuccessfulWritesAcceptFullOrUnavailableByteCounts(bool concurrently, uint bytesWritten)
+        {
+            var device = new GatedDevice();
+            var pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+            try
+            {
+                using var sink = CreateSink(device, pool, 2, concurrently: concurrently);
+                sink.WriteChunk(0, ChunkData(0));
+                var write = await device.NextWriteAsync();
+                write.Complete(bytesWritten: bytesWritten);
+                await sink.CompleteAsync();
+                Assert.That(device.Disposed, Is.True);
+            }
+            finally
+            {
+                pool.Free();
+            }
+        }
+
         /// <summary>
         /// A device whose writes complete only when the test completes them.
         /// </summary>
@@ -424,7 +473,8 @@ namespace Garnet.test.cluster
         {
             public unsafe byte[] ReadData() => new ReadOnlySpan<byte>((void*)Source, Data.Length).ToArray();
 
-            public void Complete(uint errorCode = 0) => Callback(errorCode, errorCode == 0 ? (uint)Data.Length : 0, Context, null);
+            public void Complete(uint errorCode = 0, uint? bytesWritten = null)
+                => Callback(errorCode, bytesWritten ?? (errorCode == 0 ? (uint)Data.Length : 0), Context, null);
         }
     }
 }

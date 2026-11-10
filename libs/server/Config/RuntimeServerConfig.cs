@@ -182,6 +182,9 @@ namespace Garnet.server
                 static o => o.UnixSocketPath ?? string.Empty);
             RegisterReadOnly(ServerConfigType.CLUSTER_ENABLED, "cluster-enabled", ConfigKind.Bool,
                 static o => o.EnableCluster ? "yes" : "no");
+            RegisterReadOnly(ServerConfigType.REPL_DISK_BASED_SYNC_WRITE_BUFFERS,
+                "repl-disk-based-sync-write-buffers", ConfigKind.Int32,
+                static o => o.ReplicaDiskBasedSyncWriteBuffers.ToString(CultureInfo.InvariantCulture));
             RegisterReadOnly(ServerConfigType.REPL_DISK_BASED_SYNC_WRITE_BUFFERS_CONCURRENTLY,
                 "repl-disk-based-sync-write-buffers-concurrently", ConfigKind.Bool,
                 static o => o.ReplicaDiskBasedSyncWriteBuffersConcurrently ? "yes" : "no");

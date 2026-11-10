@@ -256,7 +256,7 @@ namespace Garnet.cluster
             var context = new WriteContext(pending.Buffer);
             IssueWrite(pending, context);
 
-            (uint ErrorCode, Exception IOException) result;
+            (uint ErrorCode, uint NumBytes, Exception IOException) result;
             try
             {
                 result = await context.Completion.Task.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
@@ -271,22 +271,25 @@ namespace Garnet.cluster
             {
                 throw new GarnetException(
                     $"I/O error {result.ErrorCode} writing {Type} checkpoint file at address {pending.Address} (requested {pending.Length} bytes): " +
-                    Utility.GetCallbackErrorMessage(result.ErrorCode, 0, null), result.IOException);
+                    Utility.GetCallbackErrorMessage(result.ErrorCode, result.NumBytes, null), result.IOException);
             }
+            if (result.NumBytes != 0 && result.NumBytes < pending.Length)
+                throw new GarnetException(
+                    $"Short write of {result.NumBytes} bytes writing {Type} checkpoint file at address {pending.Address} (requested {pending.Length} bytes)");
         }
 
         private unsafe void IssueWrite(PendingWrite pending, WriteContext context)
             => device.WriteAsync((IntPtr)pending.Buffer.aligned_pointer, (ulong)pending.Address, pending.Length, OnWriteCompleted, context);
 
         private static void OnWriteCompleted(uint errorCode, uint numBytes, object context, Exception ioException)
-            => _ = ((WriteContext)context).Completion.TrySetResult((errorCode, ioException));
+            => _ = ((WriteContext)context).Completion.TrySetResult((errorCode, numBytes, ioException));
 
         // The device holds this context until the write completes, so it also roots the buffer: a write abandoned on
         // timeout can never read from a buffer that was collected and reused.
         private sealed class WriteContext(SectorAlignedMemory buffer)
         {
             public readonly SectorAlignedMemory Buffer = buffer;
-            public readonly TaskCompletionSource<(uint ErrorCode, Exception IOException)> Completion =
+            public readonly TaskCompletionSource<(uint ErrorCode, uint NumBytes, Exception IOException)> Completion =
                 new(TaskCreationOptions.RunContinuationsAsynchronously);
         }
     }

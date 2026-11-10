@@ -105,6 +105,36 @@ namespace Garnet.test
             Assert.That((string[])db.Execute("CONFIG", "GET", name), Is.EqualTo(before));
         }
 
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(8)]
+        public void CheckpointWriteBufferCountIsReadOnlyConfiguration(int writeBuffers)
+        {
+            server.Dispose();
+            server = new GarnetServer(new GarnetServerOptions
+            {
+                EndPoints = [TestUtils.EndPoint],
+                LogMemorySize = "16m",
+                PageSize = "1m",
+                IndexMemorySize = "1m",
+                CheckpointDir = TestUtils.MethodTestDir,
+                ReplicaDiskBasedSyncWriteBuffers = writeBuffers
+            });
+            server.Start();
+            const string name = "repl-disk-based-sync-write-buffers";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var before = (string[])db.Execute("CONFIG", "GET", name);
+            Assert.That(before, Is.EqualTo([name, writeBuffers.ToString()]));
+            var all = (string[])db.Execute("CONFIG", "GET", "*");
+            var index = Array.IndexOf(all, name);
+            Assert.That(index, Is.GreaterThanOrEqualTo(0));
+            Assert.That(all[index + 1], Is.EqualTo(writeBuffers.ToString()));
+            Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", name, writeBuffers == 0 ? "1" : "0"));
+            Assert.That((string[])db.Execute("CONFIG", "GET", name), Is.EqualTo(before));
+            Assert.That(server.Provider.StoreWrapper.serverOptions.ReplicaDiskBasedSyncWriteBuffers, Is.EqualTo(writeBuffers));
+        }
+
         /// <summary>
         /// This test verifies that dynamically changing the memory size configuration using CONFIG SET memory
         /// incurs the expected changes in Garnet server metrics, as well as verifies error handling for incorrect inputs.
