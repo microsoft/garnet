@@ -89,45 +89,59 @@ namespace Garnet.cluster
             if (gcs.NeedsInitialization)
                 SetMigrateHeader(gcs);
 
-            // Read the key. HandleMigrate captures the record's pieces in-epoch: the inline portion into output.SpanByteAndMemory,
-            // and any overflow key / overflow value / object value into output.Accumulator. We assemble and send them out of epoch
-            // (migration sends asynchronously and the store epoch must not be held across an await).
-            status = localServerSession.BasicGarnetApi.Read_UnifiedStore(key, ref input, ref output);
-
-            // Skip (but do not fail) if key NOTFOUND, WRONGTYPE, BADSTATE, etc.
-            if (status != GarnetStatus.OK)
-                return new(true);
-
-            var acc = output.Accumulator;
-
-            if (transferOption == TransferOption.SLOTS)
+            // Retain the reusable heap owner for records that cannot use the borrowed destination.
+            var destination = gcs.GetRecordSerializationBuffer();
+            output.SpanByteAndMemory.SpanByte = destination;
+            try
             {
-                if (acc.RecordType == VectorManager.RecordType)
+                // Pending reads complete synchronously before this borrowed buffer can be sent or recycled.
+                status = localServerSession.BasicGarnetApi.Read_UnifiedStore(key, ref input, ref output);
+                if (status != GarnetStatus.OK)
+                    return new(true);
+
+                var acc = output.Accumulator;
+
+                if (transferOption == TransferOption.SLOTS)
                 {
-                    operation.EncounteredVectorSet(key.ToArray(), acc.VectorIndexValue, acc.VectorIndexExpiration);
+                    if (acc.RecordType == VectorManager.RecordType)
+                    {
+                        operation.EncounteredVectorSet(key.ToArray(), acc.VectorIndexValue, acc.VectorIndexExpiration);
+                        return new(true);
+                    }
+                    if (acc.RecordType == RangeIndexManager.RangeIndexRecordType)
+                    {
+                        operation.AddRangeIndexKey(key.ToArray());
+                        return new(true);
+                    }
+                }
+
+                if (output.SpanByteAndMemory.IsSpanByte)
+                {
+                    gcs.CommitRecordSpan(destination, acc.InlineLength, MigrationRecordSpanType.LogRecord);
                     return new(true);
                 }
-                if (acc.RecordType == RangeIndexManager.RangeIndexRecordType)
-                {
-                    operation.AddRangeIndexKey(key.ToArray());
-                    return new(true);
-                }
-            }
 
-            // Fully-inline record: SpanByteAndMemory holds the whole record. Send it whole (or chunked if it is unusually large).
-            if (acc.IsEmpty)
+                // Fully-inline fallback: send the owned record whole, or chunk it if it exceeds a send buffer.
+                if (acc.IsEmpty)
+                {
+                    if (acc.InlineLength <= NetworkBufferSettings.MaxSendBufferContentSize)
+                    {
+                        fixed (byte* ptr = output.SpanByteAndMemory.Span)
+                            return WriteOrSendRecordSpanAsync(operation, MigrationRecordSpanType.LogRecord, new ReadOnlySpan<byte>(ptr, acc.InlineLength));
+                    }
+                    return WriteOrSendChunkedRecordAsync(operation, output.SpanByteAndMemory.Memory.Memory[..acc.InlineLength]);
+                }
+
+                return WriteOrSendAccumulatedRecordAsync(operation, output.SpanByteAndMemory.Memory.Memory[..acc.InlineLength], acc);
+            }
+            finally
             {
-                if (acc.InlineLength <= NetworkBufferSettings.MaxSendBufferContentSize)
+                if (output.SpanByteAndMemory.IsSpanByte)
                 {
-                    fixed (byte* ptr = output.SpanByteAndMemory.Span)
-                        return WriteOrSendRecordSpanAsync(operation, MigrationRecordSpanType.LogRecord, new ReadOnlySpan<byte>(ptr, acc.InlineLength));
+                    output.SpanByteAndMemory.ConvertToHeap();
+                    output.SpanByteAndMemory.Length = 0;
                 }
-                return WriteOrSendChunkedRecordAsync(operation, output.SpanByteAndMemory.Memory.Memory[..acc.InlineLength]);
             }
-
-            // Non-inline: assemble [inline][overflow key][overflow value | object chunks] and send it whole (if it fits a send
-            // buffer) or as ChunkedLogRecord chunks (large record / > 2 GB object).
-            return WriteOrSendAccumulatedRecordAsync(operation, output.SpanByteAndMemory.Memory.Memory[..acc.InlineLength], acc);
         }
 
         /// <summary>

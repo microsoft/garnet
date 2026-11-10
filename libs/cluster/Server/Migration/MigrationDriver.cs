@@ -134,8 +134,13 @@ namespace Garnet.cluster
             await Task.Yield();
 
             var configResumed = true;
+            var enteredWorkers = 0;
             try
             {
+                // Each operation has one owner; child scans join before the driver releases these lifetimes.
+                for (; enteredWorkers < migrateOperation.Length; enteredWorkers++)
+                    migrateOperation[enteredWorkers].EnterWorker();
+
                 clusterProvider.storeWrapper.store.PauseRevivification(_timeout, _cts.Token);
 
                 // Set target node to import state
@@ -221,9 +226,17 @@ namespace Garnet.cluster
             }
             finally
             {
-                if (!configResumed) clusterProvider.clusterManager.ResumeConfigMerge();
-                clusterProvider.storeWrapper.store.ResumeRevivification();
-                _ = clusterProvider.migrationManager.TryRemoveMigrationTask(this);
+                try
+                {
+                    if (!configResumed) clusterProvider.clusterManager.ResumeConfigMerge();
+                    clusterProvider.storeWrapper.store.ResumeRevivification();
+                    _ = clusterProvider.migrationManager.TryRemoveMigrationTask(this);
+                }
+                finally
+                {
+                    for (var i = 0; i < enteredWorkers; i++)
+                        migrateOperation[i].ExitWorker();
+                }
             }
         }
     }

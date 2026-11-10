@@ -191,9 +191,9 @@ namespace Garnet.server
             where TSourceLogRecord : ISourceLogRecord
         {
             // Capture the record's pieces while holding the store epoch (a migrating key is NOT locked, so its object/overflow
-            // value may be concurrently updated). We cannot stream to the network here: migration sends asynchronously and the
-            // store epoch must never be held across an await (unlike replication, which sends synchronously via BlockingWait and
-            // so CAN stream to the network in-epoch). So capture now and let the caller assemble and send out of epoch:
+            // value may be concurrently updated). Fully-inline records can use a borrowed send-buffer span, but the caller
+            // commits and sends only after the synchronous read completes. Other records capture owned pieces for sending
+            // outside the epoch:
             //   - inline portion  -> SpanByteAndMemory (compacted to RoundUp(ActualSize) so the receiver locates the overflow/object pieces),
             //   - overflow key     -> accumulator (shallow ref; store keys are immutable so the backing array is stable),
             //   - overflow value   -> accumulator (deep copy; the store value may be mutated once we release the epoch),
@@ -206,6 +206,10 @@ namespace Garnet.server
                 acc.VectorIndexValue = srcLogRecord.ValueSpan.ToArray();
                 acc.VectorIndexExpiration = srcLogRecord.DataHeader.HasExpiration ? new DateTime(srcLogRecord.Expiration, DateTimeKind.Utc) : null;
             }
+
+            if (!srcLogRecord.DataHeader.RecordIsInline ||
+                acc.RecordType == VectorManager.RecordType || acc.RecordType == RangeIndexManager.RangeIndexRecordType)
+                output.SpanByteAndMemory.ConvertToHeap();
 
             acc.InlineLength = DiskLogRecord.SerializeInlinePortionForMigration(in srcLogRecord, functionsState.memoryPool, ref output.SpanByteAndMemory);
 

@@ -188,9 +188,10 @@ namespace Garnet.cluster
         /// <returns></returns>
         public async Task<bool> MigrateKeysAsync()
         {
+            var migrateTask = migrateOperation[0];
+            migrateTask.EnterWorker();
             try
             {
-                var migrateTask = migrateOperation[0];
                 if (!await migrateTask.InitializeAsync().ConfigureAwait(false))
                     return false;
 
@@ -201,6 +202,10 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogError(ex, "An error has occurred");
+            }
+            finally
+            {
+                migrateTask.ExitWorker();
             }
             return true;
         }

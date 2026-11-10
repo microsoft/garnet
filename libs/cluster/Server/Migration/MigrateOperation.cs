@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -35,9 +36,7 @@ namespace Garnet.cluster
             readonly Task<string>[] pendingResponses;
             int responseHead;
             int responseCount;
-            int disposed;
-            int activeWorkers;
-            int localSessionDisposed;
+            CooperativeDisposeGuard disposeGuard;
 
             public GarnetClientSession Client => gcs;
 
@@ -91,16 +90,33 @@ namespace Garnet.cluster
                 return true;
             }
 
+            /// <summary>
+            /// Enter the single worker's lifetime before using its client or storage session.
+            /// </summary>
+            public void EnterWorker()
+                => ObjectDisposedException.ThrowIf(!disposeGuard.TryEnter(), this);
+
+            /// <summary>
+            /// Exit the worker's lifetime after all child tasks and resource access have completed.
+            /// </summary>
+            public void ExitWorker()
+            {
+                if (disposeGuard.ExitAndCheckShouldCleanup())
+                    DisposeResources();
+            }
+
             public void Dispose()
             {
-                if (Interlocked.Exchange(ref disposed, 1) != 0)
+                var result = disposeGuard.TryDispose();
+                if (result == CooperativeDisposeGuard.DisposeResult.AlreadyDisposed)
                     return;
 
                 try
                 {
-                    gcs.Dispose();
-                    if (Volatile.Read(ref activeWorkers) == 0)
-                        DisposeLocalSession();
+                    // Closing wakes network waits without recycling a worker's borrowed serialization buffer.
+                    gcs.CloseConnection();
+                    if (result == CooperativeDisposeGuard.DisposeResult.CleanupNow)
+                        DisposeResources();
                 }
                 finally
                 {
@@ -114,10 +130,16 @@ namespace Garnet.cluster
                 }
             }
 
-            void DisposeLocalSession()
+            void DisposeResources()
             {
-                if (Interlocked.Exchange(ref localSessionDisposed, 1) == 0)
+                try
+                {
+                    gcs.Dispose();
+                }
+                finally
+                {
                     localServerSession.Dispose();
+                }
             }
 
             static void ObserveResponseFault(Task<string> response)
@@ -139,7 +161,7 @@ namespace Garnet.cluster
                     // A full fence pairs publication with disposal so late faults are always observed.
                     _ = Interlocked.Exchange(ref pendingResponses[(responseHead + responseCount) % pendingResponses.Length], task);
                     responseCount++;
-                    if (Volatile.Read(ref disposed) != 0)
+                    if (disposeGuard.IsDisposed)
                     {
                         ObserveResponseFault(task);
                         session.logger?.LogError("Cannot track migration response after operation disposal");

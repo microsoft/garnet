@@ -24,100 +24,93 @@ namespace Garnet.cluster
             /// <param name="maxAddress">Shared snapshot boundary for liveness checks.</param>
             public async Task<bool> MigrateSlotsAsync(long beginAddress, long endAddress, long maxAddress)
             {
-                Interlocked.Increment(ref activeWorkers);
+                var useScanAheadMigration = session.clusterProvider.serverOptions.UseScanAheadMigration;
+                using var scanSession = session.GetLocalSession();
+                using var scanCancellation = useScanAheadMigration
+                    ? CancellationTokenSource.CreateLinkedTokenSource(session.cancellationToken)
+                    : null;
+                var token = scanCancellation?.Token ?? session.cancellationToken;
+                var pending = new Sketch(keyCount: batchSize << 2, maxBatchSize: batchSize);
+                Task<long> scanTask = null;
+
                 try
                 {
-                    ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
-                    var useScanAheadMigration = session.clusterProvider.serverOptions.UseScanAheadMigration;
-                    using var scanSession = session.GetLocalSession();
-                    using var scanCancellation = CancellationTokenSource.CreateLinkedTokenSource(session.cancellationToken);
-                    var token = scanCancellation.Token;
-                    var pending = new Sketch(keyCount: batchSize << 2, maxBatchSize: batchSize);
-                    Task<long> scanTask = null;
-
-                    try
+                    var cursor = ScanBatch(pending, beginAddress);
+                    while (!pending.argSliceVector.IsEmpty)
                     {
-                        var cursor = ScanBatch(pending, beginAddress);
-                        while (!pending.argSliceVector.IsEmpty)
+                        token.ThrowIfCancellationRequested();
+                        pending.SetStatus(SketchStatus.TRANSMITTING);
+                        var retired = Interlocked.Exchange(ref activeSketch, pending);
+                        if (!await session.WaitForConfigPropagationAsync().ConfigureAwait(false))
                         {
-                            token.ThrowIfCancellationRequested();
-                            pending.SetStatus(SketchStatus.TRANSMITTING);
-                            var retired = Interlocked.Exchange(ref activeSketch, pending);
-                            if (!await session.WaitForConfigPropagationAsync().ConfigureAwait(false))
-                            {
-                                session.logger?.LogError("Failed to protect migration batch");
-                                return false;
-                            }
+                            session.logger?.LogError("Failed to protect migration batch");
+                            return false;
+                        }
 
-                            // The publication barrier also retires readers of the previous sketch.
-                            retired.Clear();
-                            var scanStart = cursor;
-                            scanTask = useScanAheadMigration && cursor < endAddress
+                        // The publication barrier also retires readers of the previous sketch.
+                        retired.Clear();
+                        var scanStart = cursor;
+                        scanTask = useScanAheadMigration && cursor < endAddress
 #if DEBUG
-                                ? Task.Run(async () =>
-                                {
-                                    var next = ScanBatch(retired, scanStart);
-                                    await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead)
-                                        .WaitAsync(token).ConfigureAwait(false);
-                                    return next;
-                                }, token)
+                            ? Task.Run(async () =>
+                            {
+                                var next = ScanBatch(retired, scanStart);
+                                await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead)
+                                    .WaitAsync(token).ConfigureAwait(false);
+                                return next;
+                            }, token)
 #else
-                                ? Task.Run(() => ScanBatch(retired, scanStart), token)
+                            ? Task.Run(() => ScanBatch(retired, scanStart), token)
 #endif
-                                : null;
+                            : null;
 
-                            if (!await TransmitSlotsAsync().ConfigureAwait(false))
-                                return false;
+                        if (!await TransmitSlotsAsync().ConfigureAwait(false))
+                            return false;
 
-                            sketch.SetStatus(SketchStatus.DELETING);
-                            if (!await session.WaitForConfigPropagationAsync().ConfigureAwait(false))
-                            {
-                                session.logger?.LogError("Failed to protect migration batch deletion");
-                                return false;
-                            }
-                            DeleteKeys();
-                            sketch.SetStatus(SketchStatus.MIGRATED);
-
-                            if (scanTask != null)
-                                cursor = await scanTask.ConfigureAwait(false);
-                            else if (cursor < endAddress)
-                                cursor = ScanBatch(retired, scanStart);
-                            scanTask = null;
-                            pending = retired;
-                        }
-
-                        sketch.Clear();
-                        return true;
-                    }
-                    finally
-                    {
-                        await scanCancellation.CancelAsync().ConfigureAwait(false);
-                        if (scanTask != null)
+                        sketch.SetStatus(SketchStatus.DELETING);
+                        if (!await session.WaitForConfigPropagationAsync().ConfigureAwait(false))
                         {
-                            try
-                            {
-                                await scanTask.ConfigureAwait(false);
-                            }
-                            catch (OperationCanceledException) when (token.IsCancellationRequested)
-                            {
-                                session.logger?.LogTrace("Migration scan-ahead cancelled");
-                            }
+                            session.logger?.LogError("Failed to protect migration batch deletion");
+                            return false;
                         }
+                        DeleteKeys();
+                        sketch.SetStatus(SketchStatus.MIGRATED);
+
+                        if (scanTask != null)
+                            cursor = await scanTask.ConfigureAwait(false);
+                        else if (cursor < endAddress)
+                            cursor = ScanBatch(retired, scanStart);
+                        scanTask = null;
+                        pending = retired;
                     }
 
-                    long ScanBatch(Sketch destination, long cursor)
-                    {
-                        token.ThrowIfCancellationRequested();
-                        var scanner = new StoreScan(this, destination, token);
-                        scanSession.BasicGarnetApi.IterateStore(ref scanner, ref cursor, endAddress, maxAddress, includeTombstones: true);
-                        token.ThrowIfCancellationRequested();
-                        return cursor;
-                    }
+                    sketch.Clear();
+                    return true;
                 }
                 finally
                 {
-                    if (Interlocked.Decrement(ref activeWorkers) == 0 && Volatile.Read(ref disposed) != 0)
-                        DisposeLocalSession();
+                    if (scanCancellation != null)
+                        await scanCancellation.CancelAsync().ConfigureAwait(false);
+                    if (scanTask != null)
+                    {
+                        try
+                        {
+                            await scanTask.ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException) when (token.IsCancellationRequested)
+                        {
+                            session.logger?.LogTrace("Migration scan-ahead cancelled");
+                        }
+                    }
+                }
+
+                long ScanBatch(Sketch destination, long cursor)
+                {
+                    token.ThrowIfCancellationRequested();
+                    var scanner = new StoreScan(this, destination, token);
+                    scanSession.BasicGarnetApi.IterateStore(ref scanner, ref cursor, endAddress, maxAddress, includeTombstones: true);
+                    token.ThrowIfCancellationRequested();
+                    return cursor;
                 }
             }
         }

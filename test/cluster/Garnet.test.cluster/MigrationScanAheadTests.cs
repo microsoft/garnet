@@ -116,8 +116,21 @@ namespace Garnet.test.cluster
 
         Task<bool> StartMigration()
         {
-            var log = provider.storeWrapper.store.Log;
-            return migration = operation.MigrateSlotsAsync(log.BeginAddress, log.TailAddress, log.TailAddress);
+            return migration = RunWorkerAsync();
+
+            async Task<bool> RunWorkerAsync()
+            {
+                operation.EnterWorker();
+                try
+                {
+                    var log = provider.storeWrapper.store.Log;
+                    return await operation.MigrateSlotsAsync(log.BeginAddress, log.TailAddress, log.TailAddress);
+                }
+                finally
+                {
+                    operation.ExitWorker();
+                }
+            }
         }
 
         async Task<string> TargetAsync(params string[] command)
@@ -135,6 +148,28 @@ namespace Garnet.test.cluster
             Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo("14"));
             for (var i = 0; i < 14; i++)
                 Assert.That(await TargetAsync("GET", Key(i)), Is.EqualTo($"value-{i}"));
+        }
+
+        [Test]
+        public async Task TransfersMixedInlineAndChunkedRecords([Values(1, 3)] int depth, [Values] bool useScanAheadMigration, [Values] bool evict)
+        {
+            const int count = 48;
+            await CreateOperationAsync(depth, keyCount: count, batchSize: 64, useScanAheadMigration: useScanAheadMigration);
+            var expected = new string[count];
+            for (var i = 0; i < count; i++)
+            {
+                var length = (i % 4) switch { 0 => 32, 1 => 1024, 2 => 4096, _ => 32768 };
+                expected[i] = new string((char)('a' + i % 26), length);
+                Assert.That(await source.ExecuteAsync("SET", Key(i), expected[i]), Is.EqualTo("OK"));
+            }
+            if (evict)
+                provider.storeWrapper.store.Log.FlushAndEvict(wait: true);
+
+            Assert.That(await StartMigration().WaitAsync(TimeSpan.FromSeconds(30)), Is.True);
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("0"));
+            Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo(count.ToString()));
+            for (var i = 0; i < count; i++)
+                Assert.That(await TargetAsync("GET", Key(i)), Is.EqualTo(expected[i]));
         }
 
         [TestCase(255, false, 256)]
