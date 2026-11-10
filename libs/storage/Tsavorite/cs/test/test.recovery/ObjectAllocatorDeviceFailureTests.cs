@@ -432,6 +432,7 @@ namespace Tsavorite.test
 
         public override long GetFileSize(int segment) => underlying.GetFileSize(segment);
 
+        // Reset this device's segment range, which truncation uses, as well as the device it forwards to
         public override void Reset()
         {
             base.Reset();

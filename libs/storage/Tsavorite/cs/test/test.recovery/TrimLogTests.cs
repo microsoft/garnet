@@ -32,6 +32,7 @@ namespace Tsavorite.test
         const int ObjectSize = 1 << 13;
         const int RecordsPerPhase = 1000;
 
+        /// <summary>The main log's and the object log's base paths: segment n of each is the file path.n</summary>
         string logPath, objectLogPath;
 
         [SetUp]
@@ -49,6 +50,10 @@ namespace Tsavorite.test
             OnTearDown();
         }
 
+        /// <summary>
+        /// Trimming to a checkpoint removes the main-log and object-log segments above those the checkpoint needs and keeps exactly
+        /// those, and a store over the trimmed logs then recovers the checkpoint, objects included
+        /// </summary>
         [Test]
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
@@ -61,6 +66,7 @@ namespace Tsavorite.test
             {
                 using (var session = NewSession(store))
                 {
+                    // Write a phase, and take a checkpoint of it
                     Upsert(session, 0, RecordsPerPhase);
                     _ = store.TryInitiateFullCheckpoint(out token, checkpointType);
                     await store.CompleteCheckpointAsync().ConfigureAwait(false);
@@ -70,6 +76,9 @@ namespace Tsavorite.test
                     store.Log.FlushAndEvict(wait: true);
                 }
 
+                // The segments the checkpoint needs: the main log's through the one holding its last address, which for a snapshot
+                // is what was flushed before it, since the snapshot file holds the rest; and the object log's through the one
+                // holding its object-log tail. Both logs have segments above those.
                 var info = new HybridLogCheckpointInfo();
                 info.Recover(token, store.CheckpointManager);
                 var validUntil = checkpointType == CheckpointType.Snapshot ? info.info.flushedLogicalAddress : info.info.finalLogicalAddress;
@@ -78,6 +87,7 @@ namespace Tsavorite.test
                 Assert.That(Segments(logPath).Max(), Is.GreaterThan(lastValidSegment), "the main log should have segments above the checkpoint's");
                 Assert.That(Segments(objectLogPath).Max(), Is.GreaterThan(lastValidObjectLogSegment), "the object log should have segments above the checkpoint's");
 
+                // Trim, as recovery to the checkpoint does when asked to trim the log
                 store.hlogBase.VerifyRecoveryInfo(info, trimLog: true);
 
                 Assert.That(Segments(logPath), Is.EqualTo(Enumerable.Range(0, lastValidSegment + 1)), "the main log should keep exactly the checkpoint's segments");
@@ -100,14 +110,21 @@ namespace Tsavorite.test
                     if (status.IsPending)
                         (status, output) = context.GetSinglePendingResult();
                     Assert.That(status.Found, Is.True, $"key {key} should be recovered");
+
+                    // TestLargeObjectValue sets byte i to its size plus i, so the last byte shows the object was read in full
                     ClassicAssert.AreEqual(ObjectSize, output.valueObject.value.Length, $"key {key}");
                     ClassicAssert.AreEqual(unchecked((byte)(ObjectSize * 2 - 1)), output.valueObject.value[^1], $"key {key}");
                 }
             }
         }
 
+        /// <summary>A file device that keeps its segment files, so a second store can recover from them</summary>
         static IDevice CreateDevice(string path) => new RandomAccessLocalStorageDevice(path, deleteOnClose: false);
 
+        /// <summary>
+        /// An object store over the two logs, with 4 KB pages, an 8-page buffer, 4-page main-log segments, the smallest object-log
+        /// segments, and its checkpoints in the test directory
+        /// </summary>
         static TsavoriteKV<ClassStoreFunctions, ClassAllocator> CreateStore(IDevice log, IDevice objectLog)
             => new(new()
             {
@@ -127,6 +144,10 @@ namespace Tsavorite.test
             TsavoriteKV<ClassStoreFunctions, ClassAllocator> store)
             => store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
 
+        /// <summary>
+        /// Upsert <paramref name="count"/> keys from <paramref name="firstKey"/>, each with an object of
+        /// <see cref="ObjectSize"/> bytes
+        /// </summary>
         static void Upsert(ClientSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions, ClassStoreFunctions, ClassAllocator> session,
             int firstKey, int count)
         {

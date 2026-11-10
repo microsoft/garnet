@@ -20,8 +20,13 @@ namespace Tsavorite.test
     /// <param name="inner">Commit manager that does the work; it is owned by the caller</param>
     internal sealed class NotifyingLogCommitManager(ILogCommitManager inner) : ILogCommitManager
     {
+        /// <summary>
+        /// One completion per commit, set once its metadata has been passed on. Whichever comes first, the commit or a wait for
+        /// it, creates the completion.
+        /// </summary>
         readonly ConcurrentDictionary<(long CommitNum, long UntilAddress), TaskCompletionSource> committed = new();
 
+        /// <summary>The completion for the commit with <paramref name="commitNum"/> and <paramref name="untilAddress"/></summary>
         TaskCompletionSource Committed(long commitNum, long untilAddress)
             => committed.GetOrAdd((commitNum, untilAddress), _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
 
@@ -56,7 +61,7 @@ namespace Tsavorite.test
         /// <inheritdoc />
         public void OnRecovery(long commitNum) => inner.OnRecovery(commitNum);
 
-        /// <inheritdoc />
+        /// <summary>Does nothing: the inner commit manager belongs to the caller</summary>
         public void Dispose()
         {
         }

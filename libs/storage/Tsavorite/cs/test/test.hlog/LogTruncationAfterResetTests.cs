@@ -19,6 +19,7 @@ namespace Tsavorite.test
     [TestFixture]
     internal class LogTruncationAfterResetTests : TestBase
     {
+        // 4 KB pages and a 4-page buffer
         const int PageSizeBits = 12;
         const int MemorySizeBits = 14;
 
@@ -26,8 +27,10 @@ namespace Tsavorite.test
         const int SegmentSizeBits = 14;
         const long SegmentSize = 1L << SegmentSizeBits;
 
+        // How long to wait for a truncation task, or for the reset
         static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
+        /// <summary>The log's base path: segment n is the file logPath.n</summary>
         string logPath;
         DeviceLogCommitCheckpointManager manager;
 
@@ -49,10 +52,15 @@ namespace Tsavorite.test
             TestUtils.OnTearDown();
         }
 
+        /// <summary>
+        /// After the log is truncated through segment 3 and then moved below it by Reset or Initialize, truncating the new log
+        /// removes the segment files it writes: the device must not take the earlier truncation to mean they are already gone
+        /// </summary>
         [Test]
         [Category("TsavoriteLog")]
         public void TruncationRemovesSegmentsWrittenAfterTheLogMovesDown([Values] bool initialize)
         {
+            // Fill four segments, and truncate them all
             using var device = CreateFileDevice();
             using var log = CreateLog(device);
             FillUntil(log, 4 * SegmentSize + 1);
@@ -76,12 +84,14 @@ namespace Tsavorite.test
             AssertTruncated(firstSegment);
         }
 
+        /// <summary>
+        /// Truncation runs on a task, which can still be pending when the log is reset. The reset device truncates from segment 0,
+        /// so such a truncation would then remove the new log's segments: it must be skipped.
+        /// </summary>
         [Test]
         [Category("TsavoriteLog")]
         public void TruncationRequestedBeforeAResetIsSkipped()
         {
-            // Truncation runs on a task, which can still be pending when the log is reset. The reset device truncates from segment
-            // 0, so such a truncation would then remove the new log's segments.
             using var device = new GatedTruncationDevice(CreateFileDevice());
             using var log = CreateLog(device);
             FillUntil(log, 5 * SegmentSize + 1);
@@ -92,7 +102,8 @@ namespace Tsavorite.test
             ClassicAssert.IsTrue(device.TruncationStarted.Wait(Timeout), "the first truncation should start");
             log.UnsafeShiftBeginAddress(4 * SegmentSize, truncateLog: true);
 
-            // The reset waits for the first truncation to finish before it resets the device
+            // The reset waits for the first truncation to finish before it resets the device. The gate opens once the allocator's
+            // reset count shows that the reset has begun, so the second truncation, requested before the reset, runs after it began.
             var reset = Task.Run(log.Reset);
             var resetCountField = GetResetCountField(log, out var allocator);
             ClassicAssert.IsTrue(SpinWait.SpinUntil(() => (long)resetCountField.GetValue(allocator) == 1, Timeout), "the reset should begin");
@@ -106,8 +117,10 @@ namespace Tsavorite.test
                 ClassicAssert.IsTrue(File.Exists(SegmentPath(segment)), $"segment {segment} of the new log should remain");
         }
 
+        /// <summary>A file device that keeps its segment files, so a test can check which remain</summary>
         IDevice CreateFileDevice() => new RandomAccessLocalStorageDevice(logPath, disableFileBuffering: false, osReadBuffering: true);
 
+        /// <summary>A log over <paramref name="device"/> with the fixture's sizes, which is not recovered on construction</summary>
         TsavoriteLog CreateLog(IDevice device) => new(new TsavoriteLogSettings
         {
             LogDevice = device,
@@ -140,6 +153,7 @@ namespace Tsavorite.test
         /// </summary>
         static void Commit(TsavoriteLog log) => ClassicAssert.IsTrue(log.CommitStrongly(out _, out _, spinWait: true), "the commit should be made");
 
+        /// <summary>The file that holds segment <paramref name="segment"/> of the log</summary>
         string SegmentPath(int segment) => $"{logPath}.{segment}";
 
         /// <summary>Assert that the segment's file is deleted; truncation runs on a task, so this waits for it</summary>
@@ -167,18 +181,25 @@ namespace Tsavorite.test
         /// </summary>
         sealed class GatedTruncationDevice(IDevice underlying) : StorageDeviceBase(underlying.FileName, underlying.SectorSize, underlying.Capacity)
         {
+            /// <summary>Holds each truncation while closed; open initially</summary>
             internal readonly ManualResetEventSlim Gate = new(true);
+
+            /// <summary>Released as each truncation starts, before it waits at the gate</summary>
             internal readonly SemaphoreSlim TruncationStarted = new(0);
+
             int truncations;
 
+            /// <summary>How many truncations have started</summary>
             internal int Truncations => Volatile.Read(ref truncations);
 
+            /// <summary>Initialize this device, whose segment range truncation uses, and the one it forwards to</summary>
             public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
             {
                 base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
                 underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
             }
 
+            /// <summary>Count the truncation and signal that it started, wait at the gate, then truncate</summary>
             public override void TruncateUntilAddress(long toAddress)
             {
                 _ = Interlocked.Increment(ref truncations);
@@ -189,6 +210,7 @@ namespace Tsavorite.test
                 base.TruncateUntilAddress(toAddress);
             }
 
+            /// <summary>Reset this device's segment range, which truncation uses, and the device it forwards to</summary>
             public override void Reset()
             {
                 base.Reset();

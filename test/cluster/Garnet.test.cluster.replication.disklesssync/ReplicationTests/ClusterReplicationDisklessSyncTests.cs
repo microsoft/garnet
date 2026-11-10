@@ -563,6 +563,8 @@ namespace Garnet.test.cluster
             var nodes_count = 2;
             var primaryIndex = 0;
             var replicaIndex = 1;
+
+            // A primary that owns every slot, and a replica attached to it with its AOF in sync
             context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
 
@@ -583,6 +585,7 @@ namespace Garnet.test.cluster
             foreach (var staleSegment in staleSegments)
                 File.WriteAllBytes(staleSegment, Enumerable.Repeat((byte)0x5A, 4096).ToArray());
 
+            // Write more on the primary while the replica is detached, then reattach it: a diskless sync moves its AOF tail
             PopulatePrimary(primaryIndex, disableObjects: true, performRMW: false);
             _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
             context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);

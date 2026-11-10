@@ -187,8 +187,11 @@ namespace Garnet.test
             Assert.That(firstStaleKey, Is.GreaterThan(firstLostKey).And.LessThan(numKeys - 1), "a later page must start with a SET record that old records follow");
             var numNewKeys = firstStaleKey - firstLostKey;
 
+            // A segment file far above the tail's, standing for a history that a replica sync replaced
             File.WriteAllBytes(staleSegment, Enumerable.Repeat((byte)0x5A, 4096).ToArray());
 
+            // First recovery: the keys before the corrupted record come back. The new keys' records are then appended at the
+            // recovered tail, where the lost keys' records were.
             server = CreateServer(tryRecover: true);
             server.Start();
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
@@ -205,6 +208,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(!clearAboveTail, HoldsData(staleSegment), "the segment file above the tail's segment must be removed or emptied only when clearing");
             ClassicAssert.AreEqual(!clearAboveTail, FileContains(tailSegment, Key(numKeys - 1)), "the records above the tail must be zeroed only when clearing");
 
+            // Second recovery: the new keys come back, and without clearing, so do the old keys from the first stale one on
             server = CreateServer(tryRecover: true);
             server.Start();
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))

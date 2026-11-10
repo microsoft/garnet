@@ -113,6 +113,10 @@ namespace Tsavorite.test
             SegmentSizeBits = 22
         };
 
+        /// <summary>
+        /// Fast-commit recovery reads past the end of the written log, on each file device type and from each place the scan can
+        /// start, and ends there quietly: at the last commit, with no warning logged
+        /// </summary>
         [Test]
         [Category("TsavoriteLog")]
         public Task FastCommitRecoveryEndsQuietlyAtTheEndOfTheLog(
@@ -120,12 +124,20 @@ namespace Tsavorite.test
             [Values] RecoveryScanStart scanStart)
             => RecoverToTheEndOfTheLog(Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, $"endOfLog{deviceType}.log"), deviceType: deviceType, deleteOnClose: true), scanStart);
 
+        /// <summary>
+        /// As <see cref="FastCommitRecoveryEndsQuietlyAtTheEndOfTheLog"/>, for <see cref="NativeStorageDevice"/>. DeviceType.Native
+        /// is LocalStorageDevice on Windows, so this covers NativeStorageDevice there.
+        /// </summary>
         [Test]
         [Category("TsavoriteLog")]
         public Task FastCommitRecoveryEndsQuietlyAtTheEndOfANativeStorageDeviceLog([Values] RecoveryScanStart scanStart)
-            // DeviceType.Native is LocalStorageDevice on Windows, so this covers NativeStorageDevice there
             => RecoverToTheEndOfTheLog(new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "endOfLog.log"), deleteOnClose: true), scanStart);
 
+        /// <summary>
+        /// Write three commits spanning several pages over <paramref name="logDevice"/>, unless the log is to be empty, and remove
+        /// their commit-metadata files if the scan is to start at the beginning. Then recover, and assert that recovery ends at
+        /// the last commit without logging a warning.
+        /// </summary>
         async Task RecoverToTheEndOfTheLog(IDevice logDevice, RecoveryScanStart scanStart)
         {
             // The recovery scan for commit records has no end bound, so it always reads past the end of the written log.
@@ -175,12 +187,15 @@ namespace Tsavorite.test
             Assert.That(logger.AtOrAbove(LogLevel.Warning), Is.Empty, "reaching the end of the log is how the recovery scan ends, not a failure");
         }
 
+        /// <summary>
+        /// Only the end of the written log ends the recovery scan quietly. A device error leaves the end of the log unknown, so
+        /// recovery fails rather than drop the commits the error may hide, unless device failures are tolerated. Either way the
+        /// error is logged, and PrepareToAppend refuses to clear above the tail.
+        /// </summary>
         [Test]
         [Category("TsavoriteLog")]
         public async Task FastCommitRecoveryFailsOnAReadErrorPastTheLastCommit([Values] bool tolerateDeviceFailure)
         {
-            // Only the end of the written log ends the recovery scan quietly. A device error leaves the end of the log unknown,
-            // so recovery fails rather than drop the commits the error may hide, unless device failures are tolerated.
             var failing = new ErrorCodeOnReadDevice(Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "readError.log"), deleteOnClose: true));
             device = failing;
             var logSettings = SmallPageFastCommitSettings(failing);
@@ -194,6 +209,8 @@ namespace Tsavorite.test
 
             var pageSize = 1L << SmallPageSizeBits;
             ClassicAssert.AreNotEqual(0L, commitAddress & (pageSize - 1), "the scan should start inside the last written page");
+
+            // The page after the commit's, which the recovery scan reads to look for later commits
             var firstUnwrittenPage = (commitAddress | (pageSize - 1)) + 1;
             log.Dispose();
             log = null;
@@ -405,31 +422,47 @@ namespace Tsavorite.test
             PrepareToAppend,
         }
 
+        /// <summary>The cookie of the replacement's commit, which recovery returns only if it ends at the replacement</summary>
         static readonly byte[] ReplacementCookie = [2, 4, 6, 8];
 
+        /// <summary>The stale-suffix scenario with the stale commit numbered 4, the same as the replacement's commit</summary>
         [Test]
         [Category("TsavoriteLog")]
         public Task FastCommitRecoveryRetainsNewTailWithEqualStaleCommit([Values] ClearMode clearMode)
             => RunStaleSuffixScenario(clearMode, intermediateCommit: false, replacementLength: 4, replacementCommitNum: 4, ReplacementCookie);
 
+        /// <summary>The stale-suffix scenario with the stale commit numbered 4, below the replacement's commit, 6</summary>
         [Test]
         [Category("TsavoriteLog")]
         public Task FastCommitRecoveryRetainsNewTailWithDecreasingStaleCommit([Values] ClearMode clearMode)
             => RunStaleSuffixScenario(clearMode, intermediateCommit: false, replacementLength: 4, replacementCommitNum: 6, ReplacementCookie);
 
+        /// <summary>
+        /// The stale-suffix scenario with the stale commit numbered 5, above the replacement's commit, 4, as the next commit of
+        /// one history would be
+        /// </summary>
         [Test]
         [Category("TsavoriteLog")]
         public Task FastCommitRecoveryRetainsNewTailWithIncreasingStaleCommit([Values] ClearMode clearMode)
             => RunStaleSuffixScenario(clearMode, intermediateCommit: true, replacementLength: 4, replacementCommitNum: 4, ReplacementCookie);
 
-        // The replacement's flush zeroes the rest of the first page, so the padding check passes and only clearing stops the scan
+        /// <summary>
+        /// The stale-suffix scenario with a 3200-byte replacement, whose flush zeroes the rest of page 0. The scan then passes from
+        /// the replacement's commit through valid padding to the stale entries on page 1, so only clearing stops it, and
+        /// <see cref="ClearMode.None"/> is not tested.
+        /// </summary>
         [Test]
         [Category("TsavoriteLog")]
         public Task FastCommitRecoveryRetainsNewTailAfterFullTailPageRewrite([Values(ClearMode.Recover, ClearMode.PrepareToAppend)] ClearMode clearMode)
             => RunStaleSuffixScenario(clearMode, intermediateCommit: true, replacementLength: 3200, replacementCommitNum: 4, ReplacementCookie,
                 replacementFillsTailPage: true);
 
-        // The replacement ends where commit 4 ended, before padding, so the padding check passes and only clearing stops the scan
+        /// <summary>
+        /// The stale-suffix scenario with a 2048-byte replacement committed as 4 with no cookie, as the abandoned entry and its
+        /// commit were, so the replacement's commit record ends where the abandoned one did, and padding follows it as before.
+        /// Nothing in the log tells the two histories apart, so only clearing stops the scan, and <see cref="ClearMode.None"/>
+        /// is not tested.
+        /// </summary>
         [Test]
         [Category("TsavoriteLog")]
         public Task FastCommitRecoveryRetainsNewTailWhenReplacementMatchesStaleAddressAndNumber([Values(ClearMode.Recover, ClearMode.PrepareToAppend)] ClearMode clearMode)
@@ -441,9 +474,17 @@ namespace Tsavorite.test
         /// device past it, appends and commits a replacement, then verifies that a second recovery ends at the replacement.
         /// </summary>
         /// <remarks>
+        /// <para>
         /// With 4 KB pages, the unacknowledged suffix is a 2048-byte entry, two 3500-byte entries that each need a page of their
         /// own (starting at 4096 and 8192), and a commit record on the third page. Before the crash every byte of it is
         /// written; the crash image restores one sector of the 2048-byte entry to its unwritten contents.
+        /// </para>
+        /// <para>
+        /// The first recovery stops at the torn entry, so the replacement appended there is followed on the device by the rest of
+        /// the abandoned suffix, including its intact commit record. The tests vary the replacement's length and commit number to
+        /// show that neither commit numbers nor padding tell the stale commit from a new one: a scan that stopped at a commit
+        /// numbered no higher than the last it adopted would stop in the equal and decreasing cases, but not the increasing one.
+        /// </para>
         /// </remarks>
         /// <param name="clearMode">How the first recovery prepares the log for the replacement</param>
         /// <param name="intermediateCommit">Whether commit 4 follows the 2048-byte entry, making the commit on the third page commit 5</param>
@@ -455,6 +496,8 @@ namespace Tsavorite.test
         private static async Task RunStaleSuffixScenario(ClearMode clearMode, bool intermediateCommit, int replacementLength, long replacementCommitNum,
             byte[] replacementCookie, bool replacementFillsTailPage = false, bool replacementMatchesIntermediateCommit = false)
         {
+            // 4 KB pages, as CrashImageLog configures, and 12-byte record headers: a length and a per-entry checksum. The torn
+            // sector is 512 bytes, the smallest unit a torn write loses, at [1024, 1536), inside the 2048-byte entry.
             const int PageSize = 1 << 12;
             const int HeaderSize = 12;
             const int SectorSize = 512;
@@ -463,6 +506,7 @@ namespace Tsavorite.test
             var logPath = Path.Join(TestUtils.MethodTestDir, "s.log");
             var segmentPath = logPath + ".0";
 
+            // Fixed seeds, so every run builds the same crash image
             var prefixEntry = new byte[100];
             new Random(42).NextBytes(prefixEntry);
             var payload = new byte[2048];
@@ -487,7 +531,8 @@ namespace Tsavorite.test
                 Assert.That(original.Manager.ListCommits(), Is.EqualTo(new long[] { 1 }));
                 commitMetadata = original.Manager.GetCommitMetadata(1);
 
-                // Unacknowledged suffix
+                // Unacknowledged suffix: the 2048-byte entry at the acknowledged tail, then commit 4 if requested, the two
+                // 3500-byte entries at the starts of pages 1 and 2, and the stale commit, numbered 4 or 5, after the second
                 ClassicAssert.AreEqual(acknowledgedTail, original.Log.Enqueue(payload));
                 if (intermediateCommit)
                     ClassicAssert.IsTrue(original.Log.CommitStrongly(out intermediateTail, out _, spinWait: false, proposedCommitNum: 4));
@@ -499,6 +544,8 @@ namespace Tsavorite.test
                 ClassicAssert.Greater(staleTail, 2 * PageSize + HeaderSize + suffixEntry.Length);
                 ClassicAssert.LessOrEqual(staleTail, 3 * PageSize);
             }
+
+            // Everything the original log wrote, from which the crash image is built
             var newImage = ReadDeviceFile(segmentPath);
 
             // Crash image: one aligned sector inside the unacknowledged 2048-byte entry keeps its unwritten contents
@@ -518,6 +565,7 @@ namespace Tsavorite.test
             long replacementTail;
             using (var firstRecovery = new CrashImageLog(logPath, TestUtils.MethodTestDir))
             {
+                // Only commit 1 has a commit-metadata file, so recovery scans forward from commit 1
                 Assert.That(firstRecovery.Manager.ListCommits(), Is.EqualTo(new long[] { 1 }));
                 Assert.That(firstRecovery.Manager.GetCommitMetadata(1), Is.EqualTo(commitMetadata));
 
@@ -535,6 +583,7 @@ namespace Tsavorite.test
                 firstRecovery.Commits.WaitForMetadata(replacementCommitNum, replacementTail);
             }
 
+            // What the device holds past the replacement: the abandoned suffix without clearing, and only zeros with it
             var replacedImage = ReadDeviceFile(segmentPath);
             if (clearMode == ClearMode.None)
                 Assert.That(replacedImage.AsSpan(PageSize).SequenceEqual(newImage.AsSpan(PageSize)), Is.True,
@@ -542,6 +591,8 @@ namespace Tsavorite.test
             else
                 Assert.That(replacedImage.AsSpan((int)replacementTail).IndexOfAnyExcept((byte)0), Is.EqualTo(-1),
                     "Clearing leaves nothing past the replacement");
+
+            // The full-page rewrite's premise: the rest of page 0 is zeros, as padding before an entry that did not fit would be
             if (replacementFillsTailPage)
             {
                 Assert.That(replacedImage.AsSpan((int)replacementTail, PageSize - (int)replacementTail).IndexOfAnyExcept((byte)0), Is.EqualTo(-1),
@@ -549,11 +600,14 @@ namespace Tsavorite.test
                 Assert.That(replacementTail + HeaderSize + suffixEntry.Length, Is.GreaterThan(PageSize),
                     "A 3500-byte entry must not fit in the rest of the first page");
             }
+
+            // The matching replacement's premise: its commit ends where commit 4 did
             if (replacementMatchesIntermediateCommit)
                 ClassicAssert.AreEqual(intermediateTail, replacementTail);
 
             using (var secondRecovery = new CrashImageLog(logPath, TestUtils.MethodTestDir))
             {
+                // The newest commit-metadata file is the replacement's, so the scan starts at the replacement's tail
                 var latestInfo = new TsavoriteLogRecoveryInfo();
                 latestInfo.Initialize(secondRecovery.Manager.GetCommitMetadata(secondRecovery.Manager.ListCommits().First()));
                 ClassicAssert.AreEqual(replacementTail, latestInfo.UntilAddress);
@@ -567,6 +621,7 @@ namespace Tsavorite.test
             }
         }
 
+        /// <summary>Read a whole segment file, which a device may still hold open</summary>
         private static byte[] ReadDeviceFile(string path)
         {
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
@@ -575,6 +630,7 @@ namespace Tsavorite.test
             return bytes;
         }
 
+        /// <summary>The entries from the log's begin address to its tail, in order</summary>
         private static List<byte[]> ReadEntries(TsavoriteLog log)
         {
             var entries = new List<byte[]>();
@@ -590,12 +646,24 @@ namespace Tsavorite.test
         /// </summary>
         private sealed class CrashImageLog : IDisposable
         {
+            /// <summary>The log, which is not recovered on construction</summary>
             internal readonly TsavoriteLog Log;
+
+            /// <summary>The log's device, over its one segment file</summary>
             internal readonly IDevice Device;
+
+            /// <summary>Writes the commit-metadata files; tests list and read them through it</summary>
             internal readonly DeviceLogCommitCheckpointManager Manager;
+
+            /// <summary>Wraps <see cref="Manager"/>, so that a test can wait until a commit's metadata is written</summary>
             internal readonly NotifyingLogCommitManager Commits;
+
             bool disposed;
 
+            /// <summary>
+            /// Open the log over the segment files at <paramref name="logPath"/>, with its commit-metadata files in
+            /// <paramref name="commitDirectory"/>
+            /// </summary>
             internal CrashImageLog(string logPath, string commitDirectory)
             {
                 Device = new RandomAccessLocalStorageDevice(logPath, disableFileBuffering: false, osReadBuffering: true);
@@ -615,6 +683,7 @@ namespace Tsavorite.test
                 });
             }
 
+            /// <summary>Dispose the log, then the commit manager and the device, which the log does not own</summary>
             public void Dispose()
             {
                 if (disposed)

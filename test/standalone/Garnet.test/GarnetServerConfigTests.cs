@@ -1962,6 +1962,10 @@ namespace Garnet.test
             }
         }
 
+        /// <summary>
+        /// --aof-replay-clear-above-tail and its configuration-file key, AofReplayClearAboveTail, default to true, accept true and
+        /// false, and reject anything else
+        /// </summary>
         [Test]
         public void AofReplayClearAboveTail()
         {
