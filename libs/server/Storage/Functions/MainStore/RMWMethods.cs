@@ -525,7 +525,10 @@ namespace Garnet.server
                     return SetValueConditionalInPlaceUpdate(ref logRecord, ref input, ref output, ref rmwInfo);
                 case RespCommand.DELIFEQ:
                 case RespCommand.DELEX:
-                    return DeleteValueConditional(in logRecord, ref input, ref output, ref rmwInfo) ? IPUResult.Failed : IPUResult.NotUpdated;
+                    _ = DeleteValueConditional(in logRecord, ref input, ref output, ref rmwInfo);
+                    if (rmwInfo.Action == RMWAction.Default)
+                        rmwInfo.Action = RMWAction.CancelOperation;
+                    return IPUResult.Failed;
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
                     // Note: SETEXXX may or may not actually have an expiration.
@@ -1059,7 +1062,10 @@ namespace Garnet.server
         private readonly IPUResult SetValueConditionalInPlaceUpdate(ref LogRecord logRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
             if (!CheckSetValueCondition(logRecord.ValueSpan, ref input, ref output))
-                return IPUResult.NotUpdated;
+            {
+                rmwInfo.Action = RMWAction.CancelOperation;
+                return IPUResult.Failed;
+            }
 
             var updateInput = input;
             updateInput.header.cmd = input.header.cmd is RespCommand.SETKEEPTTLIFEQ or RespCommand.SETKEEPTTLIFNE or RespCommand.SETKEEPTTLIFDEQ or RespCommand.SETKEEPTTLIFDNE

@@ -378,6 +378,82 @@ namespace Garnet.test
             ClassicAssert.IsTrue(db.Execute("EXEC").IsNull);
         }
 
+        [Test]
+        public async Task RejectedConditionalSetPreservesWatchConflictDetection(
+            [Values("IFEQ", "IFNE", "IFDEQ", "IFDNE")] string condition, [Values] bool get, [Values] bool keepTtl)
+        {
+            using var writer = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var client = TestUtils.GetGarnetClientSession();
+            client.Connect();
+            var db = writer.GetDatabase();
+            db.StringSet("key", "old", TimeSpan.FromMinutes(1));
+            var comparison = condition switch
+            {
+                "IFEQ" => "different",
+                "IFNE" => "old",
+                "IFDEQ" => DigestOf("different"),
+                _ => DigestOf("old")
+            };
+            object[] options = keepTtl ? ["KEEPTTL"] : [];
+            if (get)
+                options = [.. options, "GET"];
+
+            for (var write = 0; write < 2; write++)
+            {
+                await client.ExecuteAsync("WATCH", "key");
+                var result = db.Execute("SET", ["key", "rejected", condition, comparison, .. options]);
+                if (get)
+                    ClassicAssert.AreEqual("old", (string)result);
+                else
+                    ClassicAssert.IsTrue(result.IsNull);
+                if (write == 1)
+                    ClassicAssert.IsTrue(db.StringSet("key", "new", expiry: null, keepTtl: true));
+
+                await client.ExecuteAsync("MULTI");
+                await client.ExecuteAsync("GET", "key");
+                var results = await client.ExecuteForArrayAsync("EXEC");
+                if (write == 0)
+                    CollectionAssert.AreEqual(new[] { "old" }, results);
+                else
+                    ClassicAssert.IsNull(results);
+            }
+        }
+
+        [Test]
+        public async Task RejectedConditionalDeletePreservesWatchConflictDetection(
+            [Values("DELIFEQ", "IFEQ", "IFNE", "IFDEQ", "IFDNE")] string condition)
+        {
+            using var writer = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var client = TestUtils.GetGarnetClientSession();
+            client.Connect();
+            var db = writer.GetDatabase();
+            db.StringSet("key", "old");
+            var comparison = condition switch
+            {
+                "IFNE" => "old",
+                "IFDEQ" => DigestOf("different"),
+                "IFDNE" => DigestOf("old"),
+                _ => "different"
+            };
+
+            for (var write = 0; write < 2; write++)
+            {
+                await client.ExecuteAsync("WATCH", "key");
+                ClassicAssert.AreEqual(0, (long)db.Execute(condition == "DELIFEQ" ? "DELIFEQ" : "DELEX",
+                    condition == "DELIFEQ" ? ["key", comparison] : ["key", condition, comparison]));
+                if (write == 1)
+                    ClassicAssert.IsTrue(db.StringSet("key", "new"));
+
+                await client.ExecuteAsync("MULTI");
+                await client.ExecuteAsync("GET", "key");
+                var results = await client.ExecuteForArrayAsync("EXEC");
+                if (write == 0)
+                    CollectionAssert.AreEqual(new[] { "old" }, results);
+                else
+                    ClassicAssert.IsNull(results);
+            }
+        }
+
         [TestCase("", "2d06800538d394c2", 0)]
         [TestCase("", "2d06800538d394c2", 1)]
         [TestCase("", "2d06800538d394c2", 2)]
