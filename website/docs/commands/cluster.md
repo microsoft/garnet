@@ -187,10 +187,14 @@ Bulk string of endpoint "address:port" or "unassigned:0"
 #### Syntax
 
 ```bash
-	CLUSTER FAILOVER [FORCE | TAKEOVER | ABORT]
+	CLUSTER FAILOVER [FORCE | TAKEOVER | ABORT] [TIMEOUT seconds]
 ```
 
 This command is sent to a replica to start a manual failover and take the role of its primary.
+`TIMEOUT` bounds the whole failover in seconds, including waiting for replication catch-up; if omitted or `0`, the
+default of 600 seconds applies. Unlike the primary-side `FAILOVER` command, whose `TIMEOUT` is in milliseconds,
+this timeout is in seconds. For backward compatibility, `CLUSTER FAILOVER FORCE|TAKEOVER <seconds>` without the `TIMEOUT`
+keyword is also accepted.
 With no option, it coordinates with the reachable primary to pause writes and wait for replication catch-up before promotion.
 This hand-off does not protect against competing promotions or provide an unconditional no-data-loss guarantee.
 When a replica receives the command with no option, it executes the following steps:
