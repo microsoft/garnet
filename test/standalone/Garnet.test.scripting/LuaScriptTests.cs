@@ -1869,6 +1869,24 @@ return retArray";
         }
 
         [Test]
+        public void SetConditionalOnNonStringKeys()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            _ = db.ListRightPush("list", "a");
+            _ = db.HashSet("hash", "f", "v");
+
+            var res = (string[])db.ScriptEvaluate(
+                "return { redis.call('SET', KEYS[1], 'v1', 'XX')['ok'], tostring(redis.call('SET', KEYS[2], 'v2', 'NX')) }",
+                ["list", "hash"]);
+
+            CollectionAssert.AreEqual(new[] { "OK", "false" }, res);
+            ClassicAssert.AreEqual("v1", (string)db.StringGet("list"));
+            ClassicAssert.AreEqual(RedisType.Hash, db.KeyType("hash"));
+        }
+
+        [Test]
         public void PermissionsEnforced()
         {
             using var allowRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

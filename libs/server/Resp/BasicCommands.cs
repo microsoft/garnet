@@ -794,13 +794,12 @@ namespace Garnet.server
                         status = storageSession.SET_Conditional(key, ref input, ref storageSession.stringTransactionalContext);
                         if (status == GarnetStatus.WRONGTYPE)
                         {
+                            // KEEPTTL keeps the expiration of the value it replaces
+                            if (cmd is RespCommand.SETKEEPTTL or RespCommand.SETKEEPTTLXX)
+                                input.arg1 = GetExpirationTicks(key);
+
                             _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
-                            input.header.cmd = cmd switch
-                            {
-                                RespCommand.SETEXXX => RespCommand.SETEXNX,
-                                RespCommand.SETKEEPTTLXX => RespCommand.SETKEEPTTL,
-                                _ => cmd,
-                            };
+                            input.header.cmd = RespCommand.SETEXNX;
                             status = storageSession.SET_Conditional(key, ref input, ref storageSession.stringTransactionalContext);
                             overwroteNonString = true;
                         }
@@ -856,6 +855,27 @@ namespace Garnet.server
 
                 return true;
             }
+        }
+
+        /// <summary>
+        /// Gets the absolute expiration of a key locked by the current transaction, in ticks, or 0 if it has none.
+        /// </summary>
+        private long GetExpirationTicks(PinnedSpanByte key)
+        {
+            Span<byte> outputSpan = stackalloc byte[32];
+            var input = new UnifiedInput(RespCommand.PEXPIRETIME);
+            var output = new UnifiedOutput(SpanByteAndMemory.FromPinnedSpan(outputSpan));
+
+            if (storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref storageSession.unifiedTransactionalContext) != GarnetStatus.OK)
+                return 0;
+
+            Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "PEXPIRETIME reply fits in the stack buffer");
+            var ptr = output.SpanByteAndMemory.SpanByte.ToPointer();
+            var end = ptr + output.SpanByteAndMemory.SpanByte.length;
+            if (!RespReadUtils.TryReadInt64(out var expirationMs, ref ptr, end) || expirationMs < 0)
+                return 0;
+
+            return ConvertUtils.TryUnixTimestampInMillisecondsToTicks(expirationMs, out var ticks) ? ticks : 0;
         }
 
         private static bool TryGetAbsoluteExpiryTicks(long expiry, bool highPrecision, out long expiryTicks)

@@ -1065,6 +1065,59 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        public void SetKeepTtlOverNonStringKeyKeepsTtl([Values(RedisType.List, RedisType.Hash, RedisType.Set)] RedisType type, [Values] bool xx)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            object[] args = xx ? [key, "v1", "KEEPTTL", "XX"] : [key, "v1", "KEEPTTL"];
+
+            CreateNonStringKey(db, key, type);
+            ClassicAssert.IsTrue(db.KeyExpire(key, TimeSpan.FromSeconds(100)));
+            var expireTime = db.KeyExpireTime(key);
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SET", args));
+            ClassicAssert.AreEqual(RedisType.String, db.KeyType(key));
+            ClassicAssert.AreEqual("v1", (string)db.StringGet(key));
+            ClassicAssert.AreEqual(expireTime, db.KeyExpireTime(key));
+
+            // Without a TTL
+            _ = db.KeyDelete(key);
+            CreateNonStringKey(db, key, type);
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SET", args));
+            ClassicAssert.AreEqual("v1", (string)db.StringGet(key));
+            ClassicAssert.IsNull(db.KeyTimeToLive(key));
+        }
+
+        [Test]
+        public void SetConditionalOnNonStringKeysInTransaction()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            CreateNonStringKey(db, "list", RedisType.List);
+            CreateNonStringKey(db, "hash", RedisType.Hash);
+            CreateNonStringKey(db, "set", RedisType.Set);
+            ClassicAssert.IsTrue(db.KeyExpire("set", TimeSpan.FromSeconds(100)));
+            var expireTime = db.KeyExpireTime("set");
+
+            var tran = db.CreateTransaction();
+            var xx = tran.ExecuteAsync("SET", ["list", "v1", "XX"]);
+            var nx = tran.ExecuteAsync("SET", ["hash", "v2", "NX"]);
+            var keepTtlXx = tran.ExecuteAsync("SET", ["set", "v3", "KEEPTTL", "XX"]);
+            ClassicAssert.IsTrue(tran.Execute());
+
+            ClassicAssert.AreEqual("OK", (string)xx.Result);
+            ClassicAssert.IsTrue(nx.Result.IsNull);
+            ClassicAssert.AreEqual("OK", (string)keepTtlXx.Result);
+            ClassicAssert.AreEqual("v1", (string)db.StringGet("list"));
+            ClassicAssert.AreEqual(RedisType.Hash, db.KeyType("hash"));
+            ClassicAssert.AreEqual("v3", (string)db.StringGet("set"));
+            ClassicAssert.AreEqual(expireTime, db.KeyExpireTime("set"));
+        }
+
         private static void CreateNonStringKey(IDatabase db, string key, RedisType type)
         {
             switch (type)
