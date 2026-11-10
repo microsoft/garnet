@@ -1031,6 +1031,32 @@ namespace Garnet.test.cluster
                 var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["FAILOVER", "128"]);
                 ClassicAssert.AreEqual("ERR Failover option (128) not supported", errorMsg);
             }
+
+            // TIMEOUT without a value rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["FAILOVER", "TIMEOUT"]);
+                ClassicAssert.AreEqual("ERR syntax error", errorMsg);
+                errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["FAILOVER", "FORCE", "TIMEOUT"]);
+                ClassicAssert.AreEqual("ERR syntax error", errorMsg);
+            }
+
+            // Non-integer and negative TIMEOUT rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["FAILOVER", "TIMEOUT", "abc"]);
+                ClassicAssert.AreEqual("ERR value is not an integer or out of range.", errorMsg);
+                errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["FAILOVER", "FORCE", "-1"]);
+                ClassicAssert.AreEqual("ERR timeout is negative", errorMsg);
+                errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["FAILOVER", "TIMEOUT", "-1"]);
+                ClassicAssert.AreEqual("ERR timeout is negative", errorMsg);
+            }
+
+            // Trailing arguments rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["FAILOVER", "TIMEOUT", "5", "FORCE"]);
+                ClassicAssert.AreEqual("ERR syntax error", errorMsg);
+                errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["FAILOVER", "FORCE", "5", "6"]);
+                ClassicAssert.AreEqual("ERR syntax error", errorMsg);
+            }
         }
 
         [Test, Order(10)]
