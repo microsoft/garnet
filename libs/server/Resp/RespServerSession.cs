@@ -733,8 +733,8 @@ namespace Garnet.server
                     break;
                 }
 
-                // WATCH is rejected inside MULTI, so EXEC does not replay it
-                if (txnManager.state == TxnState.Running && cmd is (RespCommand.WATCH or RespCommand.WATCHMS or RespCommand.WATCHOS))
+                // WATCH is rejected inside MULTI, so EXEC does not replay it (scripts run in transaction mode reject it below)
+                if (txnManager.state == TxnState.Running && noScriptBitmap == null && cmd is (RespCommand.WATCH or RespCommand.WATCHMS or RespCommand.WATCHOS))
                 {
                     _origReadHead = readHead = endReadHead;
                     continue;
