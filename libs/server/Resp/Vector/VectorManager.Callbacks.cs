@@ -284,6 +284,7 @@ namespace Garnet.server
             private readonly PinnedSpanByte lengthPrefixedKeys;
 
             private readonly Span<ulong> foundBitmap;
+            private readonly Span<ulong> pendingBitmapUpdates;
 
             public readonly delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void> callback;
             public readonly nint callbackContext;
@@ -309,11 +310,17 @@ namespace Garnet.server
 
             private bool hasPending;
 
-            public VectorReadBatchWithContextChain(nint callback, nint callbackContext, Span<ulong> foundBitmap, uint keyCount, PinnedSpanByte lengthPrefixedKeys, ReadOnlySpan<byte> namespaceBytes, ReadCopyOptions readOpts, int initialRecordSizeHint)
+            public VectorReadBatchWithContextChain(nint callback, nint callbackContext, Span<ulong> foundBitmap, Span<ulong> bitmapScratch, uint keyCount, PinnedSpanByte lengthPrefixedKeys, ReadOnlySpan<byte> namespaceBytes, ReadCopyOptions readOpts, int initialRecordSizeHint)
             {
+                Debug.Assert(bitmapScratch.Length >= foundBitmap.Length, "Scratch must be at least as large as tracking bitmap");
+
                 this.namespaceBytes = namespaceBytes;
                 this.lengthPrefixedKeys = lengthPrefixedKeys;
                 this.foundBitmap = foundBitmap;
+                pendingBitmapUpdates = bitmapScratch;
+
+                this.foundBitmap.Clear();
+                pendingBitmapUpdates[..this.foundBitmap.Length].Clear();
 
                 this.callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)callback;
                 this.callbackContext = callbackContext;
@@ -323,6 +330,9 @@ namespace Garnet.server
 
                 Count = (int)keyCount;
                 internalKeyCount = keyCount;
+
+                currentPtr = lengthPrefixedKeys.ptr;
+                currentLen = currentPtr != null ? *(int*)currentPtr : 0;
             }
 
             /// <summary>
@@ -335,6 +345,15 @@ namespace Garnet.server
             {
                 Debug.Assert(!hasPending, "Shouldn't reset before all pending operations complete");
 
+                // Union pending changes into effective bitmap
+                for (var i = 0; i < foundBitmap.Length; i++)
+                {
+                    foundBitmap[i] |= pendingBitmapUpdates[i];
+                }
+
+                pendingBitmapUpdates[..foundBitmap.Length].Clear();
+
+                // Adjust Count for previously found keys
                 Count = (int)internalKeyCount;
                 for (var i = 0; i < foundBitmap.Length; i++)
                 {
@@ -346,13 +365,15 @@ namespace Garnet.server
                     return true;
                 }
 
+                // Force a reset
+                publicCurrentIndex = int.MaxValue;
                 AdvanceTo(0);
 
                 return false;
             }
 
             /// <summary>
-            /// Mark a given public index as found.
+            /// Mark a given public index as found  - does not take effect until next <see cref="ResetAndAdjustCountForFound"/> call.
             /// </summary>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void MarkPublicFound(int publicIndex)
@@ -363,18 +384,18 @@ namespace Garnet.server
             }
 
             /// <summary>
-            /// Mark a given internal index as found.
+            /// Mark a given internal index as found - does not take effect until next <see cref="ResetAndAdjustCountForFound"/> call.
             /// </summary>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private readonly void MarkInternalFound(int internalIndex)
             {
                 Debug.Assert(!PreviouslyFound(internalIndex), "Shouldn't be marking found twice");
 
-                foundBitmap[internalIndex / 64] |= 1UL << (internalIndex % 64);
+                pendingBitmapUpdates[internalIndex / 64] |= 1UL << (internalIndex % 64);
             }
 
             /// <summary>
-            /// Returns true if the key at the given internal index has previously been found.
+            /// Returns true if the key at the given internal index has previously been found, provided <see cref="ResetAndAdjustCountForFound"/> was called after that update.
             /// </summary>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private readonly bool PreviouslyFound(int internalIndex)
@@ -404,8 +425,20 @@ namespace Garnet.server
                     currentLen = *(int*)currentPtr;
                     publicCurrentIndex = 0;
                     internalCurrentIndex = 0;
+
+                    // Skip to first not yet found internal index
+                    while (PreviouslyFound(internalCurrentIndex))
+                    {
+                        internalCurrentIndex++;
+                        currentPtr += currentLen + sizeof(int); // Skip length prefix too
+
+                        Debug.Assert(currentPtr < lengthPrefixedKeys.ToPointer() + lengthPrefixedKeys.Length, "About to access out of bounds data");
+
+                        currentLen = *(int*)currentPtr;
+                    }
                 }
 
+                // Scan forward until public index matches target
                 while (publicCurrentIndex != toPublicIndex)
                 {
                     // Advance one internal key
@@ -672,9 +705,9 @@ namespace Garnet.server
             {
                 // Repeat the batch read until we exhaust the COW context chain or find all keys
                 Span<ulong> notFoundBitmap = stackalloc ulong[(int)(keysLength / 64) + (keysLength % 64 == 0 ? 0 : 1)];
-                notFoundBitmap.Clear();
+                Span<ulong> scratchBitmap = stackalloc ulong[notFoundBitmap.Length];
 
-                var enumerable = new VectorReadBatchWithContextChain(dataCallback, dataCallbackContext, notFoundBitmap, numKeys, PinnedSpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength), nsBytes, readCopyOptions, (int)valueLengthHintWithOverhead);
+                var enumerable = new VectorReadBatchWithContextChain(dataCallback, dataCallbackContext, notFoundBitmap, scratchBitmap, numKeys, PinnedSpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength), nsBytes, readCopyOptions, (int)valueLengthHintWithOverhead);
 
                 ref var ctx = ref ActiveThreadSession.vectorBasicContext;
                 var remainingContexts = ActiveThreadShallowCopyBackReferences.Span;
