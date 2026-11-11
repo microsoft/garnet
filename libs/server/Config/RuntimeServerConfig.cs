@@ -10,6 +10,7 @@ using System.Text;
 using System.Threading;
 using Garnet.client;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -42,6 +43,7 @@ namespace Garnet.server
         static readonly ServerConfigType[] runtimeTypes = BuildRuntimeTypes();
 
         readonly long[] values = new long[TableSize];
+        readonly object checkpointTransferSettingsLock = new();
 
         // Logical configuration groups indexed by (int)ServerConfigGroupType, mirroring the Meta[]/values[]
         // tables. Each group publishes its parameters together as one versioned, consistent unit so a reader
@@ -180,6 +182,15 @@ namespace Garnet.server
                 static o => o.UnixSocketPath ?? string.Empty);
             RegisterReadOnly(ServerConfigType.CLUSTER_ENABLED, "cluster-enabled", ConfigKind.Bool,
                 static o => o.EnableCluster ? "yes" : "no");
+            RegisterReadOnly(ServerConfigType.REPL_DISK_BASED_SYNC_WRITE_BUFFERS,
+                "repl-disk-based-sync-write-buffers", ConfigKind.Int32,
+                static o => o.ReplicaDiskBasedSyncWriteBuffers.ToString(CultureInfo.InvariantCulture));
+            RegisterReadOnly(ServerConfigType.REPL_DISK_BASED_SYNC_WRITE_BUFFERS_CONCURRENTLY,
+                "repl-disk-based-sync-write-buffers-concurrently", ConfigKind.Bool,
+                static o => o.ReplicaDiskBasedSyncWriteBuffersConcurrently ? "yes" : "no");
+            RegisterReadOnly(ServerConfigType.REPL_ENABLE_BENCHMARK_TIMING,
+                "repl-enable-benchmark-timing", ConfigKind.Bool,
+                static o => o.ReplicaEnableBenchmarkTiming ? "yes" : "no");
 
             // Read-only AOF parameters resolved directly from the startup options. These describe the
             // physical AOF layout or startup-only toggles and require a restart to change, so CONFIG SET
@@ -221,6 +232,10 @@ namespace Garnet.server
             RegisterReadWrite(ServerConfigType.REPL_DISKLESS_SYNC_DELAY, "repl-diskless-sync-delay",
                 ConfigKind.Int32 | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
                 timeUnit: ConfigTimeUnit.Seconds);
+            RegisterReadWrite(ServerConfigType.REPL_DISK_BASED_SYNC_CHUNK_SIZE, "repl-disk-based-sync-chunk-size",
+                ConfigKind.Int32, IDevice.MinDeviceSectorSize, GarnetServerOptions.ReplicaDiskBasedSyncChunkSizeBytesMax);
+            RegisterReadWrite(ServerConfigType.REPL_DISK_BASED_SYNC_PIPELINE_DEPTH, "repl-disk-based-sync-pipeline-depth",
+                ConfigKind.Int32, 1, GarnetServerOptions.ReplicaDiskBasedSyncPipelineDepthMax);
             RegisterReadWrite(ServerConfigType.REPL_ATTACH_TIMEOUT, "repl-attach-timeout",
                 ConfigKind.Int32 | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
                 timeUnit: ConfigTimeUnit.Seconds);
@@ -324,6 +339,8 @@ namespace Garnet.server
             values[(int)ServerConfigType.AOF_TAIL_WITNESS_FREQ] = o.AofTailWitnessFreqMs;
             values[(int)ServerConfigType.AOF_SYNC_MAX_LAG_BYTES] = o.AofSyncMaxLagBytes;
             values[(int)ServerConfigType.REPL_DISKLESS_SYNC_DELAY] = o.ReplicaDisklessSyncDelay;
+            values[(int)ServerConfigType.REPL_DISK_BASED_SYNC_CHUNK_SIZE] = o.GetReplicaDiskBasedSyncChunkSizeBytes();
+            values[(int)ServerConfigType.REPL_DISK_BASED_SYNC_PIPELINE_DEPTH] = o.GetReplicaDiskBasedSyncPipelineDepth();
             values[(int)ServerConfigType.REPL_ATTACH_TIMEOUT] = SecondsFromTimeSpan(o.ReplicaAttachTimeout);
             values[(int)ServerConfigType.CLUSTER_REPLICATION_REESTABLISHMENT_TIMEOUT] = o.ClusterReplicationReestablishmentTimeout;
             values[(int)ServerConfigType.COMPACTION_MAX_SEGMENTS] = o.CompactionMaxSegments;
@@ -378,6 +395,16 @@ namespace Garnet.server
         {
             AssertKind(type, ConfigKind.Int32);
             return (int)Volatile.Read(ref values[(int)type]);
+        }
+
+        /// <summary>
+        /// Capture a validated chunk/depth pair for a new checkpoint transfer. Active transfers retain this snapshot.
+        /// </summary>
+        public (int ChunkSize, int PipelineDepth) GetReplicaDiskBasedSyncSettings()
+        {
+            lock (checkpointTransferSettingsLock)
+                return (GetInt(ServerConfigType.REPL_DISK_BASED_SYNC_CHUNK_SIZE),
+                    GetInt(ServerConfigType.REPL_DISK_BASED_SYNC_PIPELINE_DEPTH));
         }
 
         /// <summary>Current value of <paramref name="type"/> as a 64-bit integer, in its native unit.</summary>
@@ -582,6 +609,19 @@ namespace Garnet.server
             {
                 case ConfigKind.Int32:
                     {
+                        if (type == ServerConfigType.REPL_DISK_BASED_SYNC_CHUNK_SIZE)
+                        {
+                            try
+                            {
+                                parsed = GarnetServerOptions.ParseReplicaDiskBasedSyncChunkSizeBytes(value);
+                            }
+                            catch (ArgumentException ex)
+                            {
+                                error = $"ERR {ex.Message}";
+                                return false;
+                            }
+                            break;
+                        }
                         if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i32))
                         {
                             error = $"ERR Invalid value for '{meta.Name}': expected an integer.";
@@ -643,6 +683,30 @@ namespace Garnet.server
                 default:
                     error = $"ERR Option '{meta.Name}' is not runtime-adjustable.";
                     return false;
+            }
+
+            if (type is ServerConfigType.REPL_DISK_BASED_SYNC_CHUNK_SIZE or ServerConfigType.REPL_DISK_BASED_SYNC_PIPELINE_DEPTH)
+            {
+                // Validate before publishing, under the same lock used to capture a transfer's settings.
+                lock (checkpointTransferSettingsLock)
+                {
+                    var chunkSize = type == ServerConfigType.REPL_DISK_BASED_SYNC_CHUNK_SIZE
+                        ? (int)parsed : GetInt(ServerConfigType.REPL_DISK_BASED_SYNC_CHUNK_SIZE);
+                    var depth = type == ServerConfigType.REPL_DISK_BASED_SYNC_PIPELINE_DEPTH
+                        ? (int)parsed : GetInt(ServerConfigType.REPL_DISK_BASED_SYNC_PIPELINE_DEPTH);
+                    try
+                    {
+                        serverOptions.ValidateReplicaDiskBasedSyncChunkSectorSize(chunkSize);
+                        GarnetServerOptions.ValidateReplicaDiskBasedSyncPipelineDepth(chunkSize, depth);
+                    }
+                    catch (ArgumentException ex)
+                    {
+                        error = $"ERR {ex.Message}";
+                        return false;
+                    }
+                    Volatile.Write(ref values[(int)type], parsed);
+                    return true;
+                }
             }
 
             // Publish the new value first so any task an update action restarts observes it, then run the

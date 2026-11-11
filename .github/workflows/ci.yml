@@ -162,6 +162,9 @@ jobs:
         test: [ 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.migrate.rangeindex', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.replication.tls', 'Garnet.test.cluster.replication.disklesssync', 'Garnet.test.cluster.replication.rangeindex', 'Garnet.test.cluster.replication.vectorsets', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog' ]
     if: needs.changes.outputs.garnet == 'true'
     steps:
+      - name: Install io_uring runtime
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y liburing2
       - name: Check out code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup .NET
