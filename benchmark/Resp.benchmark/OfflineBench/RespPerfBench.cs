@@ -84,6 +84,12 @@ namespace Resp.benchmark
             int valueLen = default,
             bool numericValue = false)
         {
+            if (opts.FastLoad)
+            {
+                LoadDataFast(loadDbThreads, BatchSize, keyLen, valueLen, numericValue);
+                return;
+            }
+
             if (opts.Client == ClientType.InProc && loadDbThreads > sessions.Length)
             {
                 foreach (var session in sessions)
@@ -352,54 +358,27 @@ namespace Resp.benchmark
                 Console.WriteLine($"Num threads: {NumThreads}");
             }
 
-            // Query database
-            var workers = new Thread[NumThreads];
-
-            // Run the experiment.
-            for (var idx = 0; idx < NumThreads; idx++)
+            Action<int> runner = opts.Client switch
             {
-                var x = idx;
-                workers[idx] = opts.Client switch
-                {
-
-                    ClientType.LightClient => new Thread(() => LightOperateThreadRunner(x, OpsPerThread, opType, rg)),
-                    ClientType.GarnetClientSession => new Thread(() => GarnetClientSessionOperateThreadRunner(OpsPerThread, opType, rg)),
-                    ClientType.SERedis => new Thread(() => SERedisOperateThreadRunner(OpsPerThread, opType, rg)),
-                    ClientType.InProc => new Thread(() => InProcOperateThreadRunner(x, OpsPerThread, opType, rg)),
-                    _ => throw new Exception($"ClientType {opts.Client} not supported"),
-                };
-            }
+                ClientType.LightClient => thread => LightOperateThreadRunner(thread, OpsPerThread, opType, rg),
+                ClientType.GarnetClientSession => _ => GarnetClientSessionOperateThreadRunner(OpsPerThread, opType, rg),
+                ClientType.SERedis => _ => SERedisOperateThreadRunner(OpsPerThread, opType, rg),
+                ClientType.InProc => thread => InProcOperateThreadRunner(thread, OpsPerThread, opType, rg),
+                _ => throw new Exception($"ClientType {opts.Client} not supported"),
+            };
 
             AofAddress beginAddress = default;
             if (opts.Client == ClientType.InProc && server.StoreWrapper.appendOnlyFile != null)
                 beginAddress = server.StoreWrapper.appendOnlyFile.Log.TailAddress;
 
-            // Start threads.
-            foreach (var worker in workers)
-                worker.Start();
-
-            waiter.Set();
-
-            Stopwatch swatch = new();
-            swatch.Start();
-            if (OpsPerThread == 0)
-            {
-                if (runTime == default) runTime = TimeSpan.FromSeconds(15); // default
-                Thread.Sleep(runTime);
-                done = true;
-            }
-            foreach (var worker in workers)
-                worker.Join();
-
-            swatch.Stop();
-
-            var seconds = swatch.ElapsedMilliseconds / 1000.0;
+            var elapsedMilliseconds = RunWorkers(NumThreads, runner, OpsPerThread != 0, runTime);
+            var seconds = elapsedMilliseconds / 1000.0;
             var opsPerSecond = total_ops_done / seconds;
             var byteConsumerPerSecond = (total_bytes_consumed / seconds) / (double)1_000_000_000;
 
             if (verbose)
             {
-                Console.WriteLine($"[Total time]: {swatch.ElapsedMilliseconds:N2}ms for {total_ops_done:N2} ops");
+                Console.WriteLine($"[Total time]: {elapsedMilliseconds:N2}ms for {total_ops_done:N2} ops");
                 Console.WriteLine($"[Throughput]: {opsPerSecond:N2} ops/sec");
                 if (ClientType.InProc == opts.Client)
                 {
@@ -419,9 +398,45 @@ namespace Resp.benchmark
             done = false;
             total_ops_done = 0;
             total_bytes_consumed = 0;
-            waiter.Reset();
 
             return rg;
+        }
+
+        long RunWorkers(int numThreads, Action<int> runner, bool fixedOperationCount, TimeSpan runTime = default)
+        {
+            var workers = new Thread[numThreads];
+            var errors = new Exception[numThreads];
+            for (var index = 0; index < numThreads; index++)
+            {
+                var worker = index;
+                workers[index] = new Thread(() =>
+                {
+                    try
+                    {
+                        runner(worker);
+                    }
+                    catch (Exception exception)
+                    {
+                        errors[worker] = exception;
+                    }
+                });
+            }
+            foreach (var worker in workers)
+                worker.Start();
+            waiter.Set();
+            var stopwatch = Stopwatch.StartNew();
+            if (!fixedOperationCount)
+            {
+                Thread.Sleep(runTime == default ? TimeSpan.FromSeconds(15) : runTime);
+                done = true;
+            }
+            foreach (var worker in workers)
+                worker.Join();
+            stopwatch.Stop();
+            waiter.Reset();
+            var failures = errors.Where(error => error != null).ToArray();
+            if (failures.Length != 0) throw new AggregateException(failures);
+            return stopwatch.ElapsedMilliseconds;
         }
 
         private unsafe void LightOperateThreadRunner(int threadId, int NumOps, OpType opType, ReqGen rg)

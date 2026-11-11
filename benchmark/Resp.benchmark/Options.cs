@@ -63,6 +63,9 @@ namespace Resp.benchmark
         [Option("load-threads", Required = false, Default = 8, HelpText = "Number of threads used for the initial data load phase")]
         public int LoadThreads { get; set; }
 
+        [Option("fast-load", Required = false, Default = false, HelpText = "Stream the offline RESP preload with GarnetClientSession, reusing one random payload per load thread. Values require at least 8 bytes for the hexadecimal worker ID. Uses --load-threads and --lset.")]
+        public bool FastLoad { get; set; }
+
         [Option('a', "auth", Required = false, Default = null, HelpText = "Authentication password")]
         public string Auth { get; set; }
 

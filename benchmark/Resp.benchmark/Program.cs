@@ -107,6 +107,19 @@ namespace Resp.benchmark
 
         static bool DisabledFeatures(Options opts)
         {
+            if (opts.FastLoad)
+            {
+                try
+                {
+                    RespPerfBench.ValidateFastLoad(opts);
+                }
+                catch (ArgumentException ex)
+                {
+                    Console.Error.WriteLine(ex.Message);
+                    return true;
+                }
+            }
+
             HashSet<OpType> seRedisSupportOpSet = new();
             seRedisSupportOpSet.Add(OpType.GET);
             seRedisSupportOpSet.Add(OpType.SET);
