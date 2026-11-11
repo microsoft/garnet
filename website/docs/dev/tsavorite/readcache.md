@@ -100,6 +100,8 @@ with `ReadCopyFrom.AllImmutable` selected, copies it to the read-cache tail usin
 the same best-effort `TryCopyToReadCache` path. This applies both to direct cache hits and to pending reads that find a
 newer cached copy when their disk IO completes. Hits at or above that boundary
 do not allocate, and unsuccessful reads and update lookups do not promote.
+An explicit session or per-read `ReadCopyTo.None` override disables second-chance
+copying even when `ReadCopyFrom.AllImmutable` is inherited.
 `ReadCacheSecondChanceFraction` controls the read-only region available for this
 second chance.
 

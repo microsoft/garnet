@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -18,9 +19,13 @@ namespace Tsavorite.core
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
+            Debug.Assert(operationState.readCopyOptions.CopyFrom == ReadCopyFrom.AllImmutable,
+                "Read-cache second-chance copying requires ReadCopyFrom.AllImmutable");
+
             // Only hits in the read-only, second-chance region need a fresh copy. The hash-entry CAS
             // rejects a copy if an update or another promotion changed the chain after this lookup.
-            if (AbsoluteAddress(stackCtx.recSrc.LogicalAddress) < readcacheBase.SafeReadOnlyAddress
+            if (operationState.readCopyOptions.CopyTo != ReadCopyTo.None
+                    && AbsoluteAddress(stackCtx.recSrc.LogicalAddress) < readcacheBase.SafeReadOnlyAddress
                     && TryCopyToReadCache(in srcLogRecord, sessionFunctions, ref operationState, ref stackCtx))
                 return OperationStatus.SUCCESS | OperationStatus.COPIED_RECORD_TO_READ_CACHE;
             return OperationStatus.SUCCESS;

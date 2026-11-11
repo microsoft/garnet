@@ -147,6 +147,60 @@ namespace Tsavorite.test.ReadCacheTests
             ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
         }
 
+        /// <summary>
+        /// Verifies that disabling copying takes precedence over an AllImmutable source policy for cache hits.
+        /// </summary>
+        /// <param name="pending">Complete a disk read that discovers a cached copy instead of reading the cache directly.</param>
+        /// <param name="perRead">Disable copying for one read; otherwise disable it for the session.</param>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ReadCacheSecondChanceHonorsNoCopyOverride([Values] bool pending, [Values] bool perRead)
+        {
+            // Retain AllImmutable while disabling the destination at session scope or overriding it for one read.
+            using var populationSession = store.NewSession<KeyStruct, InputStruct, OutputStruct, Empty, Functions>(new Functions());
+            var populationContext = populationSession.BasicContext;
+            using var session = store.NewSession<KeyStruct, InputStruct, OutputStruct, Empty, Functions>(new Functions(),
+                readCopyOptions: new(ReadCopyFrom.AllImmutable, perRead ? ReadCopyTo.ReadCache : ReadCopyTo.None));
+            var context = session.BasicContext;
+            var readOptions = new ReadOptions
+            {
+                CopyOptions = perRead ? new(ReadCopyFrom.Inherit, ReadCopyTo.None) : default
+            };
+            var key = new KeyStruct { kfield1 = 42, kfield2 = 43 };
+            var value = new ValueStruct { vfield1 = 42, vfield2 = 43 };
+            InputStruct input = default;
+            OutputStruct output = default;
+
+            // Another session populates the cache after the optional pending read begins.
+            ClassicAssert.IsTrue(populationContext.Upsert(key, SpanByte.FromPinnedVariable(ref value)).Record.Created);
+            store.Log.FlushAndEvict(wait: true);
+            if (pending)
+                ClassicAssert.IsTrue(context.Read(key, ref input, ref output, ref readOptions, out _).IsPending);
+
+            ClassicAssert.IsTrue(populationContext.Read(key, ref input, ref output).IsPending);
+            populationContext.CompletePending(wait: true);
+            store.ReadCache.ShiftReadOnlyAddress(store.ReadCache.TailAddress, wait: true);
+            var cacheTail = store.ReadCache.TailAddress;
+            var mainTail = store.Log.TailAddress;
+
+            // A read-only cache hit is eligible for second chance, but the explicit no-copy override must win.
+            Status status;
+            if (pending)
+            {
+                context.CompletePendingWithOutputs(out var outputs, wait: true);
+                (status, output) = TestUtils.GetSinglePendingResult(outputs);
+            }
+            else
+                status = context.Read(key, ref input, ref output, ref readOptions, out _);
+
+            ClassicAssert.IsTrue(status.Found, status.ToString());
+            ClassicAssert.IsFalse(status.Record.CopiedToReadCache, status.ToString());
+            ClassicAssert.AreEqual(cacheTail, store.ReadCache.TailAddress);
+            ClassicAssert.AreEqual(mainTail, store.Log.TailAddress);
+            ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
+        }
+
         [Test]
         [Category("TsavoriteKV")]
         public void ReadCacheSecondChance([Values] bool pending, [Values] bool readOnly, [Values] bool cancelRead,
