@@ -15,8 +15,9 @@ using Tsavorite.core;
 namespace Garnet.test.cluster
 {
     /// <summary>
-    /// Replica side of disk-based sync with overlapped file writes: <see cref="OverlappedFileDataSink"/> and the
-    /// CLUSTER SNAPSHOT_DATA acceptance replies and end-of-file write barrier.
+    /// Replica side of disk-based sync with overlapped file writes: <see cref="OverlappedFileDataSink"/>, the
+    /// synchronous <see cref="FileDataSink"/>'s short-write check, and the CLUSTER SNAPSHOT_DATA acceptance replies
+    /// and end-of-file write barrier.
     /// </summary>
     [TestFixture, NonParallelizable]
     public class ReplicaCheckpointWriteTests : TestBase
@@ -432,6 +433,41 @@ namespace Garnet.test.cluster
                 write.Complete(bytesWritten: bytesWritten);
                 await sink.CompleteAsync();
                 Assert.That(device.Disposed, Is.True);
+            }
+            finally
+            {
+                pool.Free();
+            }
+        }
+
+        [TestCase(1u, true)]
+        [TestCase(513u, true)]
+        [TestCase(0u, false)]
+        [TestCase(1024u, false)]
+        public async Task SynchronousSinkRejectsOnlyKnownShortWrites(uint bytesWritten, bool rejected)
+        {
+            var device = new GatedDevice();
+            var pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+            using var writeCompleted = new SemaphoreSlim(0);
+            try
+            {
+                using var sink = new FileDataSink(CheckpointFileType.STORE_HLOG, Guid.NewGuid(), device, pool, writeCompleted,
+                    TimeSpan.FromSeconds(10), CancellationToken.None);
+
+                // WriteChunk blocks until its write completes, so issue it on another thread.
+                var writing = Task.Run(() => sink.WriteChunk(0, new byte[513]));
+                var write = await device.NextWriteAsync();
+                Assert.That(write.Data.Length, Is.EqualTo(1024), "The write includes sector padding");
+                write.Complete(bytesWritten: bytesWritten);
+                if (rejected)
+                {
+                    var error = Assert.ThrowsAsync<GarnetException>(async () => await writing);
+                    Assert.That(error.Message, Does.StartWith($"Short write of {bytesWritten} bytes writing STORE_HLOG checkpoint file at address 0 (requested 1024 bytes)"));
+                }
+                else
+                {
+                    await writing;
+                }
             }
             finally
             {

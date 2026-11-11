@@ -154,7 +154,7 @@ Chunk sizes are validated against device sectors at startup, through `INamedDevi
    - the first failed or timed-out write is retained for subsequent requests and completion. Queued chunks not yet issued are discarded and their buffers returned; other issued writes are still awaited. A timed-out write's buffer is abandoned rather than reused, because the device may still read from it;
    - the end-of-file request blocks in `Complete` until every queued write has been processed and the file is closed, and throws if any write failed.
 
-   With 0 write buffers the sink is `FileDataSink`, which writes each chunk before the command returns, as before these changes.
+   With 0 write buffers the sink is `FileDataSink`, which writes each chunk before the command returns, as before these changes. It applies the same short-write check described below.
 4. `ReceiveCheckpointHandler.Dispose` cancels outstanding writes and closes every sink before it frees the buffer pool that their writers return buffers to.
 
 #### Replies: acceptance and completion
@@ -193,6 +193,7 @@ Tuning guidance and memory costs are in the [operator guide](../../cluster/repli
 | `GarnetServerOptions`, `Options`, `OptionsValidators`, `RuntimeServerConfig`, `defaults.conf` | Settings, validation, `CONFIG GET`/`SET` | #2334; overlapped writes (write buffers, 16 MiB default) |
 | `ReceiveCheckpointHandler` | Routes requests to sinks and waits for end-of-file completion | Overlapped writes |
 | `OverlappedFileDataSink` | Bounded queued writes, sequential or concurrent, with an end-of-file barrier | Overlapped writes |
+| `FileDataSink` | Synchronous writes with 0 write buffers | Overlapped writes (short-write check) |
 | `RespClusterReplicationCommands.cs` (`NetworkClusterSnapshotData`) | Inline acceptance replies and end-of-file completion | Overlapped writes |
 | `benchmark/Replica-transfer.benchmark` | Real-server full-sync driver; optional component file-transfer driver | #2334; overlapped writes |
 
@@ -204,7 +205,7 @@ Tuning guidance and memory costs are in the [operator guide](../../cluster/repli
 | `GarnetClientArgumentFramingTests` | Rejecting a chunk too large for the client's send buffer, and sending one that exactly fits |
 | `GarnetClientSessionTlsLifetimeTests` | Releasing the TLS send buffer whichever owner finishes first, and after reconnects and failed handshakes or authentication |
 | `DiskBasedCheckpointChunkTests` | Chunk sizing, sector and segment bounds, logical-data versus sector-padding boundaries, truncated-file rejection, and zero-count rejection |
-| `ReplicaCheckpointWriteTests` | Out-of-order write completion, bounded concurrency, non-overlapping padded ranges, disposal, failures and timeouts; immediate acceptance replies and the end-of-file write barrier over a real connection |
+| `ReplicaCheckpointWriteTests` | Out-of-order write completion, bounded concurrency, non-overlapping padded ranges, disposal, failures, timeouts and short writes in both sinks; immediate acceptance replies and the end-of-file write barrier over a real connection |
 | `ClusterReplicationBaseTests.DiskBasedSync*` | Full syncs across chunk sizes, depths, runtime changes, and 0, 1, 2 and 4 write buffers, with and without TLS |
 | `GarnetServerConfigTests`, `RespConfigTests` | Option parsing, validation and `CONFIG GET`/`SET` |
 | `ReplicaTransferBenchmarkTests` | The benchmark's options, checkpoint generation and ACK-delay precision |
