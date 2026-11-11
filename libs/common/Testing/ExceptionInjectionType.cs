@@ -219,5 +219,9 @@ namespace Garnet.common
         /// Replica checkpoint writer: hold each overlapped file write until cleared.
         /// </summary>
         Replication_Hold_Snapshot_Write,
+        /// <summary>
+        /// Replica failover: pause after the primary acknowledged FAILSTOPWRITES, before waiting for the replica to catch up.
+        /// </summary>
+        Failover_Pause_Waiting_For_Sync,
     }
 }

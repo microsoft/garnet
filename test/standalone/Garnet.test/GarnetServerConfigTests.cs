@@ -405,6 +405,24 @@ namespace Garnet.test
         }
 
         [Test]
+        public void FailoverResetPrimaryTimeoutOptionParsing()
+        {
+            var ok = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual(60, options.GetServerOptions().FailoverResetPrimaryTimeout);
+
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--failover-reset-primary-timeout", "2"], out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual(2, options.GetServerOptions().FailoverResetPrimaryTimeout);
+
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--failover-reset-primary-timeout", "0"], out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(ok, "the reset budget must be positive");
+
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--failover-reset-primary-timeout", "2147484"], out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(ok, "the reset budget must fit a CancellationTokenSource timeout");
+        }
+
+        [Test]
         public void NativeAllocatorOptionParsing()
         {
             // Default: native allocator off (fully managed).
