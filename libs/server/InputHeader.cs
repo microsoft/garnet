@@ -691,6 +691,8 @@ namespace Garnet.server
 
         public int? MaxMigrationHeapAllocationSize { get; set; }
 
+        public bool MaybeCopyOnWrite { get; set; }
+
         public VectorInput()
         {
         }

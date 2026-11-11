@@ -794,6 +794,8 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext)
         {
+            const int MaxCopyOnStackBytes = 1_024;
+
             Debug.Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
 
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
@@ -805,12 +807,77 @@ namespace Garnet.server
             input.CallbackContext = dataCallbackContext;
             input.WriteDesiredSize = (int)writeLength;
 
+            // If we're modifying a shallow copy, the RMW should _fail_ to create a new record until we consult the (already immutable) chain of contexts
+            input.MaybeCopyOnWrite = !ActiveThreadShallowCopyBackReferences.IsEmpty;
+
+        retryInitialRMW:
             var status = ctx.RMW(keyWithNamespace, ref input);
             if (status.IsPending)
             {
                 VectorOutput ignored = new();
 
                 CompletePending(ref status, ref ignored, ref ctx);
+            }
+
+            // If we cancelled the RMW because of being a shallow copy, look through older contexts for the record (if any) to copy
+            if (input.MaybeCopyOnWrite && status.IsCanceled)
+            {
+                Span<byte> copyDataSpan = stackalloc byte[MaxCopyOnStackBytes];
+                var remainingContexts = ActiveThreadShallowCopyBackReferences.Span;
+
+                while (!remainingContexts.IsEmpty)
+                {
+                    // Attempt to copy the value from a prior context
+                    var effectiveNamespace = remainingContexts[0] | (context & (ContextStep - 1));
+                    var copyFromKeyWithNamespace = MakeVectorElementKey(effectiveNamespace, keyData, keyLength);
+
+                    VectorInput copyReadInput = default;
+                    copyReadInput.ReadDesiredSize = (int)writeLength;
+
+                    VectorOutput copyOutput = new(SpanByteAndMemory.FromPinnedSpan(copyDataSpan));
+                    var copyReadRes = ctx.Read(copyFromKeyWithNamespace, ref copyReadInput, ref copyOutput);
+                    if (copyReadRes.IsPending)
+                    {
+                        CompletePending(ref status, ref copyOutput, ref ctx);
+                    }
+
+                    if (copyReadRes.Found)
+                    {
+                        // If we found a record, we need to copy it _BUT_ we cannot overwrite any other record
+                        // since we might be racing other redirected RMWs or Upserts
+
+                        VectorInput copyWriteInput = default;
+                        copyWriteInput.MaybeCopyOnWrite = true;
+
+                        VectorOutput ignored = default;
+
+                        var copyWriteRes = ctx.Upsert(keyWithNamespace, ref copyWriteInput, copyOutput.SpanByteAndMemory.ReadOnlySpan, ref ignored);
+                        if (copyWriteRes.IsPending)
+                        {
+                            CompletePending(ref copyWriteRes, ref ignored, ref ctx);
+                        }
+
+                        copyOutput.SpanByteAndMemory.Dispose();
+
+                        if (copyWriteRes.IsCompletedSuccessfully || copyWriteRes.IsCanceled)
+                        {
+                            // If we did the copy OR conflicted with another update, retry but with no COW chaining
+                            input.MaybeCopyOnWrite = false;
+                            goto retryInitialRMW;
+                        }
+
+                        // If something else went wrong, fail the RMW
+                        RestoreKeyLengthPrefix(keyData, keyLength);
+                        return 0;
+                    }
+
+                    // Didn't find anything to copy, move on to next context
+                    remainingContexts = remainingContexts[1..];
+                }
+
+                // Found nothing to copy, redo the RMW with no COW chaining
+                input.MaybeCopyOnWrite = false;
+                goto retryInitialRMW;
             }
 
             RestoreKeyLengthPrefix(keyData, keyLength);

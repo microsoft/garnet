@@ -76,7 +76,6 @@ namespace Garnet.server
 
                     try
                     {
-
                         dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
                         var dataLen = (nuint)value.Length;
 
@@ -235,6 +234,13 @@ namespace Garnet.server
             where TKey : IKey, allows ref struct
         {
             Debug.Assert(key.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
+
+            // If we're in an RMW on a COW chain, we need to bail if we'd create a new record
+            if (input.MaybeCopyOnWrite)
+            {
+                rmwInfo.Action = RMWAction.CancelOperation;
+                return false;
+            }
 
             // Only needed when updating ContextMetadata via RMW or the DiskANN RMW callback, all of which set WriteDesiredSize
             return input.WriteDesiredSize != 0;
