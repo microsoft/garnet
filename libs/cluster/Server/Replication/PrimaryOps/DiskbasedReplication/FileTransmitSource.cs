@@ -26,7 +26,7 @@ namespace Garnet.cluster
 
         public ISnapshotDataSource DataSource { get; }
 
-        public FileTransmitSource(ISnapshotDataSource dataSource, int pipelineDepth = 1, ILogger logger = null)
+        public FileTransmitSource(ISnapshotDataSource dataSource, int pipelineDepth, ILogger logger = null)
         {
             if (pipelineDepth is < 1 or > GarnetServerOptions.ReplicaDiskBasedSyncPipelineDepthMax)
                 throw new ArgumentOutOfRangeException(nameof(pipelineDepth));
