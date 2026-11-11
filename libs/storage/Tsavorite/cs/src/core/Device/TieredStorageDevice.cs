@@ -181,7 +181,8 @@ namespace Tsavorite.core
             // Therefore we are sticking to the simpler approach at first.
             for (int i = 0; i < devices.Count; i++)
             {
-                if (devices[i].StartSegment <= segment) return i;
+                if (devices[i].StartSegment <= segment)
+                    return i;
             }
             throw new ArgumentException("No such address exists");
         }
