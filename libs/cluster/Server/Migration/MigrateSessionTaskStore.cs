@@ -3,7 +3,7 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
+using System.Threading;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -31,7 +31,7 @@ namespace Garnet.cluster
             _lock.WriteLock();
             var skipDispose = _disposed;
 
-            _disposed = true;
+            Volatile.Write(ref _disposed, true);
             _lock.WriteUnlock();
 
             if (skipDispose)
@@ -42,8 +42,8 @@ namespace Garnet.cluster
             for (var i = 0; i < sessions.Length; i++)
             {
                 sessions[i]?.Dispose();
+                Volatile.Write(ref sessions[i], null);
             }
-            Array.Clear(sessions);
         }
 
         /// <summary>
@@ -110,7 +110,11 @@ namespace Garnet.cluster
             try
             {
                 _lock.WriteLock();
-                if (_disposed) return false;
+                if (_disposed)
+                {
+                    success = false;
+                    return false;
+                }
 
                 // First iterate and check if corresponding slot is associated to another active migrate session
                 foreach (var slot in mSession.GetSlots)
@@ -126,10 +130,11 @@ namespace Garnet.cluster
                 // If reached this point all slots to be migrated are not associated with any other session
                 // so we can mark them as being associated with this newly added session
                 foreach (var slot in mSession.GetSlots)
-                    sessions[slot] = mSession;
+                    Volatile.Write(ref sessions[slot], mSession);
             }
             catch (Exception ex)
             {
+                success = false;
                 logger?.LogError(ex, "Error at TryAddMigrateSession");
                 return false;
             }
@@ -157,13 +162,14 @@ namespace Garnet.cluster
                 _lock.WriteLock();
                 if (_disposed) return false;
 
+                // Keep protection published until cancellation and connection shutdown complete.
+                mSession.Dispose();
                 foreach (var slot in mSession.GetSlots)
                 {
-                    Debug.Assert(sessions[slot] == mSession, "MigrateSession not found in slot");
-                    sessions[slot] = null;
+                    if (sessions[slot] == mSession)
+                        Volatile.Write(ref sessions[slot], null);
                 }
 
-                mSession.Dispose();
                 return true;
             }
             catch (Exception ex)
@@ -193,8 +199,8 @@ namespace Garnet.cluster
                     var s = sessions[i];
                     if (s != null && s.GetTargetNodeId.Equals(targetNodeId, StringComparison.Ordinal))
                     {
-                        sessions[i] = null;
                         s.Dispose();
+                        Volatile.Write(ref sessions[i], null);
                     }
                 }
 
@@ -220,27 +226,11 @@ namespace Garnet.cluster
         /// <returns>True if we can operate on the key, otherwise false (i.e. key is being migrated)</returns>
         public bool CanAccessKey(PinnedSpanByte key, int slot, bool readOnly)
         {
-            try
-            {
-                _lock.ReadLock();
-                if (_disposed) return true;
+            if (Volatile.Read(ref _disposed)) return true;
 
-                // Search slotMap
-                var s = sessions[slot];
-                if (s == null) // Slot is not managed by any session so can safely operate on it
-                    return true;
-
-                Debug.Assert(s != null);
-                // Check owner of slot if can operate on key
-                if (!s.CanAccessKey(key, slot, readOnly))
-                    return false;
-            }
-            finally
-            {
-                _lock.ReadUnlock();
-            }
-
-            return true;
+            // Admission reads only managed session/sketch state, which remains valid after disposal.
+            var session = Volatile.Read(ref sessions[slot]);
+            return session == null || session.CanAccessKey(key, slot, readOnly);
         }
     }
 }

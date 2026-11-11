@@ -6,6 +6,7 @@ using System.Buffers.Binary;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.cluster;
@@ -22,6 +23,7 @@ namespace Garnet.test.cluster
         ClusterProvider provider;
         MigrateSession session;
         MigrateSession.MigrateOperation operation;
+        MigrateSessionTaskStore taskStore;
 
         [SetUp]
         public void Setup()
@@ -35,6 +37,7 @@ namespace Garnet.test.cluster
         [TearDown]
         public void TearDown()
         {
+            taskStore?.Dispose();
             operation?.Dispose();
             session?.Dispose();
             context.TearDown();
@@ -56,14 +59,167 @@ namespace Garnet.test.cluster
             var nodeId = provider.clusterManager.CurrentConfig.LocalNodeId;
             session = new MigrateSession(null, provider, "127.0.0.1", ClusterTestContext.Port,
                 nodeId, null, null, nodeId, false, false, 10000, [0], null, TransferOption.SLOTS);
-            var operations = (MigrateSession.MigrateOperation[])typeof(MigrateSession)
-                .GetField("migrateOperation", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(session);
+            var operations = GetOperations(session);
             for (var i = 0; i < operations.Length; i++)
             {
                 operations[i].Dispose();
                 operations[i] = new MigrateSession.MigrateOperation(session, batchSize: 1 << (4 + (i * 4)));
             }
             return operations;
+        }
+
+        static MigrateSession.MigrateOperation[] GetOperations(MigrateSession migration)
+            => (MigrateSession.MigrateOperation[])typeof(MigrateSession)
+                .GetField("migrateOperation", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(migration);
+
+        static CancellationToken GetCancellationToken(MigrateSession migration)
+            => ((CancellationTokenSource)typeof(MigrateSession)
+                .GetField("_cts", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(migration)).Token;
+
+        bool RegisterTask(out MigrateSession migration, SketchStatus status = SketchStatus.DELETING)
+        {
+            var sketch = new Sketch(keyCount: 64);
+            sketch.HashAndStore(PinnedSpanByte.FromPinnedSpan("task-store-access"u8));
+            sketch.SetStatus(status);
+            var nodeId = provider.clusterManager.CurrentConfig.LocalNodeId;
+            return taskStore.TryAddMigrateSession(null, provider, nodeId, "127.0.0.1", ClusterTestContext.Port,
+                nodeId, null, null, false, false, 10000, [0], sketch, TransferOption.KEYS, out migration);
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task TaskStoreAccessDoesNotWaitForRemoval(bool byTarget)
+        {
+            taskStore = new MigrateSessionTaskStore();
+            Assert.That(RegisterTask(out session), Is.True);
+            var captured = session;
+            var key = PinnedSpanByte.FromPinnedSpan("task-store-access"u8);
+            using var disposing = new ManualResetEventSlim();
+            using var release = new ManualResetEventSlim();
+            using var registration = GetCancellationToken(session).Register(() =>
+            {
+                disposing.Set();
+                release.Wait();
+            });
+            var removal = Task.Factory.StartNew(() => byTarget
+                ? taskStore.TryRemove(captured.GetTargetNodeId)
+                : taskStore.TryRemove(captured), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            Task<bool> access = null;
+            try
+            {
+                Assert.That(disposing.Wait(TimeSpan.FromSeconds(5)), Is.True);
+                access = Task.Run(() => taskStore.CanAccessKey(key, 0, readOnly: false));
+                Assert.That(await access.WaitAsync(TimeSpan.FromSeconds(5)), Is.False,
+                    "Admission must remain protected without waiting for the writer's disposal callback.");
+            }
+            finally
+            {
+                release.Set();
+                Assert.That(await removal.WaitAsync(TimeSpan.FromSeconds(10)), Is.True);
+                if (access != null)
+                    await access.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+            Assert.That(taskStore.CanAccessKey(key, 0, readOnly: false), Is.True);
+            Assert.That(captured.CanAccessKey(key, 0, readOnly: false), Is.False,
+                "A captured session must retain usable admission metadata after disposal.");
+        }
+
+        [Test]
+        public void TaskStoreRetiredRemovalPreservesReplacement()
+        {
+            taskStore = new MigrateSessionTaskStore();
+            Assert.That(RegisterTask(out session), Is.True);
+            var retired = session;
+            Assert.That(taskStore.TryRemove(retired.GetTargetNodeId), Is.True);
+            Assert.That(RegisterTask(out session, SketchStatus.TRANSMITTING), Is.True);
+
+            Assert.That(taskStore.TryRemove(retired), Is.True);
+            var key = PinnedSpanByte.FromPinnedSpan("task-store-access"u8);
+            Assert.That(taskStore.GetNumSessions(), Is.EqualTo(1));
+            Assert.That(taskStore.CanAccessKey(key, 0, readOnly: false), Is.False);
+            Assert.That(taskStore.CanAccessKey(key, 0, readOnly: true), Is.True);
+        }
+
+        [Test]
+        public async Task TaskStoreConcurrentDisposeHasOneCleanupOwner()
+        {
+            taskStore = new MigrateSessionTaskStore();
+            Assert.That(RegisterTask(out session), Is.True);
+            var captured = session;
+            var slots = (MigrateSession[])typeof(MigrateSessionTaskStore)
+                .GetField("sessions", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(taskStore);
+            var cleanupCount = 0;
+            using var disposing = new ManualResetEventSlim();
+            using var release = new ManualResetEventSlim();
+            using var registration = GetCancellationToken(captured).Register(() =>
+            {
+                Interlocked.Increment(ref cleanupCount);
+                disposing.Set();
+                release.Wait();
+            });
+            var winner = Task.Factory.StartNew(taskStore.Dispose, CancellationToken.None,
+                TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            Task[] others = [];
+            try
+            {
+                Assert.That(disposing.Wait(TimeSpan.FromSeconds(5)), Is.True);
+                others = Enumerable.Range(0, 4).Select(_ => Task.Factory.StartNew(taskStore.Dispose,
+                    CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)).ToArray();
+                await Task.WhenAll(others).WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.That(winner.IsCompleted, Is.False);
+                Assert.That(Volatile.Read(ref slots[0]), Is.SameAs(captured),
+                    "Later disposers must return without running the winner's table cleanup.");
+            }
+            finally
+            {
+                release.Set();
+                await winner.WaitAsync(TimeSpan.FromSeconds(10));
+                await Task.WhenAll(others).WaitAsync(TimeSpan.FromSeconds(10));
+            }
+            Assert.That(cleanupCount, Is.EqualTo(1));
+            Assert.That(Volatile.Read(ref slots[0]), Is.Null);
+        }
+
+        [Test]
+        public async Task TaskStoreConcurrentLookupSurvivesReplacementAndShutdown()
+        {
+            taskStore = new MigrateSessionTaskStore();
+            var key = PinnedSpanByte.FromPinnedSpan("task-store-access"u8);
+            using var stop = new CancellationTokenSource();
+            using var ready = new CountdownEvent(4);
+            var readers = new Task[4];
+            for (var i = 0; i < readers.Length; i++)
+            {
+                readers[i] = Task.Factory.StartNew(() =>
+                {
+                    ready.Signal();
+                    while (!stop.IsCancellationRequested)
+                    {
+                        _ = taskStore.CanAccessKey(key, 0, readOnly: false);
+                        _ = taskStore.CanAccessKey(key, 0, readOnly: true);
+                    }
+                }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            }
+            try
+            {
+                Assert.That(ready.Wait(TimeSpan.FromSeconds(5)), Is.True);
+                for (var i = 0; i < 32; i++)
+                {
+                    Assert.That(RegisterTask(out session), Is.True);
+                    Assert.That(taskStore.CanAccessKey(key, 0, readOnly: false), Is.False);
+                    Assert.That(i % 2 == 0 ? taskStore.TryRemove(session) : taskStore.TryRemove(session.GetTargetNodeId), Is.True);
+                }
+                Assert.That(RegisterTask(out session), Is.True);
+                taskStore.Dispose();
+                Assert.That(taskStore.CanAccessKey(key, 0, readOnly: false), Is.True);
+                Assert.That(RegisterTask(out session), Is.False);
+                Assert.That(() => GetOperations(session)[0].EnterWorker(), Throws.TypeOf<ObjectDisposedException>());
+            }
+            finally
+            {
+                stop.Cancel();
+                await Task.WhenAll(readers).WaitAsync(TimeSpan.FromSeconds(10));
+            }
         }
 
         [TestCase(SketchStatus.INITIALIZING, SketchStatus.DELETING, true, false)]
