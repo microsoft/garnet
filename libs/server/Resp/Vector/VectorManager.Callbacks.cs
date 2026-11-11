@@ -902,12 +902,15 @@ namespace Garnet.server
         {
             Debug.Assert(context <= uint.MaxValue, "Contexts > 2^32-1 are not supported");
 
-            Span<byte> nsBytes = stackalloc byte[sizeof(uint)];
+            Span<byte> nsBytesRaw = stackalloc byte[sizeof(uint)];
+            var nsBytes = nsBytesRaw;
             StoreContextInNamespace(context, ref nsBytes);
 
             VectorElementKey keyWithNamespace = new(nsBytes, key);
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
+
+            var remainingContexts = ActiveThreadShallowCopyBackReferences.Span;
 
             while (true)
             {
@@ -926,10 +929,25 @@ namespace Garnet.server
 
                     if (!status.Found)
                     {
+                        // If we have other contexts to check, walk through them before giving up
+                        if (!remainingContexts.IsEmpty)
+                        {
+                            context = remainingContexts[0];
+                            remainingContexts = remainingContexts[1..];
+                            nsBytes = nsBytesRaw;
+                            StoreContextInNamespace(context, ref nsBytes);
+                            keyWithNamespace = new(nsBytes, key);
+
+                            input.ReadDesiredSize = -1;
+
+                            continue;
+                        }
+
                         value.Length = 0;
                         return false;
                     }
 
+                    // We got a hit, but we didn't allocate a large enough buffer - try again with the correct size
                     if (input.ReadDesiredSize > asSpanByte.SpanByteAndMemory.Length)
                     {
                         value.Memory?.Dispose();
