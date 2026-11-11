@@ -951,7 +951,8 @@ namespace Tsavorite.core
             // contiguous. This relies on RemoveSegment removing only the segment named, as IDevice requires.
             //
             // A NativeStorageDevice with an older native library instead removes every open segment through the one named, valid
-            // ones included. It lists its own segments, so it gets here only as a tier or shard of a composite device. That case is
+            // ones included. It lists its own segments, and a composite device has each component remove its own, so it gets here
+            // only as a component of a composite device another of whose components cannot list its segments. That case is
             // deliberately left unhandled: recovery itself never trims (it passes trimLog false; only tests pass true), Garnet
             // builds no composite devices, and current native libraries remove only the segment named.
             for (var segment = lastAvailSegment; segment > lastValidSegment; segment--)

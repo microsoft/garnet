@@ -2103,6 +2103,103 @@ namespace Tsavorite.test
         }
 
         /// <summary>
+        /// A tiered device removes the segments above the one named from every tier, including a faster tier whose start segment
+        /// is above them: it has evicted the lower segments, but still holds a higher one. The slower tier keeps the segment named.
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void TieredDevice_TryRemoveSegmentsAbove_RemovesThemFromEveryTier()
+        {
+            const long segmentSize = 1L << 16;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var (rbuf, rptr) = AllocateAlignedBuffer(HardeningSectorSize, _ => 0);
+            var epoch = new LightEpoch();
+            try
+            {
+                var fast = new RandomAccessLocalStorageDevice($"{path}.fast", preallocateFile: false, deleteOnClose: true, capacity: 1L << 30);
+                var slow = new RandomAccessLocalStorageDevice($"{path}.slow", preallocateFile: false, deleteOnClose: true);
+                using var tiered = new TieredStorageDevice(1, fast, slow);
+                tiered.Initialize(segmentSize, epoch);
+
+                // Write segments 0 through 3 to both tiers, then evict segments 0 through 2 from the faster tier, which keeps 3
+                for (var segment = 0; segment <= 3; segment++)
+                {
+                    tiered.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+                fast.TruncateUntilSegment(3);
+
+                // Removing above segment 0 removes segment 3 from the faster tier, and segments 1 to 3 from the slower one
+                ClassicAssert.IsTrue(tiered.TryRemoveSegmentsAbove(0, out var removed));
+                ClassicAssert.AreEqual(3, removed, "the slower tier removed three segments that held data");
+                ClassicAssert.IsFalse(File.Exists($"{path}.fast.3"), "the faster tier should remove segment 3");
+                foreach (var segment in new[] { 1, 2, 3 })
+                    ClassicAssert.IsFalse(File.Exists($"{path}.slow.{segment}"), $"the slower tier should remove segment {segment}");
+
+                // Segment 0 keeps its data in the slower tier, which serves reads of it
+                tiered.ReadAsync(0, 0, rptr, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+                AssertBufferContents(rptr, HardeningSectorSize, i => (byte)(i * 3), "segment 0");
+            }
+            finally
+            {
+                epoch.Dispose();
+            }
+            GC.KeepAlive(wbuf);
+            GC.KeepAlive(rbuf);
+        }
+
+        /// <summary>
+        /// Each shard of a sharded device stores its part of a segment as the segment of the same number, so the device removes
+        /// the segments above the one named from every shard, and the segments at and below it keep their data
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void ShardedDevice_TryRemoveSegmentsAbove_RemovesThemFromEveryShard()
+        {
+            const long segmentSize = 1L << 16;
+
+            // The device stripes in chunks of one sector, so each two-sector write puts part of its segment on both shards
+            const int writeSize = 2 * HardeningSectorSize;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            var (wbuf, wptr) = AllocateAlignedBuffer(writeSize, i => (byte)(i * 3));
+            var (rbuf, rptr) = AllocateAlignedBuffer(writeSize, _ => 0);
+            var epoch = new LightEpoch();
+            try
+            {
+                using var sharded = CreateResettableDeviceForTest(ResettableDeviceKind.Sharded, path, segmentSize, epoch, out var segmentFiles);
+
+                // Write segments 0 through 3
+                for (var segment = 0; segment <= 3; segment++)
+                {
+                    sharded.WriteAsync(wptr, segment, 0, writeSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+
+                // Removing above segment 1 removes segments 2 and 3 from both shards
+                ClassicAssert.IsTrue(sharded.TryRemoveSegmentsAbove(1, out var removed));
+                ClassicAssert.AreEqual(2, removed, "segments 2 and 3 held data");
+                foreach (var file in segmentFiles(2).Concat(segmentFiles(3)))
+                    ClassicAssert.IsFalse(File.Exists(file), $"{file} should be removed");
+
+                // Segments 0 and 1 keep their data on both shards
+                foreach (var segment in new[] { 0, 1 })
+                {
+                    sharded.ReadAsync(segment, 0, rptr, writeSize, IOCallback, null);
+                    semaphore.Wait();
+                    AssertBufferContents(rptr, writeSize, i => (byte)(i * 3), $"segment {segment}");
+                }
+            }
+            finally
+            {
+                epoch.Dispose();
+            }
+            GC.KeepAlive(wbuf);
+            GC.KeepAlive(rbuf);
+        }
+
+        /// <summary>
         /// Deleting a segment file that the native device holds open would lose later writes to it on Linux, and Windows refuses,
         /// so TryRemoveSegmentsAbove empties such a file instead, and a later write through the device still reaches it
         /// </summary>

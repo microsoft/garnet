@@ -38,6 +38,30 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Have each of <paramref name="devices"/> remove the segments it holds above <paramref name="segment"/>, for a device that
+        /// stores segment n of its own as segment n of each of them
+        /// </summary>
+        /// <param name="devices">The devices to remove the segments from</param>
+        /// <param name="segment">The highest segment to keep</param>
+        /// <param name="removed">The most segments that any of <paramref name="devices"/> removed: they share segment numbers, so
+        /// each counts the same segments, apart from those it held nothing in</param>
+        /// <returns>Whether every device could remove its segments. One that cannot does not stop the others from removing theirs,
+        /// since the caller is discarding everything above <paramref name="segment"/>.</returns>
+        internal static bool TryRemoveSegmentsAboveOnEach(IEnumerable<IDevice> devices, int segment, out int removed)
+        {
+            removed = 0;
+            var removedAll = true;
+            foreach (var device in devices)
+            {
+                if (device.TryRemoveSegmentsAbove(segment, out var removedFromDevice))
+                    removed = Math.Max(removed, removedFromDevice);
+                else
+                    removedAll = false;
+            }
+            return removedAll;
+        }
+
+        /// <summary>
         /// 
         /// </summary>
         public string FileName { get; }

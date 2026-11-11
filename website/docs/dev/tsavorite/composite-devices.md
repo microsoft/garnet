@@ -158,6 +158,9 @@ its begin address.
 Continuing the example, truncating the log to segment 9 removes segments 0–6 from tier 1 only, since tier 0 has already
 evicted them, and segments 7 and 8 from both tiers.
 
+Removing every segment above a given one, which [clearing](#clearing-above-the-tail) does, is different: each tier lists
+the segments it holds and removes those above the one given, whatever its `StartSegment` says.
+
 ### Errors
 
 - The write callback reports the error code and byte count of whichever tier, up to the commit point, finished last. An
@@ -176,17 +179,17 @@ evicted them, and segments 7 and 8 from both tiers.
 
 ### Limitations
 
-- **Which segments a tier holds is known only in memory**, as its `StartSegment`.
-  - After a restart, a tier recovers it only if it is a `LocalStorageDevice`, `RandomAccessLocalStorageDevice` or
-    `ManagedLocalStorageDevice` created with `recoverDevice: true`, which sets it from the segment files it finds. Any
-    other hot tier claims every segment, and a read of one that it evicted before the restart finds no data.
-  - `Reset` sets every tier's `StartSegment` to 0, since a reset log writes from segment 0 again. A read of a segment that
-    a hot tier evicted before the reset then goes to that tier and finds no data. A reset log reads only what it writes
-    after the reset, so this affects it only through clearing.
+- **Which segments a tier holds is known only in memory**, as its `StartSegment`, and it is lost in two cases. A read of
+  a segment that a hot tier evicted then goes to that tier and finds no data.
+  - After a restart, unless the tier is a `LocalStorageDevice`, `RandomAccessLocalStorageDevice` or
+    `ManagedLocalStorageDevice` created with `recoverDevice: true`, which sets it from the segment files it finds.
+  - After `TsavoriteLog.Reset` or `TsavoriteLog.Initialize`, which reset the device. That sets every tier's
+    `StartSegment` to 0, so that the log that follows is written to every tier from segment 0. `Reset` discards the log's
+    data, so this does not affect it. `Initialize` keeps the data below the new tail, and a read of it in a segment that the
+    hot tier evicted finds nothing.
 - **A write must reach tier 0.** Its callback waits for every tier up to the commit point, but a write to a segment that
   tier 0 has already evicted is not sent to tier 0, so the callback never fires. A log writes near its tail, which tier 0
   holds.
-- **Clearing above the tail can miss data** on a tiered device; see [Clearing above the tail](#clearing-above-the-tail).
 
 ## Sharded storage device
 
@@ -287,7 +290,7 @@ sequenceDiagram
 ### Removal, truncation and Reset
 
 - Removing a segment removes it from every shard, and completes when all have finished. Truncation does this for each
-  segment it drops.
+  segment it drops. Removing every segment above a given one has each shard remove its own.
 - `Reset` resets every shard.
 - The composite's capacity is unspecified, and it does not evict. A shard with a capacity evicts its own segments without
   the composite knowing, so leave the shards' capacities unspecified.
@@ -316,15 +319,22 @@ segments.
 ## Clearing above the tail
 
 `TsavoriteLog.PrepareToAppend`, and recovery when asked to, clear the device above the tail, so that a later recovery
-cannot adopt old data there (see [Appending after recovery](./tsavoritelog-commits.md#appending-after-recovery)).
-Clearing removes whole segments above the tail's segment when the device supports `TryRemoveSegmentsAbove`, and zeroes
-the rest. Neither composite device supports it, so clearing zeroes everything above the tail through the device: the
-zeroing writes go to every tier, or are split across the shards, like any write.
+cannot adopt old data there (see [Appending after recovery](./tsavoritelog-commits.md#appending-after-recovery)). Clearing
+has the device remove the segments above the tail's segment, with `TryRemoveSegmentsAbove`, and zeroes any data it finds
+above the tail in the tail's own segment.
 
-Clearing finds the data by reading through the device. On a tiered device, each read goes to the hottest tier that claims
-the segment. After `Reset`, or a restart without `recoverDevice: true`, a hot tier claims segments it evicted, so the log
-as read through it has gaps where it evicted them. Clearing stops at a run of empty pages as long as the log's in-memory
-buffer, so it can miss old data beyond such a gap, and data that only a colder tier holds.
+Both composite devices remove those segments by having each tier or shard remove its own. Each lists the segments it
+holds, so a tier's `StartSegment` does not matter. Tsavorite's file devices, `NativeStorageDevice`, `LocalMemoryDevice`
+and `AzureStorageDevice` can all list their segments. If a component cannot, the others still remove theirs, but the
+composite reports that it could not, and clearing then zeroes everything it finds above the tail.
+
+To find data in the tail's segment, clearing reads through the device. On a tiered device, each read goes to the hottest
+tier that claims the segment:
+
+- If that tier holds old data there, clearing zeroes it, on every tier.
+- If that tier evicted the segment before a reset, a colder tier's old data in it is not found. It is not read later
+  either: the hot tier keeps claiming the segment until it evicts it again, which it does only once the log has rewritten
+  the whole segment on every tier.
 
 ## Tests
 
@@ -334,4 +344,6 @@ buffer, so it can miss old data beyond such a gap, and data that only a colder t
 | `BasicStorageTests.ShardedReadCompletesWhenLaterShardThrows`, `ShardedWriteCompletesWhenLaterShardThrows` (`test.hlog`) | One callback when issuing a piece throws |
 | `DeviceTests.IDevice_Reset_ForgetsTheTruncatedSegments` (`test.hlog`) | After `Reset`, truncation removes segments again, on each kind of device including both composites |
 | `DeviceTests.TieredDevice_RemoveSegmentAsync_CompletesWhenAFasterTierEvictedTheSegment` (`test.hlog`) | Removing a segment that a hot tier has evicted |
+| `DeviceTests.TieredDevice_TryRemoveSegmentsAbove_RemovesThemFromEveryTier`, `ShardedDevice_TryRemoveSegmentsAbove_RemovesThemFromEveryShard` (`test.hlog`) | Removing every segment above a given one from each tier or shard, including a hot tier that evicted lower segments |
+| `LogClearAboveTailTests.ClearingAfterResetRemovesTheOldSegmentsFromEveryTier` (`test.hlog`) | Clearing a reset log on a tiered device whose hot tier evicted segments |
 | `IndexCheckpointIoTests.ShardedCheckpointIsNotReportedAsShort` (`test.recovery`) | Byte counts summed across shards |

@@ -451,6 +451,54 @@ namespace Tsavorite.test
         }
 
         /// <summary>
+        /// A tiered device's faster tier evicts its oldest segments, and a reset returns its start segment to 0, so it claims the
+        /// segments it evicted. Searching from the reset log's tail then finds only those empty segments, and stops before the old
+        /// segments the tier still holds above them. So clearing must have every tier remove its segments above the tail's.
+        /// Recovery then finds only what was appended after the reset.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteLog")]
+        public async Task ClearingAfterResetRemovesTheOldSegmentsFromEveryTier()
+        {
+            // A faster tier that keeps the segment being written and the two before it, over an unbounded slower tier
+            var fastPath = Path.Join(TestUtils.MethodTestDir, "fast.log");
+            var slowPath = Path.Join(TestUtils.MethodTestDir, "slow.log");
+            IDevice CreateTieredDevice() => new TieredStorageDevice(1,
+                new RandomAccessLocalStorageDevice(fastPath, disableFileBuffering: false, capacity: 2L << SegmentSizeBits, osReadBuffering: true),
+                new RandomAccessLocalStorageDevice(slowPath, disableFileBuffering: false, osReadBuffering: true));
+
+            var entry = CreateEntry(100, seed: 18);
+            var replacement = CreateEntry(64, seed: 19);
+            long replacementTail;
+            using (var log = new TestLog(logPath, commits, device: CreateTieredDevice()))
+            {
+                // Twenty commits span at least six segments, so the faster tier evicts segment 0, once the epoch lets it
+                var tails = WriteCommits(log.Log, commitCount: 20, entriesPerCommit: 48, entry);
+                Assert.That(tails[20] >> SegmentSizeBits, Is.GreaterThanOrEqualTo(5), "the log should span at least six segments");
+                ClassicAssert.IsTrue(SpinWait.SpinUntil(() => !File.Exists($"{fastPath}.0"), TimeSpan.FromSeconds(10)), "the faster tier should evict segment 0");
+
+                // Reset the log, which leaves the device's data in place, and clear above the new tail, in segment 0
+                log.Log.Reset();
+                log.Log.PrepareToAppend();
+
+                // Neither tier holds data above the tail's segment
+                Assert.That(SegmentsHoldingBytes(fastPath), Has.None.GreaterThan(0), "the faster tier should remove its old segments");
+                Assert.That(SegmentsHoldingBytes(slowPath), Has.None.GreaterThan(0), "the slower tier should remove its old segments");
+
+                // Append and commit after the reset
+                _ = log.Log.Enqueue(replacement);
+                ClassicAssert.IsTrue(log.Log.CommitStrongly(out replacementTail, out var commitNum, spinWait: true));
+                commits.WaitForMetadata(commitNum, replacementTail);
+            }
+
+            // Recovery finds only what was appended after the reset
+            using var recovered = new TestLog(logPath, commits, device: CreateTieredDevice());
+            await recovered.Log.RecoverAsync().ConfigureAwait(false);
+            ClassicAssert.AreEqual(replacementTail, recovered.Log.TailAddress);
+            Assert.That(ReadEntries(recovered.Log), Is.EqualTo([replacement]));
+        }
+
+        /// <summary>
         /// If clearing is interrupted, what remains above the tail must be the lower part of what was there, so each change to the
         /// device must be below the one before, ending with the sector that holds the tail. Removing the segments above the tail's
         /// counts as one change; a device that cannot remove them has them zeroed instead.
@@ -622,17 +670,24 @@ namespace Tsavorite.test
         /// <summary>The file that holds segment <paramref name="segment"/> of the log</summary>
         string SegmentPath(long segment) => $"{logPath}.{segment}";
 
-        /// <summary>The log's segment files with their segment numbers, in ascending order of segment</summary>
-        IEnumerable<(long Segment, string Path)> Segments()
-            => Directory.GetFiles(TestUtils.MethodTestDir, Path.GetFileName(logPath) + ".*")
+        /// <summary>
+        /// The segment files of the log, or of the device whose base path is <paramref name="devicePath"/>, with their segment
+        /// numbers, in ascending order of segment
+        /// </summary>
+        IEnumerable<(long Segment, string Path)> Segments(string devicePath = null)
+            => Directory.GetFiles(TestUtils.MethodTestDir, Path.GetFileName(devicePath ?? logPath) + ".*")
                 .Select(path => (long.Parse(Path.GetExtension(path).AsSpan(1)), path))
                 .OrderBy(segment => segment.Item1);
 
         /// <summary>The contents of each segment file, by segment number</summary>
         Dictionary<long, byte[]> ReadSegments() => Segments().ToDictionary(segment => segment.Segment, segment => File.ReadAllBytes(segment.Path));
 
-        /// <summary>The segments whose files hold any bytes; NativeStorageDevice empties, rather than deletes, the files it holds open</summary>
-        IEnumerable<long> SegmentsHoldingBytes() => Segments().Where(segment => new FileInfo(segment.Path).Length > 0).Select(segment => segment.Segment);
+        /// <summary>
+        /// The segments whose files hold any bytes, of the log or of the device whose base path is <paramref name="devicePath"/>;
+        /// NativeStorageDevice empties, rather than deletes, the files it holds open
+        /// </summary>
+        IEnumerable<long> SegmentsHoldingBytes(string devicePath = null)
+            => Segments(devicePath).Where(segment => new FileInfo(segment.Path).Length > 0).Select(segment => segment.Segment);
 
         /// <summary>Assert that the device holds nothing but zeros at and above <paramref name="address"/></summary>
         void AssertNoDataFrom(long address, int segmentSizeBits = SegmentSizeBits)

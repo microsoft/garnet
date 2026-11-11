@@ -145,6 +145,14 @@ namespace Tsavorite.core
             }
         }
 
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Every tier removes the segments it holds above <paramref name="segment"/>, whatever its <see cref="IDevice.StartSegment"/>
+        /// says: a slower tier can hold segments that a faster tier has evicted, and after <see cref="Reset"/>, which returns each
+        /// tier's start segment to 0, a faster tier still holds the old segments it had not evicted.
+        /// </remarks>
+        public override bool TryRemoveSegmentsAbove(int segment, out int removed) => TryRemoveSegmentsAboveOnEach(devices, segment, out removed);
+
         private static long ComputeCapacity(IList<IDevice> devices)
         {
             long result = 0;

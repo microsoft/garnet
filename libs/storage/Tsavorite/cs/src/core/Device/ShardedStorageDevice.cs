@@ -206,6 +206,11 @@ namespace Tsavorite.core
             }
         }
 
+        /// <inheritdoc/>
+        /// <remarks>Each shard stores its part of a segment as the segment of the same number, so each removes its segments above
+        /// <paramref name="segment"/>.</remarks>
+        public override bool TryRemoveSegmentsAbove(int segment, out int removed) => TryRemoveSegmentsAboveOnEach(partitions.Devices, segment, out removed);
+
         /// <summary>
         /// <see cref="IDevice.WriteAsync(IntPtr, int, ulong, uint, DeviceIOCompletionCallback, object)"/>
         /// </summary>
