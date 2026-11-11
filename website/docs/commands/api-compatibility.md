@@ -287,7 +287,7 @@ Legend: ➕ = supported, ➖ = not supported.
 |  | [INFO](server.md#info) | ➕ |  |
 |  | [LASTSAVE](checkpoint.md#lastsave) | ➕ |  |
 |  | LOLWUT | ➖ |  |
-|  | [MONITOR](server.md#monitor) | ➕ |  |
+|  | MONITOR | ➖ | Always returns an error; Garnet does not stream commands because of the impact on critical paths |
 |  | PSYNC | ➖ |  |
 |  | REPLCONF | ➖ |  |
 |  | [REPLICAOF](server.md#replicaof) | ➕ |  |

@@ -115,7 +115,7 @@ The CLIENT KILL command closes a given client connection.
 * CLIENT KILL ADDR ip:port. This kill the client matching the given address and port.
 * CLIENT KILL LADDR ip:port. Kill all clients connected to specified local (bind) address.
 * CLIENT KILL ID client-id. Allows to kill a client by its unique ID field. Client ID's are retrieved using the CLIENT LIST command.
-* CLIENT KILL TYPE type, where type is one of normal, master, replica and pubsub. This closes the connections of all the clients in the specified class. Note that clients blocked into the MONITOR command are considered to belong to the normal class.
+* CLIENT KILL TYPE type, where type is one of normal, master, replica and pubsub. This closes the connections of all the clients in the specified class.
 * CLIENT KILL USER username. Closes all the connections that are authenticated with the specified ACL username, however it returns an error if the username does not map to an existing ACL user.
 * CLIENT KILL SKIPME yes/no. By default this option is set to yes, that is, the client calling the command will not get killed, however setting this option to no will have the effect of also killing the client calling the command.
 * CLIENT KILL MAXAGE maxage. Closes all the connections that are older than the specified age, in seconds.
