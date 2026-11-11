@@ -499,6 +499,52 @@ namespace Tsavorite.test
         }
 
         /// <summary>
+        /// A tiered device's faster tier keeps only the newest segments, and here finds them again from its files when it starts.
+        /// Recovering to a commit in a segment it has evicted, the log cannot be written there, so clearing above the tail fails,
+        /// rather than hang, and before removing any segment. The next recovery then still finds every commit.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteLog")]
+        public async Task ClearingFailsWhenTheFastestTierHasEvictedTheTailsSegment()
+        {
+            // A faster tier that keeps the segment being written and the two before it, and finds them again when it starts, over
+            // an unbounded slower tier
+            var fastPath = Path.Join(TestUtils.MethodTestDir, "fast.log");
+            var slowPath = Path.Join(TestUtils.MethodTestDir, "slow.log");
+            IDevice CreateTieredDevice() => new TieredStorageDevice(1,
+                new RandomAccessLocalStorageDevice(fastPath, disableFileBuffering: false, capacity: 2L << SegmentSizeBits, recoverDevice: true, osReadBuffering: true),
+                new RandomAccessLocalStorageDevice(slowPath, disableFileBuffering: false, osReadBuffering: true));
+
+            // Twenty commits span at least six segments, so the faster tier evicts segment 0, where commit 1 ends
+            var entry = CreateEntry(100, seed: 20);
+            List<long> tails;
+            using (var original = new TestLog(logPath, commits, device: CreateTieredDevice()))
+            {
+                tails = WriteCommits(original.Log, commitCount: 20, entriesPerCommit: 48, entry);
+                ClassicAssert.IsTrue(SpinWait.SpinUntil(() => !File.Exists($"{fastPath}.0"), TimeSpan.FromSeconds(10)), "the faster tier should evict segment 0");
+            }
+            Assert.That(tails[1] >> SegmentSizeBits, Is.EqualTo(0), "commit 1 should end in segment 0");
+            var fastSegments = Segments(fastPath).Select(segment => segment.Segment).ToArray();
+            var slowSegments = SegmentsHoldingBytes(slowPath).ToArray();
+
+            // Recovering to commit 1 and clearing above its tail fails, and both tiers keep their segments
+            using (var recovered = new TestLog(logPath, commits, device: CreateTieredDevice()))
+            {
+                var recovery = Task.Run(async () => await recovered.Log.RecoverAsync(1, clearAboveTail: true).ConfigureAwait(false));
+                ClassicAssert.AreSame(recovery, await Task.WhenAny(recovery, Task.Delay(TimeSpan.FromSeconds(30))).ConfigureAwait(false), "clearing should fail rather than hang");
+                _ = Assert.CatchAsync<TsavoriteException>(async () => await recovery.ConfigureAwait(false));
+            }
+            Assert.That(Segments(fastPath).Select(segment => segment.Segment), Is.EqualTo(fastSegments), "the faster tier should keep its segments");
+            Assert.That(SegmentsHoldingBytes(slowPath), Is.EqualTo(slowSegments), "the slower tier should keep its segments");
+
+            // The next recovery finds every commit
+            using var reopened = new TestLog(logPath, commits, device: CreateTieredDevice());
+            await reopened.Log.RecoverAsync().ConfigureAwait(false);
+            ClassicAssert.AreEqual(tails[20], reopened.Log.TailAddress);
+            Assert.That(ReadEntries(reopened.Log), Has.Count.EqualTo(20 * 48));
+        }
+
+        /// <summary>
         /// If clearing is interrupted, what remains above the tail must be the lower part of what was there, so each change to the
         /// device must be below the one before, ending with the sector that holds the tail. Removing the segments above the tail's
         /// counts as one change; a device that cannot remove them has them zeroed instead.

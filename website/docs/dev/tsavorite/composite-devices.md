@@ -64,9 +64,9 @@ persistent.
 
 ### Writes
 
-A write is issued, in parallel, to every tier from the hottest one that holds its segment through the coldest. Its
-callback fires when every tier up to and including the commit point has finished. Writes to tiers past the commit point
-are not tracked: the caller learns nothing about them.
+A write is issued, in parallel, to every tier. Its callback fires when every tier up to and including the commit point
+has finished. Writes to tiers past the commit point are not tracked: the caller learns nothing about them. A write to a
+segment that tier 0 has evicted fails; see [Why writes must reach tier 0](#why-writes-must-reach-tier-0).
 
 With commit point 1, as above:
 
@@ -166,6 +166,8 @@ the segments it holds and removes those above the one given, whatever its `Start
 - The write callback reports the error code and byte count of whichever tier, up to the commit point, finished last. An
   error from a tier that finished earlier is lost, and reads of that segment still go to that tier.
 - Errors from tiers past the commit point are ignored.
+- A write to a segment that tier 0 has evicted fails at once, with error code `uint.MaxValue` and a
+  `TsavoriteIOException`.
 - Neither writes nor reads are retried on another tier.
 
 ### Other properties
@@ -187,9 +189,37 @@ the segments it holds and removes those above the one given, whatever its `Start
     `StartSegment` to 0, so that the log that follows is written to every tier from segment 0. `Reset` discards the log's
     data, so this does not affect it. `Initialize` keeps the data below the new tail, and a read of it in a segment that the
     hot tier evicted finds nothing.
-- **A write must reach tier 0.** Its callback waits for every tier up to the commit point, but a write to a segment that
-  tier 0 has already evicted is not sent to tier 0, so the callback never fires. A log writes near its tail, which tier 0
-  holds.
+- **Tier 0 must hold the segment being written.** A write to a segment that tier 0 has evicted fails; see
+  [Why writes must reach tier 0](#why-writes-must-reach-tier-0). So a log cannot be recovered to a commit whose tail is in
+  a segment that tier 0 has evicted, and that tier 0 knows it evicted: within a process, or after a restart from its files.
+  Clearing above the tail then fails before removing anything, and without clearing, the first write fails. Recovering the
+  latest commit is unaffected, since its tail is in tier 0's newest segments.
+
+### Why writes must reach tier 0
+
+A write completes once every tier through the commit point has finished it, so it must reach tier 0, which every write is
+issued to. A write to a segment that tier 0 has evicted cannot reach it, so it fails at once.
+
+Letting such a write complete on other tiers would lose data after a restart. A tier knows what it holds only from its
+`StartSegment`, which is kept in memory, and which only a file device created with `recoverDevice: true` rebuilds, from
+its files. So after a restart, tier 0 can claim the segment again:
+
+- **Written only to the slower tiers,** the data is hidden: reads of the segment go to tier 0, which does not hold it. In a
+  trial, a log that was recovered to an earlier commit, appended to and restarted could no longer be recovered at all.
+- **Written to tier 0 as well,** tier 0 holds only the part written. Reads of the rest of the segment go to tier 0 and find
+  zeros.
+
+Supporting such writes would need tier 0 to copy the whole segment from a slower tier before writing it, or a lasting
+record of which segments each tier holds.
+
+A log writes near its tail, which tier 0 holds, so this matters only when a log's tail is below tier 0's segments: after
+recovering to an older commit, with a tier 0 that knows what it evicted. Appending, recovering the latest commit, `Reset`
+and `Initialize` are unaffected; `Reset` and `Initialize` return every tier's `StartSegment` to 0.
+
+Only writes need tier 0. Removing a segment starts at the first tier that holds it, since a tier that evicted the segment
+has nothing to remove. Removing every segment above a given one fails, before removing anything, if tier 0 has evicted
+that segment: tier 0's segments are then all above it, removing them would empty it, and an empty tier 0 claims every
+segment after a restart, hiding the slower tiers' data.
 
 ## Sharded storage device
 
@@ -328,6 +358,11 @@ holds, so a tier's `StartSegment` does not matter. Tsavorite's file devices, `Na
 and `AzureStorageDevice` can all list their segments. If a component cannot, the others still remove theirs, but the
 composite reports that it could not, and clearing then zeroes everything it finds above the tail.
 
+A tiered device refuses, before removing anything, if tier 0 has evicted the tail's segment. Tier 0's segments are then
+all above the tail's, so removing them would empty it, and an empty tier 0 with no record of what it evicted claims every
+segment after a restart. The log could not be written there anyway; see
+[Why writes must reach tier 0](#why-writes-must-reach-tier-0).
+
 To find data in the tail's segment, clearing reads through the device. On a tiered device, each read goes to the hottest
 tier that claims the segment:
 
@@ -344,6 +379,8 @@ tier that claims the segment:
 | `BasicStorageTests.ShardedReadCompletesWhenLaterShardThrows`, `ShardedWriteCompletesWhenLaterShardThrows` (`test.hlog`) | One callback when issuing a piece throws |
 | `DeviceTests.IDevice_Reset_ForgetsTheTruncatedSegments` (`test.hlog`) | After `Reset`, truncation removes segments again, on each kind of device including both composites |
 | `DeviceTests.TieredDevice_RemoveSegmentAsync_CompletesWhenAFasterTierEvictedTheSegment` (`test.hlog`) | Removing a segment that a hot tier has evicted |
-| `DeviceTests.TieredDevice_TryRemoveSegmentsAbove_RemovesThemFromEveryTier`, `ShardedDevice_TryRemoveSegmentsAbove_RemovesThemFromEveryShard` (`test.hlog`) | Removing every segment above a given one from each tier or shard, including a hot tier that evicted lower segments |
+| `DeviceTests.TieredDevice_TryRemoveSegmentsAbove_RemovesThemFromEveryTier`, `ShardedDevice_TryRemoveSegmentsAbove_RemovesThemFromEveryShard` (`test.hlog`) | Removing every segment above a given one from each tier or shard, including the old segments a hot tier still holds after a reset |
+| `DeviceTests.TieredDevice_WriteAsync_FailsForASegmentTheFastestTierEvicted`, `TieredDevice_TryRemoveSegmentsAbove_FailsWhenTheFastestTierEvictedTheSegment` (`test.hlog`) | Failing, rather than hanging or emptying tier 0, for a segment tier 0 has evicted |
 | `LogClearAboveTailTests.ClearingAfterResetRemovesTheOldSegmentsFromEveryTier` (`test.hlog`) | Clearing a reset log on a tiered device whose hot tier evicted segments |
+| `LogClearAboveTailTests.ClearingFailsWhenTheFastestTierHasEvictedTheTailsSegment` (`test.hlog`) | Recovering to a commit below tier 0's segments: clearing fails, removes nothing, and the next recovery finds every commit |
 | `IndexCheckpointIoTests.ShardedCheckpointIsNotReportedAsShort` (`test.recovery`) | Byte counts summed across shards |

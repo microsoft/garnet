@@ -6,6 +6,8 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Specialized;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -2103,8 +2105,9 @@ namespace Tsavorite.test
         }
 
         /// <summary>
-        /// A tiered device removes the segments above the one named from every tier, including a faster tier whose start segment
-        /// is above them: it has evicted the lower segments, but still holds a higher one. The slower tier keeps the segment named.
+        /// After a reset, every tier's start segment is 0, yet a faster tier still holds the old segments it had not evicted. A
+        /// tiered device removes the segments above the one named from every tier, by what each holds rather than by its start
+        /// segment. The slower tier keeps the segment named.
         /// </summary>
         [Test]
         [Category("IDevice")]
@@ -2113,7 +2116,97 @@ namespace Tsavorite.test
             const long segmentSize = 1L << 16;
             var path = Path.Join(TestUtils.MethodTestDir, "test.log");
             var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
-            var (rbuf, rptr) = AllocateAlignedBuffer(HardeningSectorSize, _ => 0);
+            var epoch = new LightEpoch();
+            try
+            {
+                // The tiers keep their files on Reset, as a log's device does; the test directory is deleted afterwards
+                var fast = new RandomAccessLocalStorageDevice($"{path}.fast", preallocateFile: false, deleteOnClose: false, capacity: 1L << 30);
+                var slow = new RandomAccessLocalStorageDevice($"{path}.slow", preallocateFile: false, deleteOnClose: false);
+                using var tiered = new TieredStorageDevice(1, fast, slow);
+                tiered.Initialize(segmentSize, epoch);
+
+                // Write segments 0 through 3 to both tiers, evict segments 0 and 1 from the faster tier, which keeps 2 and 3, and
+                // reset the device as a log reset does
+                for (var segment = 0; segment <= 3; segment++)
+                {
+                    tiered.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+                fast.TruncateUntilSegment(2);
+                tiered.Reset();
+                ClassicAssert.AreEqual(0, fast.StartSegment, "the reset should return the faster tier's start segment to 0");
+
+                // Removing above segment 0 removes segments 2 and 3 from the faster tier, and 1 to 3 from the slower one
+                ClassicAssert.IsTrue(tiered.TryRemoveSegmentsAbove(0, out var removed));
+                ClassicAssert.AreEqual(3, removed, "the slower tier removed three segments that held data");
+                foreach (var segment in new[] { 2, 3 })
+                    ClassicAssert.IsFalse(File.Exists($"{path}.fast.{segment}"), $"the faster tier should remove segment {segment}");
+                foreach (var segment in new[] { 1, 2, 3 })
+                    ClassicAssert.IsFalse(File.Exists($"{path}.slow.{segment}"), $"the slower tier should remove segment {segment}");
+
+                // The slower tier keeps segment 0's data
+                AssertSegmentFiles($"{path}.slow", i => (byte)(i * 3), 0);
+            }
+            finally
+            {
+                epoch.Dispose();
+            }
+            GC.KeepAlive(wbuf);
+        }
+
+        /// <summary>
+        /// Writing a segment that the fastest tier has evicted fails, rather than reaching only the slower tiers, which the fastest
+        /// tier would hide after a restart, and rather than wait for tiers it skipped. The write here is to segment 0, below the
+        /// fastest tier's remaining segment, with the commit point at the slower tier.
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void TieredDevice_WriteAsync_FailsForASegmentTheFastestTierEvicted()
+        {
+            const long segmentSize = 1L << 16;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var epoch = new LightEpoch();
+            try
+            {
+                var fast = new RandomAccessLocalStorageDevice($"{path}.fast", preallocateFile: false, deleteOnClose: true, capacity: 1L << 30);
+                var slow = new RandomAccessLocalStorageDevice($"{path}.slow", preallocateFile: false, deleteOnClose: true);
+                using var tiered = new TieredStorageDevice(1, fast, slow);
+                tiered.Initialize(segmentSize, epoch);
+
+                // Write segments 0 and 1 to both tiers, then evict segment 0 from the faster tier
+                for (var segment = 0; segment <= 1; segment++)
+                {
+                    tiered.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+                fast.TruncateUntilSegment(1);
+
+                // Writing segment 0 again completes with an error
+                using var completed = new ManualResetEventSlim(false);
+                uint writeError = 0;
+                tiered.WriteAsync(wptr, 0, 0, HardeningSectorSize, (errorCode, _, _, _) => { writeError = errorCode; completed.Set(); }, null);
+                ClassicAssert.IsTrue(completed.Wait(TimeSpan.FromSeconds(10)), "the write should complete rather than hang");
+                ClassicAssert.AreNotEqual(0u, writeError, "the write should fail");
+            }
+            finally
+            {
+                epoch.Dispose();
+            }
+            GC.KeepAlive(wbuf);
+        }
+
+        /// <summary>
+        /// A tiered device refuses to remove the segments above one that its fastest tier has evicted, before removing anything:
+        /// that would empty the fastest tier, which after a restart would then claim every segment and hide the slower tier's data
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void TieredDevice_TryRemoveSegmentsAbove_FailsWhenTheFastestTierEvictedTheSegment()
+        {
+            const long segmentSize = 1L << 16;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
             var epoch = new LightEpoch();
             try
             {
@@ -2130,24 +2223,16 @@ namespace Tsavorite.test
                 }
                 fast.TruncateUntilSegment(3);
 
-                // Removing above segment 0 removes segment 3 from the faster tier, and segments 1 to 3 from the slower one
-                ClassicAssert.IsTrue(tiered.TryRemoveSegmentsAbove(0, out var removed));
-                ClassicAssert.AreEqual(3, removed, "the slower tier removed three segments that held data");
-                ClassicAssert.IsFalse(File.Exists($"{path}.fast.3"), "the faster tier should remove segment 3");
-                foreach (var segment in new[] { 1, 2, 3 })
-                    ClassicAssert.IsFalse(File.Exists($"{path}.slow.{segment}"), $"the slower tier should remove segment {segment}");
-
-                // Segment 0 keeps its data in the slower tier, which serves reads of it
-                tiered.ReadAsync(0, 0, rptr, HardeningSectorSize, IOCallback, null);
-                semaphore.Wait();
-                AssertBufferContents(rptr, HardeningSectorSize, i => (byte)(i * 3), "segment 0");
+                // Removing above segment 0 fails, and both tiers keep their segments
+                _ = Assert.Throws<TsavoriteException>(() => tiered.TryRemoveSegmentsAbove(0, out _));
+                AssertSegmentFiles($"{path}.fast", i => (byte)(i * 3), 3);
+                AssertSegmentFiles($"{path}.slow", i => (byte)(i * 3), 0, 1, 2, 3);
             }
             finally
             {
                 epoch.Dispose();
             }
             GC.KeepAlive(wbuf);
-            GC.KeepAlive(rbuf);
         }
 
         /// <summary>
@@ -2358,6 +2443,60 @@ namespace Tsavorite.test
                 epoch.Dispose();
                 GC.KeepAlive(wbuf);
                 GC.KeepAlive(rbuf);
+            }
+        }
+
+        /// <summary>
+        /// An Azure device that fails to delete a blob above the segment named reports the failure, rather than the blob removed,
+        /// and still tracks the blob, so that a later attempt finds it. A lease that another client holds on the blob makes
+        /// deleting it fail. Runs only when Azure tests are enabled, against the emulator.
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void AzureDevice_TryRemoveSegmentsAbove_FailsIfABlobRemains()
+        {
+            TestUtils.IgnoreIfNotRunningAzureTests();
+            const long segmentSize = 1L << 16;
+            var epoch = new LightEpoch();
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var leasedBlob = new BlobContainerClient(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer)
+                .GetBlobClient($"{TestUtils.AzureTestDirectory}/test.log.2");
+            BlobLeaseClient lease = null;
+            try
+            {
+                // A device that deletes on close removes every blob it found when it started, including any left by an earlier run
+                using (new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "test.log", deleteOnClose: true))
+                {
+                }
+
+                using (var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "test.log"))
+                {
+                    device.Initialize(segmentSize, epoch);
+
+                    // Write segments 0, 1 and 2, then lease segment 2's blob through another client, so the device cannot delete it
+                    for (var segment = 0; segment <= 2; segment++)
+                    {
+                        device.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                        semaphore.Wait();
+                    }
+                    lease = leasedBlob.GetBlobLeaseClient();
+                    _ = lease.Acquire(TimeSpan.FromSeconds(60));
+
+                    // Removing above segment 0 fails at segment 2, the highest, which remains, and which the device still tracks
+                    _ = Assert.Throws<TsavoriteIOException>(() => device.TryRemoveSegmentsAbove(0, out _));
+                    ClassicAssert.IsTrue(leasedBlob.Exists().Value, "segment 2's blob should remain");
+                    ClassicAssert.AreNotEqual(0L, device.GetFileSize(2), "the device should still track segment 2's blob");
+                }
+            }
+            finally
+            {
+                // Release the lease, then delete the blobs
+                _ = lease?.Release();
+                using (new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "test.log", deleteOnClose: true))
+                {
+                }
+                epoch.Dispose();
+                GC.KeepAlive(wbuf);
             }
         }
 
