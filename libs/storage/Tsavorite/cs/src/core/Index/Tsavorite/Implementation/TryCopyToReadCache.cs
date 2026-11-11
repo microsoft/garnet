@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Runtime.CompilerServices;
+
 namespace Tsavorite.core
 {
 #pragma warning disable IDE0065 // Misplaced using directive
@@ -10,11 +12,25 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private OperationStatus ReadCacheCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper>(in LogRecord srcLogRecord,
+                TSessionFunctionsWrapper sessionFunctions, ref OperationState<TInput, TOutput, TContext> operationState,
+                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            // Only hits in the read-only, second-chance region need a fresh copy. The hash-entry CAS
+            // rejects a copy if an update or another promotion changed the chain after this lookup.
+            if (AbsoluteAddress(stackCtx.recSrc.LogicalAddress) < readcacheBase.SafeReadOnlyAddress
+                    && TryCopyToReadCache(in srcLogRecord, sessionFunctions, ref operationState, ref stackCtx))
+                return OperationStatus.SUCCESS | OperationStatus.COPIED_RECORD_TO_READ_CACHE;
+            return OperationStatus.SUCCESS;
+        }
+
         /// <summary>
-        /// Copy a record from the disk to the read cache.
+        /// Copy a record from disk, the immutable main log, or the read cache to the read-cache tail.
         /// </summary>
         /// <param name="operationState"></param>
-        /// <param name="inputLogRecord">Input log record that was IO'd from disk</param>
+        /// <param name="inputLogRecord">Source log record.</param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
         /// <param name="sessionFunctions"></param>
