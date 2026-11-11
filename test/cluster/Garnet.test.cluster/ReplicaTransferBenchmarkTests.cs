@@ -394,16 +394,21 @@ namespace Garnet.test.cluster
 #endif
             var server = Path.Combine(root.FullName, "main", "GarnetServer", "bin", configuration, "net10.0", "GarnetServer.dll");
             var port = ClusterTestContext.Port;
+
+            // These small smoke runs need real Uring I/O, not the benchmark's large per-device ring allocation.
+            string[] deviceArguments = OperatingSystem.IsLinux()
+                ? ["--device-completion-threads", "2", "--device-io-contexts", "2", "--device-queue-depth", "64"]
+                : [];
             var receive = FullOptions.Parse(["receive", "--server", server, "--output", TestUtils.MethodTestDir,
                 "--port", port.ToString(), "--server-port", (port + 1).ToString(), "--write-buffers", "2",
                 "--write-buffers-concurrently", concurrently.ToString(), "--phase-timing", phaseTiming.ToString(), "--timeout-seconds", "60",
-                "--device-throttle-limit", "512"]);
+                "--device-throttle-limit", "512", .. deviceArguments]);
             var csv = Path.Combine(TestUtils.MethodTestDir, "full.csv");
             string[] transfer = serverDefaults ? ["--server-transfer-defaults", "true"] : ["--chunks", "128k", "--depths", "2"];
             var send = FullOptions.Parse(["send", "--server", server, "--output", TestUtils.MethodTestDir,
                 "--port", port.ToString(), "--server-port", (port + 2).ToString(), "--data-size", "4m",
                 "--phase-timing", phaseTiming.ToString(), "--timeout-seconds", "60", "--csv", csv,
-                "--device-throttle-limit", "512", .. transfer]);
+                "--device-throttle-limit", "512", .. deviceArguments, .. transfer]);
             Assert.That(send.ServerTransferDefaults, Is.EqualTo(serverDefaults));
             if (serverDefaults)
                 foreach (var name in new[] { "--chunks", "--depths" })
@@ -431,6 +436,12 @@ namespace Garnet.test.cluster
                     var arguments = await File.ReadAllTextAsync(launch);
                     Assert.That(arguments, Does.Contain("\"--device-throttle-limit\",\"512\""));
                     Assert.That(arguments, Does.Contain($"\"--repl-enable-benchmark-timing\",\"{(phaseTiming ? "true" : "false")}\""));
+                    if (OperatingSystem.IsLinux())
+                    {
+                        Assert.That(arguments, Does.Contain("\"--device-completion-threads\",\"2\""));
+                        Assert.That(arguments, Does.Contain("\"--device-io-contexts\",\"2\""));
+                        Assert.That(arguments, Does.Contain("\"--device-queue-depth\",\"64\""));
+                    }
                 }
                 var fingerprints = Regex.Matches(result, "\"([0-9A-F]{64})\"");
                 Assert.That(fingerprints, Has.Count.EqualTo(2));
