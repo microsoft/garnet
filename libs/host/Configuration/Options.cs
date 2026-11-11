@@ -172,6 +172,10 @@ namespace Garnet
         [Option("parallel-migrate-task-count", Required = false, HelpText = "Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used.")]
         public int ParallelMigrateTaskCount { get; set; }
 
+        [IntRangeValidation(1024, 262143)]
+        [Option("migrate-key-send-batch-size", Required = false, HelpText = "Maximum keys collected per slot migration batch (1024-262143). Network buffers may split a batch into smaller sends.")]
+        public int MigrateKeySendBatchSize { get; set; }
+
         [OptionValidation]
         [Option("use-scan-ahead-migration", Required = false, HelpText = "Gather the next slot-migration key batch while the active batch is shipped (default: false). When false, scan only after shipping and deletion complete.")]
         public bool? UseScanAheadMigration { get; set; }
@@ -986,6 +990,7 @@ namespace Garnet
                 EnableCluster = EnableCluster.GetValueOrDefault(),
                 CleanClusterConfig = CleanClusterConfig.GetValueOrDefault(),
                 ParallelMigrateTaskCount = ParallelMigrateTaskCount,
+                MigrateKeySendBatchSize = MigrateKeySendBatchSize,
                 UseScanAheadMigration = UseScanAheadMigration.GetValueOrDefault(),
                 MigrationSendBufferSize = MigrationSendBufferSize,
                 MigrationPipelineDepth = MigrationPipelineDepth,

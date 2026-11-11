@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Numerics;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -31,7 +32,8 @@ namespace Garnet.cluster
             readonly MigrateSession session;
             readonly GarnetClientSession gcs;
             readonly LocalServerSession localServerSession;
-            readonly int batchSize;
+            readonly int sketchBitCount;
+            readonly int collectionBatchCapacity;
             readonly int deleteBatchSize;
             readonly Task<string>[] pendingResponses;
             int responseHead;
@@ -67,15 +69,18 @@ namespace Garnet.cluster
 
             public void AddRangeIndexKey(byte[] key) => rangeIndexKeysToMigrate.TryAdd(key, 0);
 
-            public MigrateOperation(MigrateSession session, Sketch sketch = null, int batchSize = 1 << 18)
+            public MigrateOperation(MigrateSession session, Sketch sketch = null)
             {
                 this.session = session;
-                this.batchSize = batchSize;
+                var keySendBatchSize = session.clusterProvider.serverOptions.MigrateKeySendBatchSize;
+                sketchBitCount = (int)BitOperations.RoundUpToPowerOf2((uint)(keySendBatchSize << 2));
+                // ArgSliceVector reserves one slot beyond the usable key limit.
+                collectionBatchCapacity = keySendBatchSize + 1;
                 deleteBatchSize = session.clusterProvider.serverOptions.MigrationDeleteBatchSize;
                 pendingResponses = new Task<string>[session.clusterProvider.serverOptions.MigrationPipelineDepth];
                 gcs = session.GetGarnetClient();
                 localServerSession = session.GetLocalSession();
-                activeSketch = sketch ?? new(keyCount: batchSize << 2, maxBatchSize: batchSize);
+                activeSketch = sketch ?? new(keyCount: sketchBitCount, maxBatchSize: collectionBatchCapacity);
                 storeScan = new StoreScan(this);
                 keysToDelete = [];
                 vectorSetsIndexKeysToMigrate = new(ByteArrayComparer.Instance);

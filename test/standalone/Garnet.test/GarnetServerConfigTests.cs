@@ -335,6 +335,41 @@ namespace Garnet.test
             Assert.Throws<GarnetException>(() => serverOptions.GetMigrationSendBufferSize());
         }
 
+        [TestCase(null)]
+        [TestCase(1024)]
+        [TestCase(4096)]
+        [TestCase(262143)]
+        public void MigrateKeySendBatchSizeOptions(int? batchSize)
+        {
+            string[] args = batchSize.HasValue ? ["--migrate-key-send-batch-size", batchSize.Value.ToString()] : [];
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.GetServerOptions().MigrateKeySendBatchSize, Is.EqualTo(batchSize.GetValueOrDefault(262143)));
+        }
+
+        [TestCase(1024)]
+        [TestCase(4096)]
+        public void MigrateKeySendBatchSizeConfiguration(int batchSize)
+        {
+            var json = JsonSerializer.Serialize(new { MigrateKeySendBatchSize = batchSize });
+            Assert.That(TryParseGarnetConfOptions(json, out var options, out _, out _), Is.True);
+            Assert.That(options.GetServerOptions().MigrateKeySendBatchSize, Is.EqualTo(batchSize));
+        }
+
+        [TestCase(0)]
+        [TestCase(-1)]
+        [TestCase(1)]
+        [TestCase(1023)]
+        [TestCase(262144)]
+        public void MigrateKeySendBatchSizeRejectsInvalidSize(int batchSize)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(["--migrate-key-send-batch-size", batchSize.ToString()],
+                out _, out _, out _, out _, silentMode: true), Is.False);
+            var json = JsonSerializer.Serialize(new { MigrateKeySendBatchSize = batchSize });
+            Assert.That(TryParseGarnetConfOptions(json, out _, out _, out _), Is.False);
+            var options = new GarnetServerOptions { MigrateKeySendBatchSize = batchSize };
+            Assert.Throws<ArgumentOutOfRangeException>(() => new GarnetServer(options));
+        }
+
         [Test]
         public void MigrationPipelineOptions()
         {

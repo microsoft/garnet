@@ -21,6 +21,9 @@ namespace Garnet.test.cluster
     [TestFixture, NonParallelizable]
     internal class MigrationScanAheadTests : TestBase
     {
+        const int KeySendBatchSize = 1024;
+        const int KeyCount = KeySendBatchSize + 7;
+
         ClusterTestContext context;
         ClusterProvider provider;
         MigrateSession session;
@@ -71,7 +74,7 @@ namespace Garnet.test.cluster
 
         static string Key(int index) => $"{{scan-ahead}}{index:D2}";
 
-        async Task CreateOperationAsync(int depth, bool copy = false, int keyCount = 14, bool prepare = true, bool useScanAheadMigration = true, int batchSize = 8, int deleteBatchSize = 256)
+        async Task CreateOperationAsync(int depth, bool copy = false, int keyCount = KeyCount, bool prepare = true, bool useScanAheadMigration = true, int keySendBatchSize = KeySendBatchSize, int deleteBatchSize = 256)
         {
             context.CreateInstances(2, lowMemory: true, memorySize: "32m", pageSize: "16k",
                 migrationSendBufferSize: "16k", migrationPipelineDepth: depth);
@@ -81,6 +84,7 @@ namespace Garnet.test.cluster
                 options.ParallelMigrateTaskCount = 1;
                 options.UseScanAheadMigration = useScanAheadMigration;
                 options.MigrationDeleteBatchSize = deleteBatchSize;
+                options.MigrateKeySendBatchSize = keySendBatchSize;
             }
             Assert.That(context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], addslot: true), Is.EqualTo("OK"));
             context.clusterTestUtils.SetConfigEpoch(0, 1);
@@ -110,7 +114,7 @@ namespace Garnet.test.cluster
                 null, null, sourceId, copy, false, 10000, [slot], null, TransferOption.SLOTS);
             Assert.That(await session.TrySetSlotRangesAsync(sourceId, MigrateState.IMPORT), Is.True);
             Assert.That(session.TryPrepareLocalForMigration(), Is.True);
-            operation = new MigrateSession.MigrateOperation(session, batchSize: batchSize);
+            operation = new MigrateSession.MigrateOperation(session);
             Assert.That(await operation.InitializeAsync(), Is.True);
         }
 
@@ -144,9 +148,9 @@ namespace Garnet.test.cluster
         {
             await CreateOperationAsync(depth, copy, useScanAheadMigration: useScanAheadMigration);
             Assert.That(await StartMigration().WaitAsync(TimeSpan.FromSeconds(20)), Is.True);
-            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo(copy ? "14" : "0"));
-            Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo("14"));
-            for (var i = 0; i < 14; i++)
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo(copy ? KeyCount.ToString() : "0"));
+            Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo(KeyCount.ToString()));
+            for (var i = 0; i < KeyCount; i++)
                 Assert.That(await TargetAsync("GET", Key(i)), Is.EqualTo($"value-{i}"));
         }
 
@@ -154,7 +158,7 @@ namespace Garnet.test.cluster
         public async Task TransfersMixedInlineAndChunkedRecords([Values(1, 3)] int depth, [Values] bool useScanAheadMigration, [Values] bool evict)
         {
             const int count = 48;
-            await CreateOperationAsync(depth, keyCount: count, batchSize: 64, useScanAheadMigration: useScanAheadMigration);
+            await CreateOperationAsync(depth, keyCount: count, useScanAheadMigration: useScanAheadMigration);
             var expected = new string[count];
             for (var i = 0; i < count; i++)
             {
@@ -183,7 +187,7 @@ namespace Garnet.test.cluster
         [TestCase(513, false, int.MaxValue)]
         public async Task TransfersAcrossDeletionBatchBoundaries(int keyCount, bool copy, int deleteBatchSize)
         {
-            await CreateOperationAsync(3, copy, keyCount: keyCount, batchSize: 1024, deleteBatchSize: deleteBatchSize);
+            await CreateOperationAsync(3, copy, keyCount: keyCount, deleteBatchSize: deleteBatchSize);
             Assert.That(await StartMigration().WaitAsync(TimeSpan.FromSeconds(20)), Is.True);
             Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo(copy ? keyCount.ToString() : "0"));
             Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo(keyCount.ToString()));
@@ -196,7 +200,7 @@ namespace Garnet.test.cluster
         public async Task DeleteSlotsSkipsNamespacedAndDeferredKeysAcrossBatches(int deleteBatchSize)
         {
             const int keyCount = 260;
-            await CreateOperationAsync(3, keyCount: keyCount, batchSize: 512, deleteBatchSize: deleteBatchSize);
+            await CreateOperationAsync(3, keyCount: keyCount, deleteBatchSize: deleteBatchSize);
             var vectorKey = Encoding.ASCII.GetBytes(Key(127));
             var rangeKey = Encoding.ASCII.GetBytes(Key(258));
             operation.EncounteredVectorSet(vectorKey, [], null);
@@ -228,6 +232,35 @@ namespace Garnet.test.cluster
         }
 
 #if DEBUG
+        [TestCase(1024, false)]
+        [TestCase(1024, true)]
+        [TestCase(1025, false)]
+        [TestCase(1025, true)]
+        [TestCase(4096, false)]
+        [TestCase(4096, true)]
+        [CancelAfter(30000)]
+        public async Task ConfiguredCollectionLimitAppliesToBothSketches(int collectionBatchSize, bool useScanAheadMigration, CancellationToken cancellationToken)
+        {
+            var keyCount = collectionBatchSize + 7;
+            await CreateOperationAsync(3, keyCount: keyCount,
+                useScanAheadMigration: useScanAheadMigration, keySendBatchSize: collectionBatchSize);
+            for (var i = 0; i < collectionBatchSize; i++)
+                Assert.That(operation.sketch.TryHashAndStore(Encoding.ASCII.GetBytes(Key(i))), Is.True);
+            Assert.That(operation.sketch.TryHashAndStore(Encoding.ASCII.GetBytes(Key(collectionBatchSize))), Is.False);
+            operation.sketch.Clear();
+
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Before_Batch_Response);
+            _ = StartMigration();
+            await WaitForPauseAsync(ExceptionInjectionType.Migration_Before_Batch_Response, cancellationToken);
+            Assert.That(operation.sketch.argSliceVector.Count, Is.EqualTo(collectionBatchSize));
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Before_Batch_Response);
+            Assert.That(await migration.WaitAsync(cancellationToken), Is.True);
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("0"));
+            Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo(keyCount.ToString()));
+            for (var i = 0; i < keyCount; i++)
+                Assert.That(await TargetAsync("GET", Key(i)), Is.EqualTo($"value-{i}"));
+        }
+
         [TestCase(1)]
         [TestCase(3)]
         [CancelAfter(30000)]
@@ -241,16 +274,16 @@ namespace Garnet.test.cluster
 
             Assert.That(ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead), Is.True);
             Assert.That(migration.IsCompleted, Is.False);
-            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("14"));
-            RecreateKey(7, "updated-before-scan");
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo(KeyCount.ToString()));
+            RecreateKey(KeySendBatchSize, "updated-before-scan");
 
             ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Before_Batch_Response);
             Assert.That(await migration.WaitAsync(cancellationToken), Is.True);
             Assert.That(ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead), Is.True,
                 "Disabled scan-ahead must not launch a background scan");
             Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("0"));
-            Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo("14"));
-            Assert.That(await TargetAsync("GET", Key(7)), Is.EqualTo("updated-before-scan"));
+            Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo(KeyCount.ToString()));
+            Assert.That(await TargetAsync("GET", Key(KeySendBatchSize)), Is.EqualTo("updated-before-scan"));
         }
 
         [Test]
@@ -267,7 +300,7 @@ namespace Garnet.test.cluster
                 operation.Dispose();
             Assert.That(await migration.WaitAsync(cancellationToken), Is.False);
             Assert.That(session.Status, Is.EqualTo(MigrateState.FAIL));
-            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("14"));
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo(KeyCount.ToString()));
         }
 
         static async Task WaitForPauseAsync(ExceptionInjectionType injection, CancellationToken token)
@@ -286,10 +319,9 @@ namespace Garnet.test.cluster
                 WaitForPauseAsync(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead, token),
                 WaitForPauseAsync(ExceptionInjectionType.Migration_Before_Batch_Response, token));
             Assert.That(migration.IsCompleted, Is.False);
-            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("14"), "Unacknowledged keys must not be deleted");
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo(KeyCount.ToString()), "Unacknowledged keys must not be deleted");
             Assert.That(operation.sketch.Status, Is.EqualTo(SketchStatus.TRANSMITTING));
-            var activeKeys = operation.sketch.argSliceVector.Select(item => Encoding.ASCII.GetString(item.KeyBytes.ReadOnlySpan)).ToArray();
-            Assert.That(activeKeys, Is.EqualTo(Enumerable.Range(0, 7).Select(Key)));
+            Assert.That(operation.sketch.argSliceVector.Count, Is.EqualTo(KeySendBatchSize));
         }
 
         unsafe void RecreateKey(int index, string value, bool hash = false)
@@ -331,7 +363,7 @@ namespace Garnet.test.cluster
         {
             const int batchSize = (1 << 18) - 1;
             const int keyCount = batchSize + 7;
-            await CreateOperationAsync(3, keyCount: keyCount, prepare: false);
+            await CreateOperationAsync(3, keyCount: keyCount, prepare: false, keySendBatchSize: batchSize);
             ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead);
             ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Before_Batch_Response);
             var slot = HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(Key(0)));
@@ -362,34 +394,34 @@ namespace Garnet.test.cluster
         {
             await PauseOverlappingStagesAsync(depth, cancellationToken);
             var grownValue = new string('x', 128 * 1024);
-            RecreateKey(7, grownValue);
-            Assert.That(await source.ExecuteAsync("DEL", Key(8)), Is.EqualTo("1"));
-            Assert.That(await source.ExecuteAsync("DEL", Key(9)), Is.EqualTo("1"));
-            RecreateKey(9, "recreated");
-            Assert.That(await source.ExecuteAsync("DEL", Key(10)), Is.EqualTo("1"));
-            RecreateKey(10, "hash-value", hash: true);
-            Assert.That(await source.ExecuteAsync("PEXPIRE", Key(11), "1"), Is.EqualTo("1"));
-            Assert.That(() => KeyExists(11), Is.False.After(5000).PollEvery(10));
-            Assert.That(await source.ExecuteAsync("PEXPIRE", Key(12), "300000"), Is.EqualTo("1"));
-            Assert.That(await source.ExecuteAsync("PERSIST", Key(12)), Is.EqualTo("1"));
-            Assert.That(await source.ExecuteAsync("SET", Key(13), "updated"), Is.EqualTo("OK"));
+            RecreateKey(KeySendBatchSize, grownValue);
+            Assert.That(await source.ExecuteAsync("DEL", Key(KeySendBatchSize + 1)), Is.EqualTo("1"));
+            Assert.That(await source.ExecuteAsync("DEL", Key(KeySendBatchSize + 2)), Is.EqualTo("1"));
+            RecreateKey(KeySendBatchSize + 2, "recreated");
+            Assert.That(await source.ExecuteAsync("DEL", Key(KeySendBatchSize + 3)), Is.EqualTo("1"));
+            RecreateKey(KeySendBatchSize + 3, "hash-value", hash: true);
+            Assert.That(await source.ExecuteAsync("PEXPIRE", Key(KeySendBatchSize + 4), "1"), Is.EqualTo("1"));
+            Assert.That(() => KeyExists(KeySendBatchSize + 4), Is.False.After(5000).PollEvery(10));
+            Assert.That(await source.ExecuteAsync("PEXPIRE", Key(KeySendBatchSize + 5), "300000"), Is.EqualTo("1"));
+            Assert.That(await source.ExecuteAsync("PERSIST", Key(KeySendBatchSize + 5)), Is.EqualTo("1"));
+            Assert.That(await source.ExecuteAsync("SET", Key(KeySendBatchSize + 6), "updated"), Is.EqualTo("OK"));
 
             ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead);
             ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Before_Batch_Response);
             Assert.That(await migration.WaitAsync(cancellationToken), Is.True);
 
             Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("0"));
-            Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo("12"));
-            for (var i = 0; i < 7; i++)
+            Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo((KeyCount - 2).ToString()));
+            for (var i = 0; i < KeySendBatchSize; i++)
                 Assert.That(await TargetAsync("GET", Key(i)), Is.EqualTo($"value-{i}"));
-            Assert.That(await TargetAsync("GET", Key(7)), Is.EqualTo(grownValue));
-            Assert.That(await TargetAsync("GET", Key(8)), Is.Null);
-            Assert.That(await TargetAsync("GET", Key(9)), Is.EqualTo("recreated"));
-            Assert.That(await TargetAsync("HGET", Key(10), "field"), Is.EqualTo("hash-value"));
-            Assert.That(await TargetAsync("GET", Key(11)), Is.Null);
-            Assert.That(await TargetAsync("GET", Key(12)), Is.EqualTo("value-12"));
-            Assert.That(await TargetAsync("PTTL", Key(12)), Is.EqualTo("-1"));
-            Assert.That(await TargetAsync("GET", Key(13)), Is.EqualTo("updated"));
+            Assert.That(await TargetAsync("GET", Key(KeySendBatchSize)), Is.EqualTo(grownValue));
+            Assert.That(await TargetAsync("GET", Key(KeySendBatchSize + 1)), Is.Null);
+            Assert.That(await TargetAsync("GET", Key(KeySendBatchSize + 2)), Is.EqualTo("recreated"));
+            Assert.That(await TargetAsync("HGET", Key(KeySendBatchSize + 3), "field"), Is.EqualTo("hash-value"));
+            Assert.That(await TargetAsync("GET", Key(KeySendBatchSize + 4)), Is.Null);
+            Assert.That(await TargetAsync("GET", Key(KeySendBatchSize + 5)), Is.EqualTo($"value-{KeySendBatchSize + 5}"));
+            Assert.That(await TargetAsync("PTTL", Key(KeySendBatchSize + 5)), Is.EqualTo("-1"));
+            Assert.That(await TargetAsync("GET", Key(KeySendBatchSize + 6)), Is.EqualTo("updated"));
         }
 
         [TestCase(false)]
@@ -404,7 +436,7 @@ namespace Garnet.test.cluster
                 operation.Dispose();
             Assert.That(await migration.WaitAsync(cancellationToken), Is.False);
             Assert.That(session.Status, Is.EqualTo(MigrateState.FAIL));
-            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("14"));
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo(KeyCount.ToString()));
         }
 #endif
     }

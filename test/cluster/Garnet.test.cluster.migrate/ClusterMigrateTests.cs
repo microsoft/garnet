@@ -500,16 +500,20 @@ namespace Garnet.test.cluster
         public async Task ClusterMigrateSlotsAcrossScanBoundaries(int workers, int keyCount, int valueLength, CancellationToken cancellationToken)
             => await VerifySlotMigrationAsync(workers, keyCount, valueLength, 1, "32m", cancellationToken);
 
-        [TestCase(1, (1 << 18) + 2, "1m")]
-        [TestCase(8, 4099, "4k")]
-        [TestCase(64, 4099, "4k")]
+        [TestCase(1, (1 << 18) + 2, "1m", 262143)]
+        [TestCase(1, 8195, "1m", 4096)]
+        [TestCase(8, 4099, "4k", 1024)]
+        [TestCase(64, 4099, "4k", 1024)]
         [CancelAfter(testTimeout)]
         [Category("CLUSTER")]
-        public async Task ClusterMigrateSlotsPreservesKeysAcrossRepeatedScans(int parallelTasks, int keyCount, string pageSize, CancellationToken cancellationToken)
+        public async Task ClusterMigrateSlotsPreservesKeysAcrossRepeatedScans(int parallelTasks, int keyCount, string pageSize, int batchSize, CancellationToken cancellationToken)
         {
             context.CreateInstances(2, useTLS: UseTLS, pageSize: pageSize, lowMemory: true, memorySize: "256m");
             foreach (var options in context.nodeOptions)
+            {
                 options.ParallelMigrateTaskCount = parallelTasks;
+                options.MigrateKeySendBatchSize = batchSize;
+            }
             context.CreateConnection(useTLS: UseTLS);
             ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], addslot: true, logger: context.logger));
             context.clusterTestUtils.SetConfigEpoch(0, 1, logger: context.logger);

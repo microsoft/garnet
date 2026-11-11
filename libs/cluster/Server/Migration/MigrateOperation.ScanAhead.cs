@@ -30,7 +30,7 @@ namespace Garnet.cluster
                     ? CancellationTokenSource.CreateLinkedTokenSource(session.cancellationToken)
                     : null;
                 var token = scanCancellation?.Token ?? session.cancellationToken;
-                var pending = new Sketch(keyCount: batchSize << 2, maxBatchSize: batchSize);
+                var pending = new Sketch(keyCount: sketchBitCount, maxBatchSize: collectionBatchCapacity);
                 Task<long> scanTask = null;
 
                 try

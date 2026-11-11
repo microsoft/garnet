@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.cluster;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -43,14 +44,15 @@ namespace Garnet.test.cluster
             context.TearDown();
         }
 
-        void CreateOperation(int depth, bool copy = false, int batchSize = 4, int deleteBatchSize = 256)
+        void CreateOperation(int depth, bool copy = false, int keySendBatchSize = 1024, int deleteBatchSize = 256)
         {
             provider.serverOptions.MigrationPipelineDepth = depth;
             provider.serverOptions.MigrationDeleteBatchSize = deleteBatchSize;
+            provider.serverOptions.MigrateKeySendBatchSize = keySendBatchSize;
             var nodeId = provider.clusterManager.CurrentConfig.LocalNodeId;
             session = new MigrateSession(null, provider, "127.0.0.1", ClusterTestContext.Port,
                 nodeId, null, null, nodeId, copy, false, 10000, [0], null, TransferOption.KEYS);
-            operation = new MigrateSession.MigrateOperation(session, batchSize: batchSize);
+            operation = new MigrateSession.MigrateOperation(session);
         }
 
         MigrateSession.MigrateOperation[] CreateSlotOperations()
@@ -63,7 +65,8 @@ namespace Garnet.test.cluster
             for (var i = 0; i < operations.Length; i++)
             {
                 operations[i].Dispose();
-                operations[i] = new MigrateSession.MigrateOperation(session, batchSize: 1 << (4 + (i * 4)));
+                provider.serverOptions.MigrateKeySendBatchSize = 1 << (10 + (i * 4));
+                operations[i] = new MigrateSession.MigrateOperation(session);
             }
             return operations;
         }
@@ -220,6 +223,23 @@ namespace Garnet.test.cluster
                 stop.Cancel();
                 await Task.WhenAll(readers).WaitAsync(TimeSpan.FromSeconds(10));
             }
+        }
+
+        [TestCase(1024, 4096)]
+        [TestCase(1025, 8192)]
+        [TestCase(4096, 16384)]
+        [TestCase(262143, 1048576)]
+        public void ConfiguredBatchSizeControlsBloomFilter(int keySendBatchSize, int bitmapBitCount)
+        {
+            CreateOperation(1, keySendBatchSize: keySendBatchSize);
+            ReadOnlySpan<byte> key = "migration-filter-key"u8;
+            Assert.That(operation.sketch.TryHashAndStore(key), Is.True);
+            var hash = HashUtils.MurmurHash2x64A(key);
+            Assert.That(operation.sketch.Probe(hash, out _), Is.True);
+            Assert.That(operation.sketch.Probe(hash ^ (uint)bitmapBitCount, out _), Is.True);
+            Assert.That(operation.sketch.Probe(hash ^ (uint)(bitmapBitCount >> 1), out _), Is.False);
+            operation.sketch.Clear();
+            Assert.That(operation.sketch.Probe(hash, out _), Is.False);
         }
 
         [TestCase(SketchStatus.INITIALIZING, SketchStatus.DELETING, true, false)]
@@ -453,7 +473,7 @@ namespace Garnet.test.cluster
         [TestCase(false, 300)]
         public void DeleteKeysOnlyRemovesTransmittedEntriesAcrossBatches(bool copy, int deleteBatchSize)
         {
-            CreateOperation(3, copy, batchSize: 1024, deleteBatchSize: deleteBatchSize);
+            CreateOperation(3, copy, deleteBatchSize: deleteBatchSize);
             for (var i = 0; i < 513; i++)
                 Assert.That(operation.sketch.TryHashAndStore(Encoding.ASCII.GetBytes($"delete-key-{i}")), Is.True);
 

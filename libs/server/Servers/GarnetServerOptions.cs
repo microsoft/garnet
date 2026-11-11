@@ -67,6 +67,11 @@ namespace Garnet.server
         public int ParallelMigrateTaskCount = 1;
 
         /// <summary>
+        /// Maximum keys collected per slot migration batch (1024-262143). Network buffers may split a batch into smaller sends.
+        /// </summary>
+        public int MigrateKeySendBatchSize = (1 << 18) - 1;
+
+        /// <summary>
         /// Gather the next slot-migration key batch while the active batch is shipped.
         /// </summary>
         public bool UseScanAheadMigration = false;
@@ -99,6 +104,8 @@ namespace Garnet.server
         /// </summary>
         public void ValidateMigrationOptions()
         {
+            ArgumentOutOfRangeException.ThrowIfLessThan(MigrateKeySendBatchSize, 1024);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(MigrateKeySendBatchSize, (1 << 18) - 1);
             ArgumentOutOfRangeException.ThrowIfLessThan(MigrationPipelineDepth, 1);
             ArgumentOutOfRangeException.ThrowIfGreaterThan(MigrationPipelineDepth, 64);
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(MigrationDeleteBatchSize);
