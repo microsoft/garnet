@@ -676,6 +676,24 @@ namespace Garnet.server
     /// </summary>
     public struct VectorInput : IStoreInput
     {
+        public enum CopyOnWriteOperation : byte
+        {
+            /// <summary>
+            /// Do nothing, we're not in a COW state.
+            /// </summary>
+            None,
+
+            /// <summary>
+            /// Do not create new records as part of an RMW.
+            /// </summary>
+            DisallowCreate,
+
+            /// <summary>
+            /// Do not allow overwriteing records as part of an RMW.
+            /// </summary>
+            DisallowOverwrite,
+        }
+
         public int SerializedLength => throw new NotImplementedException();
 
         public int ReadDesiredSize { get; set; }
@@ -691,7 +709,7 @@ namespace Garnet.server
 
         public int? MaxMigrationHeapAllocationSize { get; set; }
 
-        public bool MaybeCopyOnWrite { get; set; }
+        public CopyOnWriteOperation CopyOnWrite { get; set; }
 
         public VectorInput()
         {

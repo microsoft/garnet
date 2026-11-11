@@ -808,7 +808,7 @@ namespace Garnet.server
             input.WriteDesiredSize = (int)writeLength;
 
             // If we're modifying a shallow copy, the RMW should _fail_ to create a new record until we consult the (already immutable) chain of contexts
-            input.MaybeCopyOnWrite = !ActiveThreadShallowCopyBackReferences.IsEmpty;
+            input.CopyOnWrite = !ActiveThreadShallowCopyBackReferences.IsEmpty ? VectorInput.CopyOnWriteOperation.DisallowCreate : default;
 
         retryInitialRMW:
             var status = ctx.RMW(keyWithNamespace, ref input);
@@ -820,7 +820,7 @@ namespace Garnet.server
             }
 
             // If we cancelled the RMW because of being a shallow copy, look through older contexts for the record (if any) to copy
-            if (input.MaybeCopyOnWrite && status.IsCanceled)
+            if (!ActiveThreadShallowCopyBackReferences.IsEmpty && status.IsCanceled)
             {
                 Span<byte> copyDataSpan = stackalloc byte[MaxCopyOnStackBytes];
                 var remainingContexts = ActiveThreadShallowCopyBackReferences.Span;
@@ -847,11 +847,11 @@ namespace Garnet.server
                         // since we might be racing other redirected RMWs or Upserts
 
                         VectorInput copyWriteInput = default;
-                        copyWriteInput.MaybeCopyOnWrite = true;
+                        copyWriteInput.CopyOnWrite = VectorInput.CopyOnWriteOperation.DisallowOverwrite;
 
                         VectorOutput ignored = default;
 
-                        var copyWriteRes = ctx.Upsert(keyWithNamespace, ref copyWriteInput, copyOutput.SpanByteAndMemory.ReadOnlySpan, ref ignored);
+                        var copyWriteRes = ctx.RMW(keyWithNamespace, ref copyWriteInput, ref copyOutput);
                         if (copyWriteRes.IsPending)
                         {
                             CompletePending(ref copyWriteRes, ref ignored, ref ctx);
@@ -862,7 +862,7 @@ namespace Garnet.server
                         if (copyWriteRes.IsCompletedSuccessfully || copyWriteRes.IsCanceled)
                         {
                             // If we did the copy OR conflicted with another update, retry but with no COW chaining
-                            input.MaybeCopyOnWrite = false;
+                            input.CopyOnWrite = default;
                             goto retryInitialRMW;
                         }
 
@@ -876,7 +876,7 @@ namespace Garnet.server
                 }
 
                 // Found nothing to copy, redo the RMW with no COW chaining
-                input.MaybeCopyOnWrite = false;
+                input.CopyOnWrite = default;
                 goto retryInitialRMW;
             }
 
