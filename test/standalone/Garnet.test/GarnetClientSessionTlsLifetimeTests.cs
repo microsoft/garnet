@@ -122,7 +122,10 @@ namespace Garnet.test
             using var peer = await accept;
             await peer.GetStream().WriteAsync(Encoding.ASCII.GetBytes("not a TLS record\r\n"), timeout.Token);
             Assert.ThrowsAsync<AuthenticationException>(async () => await connect.WaitAsync(timeout.Token));
-            Assert.That(pool.LiveBytes, Is.Zero, "A failed connect must release ownership without requiring caller Dispose");
+
+            // Failed connect releases the client lease, but receive-callback disposal can still be in progress.
+            Assert.That(() => pool.LiveBytes, Is.Zero.After((int)Deadline.TotalMilliseconds).PollEvery(10),
+                "A failed connect must reclaim every buffer without requiring caller Dispose");
             client.Dispose();
             Assert.That(pool.LiveBytes, Is.Zero);
         }

@@ -56,6 +56,9 @@ jobs:
         framework: [ 'net10.0' ]
         configuration: [ 'Debug', 'Release' ]
     steps:
+      - name: Install io_uring runtime
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y liburing2
       - name: Check out code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup .NET
