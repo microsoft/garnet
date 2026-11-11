@@ -3,9 +3,11 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.cluster;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -248,16 +250,13 @@ namespace Garnet.test.cluster
             }
         }
 
-        [TestCase(0, 0)]
-        [TestCase(0, 512)]
-        [TestCase(100, 0)]
         [TestCase(100, 100)]
         [TestCase(100, 512)]
-        [TestCase(512, 0)]
         [TestCase(512, 512)]
-        public async Task ReadsPreserveDataAndZeroPaddingWithOptionalByteCounts(int available, int reportedBytes)
+        public async Task ReadsPreserveRequiredDataAndOnlyPadBeyondLogicalEnd(
+            int required, int available)
         {
-            using var device = new ShortReadDevice(available, fill: 1, reportedBytes);
+            using var device = new ShortReadDevice(available, fill: 1, reportedBytes: available);
             var pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
             using var signal = new SemaphoreSlim(0);
             try
@@ -268,14 +267,15 @@ namespace Garnet.test.cluster
                 dirty.Return();
 
                 using var source = new FileDataSource(CheckpointFileType.STORE_HLOG, Guid.NewGuid(), device,
-                    0, 512, 512, TimeSpan.FromSeconds(5), pool, signal);
+                    0, required, 512, TimeSpan.FromSeconds(5), pool, signal);
                 var result = await source.ReadNextChunkAsync();
                 try
                 {
                     Assert.That(result.BytesRead, Is.EqualTo(512));
                     var data = result.Buffer.GetSlice(512).ToArray();
                     Assert.That(data[..available], Is.All.EqualTo((byte)1));
-                    Assert.That(data[available..], Is.All.EqualTo((byte)0), "The unread tail of a short read is sent as zeros");
+                    Assert.That(data[available..], Is.All.EqualTo((byte)0), "Only bytes beyond required checkpoint data may be zero padding");
+                    Assert.That(source.HasNextChunk, Is.False);
                 }
                 finally
                 {
@@ -285,6 +285,103 @@ namespace Garnet.test.cluster
             finally
             {
                 pool.Free();
+            }
+        }
+
+        [TestCase(512, 0, 0)]
+        [TestCase(512, 100, 100)]
+        [TestCase(100, 0, 0)]
+        [TestCase(512, 512, 0)]
+        public void ReadsMissingRequiredCheckpointDataFailWithoutAdvancing(int required, int available, int reportedBytes)
+        {
+            using var device = new ShortReadDevice(available, fill: 1, reportedBytes);
+            var pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+            using var signal = new SemaphoreSlim(0);
+            try
+            {
+                using var source = new FileDataSource(CheckpointFileType.STORE_HLOG, Guid.NewGuid(), device,
+                    0, required, 512, TimeSpan.FromSeconds(5), pool, signal);
+                var error = Assert.ThrowsAsync<GarnetException>(async () => await source.ReadNextChunkAsync());
+                Assert.That(error.Message, Does.StartWith($"Short read of {reportedBytes} bytes"));
+                Assert.That(source.CurrentOffset, Is.Zero, "A failed read cannot silently advance over missing data");
+            }
+            finally
+            {
+                pool.Free();
+            }
+        }
+
+        [TestCase(DeviceType.RandomAccess, false, false)]
+        [TestCase(DeviceType.RandomAccess, true, false)]
+        [TestCase(DeviceType.FileStream, false, false)]
+        [TestCase(DeviceType.FileStream, true, false)]
+        [TestCase(DeviceType.Native, false, false)]
+        [TestCase(DeviceType.Native, true, false)]
+        [TestCase(DeviceType.RandomAccess, false, true)]
+        [TestCase(DeviceType.RandomAccess, true, true)]
+        [TestCase(DeviceType.FileStream, false, true)]
+        [TestCase(DeviceType.FileStream, true, true)]
+        [TestCase(DeviceType.Native, false, true)]
+        [TestCase(DeviceType.Native, true, true)]
+        public async Task FileReadsDistinguishSectorPaddingFromTruncatedCheckpointData(
+            DeviceType deviceType, bool truncated, bool disableFileBuffering)
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            Directory.CreateDirectory(TestUtils.MethodTestDir);
+            var prefix = Path.Combine(TestUtils.MethodTestDir, "source");
+            try
+            {
+                using var device = Devices.CreateLogDevice(prefix, deviceType: deviceType, disableFileBuffering: disableFileBuffering);
+                device.Initialize(-1);
+                var sectorSize = (int)device.SectorSize;
+                var contents = new byte[sectorSize + 1];
+                Array.Fill(contents, (byte)42);
+                await File.WriteAllBytesAsync(prefix + ".0", contents);
+                var pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+                using var signal = new SemaphoreSlim(0);
+                try
+                {
+                    using var source = new FileDataSource(CheckpointFileType.STORE_INDEX, Guid.NewGuid(), device,
+                        0, truncated ? sectorSize + 88 : contents.Length, sectorSize, TimeSpan.FromSeconds(5), pool, signal);
+                    var first = await source.ReadNextChunkAsync();
+                    try
+                    {
+                        Assert.That(first.Buffer.GetSlice(sectorSize).ToArray(), Is.All.EqualTo((byte)42));
+                    }
+                    finally
+                    {
+                        first.Buffer.Return();
+                    }
+                    if (truncated)
+                    {
+                        var error = Assert.ThrowsAsync<GarnetException>(async () => await source.ReadNextChunkAsync());
+                        Assert.That(error.Message, Does.StartWith("Short read of 1 bytes"));
+                        Assert.That(source.CurrentOffset, Is.EqualTo(sectorSize));
+                    }
+                    else
+                    {
+                        var last = await source.ReadNextChunkAsync();
+                        try
+                        {
+                            var data = last.Buffer.GetSlice(last.BytesRead).ToArray();
+                            Assert.That(data[0], Is.EqualTo(42));
+                            Assert.That(data[1..], Is.All.Zero);
+                            Assert.That(source.HasNextChunk, Is.False);
+                        }
+                        finally
+                        {
+                            last.Buffer.Return();
+                        }
+                    }
+                }
+                finally
+                {
+                    pool.Free();
+                }
+            }
+            finally
+            {
+                TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             }
         }
 
@@ -301,7 +398,8 @@ namespace Garnet.test.cluster
         /// <summary>
         /// A device holding only <paramref name="available"/> bytes, so a longer read ends early, as at the end of a file.
         /// </summary>
-        private sealed class ShortReadDevice(int available, byte fill, int reportedBytes) : StorageDeviceBase("short", 512, Devices.CAPACITY_UNSPECIFIED)
+        private sealed class ShortReadDevice(int available, byte fill, int reportedBytes)
+            : StorageDeviceBase("short", 512, Devices.CAPACITY_UNSPECIFIED)
         {
             public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
                 DeviceIOCompletionCallback callback, object context)
