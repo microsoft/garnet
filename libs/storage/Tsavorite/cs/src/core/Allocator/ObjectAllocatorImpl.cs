@@ -1314,8 +1314,10 @@ namespace Tsavorite.core
             // If this is Recovery Pass 1 we skip object deserialization (frame reads are in RecoveryPhase.None).
             if (result.recoveryPhase != RecoveryPhase.Pass1)
             {
-                var objectIdMapToUse = result.recoveryPhase != RecoveryPhase.None ? objectPages[result.page % BufferSize].objectIdMap : transientObjectIdMap;
-                DeserializeObjectsOnPage((long)result.destinationPtr, result.maxAddressOffsetOnPage, objectIdMapToUse, result.readBuffers);
+                var recovering = result.recoveryPhase != RecoveryPhase.None;
+                var objectIdMapToUse = recovering ? objectPages[result.page % BufferSize].objectIdMap : result.objectFrame?.objectIdMap ?? transientObjectIdMap;
+                DeserializeObjectsOnPage((long)result.destinationPtr, result.maxAddressOffsetOnPage, objectIdMapToUse, result.readBuffers,
+                    trackHeapSize: recovering, result.objectFrame);
             }
 
             // Call the "real" page read callback
@@ -1331,8 +1333,12 @@ namespace Tsavorite.core
         /// <param name="maxAddressOffsetOnPage">Maximum offset on the page (PageSize or less for partial pages)</param>
         /// <param name="objectIdMap">The ObjectIdMap to use for deserialized objects</param>
         /// <param name="readBuffers">The circular read buffers for object log reading</param>
-        private void DeserializeObjectsOnPage(long pageStartPhysicalAddress, long maxAddressOffsetOnPage, ObjectIdMap objectIdMap, CircularDiskReadBuffer readBuffers)
+        /// <param name="trackHeapSize">Whether the destination is a resident recovery page rather than a temporary scan frame</param>
+        /// <param name="objectFrame">Ownership and initialized extent for a scan frame</param>
+        private void DeserializeObjectsOnPage(long pageStartPhysicalAddress, long maxAddressOffsetOnPage, ObjectIdMap objectIdMap, CircularDiskReadBuffer readBuffers,
+            bool trackHeapSize, ObjectScanFrame objectFrame = null)
         {
+            objectFrame?.Initialize(pageStartPhysicalAddress);
             ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
             var endKeyLength = 0;
             ulong endValueLength = 0;
@@ -1376,8 +1382,11 @@ namespace Tsavorite.core
                     if (logRecord.DataHeader.RecordHasObjects && logRecord.Info.Valid)
                     {
                         _ = logReader.ReadRecordObjects(ref logRecord, default(EmptyKey), startPosition.SegmentSizeBits);
-                        TrackRecoveredObjectRecord(in logRecord);
+                        if (trackHeapSize)
+                            TrackRecoveredObjectRecord(in logRecord);
                     }
+                    if (objectFrame is not null)
+                        objectFrame.initializedUntilAddress = recordAddress;
                 }
             }
             finally
@@ -1472,7 +1481,7 @@ namespace Tsavorite.core
             var maxOffset = endAddress - GetLogicalAddressOfStartOfPage(page);
             var objectIdMapToUse = objectPages[page % BufferSize].objectIdMap;
             using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
-            DeserializeObjectsOnPage(pagePhysicalAddress, maxOffset, objectIdMapToUse, readBuffers);
+            DeserializeObjectsOnPage(pagePhysicalAddress, maxOffset, objectIdMapToUse, readBuffers, trackHeapSize: true);
         }
 
         /// <inheritdoc/>

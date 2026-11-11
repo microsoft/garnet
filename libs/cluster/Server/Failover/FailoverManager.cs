@@ -153,7 +153,7 @@ namespace Garnet.cluster
                 try
                 {
                     using var cancellation = token.Register(session.Cancel);
-                    var success = await session.BeginAsyncReplicaFailoverAsync().ConfigureAwait(false);
+                    var success = await session.BeginAsyncReplicaFailoverAsync(token).ConfigureAwait(false);
                     lastFailoverStatus = success ? FailoverStatus.FAILOVER_COMPLETED : FailoverStatus.FAILOVER_ABORTED;
                 }
                 finally

@@ -282,6 +282,11 @@ namespace Garnet.server
         public int ClusterTimeout = 60;
 
         /// <summary>
+        /// Maximum time in seconds a replica spends retrying to restore the old primary after a failed CLUSTER FAILOVER that the primary had already accepted.
+        /// </summary>
+        public int FailoverResetPrimaryTimeout = 60;
+
+        /// <summary>
         /// How frequently to flush cluster config unto disk to persist updates. =-1: never (memory only), =0: immediately (every update performs flush), >0: frequency in ms
         /// </summary>
         public int ClusterConfigFlushFrequencyMs = 0;

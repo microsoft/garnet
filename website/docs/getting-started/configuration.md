@@ -150,6 +150,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **GossipSamplePercent** | ```--gossip-sp``` | ```int``` | Integer in range:<br/>[0, 100] | Percent of cluster nodes to gossip with at each gossip iteration. |
 | **GossipDelay** | ```--gossip-delay``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Cluster mode gossip protocol per node sleep (in seconds) delay to send updated config. |
 | **ClusterTimeout** | ```--cluster-timeout``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Cluster node timeout is the amount of seconds a node must be unreachable. |
+| **FailoverResetPrimaryTimeout** | ```--failover-reset-primary-timeout``` | ```int``` | Integer in range:<br/>[1, 2147483] | Maximum time in seconds a replica spends retrying to restore the old primary after a failed CLUSTER FAILOVER that the primary had already accepted. |
 | **ClusterConfigFlushFrequencyMs** | ```--cluster-config-flush-frequency``` | ```int``` | Integer in range:<br/>[-1, MaxValue] | How frequently to flush cluster config unto disk to persist updates. =-1: never (memory only), =0: immediately (every update performs flush), >0: frequency in ms |
 | **ClusterTlsClientTargetHost** | ```--cluster-tls-client-target-host``` | ```string``` |  | Name for the client target host when using TLS connections in cluster mode. |
 | **ServerCertificateRequired** | ```--server-certificate-required``` | ```bool``` |  | Whether server TLS certificate is required by clients established on the server side, e.g., for cluster gossip and replication. |
