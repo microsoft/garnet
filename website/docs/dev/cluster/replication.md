@@ -80,14 +80,14 @@ Integrity validation is required to ensure that the start address requested by t
 
 During a full disk-based sync, the primary ships each Tsavorite checkpoint file (index, main log, object log and snapshot files) to the replica over a dedicated connection. It sends the file as a sequence of `CLUSTER SNAPSHOT_DATA token type startAddress data` requests, then one with empty data that marks the end of the file. The replica replies `+OK` once it accepts a chunk for writing at the same offset in its own copy, and confirms completed writes at end of file. Checkpoint metadata and RangeIndex files use the same command but their own transmitters, unchanged by the work described here.
 
-Originally every file moved in fixed 128 KiB chunks, strictly one at a time. The primary read a chunk, sent it, and waited for the replica to write it and reply before reading the next. Each chunk therefore paid a full network round trip on top of a serial read, send and write, which held a link with a 1 ms round trip to about 100 MB/s. Two pull requests remove those limits:
+Originally every file moved in fixed 128 KiB chunks, strictly one at a time. The primary read a chunk, sent it, and waited for the replica to write it and reply before reading the next. Each chunk therefore paid a full network round trip on top of a serial read, send and write, which held a link with a 1 ms round trip to about 100 MB/s. Two changes remove those limits:
 
-| Pull request | Side | Intent |
+| Change | Side | Intent |
 | --- | --- | --- |
-| [#2334](https://github.com/microsoft/garnet/pull/2334): configurable, pipelined transfer | Primary | Take the round trip off the critical path without changing the protocol or the replica. Larger chunks amortize per-request costs, and a bounded window of unacknowledged chunks overlaps each round trip, and the replica's write, with the next reads and sends. Settings are captured once per transfer, so `CONFIG SET` cannot mix sizes within one. Also adds the replica-transfer benchmark and fixes TLS send-buffer ownership on abort. |
-| Overlapped replica writes, stacked on #2334 | Replica, and primary read buffers | The replica receives while writing, acknowledges chunk acceptance inline, and waits for every write at end of file. Multiple buffers overlap receive/write; the separate concurrency flag permits concurrent writes to non-overlapping ranges. The primary avoids whole-buffer clearing, validates read lengths before sending, and raises the default chunk size to 16 MiB. Also fixes an unrelated `ClusterSession` bug that broke connections whose slot-verification errors overflowed the response buffer. |
+| Configurable, pipelined transfer | Primary | Take the round trip off the critical path without changing the protocol or the replica. Larger chunks amortize per-request costs, and a bounded window of unacknowledged chunks overlaps each round trip, and the replica's write, with the next reads and sends. Settings are captured once per transfer, so `CONFIG SET` cannot mix sizes within one. Also adds the replica-transfer benchmark and fixes TLS send-buffer ownership on abort. |
+| Overlapped replica writes | Replica, and primary read buffers | The replica receives while writing, acknowledges chunk acceptance inline, and waits for every write at end of file. Multiple buffers overlap receive/write; the separate concurrency flag permits concurrent writes to non-overlapping ranges. The primary avoids whole-buffer clearing, validates read lengths before sending, and uses a 16 MiB default chunk size. Also fixes an unrelated `ClusterSession` bug that broke connections whose slot-verification errors overflowed the response buffer. |
 
-In single-machine transfer-only benchmark runs with an emulated 1.05 ms round trip, throughput went from 81 MB/s with 128 KiB stop-and-wait chunks, to about 1.1 GB/s with #2334's defaults (4 MiB chunks, depth 4), to about 1.8 GB/s with both changes (16 MiB chunks, depth 4).
+In single-machine transfer-only benchmark runs with an emulated 1.05 ms round trip, throughput went from 81 MB/s with 128 KiB stop-and-wait chunks, to about 1.1 GB/s with pipelining alone (4 MiB chunks, depth 4), to about 1.8 GB/s with overlapped replica writes as well (16 MiB chunks, depth 4).
 
 These historical component measurements predate logical-length read validation and padding; they are not performance guarantees for the current implementation.
 
@@ -184,18 +184,18 @@ Tuning guidance and memory costs are in the [operator guide](../../cluster/repli
 
 ### Where to start reviewing
 
-| Code | Role | Changed by |
+| Code | Role | Change |
 | --- | --- | --- |
-| `ReplicaSyncSession`, `TsavoriteCheckpointReader.cs` (`TsavoriteSnapshotReader`), `ReplicationNetworkBufferSettings.cs` (`ReplicationManager`) | Capture the settings; size the client's buffers; build the file sources | #2334 |
-| `FileTransmitSource` | Pipelined send loop, deadlines, abort | #2334 |
-| `FileDataSource` | Chunked, sector-aligned reads | #2334 (chunk size); overlapped writes (logical-length read validation and padding) |
-| `GarnetClientSession`, `GarnetClientSessionReplicationExtensions`, `GarnetClientSessionTcpNetworkHandler`, `NetworkHandler` | Framing without a flush, explicit flushes, TLS send-buffer ownership on abort | #2334 |
-| `GarnetServerOptions`, `Options`, `OptionsValidators`, `RuntimeServerConfig`, `defaults.conf` | Settings, validation, `CONFIG GET`/`SET` | #2334; overlapped writes (write buffers, 16 MiB default) |
+| `ReplicaSyncSession`, `TsavoriteCheckpointReader.cs` (`TsavoriteSnapshotReader`), `ReplicationNetworkBufferSettings.cs` (`ReplicationManager`) | Capture the settings; size the client's buffers; build the file sources | Pipelined transfer |
+| `FileTransmitSource` | Pipelined send loop, deadlines, abort | Pipelined transfer |
+| `FileDataSource` | Chunked, sector-aligned reads | Pipelined transfer (chunk size); overlapped writes (logical-length read validation and padding) |
+| `GarnetClientSession`, `GarnetClientSessionReplicationExtensions`, `GarnetClientSessionTcpNetworkHandler`, `NetworkHandler` | Framing without a flush, explicit flushes, TLS send-buffer ownership on abort | Pipelined transfer |
+| `GarnetServerOptions`, `Options`, `OptionsValidators`, `RuntimeServerConfig`, `defaults.conf` | Settings, validation, `CONFIG GET`/`SET` | Pipelined transfer; overlapped writes (write buffers, 16 MiB default) |
 | `ReceiveCheckpointHandler` | Routes requests to sinks and waits for end-of-file completion | Overlapped writes |
 | `OverlappedFileDataSink` | Bounded queued writes, sequential or concurrent, with an end-of-file barrier | Overlapped writes |
 | `FileDataSink` | Synchronous writes with 0 write buffers | Overlapped writes (short-write check) |
 | `RespClusterReplicationCommands.cs` (`NetworkClusterSnapshotData`) | Inline acceptance replies and end-of-file completion | Overlapped writes |
-| `benchmark/Replica-transfer.benchmark` | Real-server full-sync driver; optional component file-transfer driver | #2334; overlapped writes |
+| `benchmark/Replica-transfer.benchmark` | Real-server full-sync driver; optional component file-transfer driver | Pipelined transfer; overlapped writes |
 
 ### Tests and measurement
 
