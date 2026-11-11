@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -56,6 +57,18 @@ namespace Tsavorite.test
 
             /// <summary>Cannot remove them, so clearing zeroes the data it finds above the tail instead</summary>
             CannotRemove,
+        }
+
+        /// <summary>How a recovery fails before it restores the log</summary>
+        internal enum RecoveryFailure
+        {
+            /// <summary>
+            /// The requested commit has no commit-metadata file, and without fast commit there are no commit records to scan for
+            /// </summary>
+            MissingCommit,
+
+            /// <summary>Listing the commit-metadata files fails</summary>
+            ListingFails,
         }
 
         [SetUp]
@@ -501,6 +514,73 @@ namespace Tsavorite.test
         }
 
         /// <summary>
+        /// A commit manager that removes outdated commit-metadata files, as Garnet's does, must keep the file that clearing writes
+        /// for the tail. Recovery records the commit it started from as the latest, and clearing rewrites the metadata of the
+        /// tail's commit, which is that same commit when no commit followed it. Each recovery here models a restart, with a new
+        /// commit manager, and nothing is committed between the two, so the second starts from the file the first wrote.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteLog")]
+        public async Task ClearingKeepsTheTailMetadataWhenOutdatedCommitsAreRemoved([Values] bool fastCommit)
+        {
+            // Every commit writes its commit-metadata file here, so recovery starts from the last commit's file
+            var entry = CreateEntry(100, seed: 16);
+            List<long> tails;
+            using (var original = new TestLog(logPath, commits, fastCommit: fastCommit))
+                tails = WriteCommits(original.Log, commitCount: 2, entriesPerCommit: 10, entry);
+
+            for (var restart = 0; restart < 2; restart++)
+            {
+                using (var removing = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactoryCreator(),
+                    new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir), removeOutdated: true))
+                using (var recovered = new TestLog(logPath, removing, fastCommit: fastCommit))
+                {
+                    await recovered.Log.RecoverAsync(-1, clearAboveTail: true).ConfigureAwait(false);
+                    ClassicAssert.AreEqual(tails[2], recovered.Log.TailAddress, $"restart {restart}");
+                }
+
+                // The commit manager deletes outdated files on a background task, so a wrong deletion is given time to happen
+                ClassicAssert.IsFalse(SpinWait.SpinUntil(() => !manager.ListCommits().Contains(2), TimeSpan.FromSeconds(1)),
+                    $"restart {restart}: the tail's commit-metadata file should be kept");
+            }
+
+            // The file is the only record of the log without fast commit: a log recovered without it would be empty
+            using var reopened = new TestLog(logPath, commits, fastCommit: fastCommit);
+            await reopened.Log.RecoverAsync().ConfigureAwait(false);
+            ClassicAssert.AreEqual(tails[2], reopened.Log.TailAddress);
+            Assert.That(ReadEntries(reopened.Log), Has.Count.EqualTo(20));
+        }
+
+        /// <summary>
+        /// A recovery that fails before it restores the log leaves it empty, while the device still holds its commits, so
+        /// PrepareToAppend throws rather than erase them, and the segment and commit-metadata files are left unchanged
+        /// </summary>
+        [Test]
+        [Category("TsavoriteLog")]
+        public async Task PrepareToAppendIsRejectedWhenRecoveryFailsBeforeRestoring([Values] RecoveryFailure failure)
+        {
+            // A missing commit fails before restoring only without fast commit; with it, recovery scans for the commit's record
+            var fastCommit = failure != RecoveryFailure.MissingCommit;
+            var entry = CreateEntry(100, seed: 17);
+            using (var original = new TestLog(logPath, commits, fastCommit: fastCommit))
+                _ = WriteCommits(original.Log, commitCount: 2, entriesPerCommit: 10, entry);
+            var segmentsBefore = ReadSegments();
+            var commitsBefore = manager.ListCommits().ToArray();
+
+            // Request commit 3 of 2, or fail to list the commit-metadata files
+            ILogCommitManager recoveryCommits = failure == RecoveryFailure.ListingFails ? new UnlistableLogCommitManager(commits) : commits;
+            using (var recovered = new TestLog(logPath, recoveryCommits, fastCommit: fastCommit))
+            {
+                _ = Assert.CatchAsync(async () => await recovered.Log.RecoverAsync(failure == RecoveryFailure.MissingCommit ? 3 : -1).ConfigureAwait(false));
+                var ex = Assert.Throws<TsavoriteException>(recovered.Log.PrepareToAppend);
+                StringAssert.Contains("Recovery did not determine", ex.Message);
+            }
+
+            Assert.That(ReadSegments(), Is.EqualTo(segmentsBefore));
+            Assert.That(manager.ListCommits(), Is.EqualTo(commitsBefore));
+        }
+
+        /// <summary>
         /// Append <paramref name="commitCount"/> commits of <paramref name="entriesPerCommit"/> entries each, and wait for their
         /// commit-metadata files
         /// </summary>
@@ -579,9 +659,9 @@ namespace Tsavorite.test
         }
 
         /// <summary>
-        /// A fast-commit log with per-entry checksums over a device that keeps its files: the one given, or else one of the kind
-        /// <see cref="ClearingDevice"/> names. Its sizes default to the fixture's, and it is not recovered on construction.
-        /// Disposing it disposes the log, then the device, which the log does not own.
+        /// A log with per-entry checksums, in fast-commit mode unless <c>fastCommit</c> is false, over a device that keeps its
+        /// files: the one given, or else one of the kind <see cref="ClearingDevice"/> names. Its sizes default to the fixture's,
+        /// and it is not recovered on construction. Disposing it disposes the log, then the device, which the log does not own.
         /// </summary>
         sealed class TestLog : IDisposable
         {
@@ -596,7 +676,8 @@ namespace Tsavorite.test
             /// and otherwise through a new device of the kind <paramref name="clearingDevice"/> names
             /// </summary>
             internal TestLog(string logPath, ILogCommitManager commits, int pageSizeBits = PageSizeBits, int memorySizeBits = MemorySizeBits,
-                int segmentSizeBits = SegmentSizeBits, bool readOnly = false, IDevice device = null, ClearingDevice clearingDevice = ClearingDevice.Removes)
+                int segmentSizeBits = SegmentSizeBits, bool readOnly = false, IDevice device = null, ClearingDevice clearingDevice = ClearingDevice.Removes,
+                bool fastCommit = true)
             {
                 Device = device ?? clearingDevice switch
                 {
@@ -604,7 +685,7 @@ namespace Tsavorite.test
                     ClearingDevice.CannotRemove => new RecordingDevice(CreateFileDevice(logPath), canRemoveSegments: false),
                     _ => CreateFileDevice(logPath),
                 };
-                var settings = CreateSettings(Device, commits, pageSizeBits, memorySizeBits, segmentSizeBits);
+                var settings = CreateSettings(Device, commits, pageSizeBits, memorySizeBits, segmentSizeBits, fastCommit);
                 settings.ReadOnlyMode = readOnly;
                 Log = new TsavoriteLog(settings);
             }
@@ -612,14 +693,18 @@ namespace Tsavorite.test
             /// <summary>A file device that keeps its segment files when disposed, so a later log can recover them</summary>
             static IDevice CreateFileDevice(string logPath) => new RandomAccessLocalStorageDevice(logPath, disableFileBuffering: false, osReadBuffering: true);
 
-            /// <summary>Settings for a fast-commit log with per-entry checksums, which is not recovered on construction</summary>
-            internal static TsavoriteLogSettings CreateSettings(IDevice device, ILogCommitManager commits, int pageSizeBits, int memorySizeBits, int segmentSizeBits)
+            /// <summary>
+            /// Settings for a log with per-entry checksums, in fast-commit mode unless <paramref name="fastCommit"/> is false, which
+            /// is not recovered on construction
+            /// </summary>
+            internal static TsavoriteLogSettings CreateSettings(IDevice device, ILogCommitManager commits, int pageSizeBits, int memorySizeBits, int segmentSizeBits,
+                bool fastCommit = true)
                 => new()
                 {
                     LogDevice = device,
                     LogCommitManager = commits,
                     LogChecksum = LogChecksumType.PerEntry,
-                    FastCommitMode = true,
+                    FastCommitMode = fastCommit,
                     TryRecoverLatest = false,
                     PageSizeBits = pageSizeBits,
                     MemorySizeBits = memorySizeBits,
@@ -689,6 +774,28 @@ namespace Tsavorite.test
                 => underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
 
             public override void Dispose() => underlying.Dispose();
+        }
+
+        /// <summary>A commit manager that forwards to another, except that listing the commit-metadata files fails</summary>
+        /// <param name="inner">The commit manager to forward to; it belongs to the caller</param>
+        sealed class UnlistableLogCommitManager(ILogCommitManager inner) : ILogCommitManager
+        {
+            public IEnumerable<long> ListCommits() => throw new IOException("Listing the commit-metadata files failed");
+
+            public void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum, bool forceWriteMetadata)
+                => inner.Commit(beginAddress, untilAddress, commitMetadata, commitNum, forceWriteMetadata);
+
+            public byte[] GetCommitMetadata(long commitNum) => inner.GetCommitMetadata(commitNum);
+
+            public void RemoveCommit(long commitNum) => inner.RemoveCommit(commitNum);
+
+            public void RemoveAllCommits() => inner.RemoveAllCommits();
+
+            public void OnRecovery(long commitNum) => inner.OnRecovery(commitNum);
+
+            public void Dispose()
+            {
+            }
         }
     }
 }

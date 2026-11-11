@@ -642,6 +642,10 @@ namespace Tsavorite.core
             if (CommittedUntilAddress > BeginAddress)
                 throw new TsavoriteException($"Already recovered until address {CommittedUntilAddress}");
 
+            // The log's contents are unknown until a restore records where it ends, so PrepareToAppend refuses if recovery fails
+            // before that, rather than clear the device above the empty log the failure leaves
+            RecordCurrentPosition(cookie: null, unknown: true);
+
             RecoveredCookie = requestedCommitNum == -1
                 ? await RestoreLatestAsync(cancellationToken).ConfigureAwait(false)
                 : await RestoreSpecificCommitAsync(requestedCommitNum, cancellationToken).ConfigureAwait(false);

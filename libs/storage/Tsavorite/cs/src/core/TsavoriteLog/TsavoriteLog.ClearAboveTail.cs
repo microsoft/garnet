@@ -344,6 +344,9 @@ namespace Tsavorite.core
                 var completion = new IoCompletion(isRead: true, address);
                 device.ReadAsync((ulong)address, (IntPtr)readBuffer.aligned_pointer, (uint)length, IoCompletion.Callback, completion);
                 completion.Wait();
+
+                // The device holds only a raw pointer into readBuffer, so this keeps the buffer's array alive until the IO completes
+                GC.KeepAlive(this);
             }
 
             /// <summary>
@@ -359,6 +362,10 @@ namespace Tsavorite.core
                 var completion = new IoCompletion(isRead: false, address);
                 device.WriteAsync((IntPtr)source, (ulong)address, (uint)length, IoCompletion.Callback, completion);
                 completion.Wait();
+
+                // The device holds only a raw pointer into one of this instance's buffers, so this keeps the buffer's array alive
+                // until the IO completes
+                GC.KeepAlive(this);
             }
 
             /// <summary>
