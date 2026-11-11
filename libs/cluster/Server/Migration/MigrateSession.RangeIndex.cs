@@ -89,11 +89,9 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Migrate a batch of RangeIndex keys with sketch protection.
-        /// Adds all keys to the sketch, transitions through TRANSMITTING → DELETING → MIGRATED
-        /// with epoch barriers, ensuring concurrent operations are properly gated.
+        /// Migrate a bounded batch of RangeIndex keys with epoch barriers protecting transmission and deletion.
         /// </summary>
-        private async Task<bool> MigrateRangeIndexKeysAsync(MigrateOperation migrateOperation, HashSet<byte[]> rangeIndexKeys, CancellationToken cancellationToken)
+        private async Task<bool> MigrateRangeIndexKeysAsync(MigrateOperation migrateOperation, IReadOnlyCollection<byte[]> rangeIndexKeys, CancellationToken cancellationToken)
         {
             var migrateActivity = RangeIndexMigrationActivities.MigrateActivity.StartActivity(rangeIndexKeys.Count);
 
@@ -105,7 +103,14 @@ namespace Garnet.cluster
                 migrateOperation.sketch.Clear();
                 migrateOperation.sketch.SetStatus(SketchStatus.INITIALIZING);
                 foreach (var key in rangeIndexKeys)
-                    migrateOperation.sketch.TryHashAndStore(key);
+                {
+                    if (!migrateOperation.sketch.TryHashAndStore(key))
+                    {
+                        migrateActivity.OnError("Failed to protect RangeIndex batch");
+                        logger?.LogError("MigrateRangeIndexKeysAsync: failed to protect all {count} RangeIndex keys", rangeIndexKeys.Count);
+                        return false;
+                    }
+                }
 
                 ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.RangeIndex_Migration_Before_Transmitting);
 

@@ -242,6 +242,25 @@ namespace Garnet.test.cluster
             Assert.That(operation.sketch.Probe(hash, out _), Is.False);
         }
 
+#if DEBUG
+        [Test]
+        public async Task RangeIndexBatchRejectsIncompleteProtection()
+        {
+            var operations = CreateSlotOperations();
+            var keys = Enumerable.Range(0, 1124)
+                .Select(index => Encoding.ASCII.GetBytes($"range-index-{index}"))
+                .ToHashSet(ByteArrayComparer.Instance);
+            using var injection = ExceptionInjectionHelper.EnabledScope(ExceptionInjectionType.RangeIndex_Migration_Before_Transmitting);
+            var migrate = (Task<bool>)typeof(MigrateSession)
+                .GetMethod("MigrateRangeIndexKeysAsync", BindingFlags.Instance | BindingFlags.NonPublic)
+                .Invoke(session, [operations[0], keys, CancellationToken.None]);
+
+            Assert.That(await migrate.WaitAsync(TimeSpan.FromSeconds(5)), Is.False);
+            Assert.That(operations[0].sketch.argSliceVector.IsEmpty, Is.True);
+            Assert.That(operations[0].sketch.Status, Is.EqualTo(SketchStatus.INITIALIZING));
+        }
+#endif
+
         [TestCase(SketchStatus.INITIALIZING, SketchStatus.DELETING, true, false)]
         [TestCase(SketchStatus.MIGRATED, SketchStatus.TRANSMITTING, false, false)]
         [TestCase(SketchStatus.TRANSMITTING, SketchStatus.DELETING, true, false)]

@@ -44,6 +44,8 @@ namespace Garnet.cluster
 
             public LocalServerSession LocalSession => localServerSession;
 
+            public int KeySendBatchSize => collectionBatchCapacity - 1;
+
             public IEnumerable<KeyValuePair<byte[], (byte[] Value, DateTime? Expiration)>> VectorSets => vectorSetsIndexKeysToMigrate;
 
             public IEnumerable<byte[]> RangeIndexKeys => rangeIndexKeysToMigrate.Keys;

@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Reflection;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.cluster;
@@ -12,7 +14,6 @@ using NUnit.Framework;
 
 #if DEBUG
 using System.Linq;
-using System.Threading;
 using Tsavorite.core;
 #endif
 
@@ -47,6 +48,8 @@ namespace Garnet.test.cluster
 #if DEBUG
             ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead);
             ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Before_Batch_Response);
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.RangeIndex_Migration_After_Transmitting);
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.RangeIndex_Migration_After_Deleting);
 #endif
             try
             {
@@ -68,16 +71,18 @@ namespace Garnet.test.cluster
 #if DEBUG
                 ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead);
                 ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Migration_Before_Batch_Response);
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.RangeIndex_Migration_After_Transmitting);
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.RangeIndex_Migration_After_Deleting);
 #endif
             }
         }
 
         static string Key(int index) => $"{{scan-ahead}}{index:D2}";
 
-        async Task CreateOperationAsync(int depth, bool copy = false, int keyCount = KeyCount, bool prepare = true, bool useScanAheadMigration = true, int keySendBatchSize = KeySendBatchSize, int deleteBatchSize = 256)
+        async Task CreateOperationAsync(int depth, bool copy = false, int keyCount = KeyCount, bool prepare = true, bool useScanAheadMigration = true, int keySendBatchSize = KeySendBatchSize, int deleteBatchSize = 256, bool enableRangeIndexPreview = false)
         {
             context.CreateInstances(2, lowMemory: true, memorySize: "32m", pageSize: "16k",
-                migrationSendBufferSize: "16k", migrationPipelineDepth: depth);
+                migrationSendBufferSize: "16k", migrationPipelineDepth: depth, enableRangeIndexPreview: enableRangeIndexPreview);
             context.CreateConnection();
             foreach (var options in context.nodeOptions)
             {
@@ -141,6 +146,86 @@ namespace Garnet.test.cluster
         {
             Assert.That(await target.ExecuteAsync("ASKING"), Is.EqualTo("OK"));
             return await target.ExecuteAsync(command);
+        }
+
+        [Test]
+        [CancelAfter(120000)]
+        public async Task RangeIndexesRemainProtectedAcrossConfiguredBatches(CancellationToken cancellationToken)
+        {
+            const int batchSize = 4;
+            const int keyCount = batchSize + 3;
+            await CreateOperationAsync(3, keyCount: 0, prepare: false, enableRangeIndexPreview: true);
+            for (var i = 0; i < keyCount; i++)
+            {
+                Assert.That(await source.ExecuteAsync("RI.CREATE", Key(i), "DISK", "CACHESIZE", "65536", "MINRECORD", "8")
+                    .WaitAsync(cancellationToken), Is.EqualTo("OK"));
+                Assert.That(await source.ExecuteAsync("RI.SET", Key(i), "field", $"value-{i}")
+                    .WaitAsync(cancellationToken), Is.EqualTo("OK"));
+            }
+
+            var slot = HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(Key(0)));
+            var endpoint = context.clusterTestUtils.GetEndPoint(1);
+            Assert.That(provider.migrationManager.TryAddMigrationTask(null, context.clusterTestUtils.GetLocalNodeId(0),
+                endpoint.Address.ToString(), endpoint.Port, context.clusterTestUtils.GetLocalNodeId(1),
+                null, null, false, false, 10000, [slot], null, TransferOption.SLOTS, out session), Is.True);
+
+            // Replace the worker before starting: a small internal capacity avoids hundreds of native snapshots.
+            var operations = (MigrateSession.MigrateOperation[])typeof(MigrateSession)
+                .GetField("migrateOperation", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(session);
+            operations[0].Dispose();
+            provider.serverOptions.MigrateKeySendBatchSize = batchSize;
+            operations[0] = new MigrateSession.MigrateOperation(session);
+            provider.serverOptions.MigrateKeySendBatchSize = KeySendBatchSize;
+
+            var updatedKey = -1;
+#if DEBUG
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.RangeIndex_Migration_After_Transmitting);
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.RangeIndex_Migration_After_Deleting);
+#endif
+            Assert.That((await session.TryStartMigrationTaskAsync()).Success, Is.True);
+#if DEBUG
+            Assert.That(() => ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.RangeIndex_Migration_After_Transmitting),
+                Is.False.After(15000).PollEvery(10));
+            updatedKey = Enumerable.Range(0, keyCount).First(index => CanAccessKey(index, readOnly: false));
+            Assert.That(await source.ExecuteAsync("RI.SET", Key(updatedKey), "field", "updated")
+                .WaitAsync(cancellationToken), Is.EqualTo("OK"));
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.RangeIndex_Migration_After_Transmitting);
+            Assert.That(() => ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.RangeIndex_Migration_After_Deleting),
+                Is.False.After(30000).PollEvery(10));
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo(keyCount.ToString()));
+            Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo(batchSize.ToString()),
+                "Only the protected batch may be transmitted before its deletion barrier.");
+
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.RangeIndex_Migration_After_Deleting);
+            Assert.That(() => ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.RangeIndex_Migration_After_Transmitting),
+                Is.False.After(15000).PollEvery(10));
+            var pendingKeys = Enumerable.Range(0, keyCount).Where(KeyExists).ToArray();
+            Assert.That(pendingKeys, Has.Length.EqualTo(keyCount - batchSize));
+            foreach (var index in pendingKeys)
+            {
+                Assert.That(CanAccessKey(index, readOnly: false), Is.False);
+                Assert.That(CanAccessKey(index, readOnly: true), Is.True);
+            }
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.RangeIndex_Migration_After_Transmitting);
+            Assert.That(() => ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.RangeIndex_Migration_After_Deleting),
+                Is.False.After(30000).PollEvery(10));
+            Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo(keyCount.ToString()));
+            foreach (var index in pendingKeys)
+            {
+                Assert.That(CanAccessKey(index, readOnly: false), Is.False);
+                Assert.That(CanAccessKey(index, readOnly: true), Is.False);
+            }
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.RangeIndex_Migration_After_Deleting);
+#endif
+            context.clusterTestUtils.WaitForMigrationCleanup(0, cancellationToken);
+            context.clusterTestUtils.WaitForSlotOwnership(1, context.clusterTestUtils.GetLocalNodeId(1), [slot, slot]);
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("0"));
+            Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo(keyCount.ToString()));
+            for (var i = 0; i < keyCount; i++)
+            {
+                Assert.That(await target.ExecuteAsync("RI.GET", Key(i), "field").WaitAsync(cancellationToken),
+                    Is.EqualTo(i == updatedKey ? "updated" : $"value-{i}"));
+            }
         }
 
         [Test]
