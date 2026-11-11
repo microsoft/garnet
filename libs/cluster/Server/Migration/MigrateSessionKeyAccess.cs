@@ -38,10 +38,10 @@ namespace Garnet.cluster
             if (!_sslots.Contains(slot))
                 return true;
 
-            var canAccess = true;
+            var keyHash = HashUtils.MurmurHash2x64A(key.ToPointer(), key.Length);
             foreach (var migrateTask in migrateOperation)
             {
-                if (!migrateTask.sketch.Probe(key, out var state))
+                if (!migrateTask.sketch.Probe(keyHash, out var state))
                     continue;
 
                 // A permissive Bloom-filter match must not mask another worker's protected batch.
@@ -51,7 +51,8 @@ namespace Garnet.cluster
                     case SketchStatus.MIGRATED:
                         break;
                     case SketchStatus.TRANSMITTING:
-                        canAccess &= readOnly;
+                        if (!readOnly)
+                            return false;
                         break;
                     case SketchStatus.DELETING:
                         return false;
@@ -60,7 +61,7 @@ namespace Garnet.cluster
                 }
             }
 
-            return canAccess;
+            return true;
         }
     }
 }

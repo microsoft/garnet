@@ -1251,6 +1251,7 @@ namespace Garnet.test.cluster
             var verify = typeof(ClusterSession).GetMethod("SingleKeySlotVerify", flags);
             MigrateSession migration = null;
             Task<object> pending = null;
+            Thread worker = null;
             var ownsRecovery = false;
             try
             {
@@ -1267,6 +1268,7 @@ namespace Garnet.test.cluster
                 object[] args = [migrating, key, readOnly, false, false, (int)slot];
                 pending = Task.Run(() =>
                 {
+                    Volatile.Write(ref worker, Thread.CurrentThread);
                     session.AcquireCurrentEpoch();
                     try
                     {
@@ -1277,7 +1279,12 @@ namespace Garnet.test.cluster
                         session.ReleaseCurrentEpoch();
                     }
                 });
-                Assert.That(() => session.LocalCurrentEpoch, Is.Not.Zero.After(5_000, 10));
+                Assert.That(() =>
+                {
+                    var thread = Volatile.Read(ref worker);
+                    return thread != null && (thread.ThreadState & ThreadState.WaitSleepJoin) != 0 &&
+                        session.LocalCurrentEpoch == 0;
+                }, Is.True.After(5_000, 1), "Migration waits must park without holding GarnetEpoch.");
                 Assert.That(pending.IsCompleted, Is.False);
                 // Cross an epoch while migration blocks, proving the initial recovery check has completed.
                 Assert.That(await provider.BumpAndWaitForEpochTransitionAsync().AsTask().WaitAsync(token), Is.True);

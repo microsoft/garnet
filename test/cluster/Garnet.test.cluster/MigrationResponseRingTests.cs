@@ -4,6 +4,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -47,6 +48,53 @@ namespace Garnet.test.cluster
             session = new MigrateSession(null, provider, "127.0.0.1", ClusterTestContext.Port,
                 nodeId, null, null, nodeId, copy, false, 10000, [0], null, TransferOption.KEYS);
             operation = new MigrateSession.MigrateOperation(session, batchSize: batchSize);
+        }
+
+        MigrateSession.MigrateOperation[] CreateSlotOperations()
+        {
+            provider.serverOptions.ParallelMigrateTaskCount = 2;
+            var nodeId = provider.clusterManager.CurrentConfig.LocalNodeId;
+            session = new MigrateSession(null, provider, "127.0.0.1", ClusterTestContext.Port,
+                nodeId, null, null, nodeId, false, false, 10000, [0], null, TransferOption.SLOTS);
+            var operations = (MigrateSession.MigrateOperation[])typeof(MigrateSession)
+                .GetField("migrateOperation", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(session);
+            for (var i = 0; i < operations.Length; i++)
+            {
+                operations[i].Dispose();
+                operations[i] = new MigrateSession.MigrateOperation(session, batchSize: 1 << (4 + (i * 4)));
+            }
+            return operations;
+        }
+
+        [TestCase(SketchStatus.INITIALIZING, SketchStatus.DELETING, true, false)]
+        [TestCase(SketchStatus.MIGRATED, SketchStatus.TRANSMITTING, false, false)]
+        [TestCase(SketchStatus.TRANSMITTING, SketchStatus.DELETING, true, false)]
+        [TestCase(SketchStatus.TRANSMITTING, SketchStatus.MIGRATED, true, true)]
+        public void AccessChecksPreserveProtectionAcrossSketchSizes(SketchStatus first, SketchStatus second, bool readOnly, bool expected)
+        {
+            var operations = CreateSlotOperations();
+            var key = PinnedSpanByte.FromPinnedSpan("migration-access-key"u8);
+            operations[0].sketch.HashAndStore(key);
+            operations[0].sketch.SetStatus(first);
+            operations[1].sketch.HashAndStore(key);
+            operations[1].sketch.SetStatus(second);
+
+            Assert.That(session.CanAccessKey(key, 0, readOnly), Is.EqualTo(expected));
+        }
+
+        [TestCase(SketchStatus.TRANSMITTING)]
+        [TestCase(SketchStatus.DELETING)]
+        public void WriteDenialStopsBeforeLaterWorkers(SketchStatus state)
+        {
+            var operations = CreateSlotOperations();
+            var key = PinnedSpanByte.FromPinnedSpan("migration-access-key"u8);
+            operations[0].sketch.HashAndStore(key);
+            operations[0].sketch.SetStatus(state);
+            operations[1].sketch.HashAndStore(key);
+            // An invalid trailing state makes an unnecessary probe observable.
+            operations[1].sketch.SetStatus((SketchStatus)byte.MaxValue);
+
+            Assert.That(session.CanAccessKey(key, 0, readOnly: false), Is.False);
         }
 
         [TestCase(-1, false)]

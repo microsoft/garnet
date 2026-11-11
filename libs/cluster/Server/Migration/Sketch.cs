@@ -76,14 +76,14 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Probe sketch to check if key has been added
+        /// Probe sketch using a precomputed key hash.
         /// </summary>
-        /// <param name="key"></param>
+        /// <param name="keyHash">Unmasked MurmurHash2x64A key hash.</param>
         /// <param name="status"></param>
         /// <returns></returns>
-        public unsafe bool Probe(PinnedSpanByte key, out SketchStatus status)
+        public bool Probe(ulong keyHash, out SketchStatus status)
         {
-            var slot = (int)HashUtils.MurmurHash2x64A(key.ToPointer(), key.Length) & (size - 1);
+            var slot = (int)keyHash & (size - 1);
             var byteOffset = slot >> 3;
             var bitOffset = slot & 7;
 

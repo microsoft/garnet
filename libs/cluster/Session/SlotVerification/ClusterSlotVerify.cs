@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -12,6 +13,8 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
+        ExponentialBackoff migrationAccessBackoff = new(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(16));
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool Exists(PinnedSpanByte keySlice)
             => basicGarnetApi.EXISTS(keySlice) == GarnetStatus.OK;
@@ -153,13 +156,17 @@ namespace Garnet.cluster
             {
                 retry = false;
                 var epoch = LocalCurrentEpoch;
+                // Probes scan migration workers, so bound CPU-local retries before parking this synchronous caller.
+                var spinner = ConfiguredSpinWait.CpuLocal();
+                migrationAccessBackoff.Reset();
                 // For both read and read/write ops we need to ensure that key will not be removed
                 // while we try to operate on it so we will delay the corresponding operation
                 // as long as the key is being actively migrated
                 while (!clusterProvider.migrationManager.CanAccessKey(key, slot, readOnly))
                 {
                     ReleaseCurrentEpoch();
-                    Thread.Yield();
+                    if (!spinner.TryWait())
+                        Thread.Sleep(migrationAccessBackoff.RecordFailure());
                     AcquireCurrentEpoch();
                     if (epoch != LocalCurrentEpoch)
                     {
