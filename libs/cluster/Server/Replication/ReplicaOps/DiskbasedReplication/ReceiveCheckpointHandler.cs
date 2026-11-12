@@ -22,19 +22,27 @@ namespace Garnet.cluster
         // Active sink (one at a time, matching the sequential protocol)
         ISnapshotDataSink activeSink;
 
+        // Received chunks an overlapped file writer may hold, queued or being written; 0 writes each chunk synchronously.
+        readonly int writeBuffers;
+        readonly bool writeBuffersConcurrently;
+
         public ReceiveCheckpointHandler(ClusterProvider clusterProvider, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
             this.logger = logger;
+            writeBuffers = clusterProvider.serverOptions.ReplicaDiskBasedSyncWriteBuffers;
+            writeBuffersConcurrently = clusterProvider.serverOptions.ReplicaDiskBasedSyncWriteBuffersConcurrently;
             cts = new();
         }
 
         public void Dispose()
         {
+            // Cancel first so overlapped writers stop waiting; each sink's Dispose then waits for its writer to finish,
+            // so the token source is disposed only after nothing can still be waiting on it.
             cts.Cancel();
-            cts.Dispose();
             activeSink?.Dispose();
             activeSink = null;
+            cts.Dispose();
             writeSemaphore?.Dispose();
             bufferPool?.Free();
             bufferPool = null;
@@ -102,6 +110,10 @@ namespace Garnet.cluster
         /// <param name="type">The checkpoint file type.</param>
         /// <param name="startAddress">The start address for this chunk, or -1 for single-message payloads.</param>
         /// <param name="data">The data to write. Empty signals end-of-stream for streamed file segments.</param>
+        /// <remarks>
+        /// File chunks are acknowledged after copying and queueing, which may block while every write buffer is in use.
+        /// End-of-stream waits for every queued write, reports any write failure, and closes the file before returning.
+        /// </remarks>
         public void ProcessSnapshotData(Guid token, CheckpointFileType type, long startAddress, ReadOnlySpan<byte> data)
         {
             clusterProvider.replicationManager.UpdateLastPrimarySyncTime();
@@ -162,7 +174,10 @@ namespace Garnet.cluster
                         // This is safe because chunks are streamed from the start, overwriting any partial data.
                         var device = clusterProvider.replicationManager.CreateCheckpointDevice(token, type);
                         bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
-                        activeSink = new FileDataSink(type, token, device, bufferPool, writeSemaphore, clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token, logger);
+                        var timeout = clusterProvider.serverOptions.ReplicaSyncTimeout;
+                        activeSink = writeBuffers > 0
+                            ? new OverlappedFileDataSink(type, token, device, bufferPool, writeBuffers, timeout, cts.Token, logger, writeBuffersConcurrently)
+                            : new FileDataSink(type, token, device, bufferPool, writeSemaphore, timeout, cts.Token, logger);
                         break;
                     default:
                         ExceptionUtils.ThrowException(new GarnetException($"{nameof(ProcessSnapshotData)} invalid startAddress for checkpoint type: {type}!"));
@@ -173,7 +188,9 @@ namespace Garnet.cluster
             activeSink.WriteChunk(startAddress, data);
 
 #if DEBUG
+#pragma warning disable VSTHRD103 // Deliberately holds the receiving thread, as a slow synchronous receive would.
             ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint);
+#pragma warning restore VSTHRD103
 #endif
         }
     }

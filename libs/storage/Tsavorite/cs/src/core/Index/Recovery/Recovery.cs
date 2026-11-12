@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -219,6 +220,35 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Inspect checkpoint metadata without creating storage or pinning checkpoints against deletion.
+        /// Tokens that disappear before they can be read are skipped. The result reflects metadata observed
+        /// during this scan, not a guarantee that its files still exist when the method returns.
+        /// </summary>
+        /// <param name="hlogToken">Latest readable HybridLog token, or default if none was observed.</param>
+        /// <param name="indexToken">Compatible readable index token, or default if none was observed.</param>
+        /// <param name="storeVersion">Next version of the selected checkpoint, or -1 if none was observed.</param>
+        /// <param name="cookie">Cookie captured from the selected HybridLog metadata.</param>
+        public void GetLatestCheckpointTokensForInspection(out Guid hlogToken, out Guid indexToken, out long storeVersion, out byte[] cookie)
+        {
+            GetClosestHybridLogCheckpointInfo(-1, out hlogToken, out var recoveredHlcInfo, out cookie, out _,
+                checkpointManager.ReadLogCheckpointMetadata);
+            try
+            {
+                indexToken = default;
+                storeVersion = -1;
+                if (hlogToken == default)
+                    return;
+
+                storeVersion = recoveredHlcInfo.info.nextVersion;
+                GetClosestIndexCheckpointInfo(ref recoveredHlcInfo, out indexToken, out _, checkpointManager.ReadIndexCheckpointMetadata);
+            }
+            finally
+            {
+                recoveredHlcInfo.Dispose();
+            }
+        }
+
+        /// <summary>
         /// Get HLog latest version
         /// </summary>
         public long GetLatestCheckpointVersion()
@@ -290,7 +320,7 @@ namespace Tsavorite.core
         }
 
         private void GetClosestHybridLogCheckpointInfo(long requestedVersion, out Guid closestToken, out HybridLogCheckpointInfo closest, out byte[] cookie,
-            out HybridLogCheckpointScanStats scanStats)
+            out HybridLogCheckpointScanStats scanStats, Func<Guid, byte[]> readMetadata = null)
         {
             HybridLogCheckpointInfo current;
             var closestVersion = long.MaxValue;
@@ -315,7 +345,15 @@ namespace Tsavorite.core
                 try
                 {
                     current = new HybridLogCheckpointInfo();
-                    current.Recover(hybridLogToken, checkpointManager, out var currCookie);
+                    byte[] currCookie;
+                    if (readMetadata == null)
+                        current.Recover(hybridLogToken, checkpointManager, out currCookie);
+                    else
+                    {
+                        using var reader = new StreamReader(new MemoryStream(readMetadata(hybridLogToken)));
+                        current.info.Initialize(reader);
+                        currCookie = current.info.cookie;
+                    }
                     var distanceToTarget = (requestedVersion == -1 ? long.MaxValue : requestedVersion) - current.info.version;
 
                     // This is larger than intended version, cannot recover to this.
@@ -352,6 +390,11 @@ namespace Tsavorite.core
                         current.Dispose();
                     }
                 }
+                catch (FileNotFoundException) when (readMetadata != null)
+                {
+                    logger?.LogDebug("HybridLog checkpoint disappeared during inspection: {hybridLogToken}", hybridLogToken);
+                    continue;
+                }
                 catch (Exception ex)
                 {
                     // A checkpoint whose metadata cannot be read is skipped in favor of an older one. Report it so
@@ -367,7 +410,8 @@ namespace Tsavorite.core
             scanStats = new HybridLogCheckpointScanStats(candidateTokenCount, unreadableTokenCount);
         }
 
-        private void GetClosestIndexCheckpointInfo(ref HybridLogCheckpointInfo recoveredHlcInfo, out Guid closestToken, out IndexCheckpointInfo recoveredICInfo)
+        private void GetClosestIndexCheckpointInfo(ref HybridLogCheckpointInfo recoveredHlcInfo, out Guid closestToken, out IndexCheckpointInfo recoveredICInfo,
+            Func<Guid, byte[]> readMetadata = null)
         {
             closestToken = default;
             recoveredICInfo = default;
@@ -377,7 +421,18 @@ namespace Tsavorite.core
                 {
                     // Recovery appropriate context information
                     recoveredICInfo = new IndexCheckpointInfo();
-                    recoveredICInfo.Recover(indexToken, checkpointManager);
+                    if (readMetadata == null)
+                        recoveredICInfo.Recover(indexToken, checkpointManager);
+                    else
+                    {
+                        using var reader = new StreamReader(new MemoryStream(readMetadata(indexToken)));
+                        recoveredICInfo.info.Initialize(reader);
+                    }
+                }
+                catch (FileNotFoundException) when (readMetadata != null)
+                {
+                    logger?.LogDebug("Index checkpoint disappeared during inspection: {indexToken}", indexToken);
+                    continue;
                 }
                 catch (Exception ex)
                 {

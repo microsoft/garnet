@@ -1117,8 +1117,19 @@ namespace Tsavorite.core
         public long GetTailAddress()
         {
             var local = TailPageOffset;
+            if (local.Offset >= PageSize)
+                local = GetStableTailPageOffset(local);
+            return GetLogicalAddressOfStartOfPage(local.Page) | (uint)local.Offset;
+        }
 
-            // Handle corner cases during page overflow.
+        /// <summary>Resolves a tail page offset observed during page overflow.</summary>
+        /// <remarks>
+        /// Kept out of line because <see cref="Thread.Yield"/> is a P/Invoke: a method that inlines it sets up a P/Invoke
+        /// frame, a thread-static lookup, on every call, whether or not it yields.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        PageOffset GetStableTailPageOffset(PageOffset local)
+        {
             // The while loop is guaranteed to terminate because HandlePageOverflow ensures that it fixes the unstable TailPageOffset immediately.
             while (local.Offset >= PageSize)
             {
@@ -1132,7 +1143,7 @@ namespace Tsavorite.core
                 _ = Thread.Yield();
                 local = TailPageOffset;
             }
-            return GetLogicalAddressOfStartOfPage(local.Page) | (uint)local.Offset;
+            return local;
         }
 
         /// <summary>Get tail address without considering whether it is unstable; this is called during HandlePageOverflow as part of determining
@@ -2559,15 +2570,23 @@ namespace Tsavorite.core
         ///     case it IS the completionEvent's request instance, and the completed record is read back through it.</param>
         internal void AsyncGetFromDisk(long fromLogicalAddress, int numBytes, AsyncIOContext context)
         {
-            // If this is a protected thread, we must wait to issue the Read operation. Spin until the device is not throttled,
-            // draining events on each iteration, but do not release the epoch.
-            if (epoch.ThisInstanceProtected())
+            // A protected thread waits until the device is not throttled, reaping its own completions; there is no
+            // completion signal to block on. The wait releases the epoch so it does not hold an epoch-table entry;
+            // no caller depends on epoch-protected state across this call.
+            if (epoch.ThisInstanceProtected() && device.Throttle())
             {
-                while (device.Throttle())
+                epoch.Suspend();
+                try
                 {
-                    _ = device.TryCompleteMine();
-                    _ = Thread.Yield();
-                    epoch.ProtectAndDrain();
+                    while (device.Throttle())
+                    {
+                        _ = device.TryCompleteMine();
+                        _ = Thread.Yield();
+                    }
+                }
+                finally
+                {
+                    epoch.Resume();
                 }
             }
 
@@ -2645,7 +2664,8 @@ namespace Tsavorite.core
                                         BlittableFrame frame,
                                         ref CountdownEvent completed,
                                         long devicePageOffset = 0,
-                                        IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
+                                        IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null,
+                                        ObjectScanFrame objectFrame = null)
         {
             var usedDevice = device ?? this.device;
 
@@ -2668,6 +2688,7 @@ namespace Tsavorite.core
                 handle = completed,
                 cts = cts,
                 readBuffers = readBuffers,
+                objectFrame = objectFrame,
                 maxAddressOffsetOnPage = maxAddressOffsetOnPage
             };
 

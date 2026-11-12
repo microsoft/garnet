@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -54,8 +54,15 @@ namespace Garnet.server
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            _ = unifiedContext.Upsert(in srcLogRecord);
-            return GarnetStatus.OK;
+            if (srcLogRecord.HasNamespace)
+            {
+                // The record is the composite key; its key bytes alone omit the namespace.
+                _ = unifiedContext.Upsert(in srcLogRecord);
+                return GarnetStatus.OK;
+            }
+
+            UnifiedInput input = default;
+            return SET(srcLogRecord.Key, ref input, in srcLogRecord, ref unifiedContext);
         }
 
         /// <summary>
@@ -72,7 +79,17 @@ namespace Garnet.server
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            _ = unifiedContext.Upsert((FixedSpanByteKey)key, ref input, in srcLogRecord);
+            if (!srcLogRecord.DataHeader.ValueIsObject && srcLogRecord.RecordType == 0)
+            {
+                // Zero explicitly clears an existing ETag during replay.
+                var recordInput = new UnifiedInput(RespCommand.SET, RespInputFlags.HasEtag, srcLogRecord.Expiration)
+                {
+                    arg2 = srcLogRecord.ETag
+                };
+                _ = unifiedContext.Upsert((FixedSpanByteKey)key, ref recordInput, in srcLogRecord);
+            }
+            else
+                _ = unifiedContext.Upsert((FixedSpanByteKey)key, ref input, in srcLogRecord);
             return GarnetStatus.OK;
         }
 
@@ -205,7 +222,8 @@ namespace Garnet.server
         public unsafe GarnetStatus EXPIRE<TUnifiedContext>(PinnedSpanByte key, long expiration, out bool timeoutSet, out bool error, ExpireOption expireOption, ref TUnifiedContext unifiedContext, RespCommand respCommand)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            Span<byte> rmwOutput = stackalloc byte[sizeof(int)];
+            // CopyDefaultResp writes the reply into this buffer only when the buffer is strictly larger than the reply
+            Span<byte> rmwOutput = stackalloc byte[8];
             var unifiedOutput = new UnifiedOutput(SpanByteAndMemory.FromPinnedSpan(rmwOutput));
 
             // Convert to expiration time in ticks, rejecting values that would overflow the representable date range
@@ -313,8 +331,6 @@ namespace Garnet.server
             var oldKey = oldKeySlice;
             var newKey = newKeySlice;
 
-            var abortTransaction = false;
-
             var output = new UnifiedOutput();
             try
             {
@@ -330,7 +346,6 @@ namespace Garnet.server
                 if (isNX && newExists)
                 {
                     result = 0;             // This is the "oldkey was found" return
-                    abortTransaction = true;
                     return GarnetStatus.OK;
                 }
 
@@ -353,7 +368,6 @@ namespace Garnet.server
                 status = GET(oldKey, ref input, ref output, ref context);
                 if (status != GarnetStatus.OK)
                 {
-                    abortTransaction = true;
                     return status;
                 }
 
@@ -401,6 +415,17 @@ namespace Garnet.server
                             functionsState.vectorManager.UpdateHashSlot(oldKey, newKey, logRecord.ValueSpan, ref vectorBasicContext);
                         }
 
+                        if (logRecord.DataHeader.HasExpiration)
+                        {
+                            _ = EXPIREAT(newKey, ConvertUtils.UnixTimeInMillisecondsFromTicks(logRecord.Expiration), out var timeoutSet, out _, ExpireOption.None, ref context, milliseconds: true);
+
+                            if (!timeoutSet)
+                            {
+                                // Record _expired_ during rename, so force a delete
+                                _ = DELETE(newKey, ref context);
+                            }
+                        }
+
                         // Delete the old key
                         _ = DELETE(oldKey, ref context);
                         return GarnetStatus.OK;
@@ -417,11 +442,9 @@ namespace Garnet.server
             {
                 if (createTransaction)
                 {
-                    if (abortTransaction)
-                        txnManager.Reset();
-                    else
-                        txnManager.Commit(true);
+                    txnManager.Commit(true);
                 }
+
                 output.Dispose();
             }
 

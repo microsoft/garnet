@@ -1379,6 +1379,14 @@ namespace Garnet.server
         /// <param name="key">Name of the vector set.</param>
         /// <param name="result">Finalization result.</param>
         /// <param name="errorMsg">Error details when finalization fails.</param>
+        GarnetStatus VectorSetVerifyImport(PinnedSpanByte key, int taskIndex, int taskCount, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
+
+        /// <summary>
+        /// Finalizes an imported vector set before returning.
+        /// </summary>
+        /// <param name="key">Name of the vector set.</param>
+        /// <param name="result">Finalization result.</param>
+        /// <param name="errorMsg">Error details when finalization fails.</param>
         GarnetStatus VectorSetFinishImport(PinnedSpanByte key, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
 
         /// <summary>
@@ -1857,10 +1865,20 @@ namespace Garnet.server
         /// <summary>
         /// Returns the value associated to the field in the hash stored at key.
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="field"></param>
-        /// <param name="value"></param>
-        /// <returns></returns>
+        /// <remarks>
+        /// A field that is absent from an existing hash reports <see cref="GarnetStatus.NOTFOUND"/>, the same
+        /// status an absent key reports, so it can be told apart from a field that holds an empty value
+        /// (<see cref="GarnetStatus.OK"/> with a zero-length <paramref name="value"/>). Callers that detect a
+        /// missing field by testing for an empty value must check the status instead.
+        /// <para>
+        /// A non-empty <paramref name="value"/> lives in the session's scratch allocator, so it stays valid until
+        /// that allocator is reset: after the current batch of commands, or by <c>ResetScratchBuffer</c>.
+        /// </para>
+        /// </remarks>
+        /// <param name="key">The hash key</param>
+        /// <param name="field">The field to read</param>
+        /// <param name="value">The field's value, empty unless the status is <see cref="GarnetStatus.OK"/></param>
+        /// <returns><see cref="GarnetStatus.OK"/> if the field exists, <see cref="GarnetStatus.NOTFOUND"/> if the key or field does not</returns>
         GarnetStatus HashGet(PinnedSpanByte key, PinnedSpanByte field, out PinnedSpanByte value);
 
         /// <summary>
@@ -2245,7 +2263,7 @@ namespace Garnet.server
         /// Fetch debugging information about the Vector Set.
         /// </summary>
         /// <remarks>When the status is OK, a negative <paramref name="size"/> indicates an internal index failure.</remarks>
-        GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size, out bool importPending);
+        GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size, out VectorSetImportState importPending);
 
         /// <summary>
         /// Get the attributes associated with an element in the Vector Set.

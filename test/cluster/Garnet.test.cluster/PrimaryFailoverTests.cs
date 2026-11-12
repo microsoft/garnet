@@ -44,9 +44,9 @@ namespace Garnet.test.cluster
         ClusterProvider Provider(int index)
             => (ClusterProvider)context.nodes[index].Provider.StoreWrapper.clusterProvider;
 
-        void SetupReplica(int sublogCount, bool disableObjects = true, bool enableIndexGrowth = false)
+        void SetupReplica(int sublogCount, bool disableObjects = true, bool enableIndexGrowth = false, bool enableLua = false)
         {
-            context.CreateInstances(2, disableObjects: disableObjects, enableAOF: true, sublogCount: sublogCount);
+            context.CreateInstances(2, disableObjects: disableObjects, enableAOF: true, sublogCount: sublogCount, enableLua: enableLua);
             if (enableIndexGrowth)
                 EnableIndexGrowth(0);
             context.CreateConnection();
@@ -354,7 +354,7 @@ namespace Garnet.test.cluster
 
             Assert.That(primary.failoverManager.IsWritePaused, Is.False);
             Assert.That(primary.clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.REPLICA));
-            Assert.That(primary.replicationManager.ReplicationOffset.EqualsAll(tail), Is.True,
+            Assert.That(() => primary.replicationManager.ReplicationOffset.EqualsAll(tail), Is.True.After(10_000, 10),
                 "The reattached old primary must synchronize to the handoff offset.");
             Assert.That(Provider(1).clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.PRIMARY),
                 "The synchronized replica must be promoted using the final log tail, not the stale replica-tracking offset.");
@@ -590,6 +590,49 @@ namespace Garnet.test.cluster
                 : "+OK"));
             Assert.That(db.StringGet(key),
                 Is.EqualTo(failover ? value : (RedisValue)"changed"));
+        }
+
+        // SET runs on the script fast path; APPEND runs through RESP dispatch inside the script. The script spins
+        // until a deadline so that the pause begins after the script passed its own admission.
+        [TestCase("SET")]
+        [TestCase("APPEND")]
+        [CancelAfter(120_000)]
+        public async Task PausedScriptWriteReleasesSessionEpoch(string command)
+        {
+            SetupReplica(1, enableLua: true);
+            var primary = Provider(0);
+            var db = context.clusterTestUtils.GetDatabase();
+            var key = context.kvPairs.Keys.First();
+            var value = (string)db.StringGet(key);
+            using var connection = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var session = await ConnectIdleSessionAsync(connection, deadline.Token);
+            var script = $"while tonumber(redis.call('TIME')[1]) < tonumber(ARGV[2]) do end redis.call('{command}', KEYS[1], ARGV[1]) return 1";
+            var runUntil = DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeSeconds();
+            Task<string> response = null;
+            try
+            {
+                var stream = connection.GetStream();
+                await stream.WriteAsync(Encoding.ASCII.GetBytes(
+                    $"*6\r\n$4\r\nEVAL\r\n${script.Length}\r\n{script}\r\n$1\r\n1\r\n${key.Length}\r\n{key}\r\n$7\r\nchanged\r\n${runUntil.ToString().Length}\r\n{runUntil}\r\n"),
+                    deadline.Token);
+                response = ReadResponseAsync(stream, deadline.Token);
+                Assert.That(() => session.LocalCurrentEpoch, Is.Not.Zero.After(5_000, 10), "The script must be running.");
+
+                primary.failoverManager.PauseWrites(true);
+                Assert.That(() => session.LocalCurrentEpoch, Is.Zero.After(15_000, 10),
+                    "A script blocked on the write pause must release the epoch held by its session.");
+                Assert.That(response.IsCompleted, Is.False);
+                Assert.That(db.StringGet(key), Is.EqualTo(value));
+                Assert.That(await primary.BumpAndWaitForEpochTransitionAsync().AsTask().WaitAsync(deadline.Token), Is.True);
+            }
+            finally
+            {
+                primary.failoverManager.PauseWrites(false);
+            }
+
+            Assert.That(await response.WaitAsync(deadline.Token), Is.EqualTo(":1"));
+            Assert.That((string)db.StringGet(key), Is.EqualTo(command == "SET" ? "changed" : value + "changed"));
         }
 
         [TestCase(false)]
@@ -1056,15 +1099,10 @@ namespace Garnet.test.cluster
         {
             SetupReplica(1);
             var primary = Provider(0);
-            var server = (GarnetServerTcp)primary.storeWrapper.Servers[0];
-            var existing = server.ActiveClusterSessions().ToHashSet();
             using var connection = new TcpClient();
-            await connection.ConnectAsync((IPEndPoint)context.clusterTestUtils.GetEndPoint(0));
-            var stream = connection.GetStream();
-            await stream.WriteAsync("*1\r\n$4\r\nPING\r\n"u8.ToArray());
-            await stream.ReadExactlyAsync(new byte[7]);
-            var reader = server.ActiveClusterSessions().OfType<ClusterSession>().Single(s => !existing.Contains(s));
-            Assert.That(() => reader.LocalCurrentEpoch, Is.Zero.After(5_000, 10));
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            // Match this client's endpoint; background cluster connections can also appear during admission.
+            var reader = await ConnectIdleSessionAsync(connection, deadline.Token);
             reader.AcquireCurrentEpoch();
             try
             {
@@ -1231,7 +1269,14 @@ namespace Garnet.test.cluster
         public Task MigrationWaitRedirectsToNewPrimary(bool readOnly, bool isTxn)
             => VerifyMigrationWaitAsync(readOnly, demote: true, isTxn, verifyResponse: true);
 
-        async Task VerifyMigrationWaitAsync(bool readOnly, bool demote, bool isTxn, bool verifyResponse)
+        // A script's session waits on the epoch held by the session that runs the script
+        [TestCase(false)]
+        [TestCase(true)]
+        [CancelAfter(120_000)]
+        public Task MigrationWaitInScriptSessionRevalidatesConfiguration(bool isTxn)
+            => VerifyMigrationWaitAsync(readOnly: false, demote: true, isTxn, verifyResponse: true, scriptSession: true);
+
+        async Task VerifyMigrationWaitAsync(bool readOnly, bool demote, bool isTxn, bool verifyResponse, bool scriptSession = false)
         {
             SetupReplica(1);
             var provider = Provider(0);
@@ -1243,6 +1288,14 @@ namespace Garnet.test.cluster
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var token = deadline.Token;
             var session = await ConnectIdleSessionAsync(connection, token);
+            using var ownerConnection = new TcpClient();
+            var epochSession = session;
+            if (scriptSession)
+            {
+                // The owner runs the script and holds the epoch; `session` is the session the script issues commands through
+                epochSession = await ConnectIdleSessionAsync(ownerConnection, token);
+                session.SetEpochOwner(epochSession);
+            }
             var keyBytes = "migration-recovery-probe"u8.ToArray();
             var pin = GCHandle.Alloc(keyBytes, GCHandleType.Pinned);
             var key = MakePinnedKey(pin.AddrOfPinnedObject(), keyBytes.Length);
@@ -1272,17 +1325,17 @@ namespace Garnet.test.cluster
                 object[] args = [migrating, key, readOnly, false, false, (int)slot];
                 pending = Task.Run(() =>
                 {
-                    session.AcquireCurrentEpoch();
+                    epochSession.AcquireCurrentEpoch();
                     try
                     {
                         return verifyResponse ? VerifyMultiKeyResponse(session, key, readOnly, isTxn) : verify.Invoke(session, args);
                     }
                     finally
                     {
-                        session.ReleaseCurrentEpoch();
+                        epochSession.ReleaseCurrentEpoch();
                     }
                 });
-                Assert.That(() => session.LocalCurrentEpoch, Is.Not.Zero.After(5_000, 10));
+                Assert.That(() => epochSession.LocalCurrentEpoch, Is.Not.Zero.After(5_000, 10));
                 Assert.That(pending.IsCompleted, Is.False);
                 // Cross an epoch while migration blocks, proving the initial recovery check has completed.
                 Assert.That(await provider.BumpAndWaitForEpochTransitionAsync().AsTask().WaitAsync(token), Is.True);

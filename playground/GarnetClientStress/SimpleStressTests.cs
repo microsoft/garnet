@@ -20,7 +20,7 @@ namespace GarnetClientStress
                     new IPEndPoint(IPAddress.Parse(opts.Address), opts.Port),
                     opts.EnableTLS ? StressTestUtils.GetTlsOptions("GarnetTest") : null,
                     timeoutMilliseconds: (int)timeout.TotalMilliseconds,
-                    maxOutstandingTasks: opts.ClientMaxOutstandingTasks,
+                    networkWriterOptions: StressTestUtils.GetNetworkWriterOptions(opts.ClientMaxOutstandingTasks),
                     recordLatency: true);
                 clients[i].Connect();
                 var result = clients[i].PingAsync().GetAwaiter().GetResult();

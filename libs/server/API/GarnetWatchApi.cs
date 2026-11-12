@@ -687,7 +687,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size, out bool importPending)
+        public GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size, out VectorSetImportState importPending)
         {
             garnetApi.WATCH(key, StoreType.Main);
             return garnetApi.VectorSetInfo(key, out quantType, out distanceMetricType, out vectorDimensions, out reducedDimensions, out buildExplorationFactor, out numberOfLinks, out size, out importPending);
