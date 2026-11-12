@@ -28,6 +28,35 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteLog")]
+        public void PageBlobMetadataReadDoesNotRecreateDeletedBlob()
+        {
+            TestUtils.IgnoreIfNotRunningAzureTests();
+            using var manager = new DeviceLogCommitCheckpointManager(
+                TestUtils.AzureStorageNamedDeviceFactoryCreator,
+                new AzureCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"),
+                removeOutdated: false);
+            try
+            {
+                var token = Guid.NewGuid();
+                var metadata = new byte[8193];
+                new Random(0).NextBytes(metadata);
+                manager.CommitLogCheckpointMetadata(token, metadata);
+                CollectionAssert.AreEqual(metadata, manager.ReadLogCheckpointMetadata(token));
+                CollectionAssert.Contains(manager.GetLogCheckpointTokens().ToArray(), token);
+
+                manager.Purge(token);
+                _ = Assert.Throws<FileNotFoundException>(() => manager.ReadLogCheckpointMetadata(token));
+
+                ClassicAssert.IsEmpty(manager.GetLogCheckpointTokens(), "A missing metadata read must not create a page blob");
+            }
+            finally
+            {
+                manager.PurgeAll();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteLog")]
         public async ValueTask PageBlobTsavoriteLogTest1([Values] LogChecksumType logChecksum, [Values] TsavoriteLogTestBase.IteratorType iteratorType)
         {
             TestUtils.IgnoreIfNotRunningAzureTests();

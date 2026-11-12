@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using Garnet.common;
 using Garnet.server;
@@ -331,20 +332,39 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Get latest checkpoint from memory info
+        /// Inspect the latest readable checkpoint on disk without creating storage or pinning its files.
         /// </summary>
         /// <returns></returns>
         public string GetLatestCheckpointFromDiskInfo()
         {
             try
             {
-                var cEntry = GetLatestCheckpointEntryFromDisk();
-                if (cEntry == null)
+                storeWrapper.store.GetLatestCheckpointTokensForInspection(out var hlogToken, out var indexToken, out var version, out var cookie);
+                if (hlogToken == default)
                     return "(empty)";
-                return cEntry.ToString();
+
+                var coveredAddress = AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, 0);
+                clusterProvider.ReplicationLogCheckpointManager.GetCheckpointCookieMetadata(cookie, ref coveredAddress, out var replicationId);
+                return new CheckpointEntry
+                {
+                    metadata = new(storeWrapper.serverOptions.AofPhysicalSublogCount)
+                    {
+                        storeVersion = version,
+                        storeHlogToken = hlogToken,
+                        storeIndexToken = indexToken,
+                        storeCheckpointCoveredAofAddress = coveredAddress,
+                        storePrimaryReplId = replicationId,
+                    }
+                }.ToString();
             }
-            catch
+            catch (DirectoryNotFoundException)
             {
+                logger?.LogDebug("Checkpoint directory disappeared during inspection");
+                return "(empty)";
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Failed to inspect checkpoints on disk");
                 return "(empty)";
             }
         }

@@ -113,6 +113,24 @@ namespace Tsavorite.core
         byte[] GetLogCheckpointMetadata(Guid logToken);
 
         /// <summary>
+        /// Read index metadata for inspection without creating storage. Missing metadata throws
+        /// <see cref="System.IO.FileNotFoundException"/>; other read failures remain errors.
+        /// </summary>
+        /// <param name="indexToken">Token to inspect.</param>
+        /// <returns>The metadata payload without its length prefix or sector padding.</returns>
+        byte[] ReadIndexCheckpointMetadata(Guid indexToken)
+            => throw new NotSupportedException("This checkpoint manager does not support non-creating metadata inspection");
+
+        /// <summary>
+        /// Read HybridLog metadata for inspection without creating storage. Missing metadata throws
+        /// <see cref="System.IO.FileNotFoundException"/>; other read failures remain errors.
+        /// </summary>
+        /// <param name="logToken">Token to inspect.</param>
+        /// <returns>The metadata payload without its length prefix or sector padding.</returns>
+        byte[] ReadLogCheckpointMetadata(Guid logToken)
+            => throw new NotSupportedException("This checkpoint manager does not support non-creating metadata inspection");
+
+        /// <summary>
         /// Get list of index checkpoint tokens, in order of usage preference
         /// </summary>
         /// <returns></returns>
