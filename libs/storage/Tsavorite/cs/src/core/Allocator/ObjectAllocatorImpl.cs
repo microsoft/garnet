@@ -159,20 +159,21 @@ namespace Tsavorite.core
                     ClearPage(index, 0);
                     FreeNativeLogPage(index);
                 }
+                else if (freePagePool.IsFull)
+                {
+                    // The page will not be reused, so only its objects need releasing.
+                    objectPages[index].Clear();
+                }
                 else
                 {
-                    var enqueued = freePagePool.TryAdd(new()
+                    // Clear before pooling: a page turn can take the page from the pool as soon as it is added.
+                    ClearPage(index, 0);
+                    _ = freePagePool.TryAdd(new()
                     {
                         array = pageArrays[index],
                         pointer = pagePointers[index],
                         value = objectPages[index]
                     });
-
-                    // We only need to clear the page if it's enqueued; otherwise we don't reuse the page, so can save the time
-                    if (enqueued)
-                        ClearPage(index, 0);
-                    else
-                        objectPages[index].Clear();
                 }
                 pageArrays[index] = default;
                 pagePointers[index] = default;
