@@ -173,6 +173,101 @@ namespace Tsavorite.test.spanbyte
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
+        public void ScanCursorRetriesEarliestPendingRecord(
+            [Values(HashModulo.Hundred)] HashModulo hashMod,
+            [Values(3, 128, 600)] int keyCount,
+            [Values] bool namespaced,
+            [Values] bool resetCursor)
+        {
+            var functions = new ScanFunctions();
+            using var session = store.NewSession<KeyWithNamespaceStruct, PinnedSpanByte, SpanByteAndMemory, Empty, ScanFunctions>(functions);
+            var addresses = new long[keyCount];
+            for (var i = 0; i < keyCount; i++)
+            {
+                var key = new KeyWithNamespaceStruct { kfield1 = i, namespaceArr = namespaced ? [1] : null };
+                // A short, fully colliding chain reaches the final pending drain before filling the batch.
+                if (keyCount == 3)
+                {
+                    var comparer = new SpanByteComparerModulo((int)hashMod);
+                    while (comparer.GetHashCode64(key) != 0)
+                        key.kfield2++;
+                }
+                Assert.That(session.BasicContext.Upsert(key, "value"u8).IsPending, Is.False);
+                addresses[i] = functions.insertedAddress;
+            }
+            var endAddress = store.Log.TailAddress;
+            store.Log.FlushAndEvict(wait: true);
+
+            var scanner = new BatchLimitedScanFunctions(addresses, namespaced, capacity: keyCount == 3 ? 1 : 7);
+            long cursor = 0;
+            var batches = 0;
+            var multipleRejections = false;
+            while (true)
+            {
+                Assert.That(++batches, Is.LessThanOrEqualTo(keyCount + 1), "Retry batches must make progress.");
+                var more = session.ScanCursor(ref cursor, long.MaxValue, scanner, endAddress,
+                    maxAddress: endAddress, resetCursor: resetCursor);
+                if (scanner.rejectedCount > 0)
+                {
+                    multipleRejections |= scanner.rejectedCount > 1;
+                    Assert.That(more, Is.True, "Pending rejections must preserve a resumable batch even at the end of the scan.");
+                    Assert.That(cursor, Is.EqualTo(scanner.earliestRejectedAddress));
+                }
+                if (!more)
+                    break;
+            }
+            Assert.That(multipleRejections, Is.True, "The batch limit must reject multiple pending disk lookups.");
+            Assert.That(scanner.seen.Count, Is.EqualTo(keyCount), "No rejected key may be skipped.");
+            Assert.That(cursor, resetCursor ? Is.Zero : Is.GreaterThanOrEqualTo(endAddress));
+        }
+
+        sealed class BatchLimitedScanFunctions(long[] addresses, bool namespaced, int capacity) : IScanIteratorFunctions
+        {
+            internal readonly HashSet<int> seen = [];
+            internal long earliestRejectedAddress;
+            internal int rejectedCount;
+            int batchCount;
+
+            public bool IncludeValues => false;
+
+            public bool OnStart(long beginAddress, long endAddress)
+            {
+                earliestRejectedAddress = long.MaxValue;
+                rejectedCount = 0;
+                batchCount = 0;
+                return true;
+            }
+
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord record, RecordMetadata metadata, long numberOfRecords, out CursorRecordResult result)
+                where TSourceLogRecord : ISourceLogRecord
+            {
+                var index = (int)BitConverter.ToInt64(record.Key);
+                Assert.That(metadata.Address, Is.EqualTo(addresses[index]));
+                Assert.That(record.HasNamespace, Is.EqualTo(namespaced));
+                if (seen.Contains(index))
+                    result = CursorRecordResult.Skip;
+                else if (batchCount == capacity)
+                {
+                    earliestRejectedAddress = Math.Min(earliestRejectedAddress, metadata.Address);
+                    rejectedCount++;
+                    result = CursorRecordResult.EndBatch | CursorRecordResult.RetryLastRecord;
+                }
+                else
+                {
+                    seen.Add(index);
+                    batchCount++;
+                    result = CursorRecordResult.Accept;
+                }
+                return true;
+            }
+
+            public void OnStop(bool completed, long numberOfRecords) { }
+            public void OnException(Exception exception, long numberOfRecords) => Assert.Fail(exception.ToString());
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        [Category("Smoke")]
         public unsafe void SpanByteScanCursorTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
         {
             const long PageSize = 1L << PageSizeBits;

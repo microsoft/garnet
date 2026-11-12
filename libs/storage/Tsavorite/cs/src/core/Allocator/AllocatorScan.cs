@@ -240,6 +240,7 @@ namespace Tsavorite.core
             scanCursorState.Initialize(scanFunctions);
 
             long numPending = 0;
+            var batchComplete = false;
             while (iter.GetNext())
             {
                 if (!iter.Info.Tombstone || includeTombstones)
@@ -257,24 +258,28 @@ namespace Tsavorite.core
                 }
 
                 // Update the cursor to point to the next record.
-                if (scanCursorState.retryLastRecord)
-                    cursor = iter.CurrentAddress;
-                else
-                    cursor = iter.NextAddress;
+                cursor = iter.NextAddress;
 
                 // Now see if we completed the enumeration.
                 if (scanCursorState.stop)
-                    goto IterationComplete;
+                    break;
                 if (scanCursorState.acceptedCount >= count || scanCursorState.endBatch)
                 {
-                    scanFunctions.OnStop(true, scanCursorState.acceptedCount);
-                    return true;
+                    batchComplete = true;
+                    break;
                 }
             }
 
-            // Drain any pending pushes. We have ended the iteration; we know there are no more matching records, so drop through to end it and return false.
+            // Pending callbacks can reject earlier records, including after the iterator reaches its end.
             if (numPending > 0)
                 _ = bContext.CompletePending(wait: true);
+
+            if (!scanCursorState.stop && (batchComplete || scanCursorState.endBatch))
+            {
+                cursor = Math.Min(cursor, scanCursorState.retryAddress);
+                scanFunctions.OnStop(true, scanCursorState.acceptedCount);
+                return true;
+            }
 
         IterationComplete:
             if (resetCursor)
@@ -345,7 +350,7 @@ namespace Tsavorite.core
                         if ((cursorRecordResult & CursorRecordResult.EndBatch) != 0)
                             scanCursorState.endBatch = true;
                         if ((cursorRecordResult & CursorRecordResult.RetryLastRecord) != 0)
-                            scanCursorState.retryLastRecord = true;
+                            scanCursorState.retryAddress = Math.Min(scanCursorState.retryAddress, originalAddress);
                     }
                 }
                 finally
