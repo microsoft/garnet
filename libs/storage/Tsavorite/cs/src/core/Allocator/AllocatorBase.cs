@@ -2653,7 +2653,8 @@ namespace Tsavorite.core
                                         BlittableFrame frame,
                                         ref CountdownEvent completed,
                                         long devicePageOffset = 0,
-                                        IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
+                                        IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null,
+                                        ObjectScanFrame objectFrame = null)
         {
             var usedDevice = device ?? this.device;
 
@@ -2676,6 +2677,7 @@ namespace Tsavorite.core
                 handle = completed,
                 cts = cts,
                 readBuffers = readBuffers,
+                objectFrame = objectFrame,
                 maxAddressOffsetOnPage = maxAddressOffsetOnPage
             };
 

@@ -1099,15 +1099,10 @@ namespace Garnet.test.cluster
         {
             SetupReplica(1);
             var primary = Provider(0);
-            var server = (GarnetServerTcp)primary.storeWrapper.Servers[0];
-            var existing = server.ActiveClusterSessions().ToHashSet();
             using var connection = new TcpClient();
-            await connection.ConnectAsync((IPEndPoint)context.clusterTestUtils.GetEndPoint(0));
-            var stream = connection.GetStream();
-            await stream.WriteAsync("*1\r\n$4\r\nPING\r\n"u8.ToArray());
-            await stream.ReadExactlyAsync(new byte[7]);
-            var reader = server.ActiveClusterSessions().OfType<ClusterSession>().Single(s => !existing.Contains(s));
-            Assert.That(() => reader.LocalCurrentEpoch, Is.Zero.After(5_000, 10));
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            // Match this client's endpoint; background cluster connections can also appear during admission.
+            var reader = await ConnectIdleSessionAsync(connection, deadline.Token);
             reader.AcquireCurrentEpoch();
             try
             {

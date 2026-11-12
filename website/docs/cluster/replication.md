@@ -60,6 +60,47 @@ A summary of these options is shown below:
 Using the aforementioned options, we guarantee that no writes are lost while a replica is attaching and replication remains highly performant.
 However, due to the asynchronous nature of replication, if a primary goes down before unexpectedly, the replicas might have not received the latest AOF log records, resulting in lost writes.
 
+## Disk-Based Full-Sync Transfer Size
+
+On the primary, `--repl-disk-based-sync-chunk-size` sets the maximum payload per Tsavorite checkpoint file-transfer request. The default is `16m` (16 MiB). For example, to use smaller chunks and less memory:
+
+```bash
+GarnetServer.exe --cluster --aof --repl-disk-based-sync-chunk-size 4m
+```
+
+The equivalent Garnet configuration property and `GarnetServerOptions` field are `ReplicaDiskBasedSyncChunkSize`. It also supports `CONFIG SET repl-disk-based-sync-chunk-size`; `CONFIG GET` returns the effective size in bytes. It applies to main-log, object-log, snapshot and index checkpoint files; it does not change diskless replication, AOF streaming, checkpoint metadata or RangeIndex file transfers.
+
+Sizes from 512 bytes through 512 MiB are accepted and rounded down to a power of two. Device-backed chunks must be at least and a multiple of the device sector size. Startup validation queries the configured checkpoint and log factories without opening files; runtime changes use that same sector constraint. Transfer-time validation remains as a defensive check for individual devices. Reads stop at physical segment boundaries, and final chunks are sector-aligned, so actual chunks can be smaller than the configured maximum.
+
+Each chunk costs a round trip for the replica's acceptance acknowledgement plus fixed per-request overhead. Larger chunks amortize that cost, and pipelining (below) overlaps it. Compare a few sizes such as 4, 16 and 64 MiB with the same checkpoint and storage conditions, then choose the smallest size near the measured throughput plateau.
+
+On the primary, `--repl-disk-based-sync-pipeline-depth` allows multiple unacknowledged chunks per replica. The default `4` keeps up to four chunks outstanding; `1` restores stop-and-wait behavior. Values from 1 through 64 are accepted, provided depth times the effective chunk size does not exceed 512 MiB. With the default depth, chunk sizes above 128 MiB therefore also need a lower depth; with the default chunk size, depths above 32 need a smaller chunk. The equivalent configuration property and `GarnetServerOptions` field are `ReplicaDiskBasedSyncPipelineDepth`. It also supports `CONFIG SET repl-disk-based-sync-pipeline-depth`, with the same file-type scope. For example:
+
+```bash
+GarnetServer.exe --cluster --aof --repl-disk-based-sync-pipeline-depth 8
+```
+
+Each transfer captures one validated chunk/depth pair and matching client-buffer size when it starts. Runtime changes affect new transfers, not a transfer already running. Updates are checked against the current counterpart, so order them so that every intermediate combination stays within the payload limit. For example, from depth 32 at 16 MiB to depth 8 at 64 MiB, lower the depth first:
+
+```text
+CONFIG SET repl-disk-based-sync-pipeline-depth 8
+CONFIG SET repl-disk-based-sync-chunk-size 64m
+```
+
+The primary reads and submits chunks sequentially, but can read and send later chunks while previous acknowledgements are outstanding. Ready chunks can share one network send buffer; the producer flushes before waiting for a full acknowledgement window, an asynchronous read, or the final drain. The replica acknowledges each chunk after copying and accepting it into its bounded write queue, not after its disk write. All acceptance acknowledgements are drained before sending the file's end marker. The end marker waits for every write to succeed and the file to close; the primary checks its reply before advancing to another file. Both peers must run the updated implementation; mixed-version negotiation is not provided. Pipelining can hide acknowledgement latency but does not guarantee line-rate throughput. A window larger than needed to keep the replica busy adds memory and can reduce throughput, so compare depths such as 2, 4 and 8 rather than assuming deeper is faster.
+
+On the replica, `--repl-disk-based-sync-write-buffers` sets how many received chunks it may hold for its file writer, queued or being written. The default `1` lets the replica receive the next chunk while it writes the previous one; `0` writes each chunk before receiving the next. Values from 0 through 8 are accepted. The equivalent configuration property and `GarnetServerOptions` field are `ReplicaDiskBasedSyncWriteBuffers`. Writes are sequential by default even with multiple buffers. Set `--repl-disk-based-sync-write-buffers-concurrently true` (`ReplicaDiskBasedSyncWriteBuffersConcurrently`) to allow concurrent writes to non-overlapping ranges of the same Tsavorite file. With 0 or 1 buffers, the flag does not increase concurrency. Both settings require restart; the concurrency flag is read-only through `CONFIG GET`. When every buffer is occupied, receiving blocks until a write releases a buffer. End-of-file waits for all writes and fails if any failed. More buffers increase memory use, but are not necessarily faster; compare 1, 2 and 4 with each policy before raising it. For example:
+
+```bash
+GarnetServer.exe --cluster --aof --repl-disk-based-sync-write-buffers 2 --repl-disk-based-sync-write-buffers-concurrently true
+```
+
+Larger chunks and deeper windows increase memory costs. The primary's checkpoint client uses power-of-two send buffers with framing headroom (at least 1 MiB each, otherwise twice the effective chunk size); with the defaults, that is 32 MiB per buffer and at most 64 MiB of unacknowledged payload per replica. Aligned source buffers are returned after their contents are copied into network-owned buffers, without waiting for acknowledgements. Replicas also need a receive buffer and one aligned chunk-sized buffer per write buffer (one for synchronous writes). The 512 MiB window limit bounds unacknowledged payload, not total memory allocation; socket buffers, framing, pool capacity and concurrent syncs add to that cost, and pools can retain buffers after use. Depth 3 does not require three replica write buffers. The replica's programmatic `GarnetServerOptions.NetworkReceiveBufferMaxSize` setting controls receive-buffer retention, not this chunk limit.
+
+Each chunk's `--repl-sync-timeout` deadline starts when submission begins, including time blocked by socket backpressure, and is not restarted when its response reaches the head of the window. Allow enough time for network transfer and queued replica writes. An error, disconnect, timeout or cancellation aborts the checkpoint connection rather than reusing it with outstanding replies.
+
+The [replica-transfer benchmark](https://github.com/microsoft/garnet/tree/main/benchmark/Replica-transfer.benchmark) sweeps chunk sizes and pipeline depths on one machine or two, in two scenarios. The default, `--scenario full`, launches real primary and replica servers and times a complete disk-based full sync: from `CLUSTER REPLICATE ... SYNC` until a new post-attach marker is readable on the replica, including checkpoint shipping, recovery and AOF catch-up. Population, the preparatory checkpoint and verification are untimed. This is full-sync time, not checkpoint-shipping throughput; `--phase-timing true` also reports the shipment separately. `--scenario transfer-only` measures checkpoint-file shipping alone, using the same device reads, network sender, queue acceptance replies and final write-completion barrier, from a generated checkpoint or an existing offline file. The README includes concrete commands, representative output, measurement caveats and how to compare the scenarios.
+
 # Creating a Garnet Cluster with Replication
 
 The process of setting up a cluster with replication is similar to setting up a regular cluster while also enabling the aof option.
