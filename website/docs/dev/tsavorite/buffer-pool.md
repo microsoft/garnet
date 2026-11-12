@@ -130,7 +130,10 @@ The **depot** is the third tier — a shared fallback owned by the pool. Decodin
   3. **No per-push allocation.** `Stack<T>` pushes into a pre-grown array, so parking a buffer allocates nothing.
 
   Contention is bounded by striping: the depot is spread `DepotStripes` ways, sized from the machine's processor
-  count, and each critical section is O(1).
+  count, and each critical section is O(1). A pop returns without locking when the stripe's `count` — the stack
+  depth, published under the lock — is zero, so a miss that finds the depot empty (as every miss does once the byte
+  budget is exhausted, §9) takes no stripe lock. The read is a hint: a pop racing a first push may miss that buffer
+  and allocate instead.
 * **overflow pool** — it catches buffers that cannot stay in per-thread caches, and redistributes them:
   * On **Return**, if the origin thread is at its local byte ceiling (§9) or the origin shard has retired (its
     thread died), the buffer overflows into the depot (`DepotPush`) instead of being dropped.
@@ -230,13 +233,25 @@ rather than of the pool. Each thread's ceiling (`ThreadShard.localByteCap`) is a
 that local caching draws from:
 
 ```
-threadLocalByteCap = max(smallBudget / ExpectedConcurrentThreads, MinThreadLocalBytes)
+threadLocalByteCap = max(smallBudget / ExpectedConcurrentThreads, MinThreadLocalBytes)    // threads <= expected
+threadLocalByteCap = smallBudget / 2 / RoundUpToPowerOf2(threads)                         // threads >  expected
 ```
 
 `ExpectedConcurrentThreads` is `2 × ProcessorCount` capped at 64, and `MinThreadLocalBytes` (1 MB) is a floor so
 a small configured budget still caches. At the 1 GiB default on a 32-core or larger box that is
 256 MB / 64 = **4 MB** per thread. The slices of that many threads sum to the sub-budget, so no thread can retain
 enough to starve the others. Only small classes reach this path; large classes go straight to the depot (§6).
+
+`threads` is the number of threads using the pool: each thread that takes a buffer from it counts until that thread
+exits and its shard is finalized. Each thread parks up to its ceiling when it goes idle, and buffers parked on one
+thread are unreachable by the others, so with a fixed slice more threads than expected could together park more
+than the sub-budget, leaving every further buffer uncached. The pool therefore re-cuts the slice whenever a thread's
+shard is created or finalized, so all slices together cover at most **half** the sub-budget; the other half stays
+available for buffers in flight and for the depot. Rounding the count up to a power of two keeps the slice unchanged
+between powers of two; when it changes, the new ceiling is written into every live thread's shard. A thread above a
+lowered ceiling spills down to it at its next `Return` that reaches the ceiling (`TryMakeRoom`), and admits buffers
+other threads return to it only up to the ceiling (`SpliceIntoLocal`); what an idle thread parked stays parked until
+that thread runs again, since only the owner touches its local chains.
 
 The ceiling is shared across all of a thread's size classes and is enforced only once the thread reaches it, so a
 thread whose traffic is a single class keeps the whole slice. At the ceiling, admission is **max-min fair** across
@@ -259,8 +274,10 @@ Two events make this hard: **threads die** and **pools close** — both possibly
   sentinel is never swapped back out — it is a permanent "this list is closed" marker.
 * **Dead-thread reclamation.** There is no thread-exit callback, so `ThreadShard` is **finalizable**. If a thread
   dies with buffers still cached, the finalizer walks its buckets and releases their permits back to the budget so
-  it does not leak. A `drainedOnce` CAS arbitrates between the finalizer and an explicit pool `Free` so buffers are
-  drained **at most once**; `Free` deliberately releases that flag again for shards it did not own (see below).
+  it does not leak, and re-cuts the per-thread ceiling for the threads that remain. A `drainedOnce` CAS arbitrates
+  between the finalizer and an explicit pool `Free` so buffers are drained **at most once**; `Free` deliberately
+  releases that flag again for shards it did not own (see below). The flag starts set and is cleared only when the
+  pool counts the shard, so a shard whose creation fails part-way is finalized without being uncounted.
 * **Pool `Free`.** `FreeOriginReturn` flips `poolState` to `Closing` (stopping new reservations and making any new
   shard born-sealed), seals and drains all registered live shards, closes every depot stripe, marks `Closed`, and
   releases the pool's slot. It is idempotent. Draining is asymmetric by ownership: the freeing thread's own shard
@@ -293,5 +310,6 @@ path; **large** classes (> 256 KB) bypass them and share globally through the de
 redistribution go through a shared, per-class, lock-striped **depot** (8–64 stripes, sized from the processor
 count). A per-pool **byte budget**, split into isolated small and large slices, caps total retained bytes via one
 permit per buffer taken at birth and released at death; within the small slice each thread retains up to an equal
-per-thread byte share, spilling the surplus to the depot rather than dropping it. Seal sentinels, finalizers, and
+per-thread byte share, re-cut so the shares stay within the slice however many threads use the pool, and spills
+the surplus to the depot rather than dropping it. Seal sentinels, finalizers, and
 a closing state machine make thread death and pool teardown race-safe.

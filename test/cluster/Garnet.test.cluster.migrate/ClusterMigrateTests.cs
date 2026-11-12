@@ -2733,5 +2733,43 @@ namespace Garnet.test.cluster
             var keepObjectCard = (long)server.Execute(0, "SCARD", [keepObjectKey]);
             ClassicAssert.AreEqual(3, keepObjectCard, "keepSlot object key should still contain all 3 members");
         }
+
+
+        [Test, Order(29)]
+        [Category("CLUSTER")]
+        public void ClusterMigrateSlotsVectorSetsDisabled()
+        {
+            var Shards = defaultShards;
+            context.CreateInstances(Shards, useTLS: UseTLS, enableVectorSetPreview: false);
+            context.CreateConnection(useTLS: UseTLS);
+
+            var (_, slots) = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var keyCount = 100;
+            var slot = CreateSingleSlotData(keyLen: 16, valueLen: 16, keyTagEnd: 6, keyCount, out var data);
+            var sourceIndex = context.clusterTestUtils.GetSourceNodeIndexFromSlot((ushort)slot, context.logger);
+            var expectedKeyCount = context.clusterTestUtils.CountKeysInSlot(slot);
+            ClassicAssert.AreEqual(expectedKeyCount, keyCount);
+
+            var sourceEndpoint = (IPEndPoint)context.endpoints[sourceIndex];
+            var targetEndpoint = (IPEndPoint)context.endpoints[(sourceIndex + 1) % context.endpoints.Count];
+
+            // Initiate Migration            
+            context.clusterTestUtils.MigrateSlots(sourceEndpoint, targetEndpoint, new List<int>() { slot }, logger: context.logger);
+
+            // Wait for keys to become available for reading
+            var keysList = data.Keys.ToList();
+            for (var i = 0; i < keysList.Count; i++)
+            {
+                var value = context.clusterTestUtils.GetKey(targetEndpoint, keysList[i], out var _slot, out var endPoint, out var responseState);
+                while (responseState != ResponseState.OK || value == null)
+                {
+                    _ = Thread.Yield();
+                    value = context.clusterTestUtils.GetKey(targetEndpoint, keysList[i], out _slot, out endPoint, out responseState);
+                }
+
+                ClassicAssert.AreEqual(data[keysList[i]], Encoding.ASCII.GetBytes(value));
+            }
+        }
     }
 }
