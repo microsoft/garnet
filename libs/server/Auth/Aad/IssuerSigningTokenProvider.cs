@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Protocols;
@@ -34,21 +35,25 @@ namespace Garnet.server.Auth.Aad
         protected IssuerSigningTokenProvider(string authority, IReadOnlyCollection<SecurityKey> signingTokens, bool refreshTokens = true, ILogger logger = null)
         {
             _authority = authority;
+            _signingTokens = signingTokens;
+            _logger = logger;
+
             if (refreshTokens)
             {
-                _refreshTimer = new Timer(RefreshSigningTokens, null, TimeSpan.Zero, TimeSpan.FromDays(1));
+                _refreshTimer = new Timer(static provider => _ = ((IssuerSigningTokenProvider)provider).RefreshSigningTokensAsync(),
+                    this, TimeSpan.Zero, TimeSpan.FromDays(1));
             }
-            _signingTokens = signingTokens;
-
-            _logger = logger;
         }
 
-
-        private void RefreshSigningTokens(object _)
+        /// <summary>
+        /// Replaces the signing keys with those the authority publishes now. Runs from the refresh timer on a thread
+        /// pool thread, which it gives back while the fetch is outstanding.
+        /// </summary>
+        private async Task RefreshSigningTokensAsync()
         {
             try
             {
-                _signingTokens = RetrieveSigningTokens(_authority);
+                _signingTokens = await RetrieveSigningTokensAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -57,12 +62,17 @@ namespace Garnet.server.Auth.Aad
             }
         }
 
-        private static IReadOnlyCollection<SecurityKey> RetrieveSigningTokens(string authority)
+        /// <summary>
+        /// Fetches the signing keys the authority publishes.
+        /// </summary>
+        protected virtual Task<IReadOnlyCollection<SecurityKey>> RetrieveSigningTokensAsync() => FetchSigningTokensAsync(_authority);
+
+        private static async Task<IReadOnlyCollection<SecurityKey>> FetchSigningTokensAsync(string authority)
         {
             var configUrl = string.Format(OpenIdConfigurationAddressFormat, authority);
 
             var configManager = new ConfigurationManager<OpenIdConnectConfiguration>(configUrl, new OpenIdConnectConfigurationRetriever(), new HttpDocumentRetriever());
-            var doc = AsyncUtils.BlockingWait(configManager.GetConfigurationAsync());
+            var doc = await configManager.GetConfigurationAsync().ConfigureAwait(false);
 
             return [.. doc.SigningKeys];
         }
@@ -106,7 +116,8 @@ namespace Garnet.server.Auth.Aad
                 throw new Exception("Authority cannot be null");
             }
 
-            var signingTokens = RetrieveSigningTokens(authority);
+            // Called while the server options are built, before the server starts
+            var signingTokens = AsyncUtils.BlockingWait(FetchSigningTokensAsync(authority));
             return new IssuerSigningTokenProvider(authority, signingTokens, refreshTokens: true, logger);
         }
     }

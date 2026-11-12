@@ -8,6 +8,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -764,6 +765,33 @@ ClusterRedirectTests.TestFlags testFlags)
             connections.ToList().ForEach(x => x.Dispose());
         }
 
+        [Test, Order(7)]
+        [Category("CLUSTER")]
+        public void ClusterSlotErrorsOverflowingTheResponseBufferAreAllDelivered()
+        {
+            // This node owns no slots, so slot verification fails every keyed command with CLUSTERDOWN. Each 35-byte
+            // error is longer than its 20-byte request, so a full receive batch overflows the equally sized response
+            // buffer, and the errors written so far must be sent before writing continues. That send used to measure
+            // the reply from a cluster session field that only CLUSTER commands set, so these errors were dropped or garbled.
+            context.CreateInstances(1);
+
+            using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp) { ReceiveTimeout = 10_000 };
+            socket.Connect(new IPEndPoint(IPAddress.Loopback, ClusterTestContext.Port));
+
+            const int count = 10_000;
+            var payload = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat(Resp("TTL", "k"), count)));
+
+            // Send from another thread, so replies backing up cannot stall the server while this thread is still sending.
+            var sent = 0;
+            var sender = new Thread(() => sent = socket.Send(payload));
+            sender.Start();
+            using var reader = new StreamReader(new NetworkStream(socket), Encoding.ASCII);
+            for (var i = 0; i < count; i++)
+                ClassicAssert.AreEqual("-CLUSTERDOWN Hash slot not served", reader.ReadLine(), $"reply {i}");
+            sender.Join();
+            ClassicAssert.AreEqual(payload.Length, sent);
+        }
+
         private string KeyForSlot(int slot)
         {
             var data = new byte[16];
@@ -1059,6 +1087,94 @@ ClusterRedirectTests.TestFlags testFlags)
 
             connections.ToList().ForEach(x => x.Dispose());
             context.logger.LogDebug("1. ClusterUnknownEndpointPreferredTests done");
+        }
+
+        [Test, Order(7)]
+        [Category("CLUSTER")]
+        public void ClusterScriptCommandsInheritAskingOnImportingSlot()
+        {
+            const string key = "script-asking-key";
+            const string script = "redis.call('SET', KEYS[1], 'v'); return redis.call('GET', KEYS[1])";
+            var eval = Encoding.ASCII.GetBytes($"*4\r\n$4\r\nEVAL\r\n${script.Length}\r\n{script}\r\n$1\r\n1\r\n${key.Length}\r\n{key}\r\n");
+
+            var port = ClusterTestContext.Port;
+            var shards = context.defaultShards;
+
+            context.CreateInstances(shards, cleanClusterConfig: true, enableLua: true);
+            context.CreateConnection();
+
+            var connections = ClusterTestUtils.CreateLightRequestConnections([.. Enumerable.Range(port, shards)]);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var slot = ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(key));
+            var sourceNodeIndex = ClusterTestUtils.GetSourceNodeIndexFromSlot(ref connections, slot);
+            var targetNodeIndex = context.clusterTestUtils.GetRandomTargetNodeIndex(ref connections, sourceNodeIndex);
+            var sourceNodeId = ClusterTestUtils.GetNodeIdFromNode(ref connections[sourceNodeIndex]);
+
+            ClassicAssert.AreEqual("OK", ClusterTestUtils.SetSlot(ref connections[targetNodeIndex], slot, "IMPORTING", sourceNodeId));
+
+            // The script is accepted on the importing node only after ASKING, and every command it issues follows suit
+            ClusterTestUtils.Asking(ref connections[targetNodeIndex]);
+            var reply = Encoding.ASCII.GetString(connections[targetNodeIndex].SendCommand(eval)).TrimEnd('\0');
+            ClassicAssert.AreEqual("$1\r\nv\r\n", reply);
+
+            reply = Encoding.ASCII.GetString(connections[targetNodeIndex].SendCommand(eval)).TrimEnd('\0');
+            StringAssert.StartsWith("-MOVED", reply);
+
+            connections.ToList().ForEach(x => x.Dispose());
+        }
+
+        [Test, Order(8)]
+        [Category("CLUSTER")]
+        public void ClusterScriptCommandsOnAMigratingSlotAreServedOnlyForExistingKeys()
+        {
+            const string existing = "{migrating}existing";
+            const string missing = "{migrating}missing";
+
+            var port = ClusterTestContext.Port;
+            var shards = context.defaultShards;
+
+            context.CreateInstances(shards, cleanClusterConfig: true, enableLua: true);
+            context.CreateConnection();
+
+            var connections = ClusterTestUtils.CreateLightRequestConnections([.. Enumerable.Range(port, shards)]);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var slot = ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(existing));
+            var sourceNodeIndex = ClusterTestUtils.GetSourceNodeIndexFromSlot(ref connections, slot);
+            var targetNodeIndex = context.clusterTestUtils.GetRandomTargetNodeIndex(ref connections, sourceNodeIndex);
+            var targetNodeId = ClusterTestUtils.GetNodeIdFromNode(ref connections[targetNodeIndex]);
+
+            ClassicAssert.AreEqual(ResponseState.OK, context.clusterTestUtils.SetKey(sourceNodeIndex, Encoding.ASCII.GetBytes(existing), "v"u8.ToArray(), out _, out _));
+            ClassicAssert.AreEqual("OK", ClusterTestUtils.SetSlot(ref connections[sourceNodeIndex], slot, "MIGRATING", targetNodeId));
+
+            // The declared key exists, so the script is accepted. The node then serves each command it issues
+            // only for a key it still holds; any other key is on the target node, so the command is redirected there.
+            string Eval(string script)
+            {
+                var request = Encoding.ASCII.GetBytes($"*4\r\n$4\r\nEVAL\r\n${script.Length}\r\n{script}\r\n$1\r\n1\r\n${existing.Length}\r\n{existing}\r\n");
+                return Encoding.ASCII.GetString(connections[sourceNodeIndex].SendCommand(request)).TrimEnd('\0');
+            }
+
+            StringAssert.StartsWith("$1\r\nv\r\n", Eval($"return redis.call('GET', '{existing}')"));
+            StringAssert.StartsWith(":1\r\n", Eval($"return redis.call('EXPIRE', '{existing}', 100)"));
+            StringAssert.StartsWith("$1\r\nw\r\n", Eval($"redis.call('SET', '{existing}', 'w'); return redis.call('GET', '{existing}')"));
+
+            foreach (var script in new[]
+            {
+                $"return redis.call('GET', '{missing}')",
+                $"return redis.call('SET', '{missing}', 'x')",
+                $"return redis.call('HGET', '{missing}', 'f')",
+                $"return redis.call('HSET', '{missing}', 'f', 'v')",
+                $"return redis.call('EXPIRE', '{missing}', 100)",
+            })
+            {
+                var reply = Eval(script);
+                StringAssert.StartsWith("-", reply, script);
+                StringAssert.Contains("ASK", reply, script);
+            }
+
+            connections.ToList().ForEach(x => x.Dispose());
         }
 
         [Test, Order(6)]

@@ -203,6 +203,21 @@ namespace Garnet.cluster
 
             async Task<bool> ScanStoreTaskAsync(int taskId, long beginAddress, long tailAddress, int pageSize)
             {
+                // The driver can stop waiting for this task on a timeout or cancellation, so the task holds its own
+                // reference to the operation it uses
+                AddReference();
+                try
+                {
+                    return await ScanStoreAsync(taskId, beginAddress, tailAddress, pageSize).ConfigureAwait(false);
+                }
+                finally
+                {
+                    ReleaseReference();
+                }
+            }
+
+            async Task<bool> ScanStoreAsync(int taskId, long beginAddress, long tailAddress, int pageSize)
+            {
                 // Force async
                 await Task.Yield();
 
@@ -233,6 +248,12 @@ namespace Garnet.cluster
 
                     // Transition EPSM to MIGRATING
                     migrateOperation.sketch.SetStatus(SketchStatus.TRANSMITTING);
+
+#if DEBUG
+                    // Only on Debug mode
+                    await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Migration_Slot_Keys_Transmitting).ConfigureAwait(false);
+#endif
+
                     await WaitForConfigPropagationAsync().ConfigureAwait(false);
 
                     // Transmit all keys gathered

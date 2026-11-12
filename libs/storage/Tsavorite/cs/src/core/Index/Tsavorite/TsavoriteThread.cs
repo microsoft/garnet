@@ -182,7 +182,7 @@ namespace Tsavorite.core
             // If this was an operation that was trying to retrieve a target record, copy it into the pendingState.
             // CONDITIONAL_* operations do not care about the retrieved data; they only care whether a record was found.
             if (request.diskLogRecord.IsSet && !pendingState.IsConditionalOp)
-                pendingState.TransferFrom(ref request.diskLogRecord, hlogBase.bufferPool);
+                pendingState.TransferFrom(ref request.diskLogRecord, hlogBase.bufferPool, hlogBase.transientObjectIdMap);
 
             var internalStatus = pendingState.type switch
             {

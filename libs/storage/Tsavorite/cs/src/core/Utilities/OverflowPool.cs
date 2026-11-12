@@ -46,6 +46,11 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Whether the pool is at capacity, so <see cref="TryAdd"/> would not retain an item
+        /// </summary>
+        public bool IsFull => itemQueue.Count >= size || disposed;
+
+        /// <summary>
         /// Try to add overflow item to pool
         /// </summary>
         /// <param name="item"></param>
