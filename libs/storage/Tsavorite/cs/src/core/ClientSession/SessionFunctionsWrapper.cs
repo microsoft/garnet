@@ -161,7 +161,8 @@ namespace Tsavorite.core
             if (_clientSession.functions.InPlaceUpdater(ref logRecord, ref input, ref output, ref rmwInfo))
             {
                 rmwInfo.Action = RMWAction.Default;
-                logRecord.InfoRef.SetModified();
+                if (!rmwInfo.RecordUnchanged)
+                    logRecord.InfoRef.SetModified();
 
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                 return true;

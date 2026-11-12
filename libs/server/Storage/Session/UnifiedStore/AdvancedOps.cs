@@ -20,6 +20,13 @@ namespace Garnet.server
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
+        /// <summary>
+        /// Updates a key through the unified store, returning <see cref="GarnetStatus.OK"/> if the update found the key.
+        /// </summary>
+        /// <remarks>
+        /// Only a found record produces output: no unified-store update creates a record. A created or in-place-updated
+        /// record without <see cref="Status.Found"/> is an expired record tombstoned by the update, which wrote no output.
+        /// </remarks>
         public GarnetStatus RMW_UnifiedStore<TUnifiedContext>(ReadOnlySpan<byte> key, ref UnifiedInput input, ref UnifiedOutput output, ref TUnifiedContext context)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
@@ -28,9 +35,7 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForUnifiedStoreSession(ref status, ref output, ref context);
 
-            return status.Found || status.Record.Created || status.Record.InPlaceUpdated
-                ? GarnetStatus.OK
-                : GarnetStatus.NOTFOUND;
+            return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
     }
 }
