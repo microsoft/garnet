@@ -359,6 +359,10 @@ namespace Tsavorite.test
         /// <summary>When non-zero, reads complete with this error code and no data is transferred.</summary>
         public volatile uint ReadErrorCode;
 
+        /// <summary>The device address from which <see cref="ReadErrorCode"/> applies; reads that start below it succeed.
+        /// Defaults to failing every read.</summary>
+        public long ReadErrorFromAddress;
+
         /// <summary>When non-negative, reads succeed but report only this many bytes transferred, as a device does
         /// when the file ends before the requested length.</summary>
         public volatile int ShortReadBytes = -1;
@@ -387,7 +391,7 @@ namespace Tsavorite.test
             DeviceIOCompletionCallback callback, object context)
         {
             var errorCode = ReadErrorCode;
-            if (errorCode != 0)
+            if (errorCode != 0 && segmentId * SegmentSize + (long)sourceAddress >= Volatile.Read(ref ReadErrorFromAddress))
             {
                 callback(errorCode, 0, context, null);
                 return;
@@ -924,6 +928,16 @@ namespace Tsavorite.test
         {
             lock (gateLock)
                 return Volatile.Read(ref pending[index].CompletionStamp);
+        }
+
+        /// <summary>Number of operations the gate has captured, released or not.</summary>
+        public int PendingCount
+        {
+            get
+            {
+                lock (gateLock)
+                    return pending.Count;
+            }
         }
 
         /// <summary>Blocks until the gate has captured <paramref name="count"/> operations.</summary>

@@ -9,6 +9,9 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
+        private bool IsFailoverTimeoutToken(int idx)
+            => parseState.TryGetFailoverOption(idx, out var option) && option == FailoverOption.TIMEOUT;
+
         /// <summary>
         /// Implements CLUSTER FAILOVER command
         /// </summary>
@@ -18,8 +21,8 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            // Expecting 1 or 2 arguments
-            if (parseState.Count is < 0 or > 2)
+            // CLUSTER FAILOVER [FORCE | TAKEOVER | ABORT] [TIMEOUT seconds], also accepting the legacy <option> <seconds> form
+            if (parseState.Count > 3)
             {
                 invalidParameters = true;
                 return true;
@@ -27,31 +30,58 @@ namespace Garnet.cluster
 
             var failoverOption = FailoverOption.DEFAULT;
             TimeSpan failoverTimeout = default;
-            if (parseState.Count > 0)
+            var currTokenIdx = 0;
+
+            if (currTokenIdx < parseState.Count && !IsFailoverTimeoutToken(currTokenIdx))
             {
-                // Try to parse failover option
-                if (!parseState.TryGetFailoverOption(0, out failoverOption) ||
+                if (!parseState.TryGetFailoverOption(currTokenIdx, out failoverOption) ||
                     failoverOption == FailoverOption.DEFAULT || failoverOption == FailoverOption.INVALID)
                 {
-                    var failoverOptionStr = parseState.GetString(0);
-
-                    // On failure set the invalid flag, write error and continue parsing to drain rest of parameters if any
+                    var failoverOptionStr = parseState.GetString(currTokenIdx);
                     while (!RespWriteUtils.TryWriteError($"ERR Failover option ({failoverOptionStr}) not supported", ref dcurr, dend))
                         SendAndReset();
+                    return true;
+                }
+                currTokenIdx++;
+            }
 
+            if (currTokenIdx < parseState.Count)
+            {
+                var hasTimeoutToken = IsFailoverTimeoutToken(currTokenIdx);
+                if (hasTimeoutToken)
+                    currTokenIdx++;
+
+                // The bare legacy form only accepts the timeout as the final argument after an option
+                if (currTokenIdx >= parseState.Count || (!hasTimeoutToken && currTokenIdx != parseState.Count - 1))
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                        SendAndReset();
                     return true;
                 }
 
-                if (parseState.Count > 1)
+                if (!parseState.TryGetInt(currTokenIdx, out var failoverTimeoutSeconds))
                 {
-                    if (!parseState.TryGetInt(1, out var failoverTimeoutSeconds))
-                    {
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
-                    }
-                    failoverTimeout = TimeSpan.FromSeconds(failoverTimeoutSeconds);
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
                 }
+
+                if (failoverTimeoutSeconds < 0)
+                {
+                    while (!RespWriteUtils.TryWriteError("ERR timeout is negative"u8, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                failoverTimeout = TimeSpan.FromSeconds(failoverTimeoutSeconds);
+                currTokenIdx++;
+            }
+
+            if (currTokenIdx < parseState.Count)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
 
             if (clusterProvider.serverOptions.EnableAOF)
@@ -117,17 +147,27 @@ namespace Garnet.cluster
             var nodeId = parseState.GetString(0);
 
             if (!string.IsNullOrEmpty(nodeId))
-            {// Make this node a primary after receiving a request from a replica that is trying to takeover
+            {// Demote the primary before draining its maintenance and returning the final offset.
                 clusterProvider.clusterManager.TryStopWrites(nodeId);
+                ReleaseCurrentEpoch();
+                try
+                {
+                    AsyncUtils.BlockingWait(clusterProvider.storeWrapper.SuspendPrimaryOnlyTasksAsync());
+                }
+                finally
+                {
+                    AcquireCurrentEpoch();
+                }
             }
             else
             {// Reset this node back to its original state
                 clusterProvider.clusterManager.TryResetReplica();
+                clusterProvider.storeWrapper.StartPrimaryTasks();
             }
 
             // Cannot avoid blocking here we're on the network thread
             AsyncUtils.BlockingWait(UnsafeBumpAndWaitForEpochTransitionAsync());
-            while (!RespWriteUtils.TryWriteAsciiBulkString(clusterProvider.replicationManager.ReplicationOffset.ToString(), ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteAsciiBulkString(clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress.ToString(), ref dcurr, dend))
                 SendAndReset();
             return true;
         }

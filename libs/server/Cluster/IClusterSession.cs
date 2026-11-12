@@ -28,6 +28,18 @@ namespace Garnet.server
         bool IsInternalWriteSession { get; }
 
         /// <summary>
+        /// Whether local application writes are paused for failover, including during demotion.
+        /// </summary>
+        bool IsWritePaused { get; }
+
+        /// <summary>
+        /// Waits outside the session epoch for an active primary failover pause to end.
+        /// Internal replay and requests already routed to a replica do not wait.
+        /// Callers must revalidate configuration-dependent admission after this wait.
+        /// </summary>
+        void WaitForWritesToResume();
+
+        /// <summary>
         /// If the current session is part of an active replication stream (set on first APPENDLOG, including the init handshake).
         /// </summary>
         bool IsReplicating { get; }
@@ -68,6 +80,20 @@ namespace Garnet.server
         /// Release epoch
         /// </summary>
         void ReleaseCurrentEpoch();
+
+        /// <summary>
+        /// Sets the session whose epoch this session releases and re-acquires while it waits for a key that is
+        /// being migrated.
+        /// </summary>
+        /// <remarks>
+        /// Migration waits for every network session to move past a configuration change. A session that executes
+        /// commands on behalf of a network session, such as the one that runs the commands of a Lua script, is not
+        /// itself tracked, and the network session holds its epoch until the batch containing the script ends.
+        /// Releasing the executing session's own epoch while waiting would therefore leave the migration waiting
+        /// for the network session, and the script waiting for the migration.
+        /// </remarks>
+        /// <param name="owner">The session whose epoch is released while waiting, or null to use this session's own.</param>
+        void SetEpochOwner(IClusterSession owner);
 
         /// <summary>
         /// Process cluster commands

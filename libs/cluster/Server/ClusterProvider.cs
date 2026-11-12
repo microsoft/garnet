@@ -119,11 +119,15 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
+        public void OnGossipClientConfigChanged()
+            => clusterManager?.SwapGossipClients();
+
+        /// <inheritdoc />
         public void Dispose()
         {
+            failoverManager?.Dispose();
             clusterManager?.Dispose();
             replicationManager?.Dispose();
-            failoverManager?.Dispose();
             migrationManager?.Dispose();
         }
 
@@ -132,6 +136,9 @@ namespace Garnet.cluster
         /// <inheritdoc />
         public bool IsReplica()
             => clusterManager?.CurrentConfig.LocalNodeRole == NodeRole.REPLICA || replicationManager?.IsRecovering == true;
+
+        /// <inheritdoc />
+        public bool IsWritePaused => failoverManager?.IsWritePaused ?? false;
 
         /// <inheritdoc />
         public bool IsReplica(string nodeId)
@@ -272,6 +279,10 @@ namespace Garnet.cluster
                         replicationInfo.Add(new($"slave{i}", replicaInfo[i].ToString()));
                 }
             }
+
+            // Format last-successful phase samples only for startup-enabled managers, on INFO rather than chunks.
+            if (replicationManager.BenchmarkTiming != null)
+                replicationInfo.AddRange(replicationManager.BenchmarkTiming.GetMetrics());
             return [.. replicationInfo];
         }
 
@@ -320,6 +331,9 @@ namespace Garnet.cluster
         public MetricsItem[] GetGossipStats(bool metricsDisabled)
         {
             var gossipStats = clusterManager.gossipStats;
+            var (activeMemoryUsageBytes, maxMemoryUsageBytes) = metricsDisabled
+                ? default
+                : clusterManager.clusterConnectionStore.GetMemoryUsage();
             return
                 [
                     new("meet_requests_recv", metricsDisabled ? "0" : gossipStats.meet_requests_recv.ToString()),
@@ -332,7 +346,9 @@ namespace Garnet.cluster
                     new("gossip_empty_send", metricsDisabled ? "0" : gossipStats.gossip_empty_send.ToString()),
                     new("gossip_bytes_send", metricsDisabled ? "0" : gossipStats.gossip_bytes_send.ToString()),
                     new("gossip_bytes_recv", metricsDisabled ? "0" : gossipStats.gossip_bytes_recv.ToString()),
-                    new("gossip_open_connections", metricsDisabled ? "0" : this.clusterManager.clusterConnectionStore.Count.ToString())
+                    new("gossip_open_connections", metricsDisabled ? "0" : this.clusterManager.clusterConnectionStore.Count.ToString()),
+                    new("gossip_active_memory_bytes", metricsDisabled ? "0" : activeMemoryUsageBytes.ToString()),
+                    new("gossip_max_memory_bytes", metricsDisabled ? "0" : maxMemoryUsageBytes.ToString())
                 ];
         }
 
@@ -364,9 +380,10 @@ namespace Garnet.cluster
         /// <summary>
         /// Wait for config transition
         /// </summary>
+        /// <param name="token">Cancellation token for the transition wait.</param>
         /// <returns></returns>
-        internal ValueTask<bool> BumpAndWaitForEpochTransitionAsync()
-            => garnetEpoch.BumpAndWaitForEpochTransitionAsync();
+        public ValueTask<bool> BumpAndWaitForEpochTransitionAsync(CancellationToken token = default)
+            => garnetEpoch.BumpAndWaitForEpochTransitionAsync(token);
 
         /// <inheritdoc />
         public string GetRunId() => replicationManager.PrimaryReplId;

@@ -770,10 +770,30 @@ namespace Tsavorite.core
                     PendingFlush[i] = new PendingFlushList();
             }
             device = logSettings.LogDevice;
-            sectorSize = (int)device.SectorSize;
+            sectorSize = (int)Math.Max(device.SectorSize, logSettings.ObjectLogDevice?.SectorSize ?? 0u);
 
             if (PageSize < sectorSize)
                 throw new TsavoriteException($"Page size must be at least of device sector size ({sectorSize} bytes). Set PageSizeBits accordingly.");
+
+            // Pages are snapshotted to, and recovered from, the checkpoint devices directly, so they must also be aligned
+            // and rounded for those devices. A checkpoint sector larger than a page cannot be served; leave startup working
+            // and let a checkpoint fail with the explicit sector-size error instead.
+            var checkpointSectorSize = logSettings.CheckpointSectorSize;
+            if (checkpointSectorSize > sectorSize)
+            {
+                if (!Utility.IsPowerOfTwo(checkpointSectorSize))
+                    throw new TsavoriteException($"Checkpoint sector size {checkpointSectorSize} must be a power of two");
+                if (checkpointSectorSize <= PageSize)
+                {
+                    sectorSize = checkpointSectorSize;
+                    logger?.LogInformation("Using sector size {sectorSize} for log pages and IO to match the checkpoint devices", sectorSize);
+                }
+                else
+                {
+                    logger?.LogWarning("Checkpoint devices require sector size {checkpointSectorSize}, which exceeds the page size {pageSize}; checkpoints will fail until the page size is at least the checkpoint sector size",
+                        checkpointSectorSize, PageSize);
+                }
+            }
 
             AlignedPageSizeBytes = RoundUp(PageSize, sectorSize);
 
@@ -1097,8 +1117,19 @@ namespace Tsavorite.core
         public long GetTailAddress()
         {
             var local = TailPageOffset;
+            if (local.Offset >= PageSize)
+                local = GetStableTailPageOffset(local);
+            return GetLogicalAddressOfStartOfPage(local.Page) | (uint)local.Offset;
+        }
 
-            // Handle corner cases during page overflow.
+        /// <summary>Resolves a tail page offset observed during page overflow.</summary>
+        /// <remarks>
+        /// Kept out of line because <see cref="Thread.Yield"/> is a P/Invoke: a method that inlines it sets up a P/Invoke
+        /// frame, a thread-static lookup, on every call, whether or not it yields.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        PageOffset GetStableTailPageOffset(PageOffset local)
+        {
             // The while loop is guaranteed to terminate because HandlePageOverflow ensures that it fixes the unstable TailPageOffset immediately.
             while (local.Offset >= PageSize)
             {
@@ -1112,7 +1143,7 @@ namespace Tsavorite.core
                 _ = Thread.Yield();
                 local = TailPageOffset;
             }
-            return GetLogicalAddressOfStartOfPage(local.Page) | (uint)local.Offset;
+            return local;
         }
 
         /// <summary>Get tail address without considering whether it is unstable; this is called during HandlePageOverflow as part of determining
@@ -1823,15 +1854,25 @@ namespace Tsavorite.core
         {
             if (MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out var oldSafeReadOnlyAddress))
             {
-                // Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
-                if (onReadOnlyObserver != null)
+                try
                 {
-                    // This scan does not need a store because it does not lock; it is epoch-protected so by the time it runs no current thread
-                    // will have seen a record below the new ReadOnlyAddress as "in mutable region".
-                    using var iter = Scan(store: null, oldSafeReadOnlyAddress, newSafeReadOnlyAddress, DiskScanBufferingMode.NoBuffering);
-                    onReadOnlyObserver?.OnNext(iter);
+                    // Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
+                    if (onReadOnlyObserver != null)
+                    {
+                        // This scan does not need a store because it does not lock; it is epoch-protected so by the time it runs no current thread
+                        // will have seen a record below the new ReadOnlyAddress as "in mutable region".
+                        using var iter = Scan(store: null, oldSafeReadOnlyAddress, newSafeReadOnlyAddress, DiskScanBufferingMode.NoBuffering);
+                        onReadOnlyObserver?.OnNext(iter);
+                    }
+                    AsyncFlushPagesForReadOnly(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, noFlush);
                 }
-                AsyncFlushPagesForReadOnly(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, noFlush);
+                catch (Exception ex)
+                {
+                    // SafeReadOnlyAddress has passed a range that may not be flushed, and FlushedUntilAddress cannot pass an unflushed
+                    // range, so the log would stall silently. Crash instead: a dump is the only practical way to diagnose this.
+                    FailFastOnWorkerException($"OnPagesMarkedReadOnly failed; allocator state is unrecoverable. Range [{oldSafeReadOnlyAddress}, {newSafeReadOnlyAddress}) "
+                        + $"may not be flushed. FlushedUntilAddress={FlushedUntilAddress}", ex);
+                }
             }
         }
 
@@ -1875,20 +1916,36 @@ namespace Tsavorite.core
             {
                 // Page closing cannot resume after a failure here, so the log would stall silently. Crash instead: a dump is the
                 // only practical way to diagnose this.
-                var exceptionDetails = ex.GetType().FullName ?? ex.GetType().Name;
-                try
-                {
-                    exceptionDetails = ex.ToString() ?? exceptionDetails;
-                }
-                finally
-                {
-                    // Exception.ToString() is virtual; always fail fast even if an application exception throws while formatting itself.
-                    Environment.FailFast(
-                        $"OnPagesClosedWorker failed; allocator state is unrecoverable. ClosedUntilAddress={ClosedUntilAddress}, OngoingCloseUntilAddress={OngoingCloseUntilAddress}"
-                        + $"{Environment.NewLine}Caught exception:{Environment.NewLine}{exceptionDetails}",
-                        ex);
-                }
+                FailFastOnWorkerException(
+                    $"OnPagesClosedWorker failed; allocator state is unrecoverable. ClosedUntilAddress={ClosedUntilAddress}, OngoingCloseUntilAddress={OngoingCloseUntilAddress}", ex);
             }
+        }
+
+        /// <summary>
+        /// Terminates the process for an exception that escapes a page flush or close. These run in epoch drains on whichever thread
+        /// drains them, and the log cannot advance past the range they failed on.
+        /// </summary>
+        /// <param name="state">The failed operation and the allocator state it leaves.</param>
+        /// <param name="ex">The exception.</param>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private protected static void FailFastOnWorkerException(string state, Exception ex)
+        {
+            // Exception.ToString() is virtual, so an application exception can throw while formatting itself. FailFast formats the
+            // exception it is given and throws instead of terminating if that throws, so such an exception is reported by type only.
+            var exceptionType = ex.GetType().FullName ?? ex.GetType().Name;
+            string exceptionDetails;
+            var reportedException = ex;
+            try
+            {
+                exceptionDetails = ex.ToString() ?? exceptionType;
+            }
+            catch (Exception formatException)
+            {
+                exceptionDetails = $"{exceptionType}; its ToString() threw {formatException.GetType().FullName}";
+                reportedException = null;
+            }
+
+            Environment.FailFast($"{state}{Environment.NewLine}Caught exception:{Environment.NewLine}{exceptionDetails}", reportedException);
         }
 
         private void OnPagesClosedWorkerCore()
@@ -2513,15 +2570,23 @@ namespace Tsavorite.core
         ///     case it IS the completionEvent's request instance, and the completed record is read back through it.</param>
         internal void AsyncGetFromDisk(long fromLogicalAddress, int numBytes, AsyncIOContext context)
         {
-            // If this is a protected thread, we must wait to issue the Read operation. Spin until the device is not throttled,
-            // draining events on each iteration, but do not release the epoch.
-            if (epoch.ThisInstanceProtected())
+            // A protected thread waits until the device is not throttled, reaping its own completions; there is no
+            // completion signal to block on. The wait releases the epoch so it does not hold an epoch-table entry;
+            // no caller depends on epoch-protected state across this call.
+            if (epoch.ThisInstanceProtected() && device.Throttle())
             {
-                while (device.Throttle())
+                epoch.Suspend();
+                try
                 {
-                    _ = device.TryCompleteMine();
-                    _ = Thread.Yield();
-                    epoch.ProtectAndDrain();
+                    while (device.Throttle())
+                    {
+                        _ = device.TryCompleteMine();
+                        _ = Thread.Yield();
+                    }
+                }
+                finally
+                {
+                    epoch.Resume();
                 }
             }
 
@@ -2599,7 +2664,8 @@ namespace Tsavorite.core
                                         BlittableFrame frame,
                                         ref CountdownEvent completed,
                                         long devicePageOffset = 0,
-                                        IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
+                                        IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null,
+                                        ObjectScanFrame objectFrame = null)
         {
             var usedDevice = device ?? this.device;
 
@@ -2622,6 +2688,7 @@ namespace Tsavorite.core
                 handle = completed,
                 cts = cts,
                 readBuffers = readBuffers,
+                objectFrame = objectFrame,
                 maxAddressOffsetOnPage = maxAddressOffsetOnPage
             };
 
@@ -2744,6 +2811,12 @@ namespace Tsavorite.core
                     // Re-issue this same op (a reference), repopulating its read buffer; all fields propagate.
                     AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
                     return false;
+                }
+                else
+                {
+                    // We're at the end of the chain; dispose the diskLogRecord so it is not taken as the result.
+                    _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
+                    ctx.diskLogRecord.Dispose();
                 }
             }
             return true;

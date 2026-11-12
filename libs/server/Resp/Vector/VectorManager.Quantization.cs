@@ -4,7 +4,6 @@
 using System;
 using System.Diagnostics;
 using System.Threading;
-using System.Threading.Channels;
 using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -17,7 +16,7 @@ namespace Garnet.server
         /// <summary>
         /// Different steps of quantization process.
         /// </summary>
-        private enum QuantizationOrImportStep
+        private enum QuantizationStep
         {
             Invalid = 0,
 
@@ -30,15 +29,10 @@ namespace Garnet.server
             /// Backfill quantized vectors - many tasks can do this concurrently for a Vector Set Index.
             /// </summary>
             BackfillQuantizedVectors,
-
-            /// <summary>
-            /// Import has finished, run finalized steps.
-            /// </summary>
-            FinalizeImport,
         }
 
         /// <summary>
-        /// For <see cref="QuantizationOrImportState"/>, keeps a count of pending related tasks.
+        /// For <see cref="QuantizationState"/>, keeps a count of pending related tasks.
         /// </summary>
         private sealed class CountdownHolder(int initialCount)
         {
@@ -51,42 +45,42 @@ namespace Garnet.server
             => Interlocked.Decrement(ref count) == 0;
         }
 
-        private readonly record struct QuantizationOrImportState(ReadOnlyMemory<byte> Key, QuantizationOrImportStep Step, int StepIndex, CountdownHolder Countdown);
+        private readonly record struct QuantizationState(ReadOnlyMemory<byte> Key, QuantizationStep Step, int StepIndex);
 
-        private readonly Channel<QuantizationOrImportState> quantizationOrImportChannel;
+        private readonly VectorSetCleanupWorkChannel<QuantizationState> quantizationChannel;
 
         /// <summary>
-        /// Worker tasks that drain <see cref="quantizationOrImportChannel"/>. They run on the .NET thread pool, but a
+        /// Worker tasks that drain <see cref="quantizationChannel"/>. They run on the .NET thread pool, but a
         /// worker that cannot immediately acquire a vector set's lock yields its pool thread and retries
-        /// asynchronously (see <see cref="StartQuantizationAndImportTasks"/>) instead of spin-waiting on it. A network VADD
+        /// asynchronously (see <see cref="StartQuantizationTasks"/>) instead of spin-waiting on it. A network VADD
         /// that recreates a disk-tiered index blocks on a pending disk read while holding that lock exclusively;
         /// if the workers spin-waited on the pool they would consume every pool thread and starve the disk-IO
         /// completion that releases the lock, deadlocking concurrent VADD. Cooperative yielding keeps pool threads
         /// available for that completion.
         /// </summary>
-        private readonly Task[] quantizationAndImportTasks;
+        private readonly Task[] quantizationTasks;
 
         /// <summary>
         /// Number of quantization worker tasks, also used as the backfill shard count.
         /// </summary>
-        private readonly int quantizationAndImportTaskCount;
+        private readonly int quantizationTaskCount;
 
         private int quantizationRequestsProcessed;
         private int quantizationBackfillsProcessed;
 
         /// <summary>
-        /// For testing purposes, the number of <see cref="QuantizationOrImportStep.BuildQuantizationTable"/> requests processed by <see cref="StartQuantizationAndImportTasks"/> tasks.
+        /// For testing purposes, the number of <see cref="QuantizationStep.BuildQuantizationTable"/> requests processed by <see cref="StartQuantizationTasks"/> tasks.
         /// </summary>
         internal int QuantizationRequestsProcessed => quantizationRequestsProcessed;
 
         /// <summary>
-        /// For testing purposes, the number of <see cref="QuantizationOrImportStep.BackfillQuantizedVectors"/> requests processed by <see cref="StartQuantizationAndImportTasks"/> tasks.
+        /// For testing purposes, the number of <see cref="QuantizationStep.BackfillQuantizedVectors"/> requests processed by <see cref="StartQuantizationTasks"/> tasks.
         /// </summary>
         internal int QuantizationBackfillsProcessed => quantizationBackfillsProcessed;
 
-        private void EnqueueQuantization(QuantizationOrImportState state)
+        private void EnqueueQuantization(QuantizationState state)
         {
-            if (!quantizationOrImportChannel.Writer.TryWrite(state))
+            if (!quantizationChannel.TryPublish(state))
             {
                 logger?.LogCritical("VectorManager quantization channel rejected a request");
                 Debug.Assert(false, "VectorManager quantization channel should never drop a request");
@@ -94,21 +88,21 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Populate <see cref="quantizationAndImportTasks"/> with running tasks for handling any quantization requests.
+        /// Populate <see cref="quantizationTasks"/> with running tasks for handling any quantization requests.
         /// </summary>
-        public void StartQuantizationAndImportTasks()
+        public void StartQuantizationTasks()
         {
-            for (var i = 0; i < quantizationAndImportTasks.Length; i++)
+            for (var i = 0; i < quantizationTasks.Length; i++)
             {
-                quantizationAndImportTasks[i] = QuantizationTaskAsync(this, quantizationOrImportChannel.Reader, quantizationOrImportChannel.Writer);
+                quantizationTasks[i] = QuantizationTaskAsync(this, quantizationChannel);
             }
 
-            static async Task QuantizationTaskAsync(VectorManager self, ChannelReader<QuantizationOrImportState> reader, ChannelWriter<QuantizationOrImportState> writer)
+            static async Task QuantizationTaskAsync(VectorManager self, VectorSetCleanupWorkChannel<QuantizationState> channel)
             {
                 // Force async
                 await Task.Yield();
 
-                while (await reader.WaitToReadAsync().ConfigureAwait(false))
+                while (await channel.WaitToReadAsync().ConfigureAwait(false))
                 {
                     using var session = (RespServerSession)self.getTempSession();
                     if (session.activeDbId != self.dbId && !session.TrySwitchActiveDatabaseSession(self.dbId))
@@ -120,7 +114,7 @@ namespace Garnet.server
                     // (not a Span) because it must survive the awaits in the cooperative retry loop below.
                     var indexArray = GC.AllocateArray<byte>(IndexSizeBytes, pinned: true);
 
-                    while (reader.TryRead(out var state))
+                    while (channel.TryRead(out var state))
                     {
                         // Cooperative acquisition. TryProcessQuantizationRequest returns false only when the vector
                         // set lock is currently held by another thread - typically a network VADD that is recreating
@@ -128,7 +122,7 @@ namespace Garnet.server
                         // Instead of spin-waiting on a pool thread (which would consume the pool and starve the
                         // disk-IO completion that releases the lock, deadlocking concurrent VADD), yield the pool
                         // thread and retry so a completion can always be scheduled.
-                        for (var attempt = 0; !TryProcessQuantizationOrImportRequest(self, session, writer, state, indexArray); attempt++)
+                        for (var attempt = 0; !TryProcessQuantizationRequest(self, session, state, indexArray); attempt++)
                         {
                             if (attempt < 16)
                             {
@@ -137,7 +131,7 @@ namespace Garnet.server
                             else
                             {
                                 // If we're going to delay _but_ are being shutdown, bail on this request
-                                if (reader.Completion.IsCompleted)
+                                if (channel.IsCompleted)
                                 {
                                     break;
                                 }
@@ -153,7 +147,7 @@ namespace Garnet.server
             // handled (or is terminal, e.g. the index was dropped), and false when the set lock was contended and
             // the caller should yield its pool thread and retry. All ref struct / Span / native interop stays inside
             // this synchronous method so it never straddles an await.
-            static bool TryProcessQuantizationOrImportRequest(VectorManager self, RespServerSession session, ChannelWriter<QuantizationOrImportState> writer, QuantizationOrImportState state, byte[] indexArray)
+            static bool TryProcessQuantizationRequest(VectorManager self, RespServerSession session, QuantizationState state, byte[] indexArray)
             {
                 try
                 {
@@ -163,9 +157,9 @@ namespace Garnet.server
                         {
                             var keySpan = SpanByte.FromPinnedPointer(keyPtr, state.Key.Length);
 
-                            // Dummy command, we just need something Vector Set-y
+                            // Command which will always acquire a lock (for importing indexes that means VINFO)
                             StringInput input = default;
-                            input.header.cmd = RespCommand.VSIM;
+                            input.header.cmd = RespCommand.VINFO;
 
                             Span<byte> indexSpan = indexArray;
 
@@ -187,58 +181,31 @@ namespace Garnet.server
 
                                 switch (state.Step)
                                 {
-                                    case QuantizationOrImportStep.BuildQuantizationTable:
+                                    case QuantizationStep.BuildQuantizationTable:
                                         if (self.Service.BuildQuantizationTable(context, indexPtr))
                                         {
                                             _ = Interlocked.Increment(ref self.quantizationRequestsProcessed);
 
                                             // Schedule backfill after quantization table is available
-                                            for (var i = 0; i < self.quantizationAndImportTaskCount; i++)
+                                            for (var i = 0; i < self.quantizationTaskCount; i++)
                                             {
-                                                self.EnqueueQuantization(new(state.Key, QuantizationOrImportStep.BackfillQuantizedVectors, i, null));
+                                                self.EnqueueQuantization(new(state.Key, QuantizationStep.BackfillQuantizedVectors, i));
                                             }
                                         }
 
                                         break;
 
-                                    case QuantizationOrImportStep.BackfillQuantizedVectors:
-                                        if (!self.Service.BackfillQuantizedVectors(context, indexPtr, state.StepIndex, self.quantizationAndImportTasks.Length))
+                                    case QuantizationStep.BackfillQuantizedVectors:
+                                        if (!self.Service.BackfillQuantizedVectors(context, indexPtr, state.StepIndex, self.quantizationTasks.Length))
                                         {
-                                            self.logger?.LogError("Quantization backfill {step}/{total} failed for context {context}", state.StepIndex, self.quantizationAndImportTasks.Length, context);
+                                            self.logger?.LogError("Quantization backfill {step}/{total} failed for context {context}", state.StepIndex, self.quantizationTasks.Length, context);
 
                                             // Post a retry back on the channel
-                                            self.EnqueueQuantization(new(state.Key, QuantizationOrImportStep.BackfillQuantizedVectors, state.StepIndex, null));
+                                            self.EnqueueQuantization(new(state.Key, QuantizationStep.BackfillQuantizedVectors, state.StepIndex));
                                             break;
                                         }
 
                                         _ = Interlocked.Increment(ref self.quantizationBackfillsProcessed);
-                                        break;
-
-                                    case QuantizationOrImportStep.FinalizeImport:
-                                        try
-                                        {
-                                            if (!self.TryProcessImportPartitionFinalize(keySpan, context, indexPtr, state.StepIndex, self.quantizationAndImportTasks.Length))
-                                            {
-                                                SetFlags(keySpan, VectorSetFlags.ImportPending | VectorSetFlags.ImportFailed, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
-
-                                                // On error, we want to unblock immediately
-                                                RemoveFromActiveImports(self, keySpan);
-                                            }
-                                            else if (state.Countdown.TickDown())
-                                            {
-                                                // No need to check for failed here, because we only count down on successes
-                                                SetFlags(keySpan, VectorSetFlags.ImportCompleted, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
-
-                                                // On success, if we're the last finalizer, then 
-                                                RemoveFromActiveImports(self, keySpan);
-                                            }
-                                        }
-                                        catch (Exception e)
-                                        {
-                                            self.logger?.LogError(e, "During VectorManager background FinalizeImport");
-
-                                            RemoveFromActiveImports(self, keySpan);
-                                        }
                                         break;
 
                                     default:
@@ -255,16 +222,6 @@ namespace Garnet.server
                 {
                     self.logger?.LogError(ex, "During Vector Set quantization");
                     return true;
-                }
-
-                // Remove the given set from activeImportFinalization
-                static void RemoveFromActiveImports(VectorManager self, ReadOnlySpan<byte> keySpan)
-                {
-#if NET9_0_OR_GREATER
-                    _ = self.activeImportFinalizationsLookup.TryRemove(keySpan, out _);
-#else
-                    _ = self.activeImportFinalizations.TryRemove(keySpan.ToArray(), out _);
-#endif
                 }
             }
         }

@@ -53,6 +53,21 @@ namespace Garnet.server
         public CommandStats GetCommandStats => commandStats;
 
         /// <summary>
+        /// Updates the session's command counters for a command that did not pass through the message loop,
+        /// as the loop does for each command it processes.
+        /// </summary>
+        /// <param name="cmd">The command that was executed or rejected.</param>
+        internal void CountCommandProcessed(RespCommand cmd)
+        {
+            if (sessionMetrics == null)
+                return;
+
+            sessionMetrics.total_commands_processed++;
+            sessionMetrics.total_write_commands_processed += cmd.OneIfWrite();
+            sessionMetrics.total_read_commands_processed += cmd.OneIfRead();
+        }
+
+        /// <summary>
         /// Get a copy of latencyMetrics
         /// </summary>
         public GarnetLatencyMetricsSession GetLatencyMetrics() => LatencyMetrics;
@@ -337,6 +352,7 @@ namespace Garnet.server
             clusterSession = cp?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, storageSession.stringBasicContext, storageSession.vectorBasicContext, networkSender, logger);
             clusterSession?.SetUserHandle(this._userHandle);
             sessionScriptCache?.SetUserHandle(this._userHandle);
+            sessionScriptCache?.SetEpochOwner(clusterSession);
 
             parseState.Initialize();
             readHead = 0;
@@ -700,6 +716,14 @@ namespace Garnet.server
         internal void SetTransactionMode(bool enable)
             => txnManager.state = enable ? TxnState.Running : TxnState.None;
 
+        /// <summary>
+        /// Whether a blocking command on this session may wait for an item. It may not while a transaction is running
+        /// (EXEC, or a script in transaction mode): the transaction holds its keys' locks until commit, so no other
+        /// client can add an item. Nor may it in a session that runs scripts, since a script must not wait on other
+        /// clients. A blocking command that may not wait takes an available item or replies as on timeout.
+        /// </summary>
+        internal bool CanBlock => txnManager.state != TxnState.Running && noScriptBitmap == null;
+
         private void ProcessMessages<TBasicApi, TTxnApi>(ref TBasicApi basicApi, ref TTxnApi transactionalApi)
             where TBasicApi : IGarnetApi
             where TTxnApi : IGarnetApi
@@ -734,7 +758,8 @@ namespace Garnet.server
                     {
                         // In RESP2, only a small set of commands are allowed while in subscription mode.
                         // RESP3 uses distinct push types for subscription messages, so all commands are valid.
-                        if (isSubscriptionSession && respProtocolVersion == 2 && !cmd.IsAllowedInSubscriptionMode())
+                        // Commands replayed by EXEC were queued before subscription mode began; rejecting them would skip the commit.
+                        if (isSubscriptionSession && respProtocolVersion == 2 && txnManager.state != TxnState.Running && !cmd.IsAllowedInSubscriptionMode())
                         {
                             while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericPubSubCommandNotAllowed, cmd.ToString()), ref dcurr, dend))
                                 SendAndReset();

@@ -17,7 +17,7 @@ namespace Garnet.test
         [Test]
         public async Task PublishedItemIsReadable()
         {
-            var channel = new VectorSetCleanupWorkChannel<int>();
+            var channel = VectorSetCleanupWorkChannel<int>.CreateSingleReaderMultiWriter();
 
             ClassicAssert.IsFalse(channel.HasPending);
             ClassicAssert.IsTrue(channel.TryPublish(7));
@@ -35,7 +35,7 @@ namespace Garnet.test
         [Test]
         public async Task CompletedChannelRejectsPublishesAndReleasesWaiters()
         {
-            var channel = new VectorSetCleanupWorkChannel<int>();
+            var channel = VectorSetCleanupWorkChannel<int>.CreateSingleReaderMultiWriter();
             channel.CompleteAndWaitForConsumerTask(Task.CompletedTask);
 
             ClassicAssert.IsFalse(channel.TryPublish(7));
@@ -45,7 +45,7 @@ namespace Garnet.test
         [Test]
         public void CompleteAndWaitForConsumerTaskDrainsBeforeReturning()
         {
-            var channel = new VectorSetCleanupWorkChannel<int>();
+            var channel = VectorSetCleanupWorkChannel<int>.CreateSingleReaderMultiWriter();
             var consumed = 0;
 
             var consumer = Task.Run(async () =>

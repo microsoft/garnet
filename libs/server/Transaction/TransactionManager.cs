@@ -112,6 +112,7 @@ namespace Garnet.server
 
         // Track whether transaction contains write operations
         internal bool PerformWrites;
+        internal bool ContainsDatabaseFlush;
 
         /// <summary>
         /// State
@@ -207,8 +208,6 @@ namespace Garnet.server
             Reset(false);
         }
 
-        internal void Reset() => Reset(state == TxnState.Running);
-
         /// <summary>
         /// Releases the transaction scratch allocator if it is over its cap, idle, and holds nothing live.
         /// Driven from the session's batch boundary; WATCHed key slices span batches, so the allocator
@@ -273,6 +272,7 @@ namespace Garnet.server
             this.storeTypes = TransactionStoreTypes.None;
             functionsState.StoredProcMode = false;
             this.PerformWrites = false;
+            this.ContainsDatabaseFlush = false;
 
             // Reset cluster key parse state
             if (clusterEnabled)

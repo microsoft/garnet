@@ -124,6 +124,31 @@ namespace Tsavorite.core
             OnDispose(ref logRecord, DisposeReason.Deleted);
         }
 
+        /// <summary>
+        /// Tombstone and dispose an in-memory source record that an RMW leaves in place as logically absent: an expired record it is
+        /// about to replace, or an elidable record it deletes outright. Does nothing to a record an ongoing checkpoint has frozen.
+        /// </summary>
+        /// <remarks>
+        /// Disposal clears the record's expiration along with its value, yet the record stays the latest for its key until a new
+        /// record is CAS'd in, and the RMW may end without one: NeedInitialUpdate or InitialUpdater may decline, or allocation or the
+        /// CAS may fail and the RMW retry. The tombstone keeps the record logically absent on every such path, which is right only
+        /// because the record is already absent. A live record that the RMW replaces with a tombstone record is disposed by
+        /// <see cref="OnDisposeSupersededSource"/> once that record is CAS'd in, so a retry still finds it live. A frozen record
+        /// keeps its value and expiration, so it remains expired.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void OnDisposeExpiredSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord logRecord)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            if (IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, logRecord.Info))
+                return;
+
+            // Tombstone first so the record is never live with its value cleared
+            logRecord.InfoRef.SetTombstone();
+            OnDispose(ref logRecord, DisposeReason.Deleted);
+        }
+
         [MethodImpl(MethodImplOptions.NoInlining)]
         private (bool elided, bool added) TryElideAndTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord logRecord)

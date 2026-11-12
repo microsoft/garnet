@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -38,6 +40,8 @@ namespace Tsavorite.test
 {
     using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectValueComparerModulo, DefaultRecordTriggers>>;
     using ClassStoreFunctions = StoreFunctions<TestObjectValueComparerModulo, DefaultRecordTriggers>;
+    using DisposingAllocator = ObjectAllocator<StoreFunctions<TestObjectValueComparerModulo, ObjectLogScanTests.DisposingScanTriggers>>;
+    using DisposingStoreFunctions = StoreFunctions<TestObjectValueComparerModulo, ObjectLogScanTests.DisposingScanTriggers>;
     [TestFixture]
     internal class ObjectLogScanTests : TestBase
     {
@@ -547,14 +551,17 @@ namespace Tsavorite.test
         {
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectScanEndInsideRecordTest.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectScanEndInsideRecordTest.obj.log"), deleteOnClose: true);
+
+            // Records never span pages, so a sector boundary can run through a record only if a page holds several sectors.
+            var pageSize = Math.Max(MinKvLogPageSize, 2L * Math.Max(log.SectorSize, objlog.SectorSize));
             store = new(new()
             {
                 IndexSize = 1L << 13,
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
-                LogMemorySize = 1L << 15,
-                PageSize = MinKvLogPageSize
+                LogMemorySize = 8 * pageSize,
+                PageSize = pageSize
             }, StoreFunctions.Create(comparer, () => new TestObjectValue.Serializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -848,6 +855,340 @@ namespace Tsavorite.test
             ClassicAssert.Greater(cursor, 0, "Expected cursor to be > 0, pt 1");
         }
 
+        sealed class RecordingValueSerializer(ConcurrentQueue<WeakReference<IHeapObject>> objects) : TestObjectValue.Serializer
+        {
+            public override void Deserialize(out IHeapObject obj)
+            {
+                base.Deserialize(out obj);
+                objects.Enqueue(new(obj));
+            }
+        }
+
+        ConcurrentQueue<WeakReference<IHeapObject>> CreateRecordingScanStore()
+        {
+            var objects = new ConcurrentQueue<WeakReference<IHeapObject>>();
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "scan.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "scan.obj.log"), deleteOnClose: true);
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                LogMemorySize = 1L << 20,
+                PageSize = MinKvLogPageSize
+            }, StoreFunctions.Create(comparer, () => new RecordingValueSerializer(objects)),
+                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+            var tracker = new LogSizeTracker<ClassStoreFunctions, ClassAllocator>(store.Log, 1L << 20, 1L << 17, 1L << 16, logger: null);
+            store.Log.SetLogSizeTracker(tracker);
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, ScanFunctions>(new ScanFunctions());
+            for (var i = 0; i < 2200; i++)
+                _ = session.BasicContext.Upsert(new TestObjectKey { key = i }, new TestObjectValue { value = i });
+            store.Log.FlushAndEvict(wait: true);
+            Assert.That(tracker.LogHeapSizeBytes, Is.Zero);
+            return objects;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void AssertDeserializedObjectsReleased(ConcurrentQueue<WeakReference<IHeapObject>> objects)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            Assert.That(objects, Is.Not.Empty, "The scan must actually deserialize disk objects");
+            foreach (var reference in objects)
+                Assert.That(reference.TryGetTarget(out _), Is.False, "A disposed scan still roots a deserialized object");
+            objects.Clear();
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjectScanCursorReleasesFrameObjects([Values(1L, 100L, long.MaxValue)] long count)
+        {
+            var objects = CreateRecordingScanStore();
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, ScanFunctions>(new ScanFunctions());
+            var functions = new ScanCursorFuncs();
+            functions.Initialize(verifyKeys: false, k => (k.key & 1) != 0);
+            long cursor = 0;
+            for (var i = 0; i < 4; i++)
+            {
+                _ = session.ScanCursor(ref cursor, count, functions);
+                AssertDeserializedObjectsReleased(objects);
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjectScanDoesNotChargeTransientHeap([Values(1L, 100L, long.MaxValue)] long count)
+        {
+            _ = CreateRecordingScanStore();
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, ScanFunctions>(new ScanFunctions());
+            var functions = new ScanCursorFuncs();
+            functions.Initialize(verifyKeys: false);
+            long cursor = 0;
+            for (var i = 0; i < 4; i++)
+            {
+                _ = session.ScanCursor(ref cursor, count, functions);
+                Assert.That(store.Log.HeapSizeBytes, Is.Zero, "Scan frames are not resident log heap");
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjectPullScanReleasesFrameObjects(
+            [Values(DiskScanBufferingMode.SinglePageBuffering, DiskScanBufferingMode.DoublePageBuffering)] DiskScanBufferingMode buffering,
+            [Values(1, int.MaxValue)] int recordsToRead)
+        {
+            var objects = CreateRecordingScanStore();
+            for (var i = 0; i < 3; i++)
+            {
+                ReadScanRecords(buffering, recordsToRead);
+                AssertDeserializedObjectsReleased(objects);
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void ReadScanRecords(DiskScanBufferingMode buffering, int recordsToRead)
+        {
+            using var iter = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress, buffering);
+            for (var n = 0; n < recordsToRead && iter.GetNext(); n++)
+                Assert.That(iter.ValueObject, Is.InstanceOf<TestObjectValue>());
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjectScanFrameCleanupReleasesOverflowKeys()
+        {
+            var objects = CreateRecordingScanStore();
+            var fromAddress = store.Log.TailAddress;
+            using (var session = store.NewSession<OverflowTestKey, TestObjectInput, TestObjectOutput, Empty, ScanFunctions>(new ScanFunctions()))
+            {
+                for (var i = 0; i < 100; i++)
+                    _ = session.BasicContext.Upsert(new OverflowTestKey(i + 2200), new TestObjectValue { value = i });
+            }
+            store.Log.FlushAndEvict(wait: true);
+            var overflow = ReadOverflowScanRecord(fromAddress);
+            AssertDeserializedObjectsReleased(objects);
+            Assert.That(overflow.TryGetTarget(out _), Is.False, "Disposal must release overflow key slots as well as objects");
+            Assert.That(store.Log.HeapSizeBytes, Is.Zero);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        WeakReference<byte[]> ReadOverflowScanRecord(long fromAddress)
+        {
+            using var iter = store.Log.Scan(fromAddress, store.Log.TailAddress, DiskScanBufferingMode.SinglePageBuffering);
+            Assert.That(iter.GetNext(), Is.True);
+            Assert.That(((TestObjectValue)iter.ValueObject).value, Is.Zero);
+            Assert.That(iter.Key.Length, Is.EqualTo(OverflowKeyLength));
+            return new(iter.KeyOverflow.Array);
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjectScanFramesDoNotShareOwnership()
+        {
+            var objects = CreateRecordingScanStore();
+            ReadOverlappingScanFrames();
+            AssertDeserializedObjectsReleased(objects);
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjectScanFramesShareIteratorMap(
+            [Values(DiskScanBufferingMode.SinglePageBuffering, DiskScanBufferingMode.DoublePageBuffering)] DiskScanBufferingMode buffering)
+        {
+            _ = CreateRecordingScanStore();
+            using var iter = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress, buffering);
+            ObjectIdMap map = null;
+            var count = 0;
+            while (iter.GetNext())
+            {
+                map ??= iter.ObjectIdMap;
+                Assert.That(iter.ObjectIdMap, Is.SameAs(map), "Every disk frame must use the iterator's map");
+                Assert.That(((TestObjectValue)iter.ValueObject).value, Is.EqualTo(count++));
+            }
+            Assert.That(count, Is.EqualTo(2200), "The scan must cross and reuse multiple frames");
+            var frameCount = buffering == DiskScanBufferingMode.DoublePageBuffering ? 2 : 1;
+            Assert.That(map.Count, Is.LessThanOrEqualTo(frameCount * store.Log.PageSizeBytes / 32),
+                "Released slots must be reused rather than accumulated across pages");
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void TransferredScanRecordOutlivesIterator([Values(false, true)] bool fromDisk)
+        {
+            _ = CreateRecordingScanStore();
+            var fromAddress = store.Log.BeginAddress;
+            if (!fromDisk)
+            {
+                fromAddress = store.Log.TailAddress;
+                using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, ScanFunctions>(new ScanFunctions());
+                _ = session.BasicContext.Upsert(new TestObjectKey { key = 2200 }, new TestObjectValue { value = 2200 });
+            }
+            using var iter = store.Log.Scan(fromAddress, store.Log.TailAddress, DiskScanBufferingMode.SinglePageBuffering);
+            Assert.That(iter.GetNext(), Is.True);
+            var value = iter.ValueObject;
+            var transferred = DiskLogRecord.TransferFrom(ref iter.AsDiskLogRecordRef(), store.hlogBase.bufferPool, store.Log.TransientObjectIdMap);
+            try
+            {
+                Assert.That(iter.IsSet, Is.False, "Transfer must relinquish the iterator's current record");
+                iter.Dispose();
+                Assert.That(transferred.ValueObject, Is.SameAs(value), "Transferred slots must survive iterator map cleanup");
+
+                // Transferring an owned buffer must move it intact, without clearing its slots.
+                var physicalAddress = transferred.logRecord.physicalAddress;
+                var moved = DiskLogRecord.TransferFrom(ref transferred, store.hlogBase.bufferPool, store.Log.TransientObjectIdMap);
+                try
+                {
+                    Assert.That(transferred.IsSet, Is.False);
+                    Assert.That(moved.logRecord.physicalAddress, Is.EqualTo(physicalAddress));
+                    Assert.That(moved.ValueObject, Is.SameAs(value));
+                }
+                finally
+                {
+                    moved.Dispose();
+                }
+                if (!fromDisk)
+                    Assert.That(store.hlogBase._wrapper.CreateLogRecord(fromAddress).ValueObject, Is.SameAs(value),
+                        "Releasing remapped slots must not change the resident record");
+            }
+            finally
+            {
+                transferred.Dispose();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void ReadOverlappingScanFrames()
+        {
+            using var first = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress, DiskScanBufferingMode.SinglePageBuffering);
+            Assert.That(first.GetNext(), Is.True);
+            var firstValue = first.ValueObject;
+            using (var second = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress, DiskScanBufferingMode.DoublePageBuffering))
+                Assert.That(second.GetNext(), Is.True);
+            Assert.That(first.ValueObject, Is.SameAs(firstValue), "Disposing one iterator must not clear another iterator's objects");
+        }
+
+        sealed class DisposalCountingValue : TestObjectValue
+        {
+            internal int disposeCount;
+            internal bool diskReadInitialized;
+            public override void Dispose() => ++disposeCount;
+        }
+
+        sealed class DisposalCountingSerializer(ConcurrentQueue<DisposalCountingValue> values) : TestObjectValue.Serializer
+        {
+            public override void Deserialize(out IHeapObject obj)
+            {
+                var value = new DisposalCountingValue { value = reader.ReadInt32() };
+                values.Enqueue(value);
+                obj = value;
+            }
+        }
+
+        internal sealed class DisposingScanTriggers : IRecordTriggers
+        {
+            internal int? throwOnValue;
+            public bool CallOnDiskRead => true;
+            public void OnDiskRead(ref LogRecord logRecord)
+            {
+                if (logRecord.DataHeader.ValueIsObject)
+                    ((DisposalCountingValue)logRecord.ValueObject).diskReadInitialized = true;
+            }
+            public void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason)
+            {
+                if (!logRecord.IsSet || !logRecord.DataHeader.ValueIsObject)
+                    return;
+                var value = (DisposalCountingValue)logRecord.ValueObject;
+                Assert.That(value.diskReadInitialized, Is.True, "Initialize disk-owned handles before invoking disposal");
+                value.Dispose();
+                if (value.value == throwOnValue)
+                    throw new InvalidOperationException("Injected disk disposal failure");
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjectScanDisposesOwnedObjectsButNotResidentObjects(
+            [Values(1L, long.MaxValue)] long count,
+            [Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
+        {
+            var values = new ConcurrentQueue<DisposalCountingValue>();
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "dispose.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "dispose.obj.log"), deleteOnClose: true);
+            using var scanStore = new TsavoriteKV<DisposingStoreFunctions, DisposingAllocator>(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                LogMemorySize = 1L << 20,
+                PageSize = MinKvLogPageSize
+            }, StoreFunctions.Create(comparer, () => new DisposalCountingSerializer(values), new DisposingScanTriggers()),
+                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+            using var session = scanStore.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, ScanFunctions>(new ScanFunctions());
+            var residentValues = new DisposalCountingValue[2200];
+            for (var i = 0; i < residentValues.Length; i++)
+            {
+                residentValues[i] = new() { value = i };
+                _ = session.BasicContext.Upsert(new TestObjectKey { key = i }, residentValues[i]);
+            }
+            var functions = new ScanCursorFuncs();
+            functions.Initialize(verifyKeys: false);
+            long cursor = 0;
+            _ = session.ScanCursor(ref cursor, long.MaxValue, functions);
+            foreach (var value in residentValues)
+                Assert.That(value.disposeCount, Is.Zero, "Buffered resident values are borrowed, not owned");
+
+            scanStore.Log.FlushAndEvict(wait: true);
+            cursor = 0;
+            for (var i = 0; i < 4; i++)
+            {
+                _ = session.ScanCursor(ref cursor, count, functions);
+                Assert.That(values, Is.Not.Empty);
+                foreach (var value in values)
+                    Assert.That(value.disposeCount, Is.EqualTo(1), "Every deserialized value must be disposed exactly once");
+                values.Clear();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjectScanFrameCleanupSurfacesDisposalFailureAndReleasesOtherObjects()
+        {
+            var values = new ConcurrentQueue<DisposalCountingValue>();
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "failure.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "failure.obj.log"), deleteOnClose: true);
+            var triggers = new DisposingScanTriggers();
+            using var scanStore = new TsavoriteKV<DisposingStoreFunctions, DisposingAllocator>(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                LogMemorySize = 1L << 20,
+                PageSize = MinKvLogPageSize
+            }, StoreFunctions.Create(comparer, () => new DisposalCountingSerializer(values), triggers),
+                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+            using var session = scanStore.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, ScanFunctions>(new ScanFunctions());
+            for (var i = 0; i < 300; i++)
+                _ = session.BasicContext.Upsert(new TestObjectKey { key = i }, new DisposalCountingValue { value = i });
+            scanStore.Log.FlushAndEvict(wait: true);
+            var iter = scanStore.Log.Scan(scanStore.Log.BeginAddress, scanStore.Log.TailAddress, DiskScanBufferingMode.DoublePageBuffering);
+            try
+            {
+                Assert.That(iter.GetNext(), Is.True);
+                // Fail on an unvisited record in the first frame; the second frame's read-ahead also needs cleanup.
+                triggers.throwOnValue = 1;
+                Assert.That(() => iter.Dispose(), Throws.InvalidOperationException.With.Message.EqualTo("Injected disk disposal failure"));
+                Assert.That(values.Count, Is.GreaterThan(126), "Read-ahead must deserialize another page");
+                foreach (var value in values)
+                    Assert.That(value.disposeCount, Is.EqualTo(1));
+            }
+            finally
+            {
+                triggers.throwOnValue = null;
+                iter.Dispose();
+            }
+        }
+
         internal sealed class ScanCursorFuncs : IScanIteratorFunctions
         {
             internal int numRecords;
@@ -873,6 +1214,7 @@ namespace Tsavorite.test
 
                 if (verifyKeys)
                     ClassicAssert.AreEqual(numRecords, logRecord.Key.AsRef<TestObjectKey>().key, "Mismatched key field on Scan");
+                Assert.That(((TestObjectValue)logRecord.ValueObject).value, Is.EqualTo(logRecord.Key.AsRef<TestObjectKey>().key), "Mismatched value on Scan");
                 ClassicAssert.Greater(recordMetadata.Address, 0);
                 ++numRecords;
                 lastAddress = recordMetadata.Address;

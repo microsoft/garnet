@@ -223,16 +223,14 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVIMPORT));
             }
 
+            var key = parseState.GetArgSliceByRef(0);
+
             var term = parseState.GetArgSliceByRef(1).ReadOnlySpan;
             if (term.EqualsUpperCaseSpanIgnoringCase("FINISH"u8))
             {
                 if (parseState.Count != 2)
                 {
                     return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVIMPORT));
-                }
-                if (parseState.GetArgSliceByRef(0).ReadOnlySpan.IsEmpty)
-                {
-                    return AbortWithErrorMessage("ERR Vector Set key cannot be empty"u8);
                 }
 
                 var finishStatus = storageApi.VectorSetFinishImport(parseState.GetArgSliceByRef(0), out var finishResult, out var finishErrorMsg);
@@ -252,6 +250,33 @@ namespace Garnet.server
                 WriteDirect(CmdStrings.RESP_OK);
                 return true;
             }
+            else if (term.EqualsUpperCaseSpanIgnoringCase("VERIFY"u8))
+            {
+                if (parseState.Count != 4)
+                {
+                    return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVIMPORT));
+                }
+
+                if (!parseState.TryGetInt(2, out var taskIndex) || !parseState.TryGetInt(3, out var taskCount))
+                {
+                    return AbortWithErrorMessage("ERR XVIMPORT VERIFY must have integer taskIndex and taskCount parameters");
+                }
+
+                var verifyStatus = storageApi.VectorSetVerifyImport(key, taskIndex, taskCount, out var res, out var verifyErrorMsg);
+                if (verifyStatus == GarnetStatus.WRONGTYPE)
+                {
+                    return AbortVectorSetWrongType();
+                }
+
+                if (res != VectorManagerResult.OK)
+                {
+                    return AbortWithErrorMessage(verifyErrorMsg);
+                }
+
+                WriteDirect(CmdStrings.RESP_OK);
+                return true;
+            }
+
             if (parseState.Count != 4)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVIMPORT));
@@ -271,8 +296,19 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR invalid vector set import term"u8);
             }
 
-            var status = storageApi.VectorSetImport(parseState.GetArgSliceByRef(0), termType,
-                parseState.GetArgSliceByRef(2), parseState.GetArgSliceByRef(3), out var result, out var errorMsg);
+            var id = parseState.GetArgSliceByRef(2);
+            var value = parseState.GetArgSliceByRef(3);
+
+            if (termType == VectorImportTermType.IntMap && value.length != sizeof(uint))
+            {
+                return AbortWithErrorMessage("ERR imported INTMAP value must 4-bytes");
+            }
+            else if (termType is VectorImportTermType.Vector or VectorImportTermType.Neighbors or VectorImportTermType.Quant or VectorImportTermType.Attrs or VectorImportTermType.ExtMap && id.length != sizeof(uint))
+            {
+                return AbortWithErrorMessage("ERR imported id for this term must be 4-bytes");
+            }
+
+            var status = storageApi.VectorSetImport(key, termType, id, value, out var result, out var errorMsg);
             if (status == GarnetStatus.WRONGTYPE)
             {
                 return AbortVectorSetWrongType();
@@ -1886,7 +1922,7 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            var res = storageApi.VectorSetInfo(key, out var quantType, out var distanceMetricType, out var vectorDimensions, out var reducedDimensions, out var buildExplorationFactor, out var numLinks, out var size, out var importPending);
+            var res = storageApi.VectorSetInfo(key, out var quantType, out var distanceMetricType, out var vectorDimensions, out var reducedDimensions, out var buildExplorationFactor, out var numLinks, out var size, out var importPendingState);
 
             if (res != GarnetStatus.OK)
             {
@@ -1903,7 +1939,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage($"Unexpected GarnetStatus: {res}");
             }
 
-            if (!importPending && size < 0)
+            if (importPendingState != VectorSetImportState.None && size < 0)
             {
                 return AbortWithErrorMessage("ERR vector set cardinality failed"u8);
             }
@@ -1929,7 +1965,15 @@ namespace Garnet.server
                 _ => throw new GarnetException($"Invalid VectorDistanceMetricType: {distanceMetricType}"),
             };
 
-            WriteMapLength(importPending ? 7 : 8);
+            var importPendingStateSpan = importPendingState switch
+            {
+                VectorSetImportState.None => "not-importing",
+                VectorSetImportState.ImportInProgress => "pending",
+                VectorSetImportState.ImportFailed => "failed",
+                _ => throw new GarnetException($"Invalid VectorSetImportState: {importPendingState}"),
+            };
+
+            WriteMapLength(importPendingState == VectorSetImportState.None ? 8 : 7);
             WriteSimpleString("quant-type"u8);
             WriteSimpleString(quantTypeSpan);
             WriteSimpleString("distance-metric"u8);
@@ -1942,13 +1986,13 @@ namespace Garnet.server
             WriteInt32((int)buildExplorationFactor);
             WriteSimpleString("num-links"u8);
             WriteInt32((int)numLinks);
-            if (!importPending)
+            if (importPendingState == VectorSetImportState.None)
             {
                 WriteSimpleString("size"u8);
                 WriteInt64(size);
             }
-            WriteSimpleString("import-pending"u8);
-            WriteInt32(importPending ? 1 : 0);
+            WriteSimpleString("import-state"u8);
+            WriteSimpleString(importPendingStateSpan);
 
             return true;
         }

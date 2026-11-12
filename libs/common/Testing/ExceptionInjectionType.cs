@@ -14,6 +14,26 @@ namespace Garnet.common
         None = 0,
 
         /// <summary>
+        /// Fail replica attachment after primary maintenance has drained.
+        /// </summary>
+        Replication_Fail_After_Primary_Task_Drain,
+
+        /// <summary>
+        /// Pause an in-flight background collection cycle before its storage mutations.
+        /// </summary>
+        Failover_Pause_Background_Object_Collection,
+
+        /// <summary>
+        /// Pause between sampling write admission state and loading cluster configuration.
+        /// </summary>
+        Failover_Pause_Between_Write_Admission_Reads,
+
+        /// <summary>
+        /// Pause an admitted transaction before executing a database flush.
+        /// </summary>
+        Failover_Pause_Before_Transactional_Flush,
+
+        /// <summary>
         /// Network failure after GarnetServerTcp handler created
         /// </summary>
         Network_After_GarnetServerTcp_Handler_Created,
@@ -37,6 +57,15 @@ namespace Garnet.common
         /// Wait at migration slot driver right after acquiring the end scan range
         /// </summary>
         Migration_Slot_End_Scan_Range_Acquisition,
+        /// <summary>
+        /// Wait at migration slot driver right after the keys of a scanned batch become inaccessible to writers
+        /// </summary>
+        Migration_Slot_Keys_Transmitting,
+        /// <summary>
+        /// Hold the migration slot driver, until cleared, once it has suspended config merges to hand the slots over.
+        /// A node shutting down does not release the hold.
+        /// </summary>
+        Migration_Hold_Ownership_Transfer,
         /// <summary>
         /// AOF on replica has diverged from stream coming from primary.
         /// </summary>
@@ -157,13 +186,51 @@ namespace Garnet.common
         /// </summary>
         Replication_Fail_Replica_Unreadable_Checkpoint,
         /// <summary>
+        /// Cluster gossip: pause at the top of a pending connection add (before the store write lock is taken),
+        /// so a test can republish the GOSSIP_CLIENT configuration while an add is in flight and verify the
+        /// pending node was built against the stale snapshot and is rebuilt before being advertised.
+        /// </summary>
+        Cluster_Gossip_Pause_Before_AddConnection,
+        /// <summary>
+        /// GarnetClient: pause before encrypting a flush chunk, while its source buffer is still in use.
+        /// </summary>
+        GarnetClient_Tls_Pause_Before_Write,
+        /// <summary>
+        /// GarnetClient: pause after connecting a socket, before publishing its writer.
+        /// </summary>
+        GarnetClient_Connect_Pause_Before_Publish,
+        /// <summary>
         /// Pause after receiving the full diskless snapshot, before recovery resets the AOF addresses.
         /// </summary>
         Replication_Pause_Before_Diskless_Snapshot_Recovery,
+        /// <summary>
+        /// Pause a periodic commit before checking the node role and committing the AOF.
+        /// </summary>
+        Aof_Pause_Before_Periodic_Commit,
         /// <summary>
         /// Server network sender: pause a send completion that frees a slot for a waiting send, after it has
         /// decremented the send count and before it releases the waiter.
         /// </summary>
         Sender_Pause_Before_Slot_Release,
+        /// <summary>
+        /// Server network sender: pause after a send timeout closes the socket, before waiting for its send slot.
+        /// </summary>
+        Sender_Pause_Before_Timed_Out_Slot_Wait,
+        /// <summary>
+        /// Checkpoint sender: pause while holding its plaintext send-buffer pointer, before copying the payload.
+        /// </summary>
+        Checkpoint_Pause_Before_Payload_Copy,
+        /// <summary>
+        /// TLS handler: signal that receive-side resource cleanup has finished.
+        /// </summary>
+        Tls_Signal_After_Handler_Dispose,
+        /// <summary>
+        /// Replica checkpoint writer: hold each overlapped file write until cleared.
+        /// </summary>
+        Replication_Hold_Snapshot_Write,
+        /// <summary>
+        /// Replica failover: pause after the primary acknowledged FAILSTOPWRITES, before waiting for the replica to catch up.
+        /// </summary>
+        Failover_Pause_Waiting_For_Sync,
     }
 }

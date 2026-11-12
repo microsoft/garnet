@@ -165,7 +165,7 @@ These operations are handled purely on the Garnet side by first reading out the 
 
 ### Metadata (via `VDIM` and `VINFO`)
 
-Configuration and `import-pending` come from the [`Index`](#indexes) structure. `VINFO` also reads `size`
+Configuration and `import-state` come from the [`Index`](#indexes) structure. `VINFO` also reads `size`
 from DiskANN, except during import: it then omits `size` and returns stored metadata without recreating or
 calling the native index.
 

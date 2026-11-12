@@ -183,6 +183,32 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task SortedSetAddRecreatesExpiredEvictedKey(
+            [Values(RedisProtocol.Resp2, RedisProtocol.Resp3)] RedisProtocol protocol,
+            [Values(SortedSetWhen.Always, SortedSetWhen.NotExists)] SortedSetWhen when,
+            [Values(16, 2048)] int keyLength)
+        {
+            using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig(protocol: protocol));
+            var db = redis.GetDatabase(0);
+            var clientId = (long)await db.ExecuteAsync("CLIENT", "ID");
+            var key = new string('k', keyLength);
+            Assert.That(await db.SortedSetAddAsync(key, "old", 1), Is.True);
+            Assert.That(await db.KeyExpireAsync(key, TimeSpan.FromMilliseconds(200)), Is.True);
+
+            var storeLog = server.Provider.StoreWrapper.store.Log;
+            var tailAddress = storeLog.TailAddress;
+            storeLog.FlushAndEvict(wait: true);
+            Assert.That(storeLog.HeadAddress, Is.GreaterThanOrEqualTo(tailAddress), "The expired source must be read from disk");
+            await Task.Delay(300);
+
+            Assert.That(await db.SortedSetAddAsync(key, "new", 42, when), Is.True);
+            Assert.That(await db.SortedSetRangeByRankWithScoresAsync(key), Is.EqualTo([new SortedSetEntry("new", 42)]));
+            Assert.That(await db.KeyTimeToLiveAsync(key), Is.Null, "The replacement must not inherit the old key's TTL");
+            Assert.That((string)await db.ExecuteAsync("PING"), Is.EqualTo("PONG"));
+            Assert.That((long)await db.ExecuteAsync("CLIENT", "ID"), Is.EqualTo(clientId), "The connection must not have been replaced");
+        }
+
+        [Test]
         public void AddAndLength()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -4828,6 +4854,69 @@ namespace Garnet.test
             response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 2 WITHSCORES", "PING", 5, 1);
             expectedResponse = "*4\r\n"; // 2 member/score pairs
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void CanUseZRandMemberWithUnrepresentableNegativeCount()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("ZADD randzset 1 m1 2 m2 3 m3");
+            TestUtils.AssertEqualUpToExpectedLength(":3\r\n", response);
+
+            // A negative count asks for that many members with repeats, so unlike a positive count it cannot be reduced
+            // to the size of the sorted set; a count below what the packed count field represents is rejected
+            const string expectedResponse = "-ERR value is not an integer or out of range.\r\n+PONG\r\n";
+            foreach (var count in new[] { "-536870913", "-2147483648" })
+            {
+                response = lightClientRequest.SendCommands($"ZRANDMEMBER randzset {count}", "PING", 1, 1);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+                response = lightClientRequest.SendCommands($"ZRANDMEMBER randzset {count} WITHSCORES", "PING", 1, 1);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
+        }
+
+        [Test]
+        public void SortedSetRejectsNaN([Values("nan", "NaN", "-NaN")] string nan)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "nanzset";
+            ClassicAssert.IsTrue(db.SortedSetAdd(key, "a", 1));
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("ZADD", key, nan, "b"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT), ex.Message);
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("ZINCRBY", key, nan, "b"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT), ex.Message);
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("ZINCRBY", key, nan, "a"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT), ex.Message);
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("ZRANGEBYSCORE", key, nan, "+inf"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT), ex.Message);
+
+            CollectionAssert.AreEqual(new RedisValue[] { "a" }, db.SortedSetRangeByRank(key));
+            ClassicAssert.AreEqual(1, db.SortedSetScore(key, "a"));
+        }
+
+        /// <summary>
+        /// Ranks are integers: ZRANGE by rank rejects any other bound, and ranks past the int range select as the nearest int rank would.
+        /// </summary>
+        [Test]
+        public void ZRangeByRankRequiresIntegerRanks([Values("0.5", "(1", "inf", "-inf", "1e1")] string rank)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "rankzset";
+            ClassicAssert.AreEqual(3, db.SortedSetAdd(key, [new SortedSetEntry("a", 1), new SortedSetEntry("b", 2), new SortedSetEntry("c", 3)]));
+
+            foreach (var (command, start, stop) in new[] { ("ZRANGE", rank, "-1"), ("ZRANGE", "0", rank), ("ZREVRANGE", rank, "-1") })
+            {
+                var ex = Assert.Throws<RedisServerException>(() => db.Execute(command, key, start, stop));
+                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER), ex.Message, $"{command} {start} {stop}");
+            }
+
+            var all = (RedisValue[])db.Execute("ZRANGE", key, long.MinValue, long.MaxValue);
+            CollectionAssert.AreEqual(new RedisValue[] { "a", "b", "c" }, all);
+            ClassicAssert.AreEqual(0, ((RedisValue[])db.Execute("ZRANGE", key, long.MaxValue, long.MaxValue)).Length);
         }
 
         [Test]

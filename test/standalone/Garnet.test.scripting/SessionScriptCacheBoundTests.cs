@@ -206,5 +206,71 @@ namespace Garnet.test
             ClassicAssert.AreEqual(Distinct, cache.CachedScriptCount,
                 "a zero cap must disable eviction entirely");
         }
+
+        /// <summary>
+        /// <c>redis.call</c> serves GET and HGET without RESP dispatch, so nothing resets the scratch space the
+        /// reply is read into at a batch boundary. The fast path has to release it itself, otherwise a script that
+        /// reads in a loop keeps every value it read for as long as the script runs.
+        /// </summary>
+        [TestCase("return redis.call('GET', KEYS[1])", TestName = "GET")]
+        [TestCase("return redis.call('HGET', KEYS[1], 'f')", TestName = "HGET")]
+        public void ReadsThroughTheFastPathsDoNotAccumulateScratchSpace(string script)
+        {
+            const int Reads = 500;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var value = new string('v', 1024);
+            db.StringSet("k", value);
+            db.HashSet("h", "f", value);
+            var key = script.Contains("HGET") ? "h" : "k";
+
+            var loop = $"for i = 1, {Reads} do {script.Replace("return ", "local _ = ")} end return 1";
+            ClassicAssert.AreEqual(1, (int)db.ScriptEvaluate(loop, [(RedisKey)key]));
+
+            var processorField = typeof(SessionScriptCache).GetField("processor", BindingFlags.Instance | BindingFlags.NonPublic);
+            ClassicAssert.IsNotNull(processorField, "SessionScriptCache should still hold its script processor in a 'processor' field");
+
+            var processor = (RespServerSession)processorField.GetValue(SoleSessionCache());
+            var retained = processor.scratchBufferAllocator.TotalLength;
+            ClassicAssert.Less(retained, Reads * value.Length / 4,
+                $"one script read a {value.Length} byte value {Reads} times, and the processor still holds {retained} bytes of scratch space");
+        }
+
+        /// <summary>
+        /// A value larger than the retained-size cap that a fast-path read brings into the processor's
+        /// scratch allocator is released by the session trim.
+        /// </summary>
+        [TestCase("return #redis.call('GET', KEYS[1])", TestName = "GET")]
+        [TestCase("return #redis.call('HGET', KEYS[1], 'f')", TestName = "HGET")]
+        public void ALargeFastPathReadIsReleasedByTheSessionTrim(string script)
+        {
+            const int ValueLength = 256 * 1024;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var value = new string('v', ValueLength);
+            db.StringSet("k", value);
+            db.HashSet("h", "f", value);
+            var key = script.Contains("HGET") ? "h" : "k";
+
+            ClassicAssert.AreEqual(ValueLength, (int)db.ScriptEvaluate(script, [(RedisKey)key]));
+
+            var processorField = typeof(SessionScriptCache).GetField("processor", BindingFlags.Instance | BindingFlags.NonPublic);
+            ClassicAssert.IsNotNull(processorField, "SessionScriptCache should still hold its script processor in a 'processor' field");
+
+            var cache = SoleSessionCache();
+            var processor = (RespServerSession)processorField.GetValue(cache);
+            ClassicAssert.GreaterOrEqual(processor.scratchBufferAllocator.TotalLength, ValueLength,
+                "the read should have grown the processor's scratch allocator past the retained-size cap");
+
+            // A buffer is released once it has stayed above the cap across two consecutive trims
+            cache.TrimScratchBuffer();
+            cache.TrimScratchBuffer();
+
+            ClassicAssert.AreEqual(0, processor.scratchBufferAllocator.TotalLength);
+        }
     }
 }

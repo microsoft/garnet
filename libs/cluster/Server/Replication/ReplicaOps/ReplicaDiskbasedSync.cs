@@ -20,6 +20,13 @@ namespace Garnet.cluster
     internal sealed partial class ReplicationManager : IDisposable
     {
         public ReceiveCheckpointHandler recvCheckpointHandler = null;
+
+        /// <summary>
+        /// Startup opt-in sampled once for this manager. The factory returns null without allocating a
+        /// recorder unless enabled; all disk-based sessions share the resulting manager-lifetime instance.
+        /// </summary>
+        internal readonly ReplicaBenchmarkTiming BenchmarkTiming;
+
         CheckpointEntry cEntry;
 
         /// <summary>
@@ -35,6 +42,7 @@ namespace Garnet.cluster
             ReadOnlyMemory<byte> errorMessage = default;
             try
             {
+                session?.ReleaseCurrentEpoch();
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", options.NodeId);
                 // Update the configuration to make this node a replica of provided nodeId
                 if (options.TryAddReplica)
@@ -52,7 +60,7 @@ namespace Garnet.cluster
                 // Wait for threads to agree
                 if (session != null)
                 {
-                    await session.UnsafeBumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
+                    await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
                 }
 
                 // Initiate remote checkpoint retrieval
@@ -79,6 +87,10 @@ namespace Garnet.cluster
                 logger?.LogError(ex, $"{nameof(TryReplicateDiskbasedSyncAsync)}");
                 return (false, errorMessage);
             }
+            finally
+            {
+                session?.AcquireCurrentEpoch();
+            }
 
             async Task<string> ReplicaSyncAttachTaskAsync(bool downgradeLock, bool forceAsync)
             {
@@ -89,6 +101,7 @@ namespace Garnet.cluster
 
                 Debug.Assert(IsRecovering);
                 GarnetClientSession gcs = null;
+                var restoredPrimary = false;
                 resetHandler ??= new CancellationTokenSource();
                 try
                 {
@@ -152,6 +165,7 @@ namespace Garnet.cluster
 
                     // Suspend background tasks that may interfere with AOF
                     await storeWrapper.SuspendPrimaryOnlyTasksAsync().ConfigureAwait(false);
+                    ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Replication_Fail_After_Primary_Task_Drain);
 
                     // Send request to primary
                     //      Primary will initiate background task and start sending checkpoint data
@@ -190,7 +204,10 @@ namespace Garnet.cluster
                     logger?.LogError(ex, "An error occurred at ReplicationManager.RetrieveStoreCheckpoint");
 
                     if (options.AllowReplicaResetOnFailure)
+                    {
                         clusterProvider.clusterManager.TryResetReplica();
+                        restoredPrimary = true;
+                    }
 
                     return ex.Message;
                 }
@@ -210,6 +227,11 @@ namespace Garnet.cluster
                     {
                         resetHandler.Dispose();
                         resetHandler = new CancellationTokenSource();
+                    }
+                    if (restoredPrimary)
+                    {
+                        await storeWrapper.SuspendReplicaOnlyTasksAsync().ConfigureAwait(false);
+                        storeWrapper.StartPrimaryTasks();
                     }
                 }
                 return null;
@@ -287,6 +309,9 @@ namespace Garnet.cluster
             ref AofAddress recoveredReplicationOffset,
             out ReadOnlySpan<byte> errorMessage)
         {
+            // This local phase covers checkpoint recovery, requested replay and replication-state setup.
+            // It excludes subsequent live AOF catch-up and the benchmark's post-attach visibility marker.
+            var recoveryStarted = BenchmarkTiming == null ? 0 : Stopwatch.GetTimestamp();
             try
             {
                 errorMessage = [];
@@ -348,6 +373,8 @@ namespace Garnet.cluster
                 // This is necessary to ensure that the stored procedure can perform write operations if needed
                 clusterProvider.replicationManager.aofProcessor.SetInternalWriteSession();
 
+                // Publish only on success; the recovery-status transition in finally is outside this sample.
+                BenchmarkTiming?.RecordRecovery(recoveryStarted);
                 return this.replicationOffset;
             }
             catch (Exception ex)
