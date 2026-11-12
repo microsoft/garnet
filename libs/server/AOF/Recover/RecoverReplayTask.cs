@@ -132,7 +132,7 @@ namespace Garnet.server
                     {
                         TsavoriteLogRecoveryInfo info = new();
                         info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
-                        // The leader protects the input, not this worker's epoch operations.
+                        // The leader holds epoch protection, but this worker runs on a different thread.
                         replaySublog.UnsafeCommitMetadataOnly(info, isProtected: false);
                     }
                     entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
