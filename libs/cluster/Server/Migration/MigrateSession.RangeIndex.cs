@@ -37,6 +37,7 @@ namespace Garnet.cluster
 
             var sessionClient = migrateOperation.Client;
             var buffer = ArrayPool<byte>.Shared.Rent(chunkSize);
+            var sendChunkSize = Math.Min(chunkSize, NetworkBufferSettings.MaxSendBufferContentSize);
             var transmitActivity = RangeIndexMigrationActivities.TransmitActivity.StartActivity();
             try
             {
@@ -47,11 +48,12 @@ namespace Garnet.cluster
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    var payloadLen = await reader.ReadNextChunkAsync(buffer, cancellationToken).ConfigureAwait(false);
+                    // Drain the reader's independent file buffer in send-sized chunks without splitting framing elements.
+                    var payloadLen = await reader.ReadNextChunkAsync(buffer.AsMemory(0, sendChunkSize), cancellationToken).ConfigureAwait(false);
                     if (payloadLen == 0)
                     {
                         transmitActivity.OnError("Zero-length payload from reader");
-                        logger?.LogError("TransmitRangeIndexAsync: reader returned zero-length payload with a {Size}-byte buffer for key {key}", chunkSize, Encoding.UTF8.GetString(keyBytes));
+                        logger?.LogError("TransmitRangeIndexAsync: reader returned zero-length payload with a {Size}-byte buffer for key {key}", sendChunkSize, Encoding.UTF8.GetString(keyBytes));
                         return false;
                     }
 
