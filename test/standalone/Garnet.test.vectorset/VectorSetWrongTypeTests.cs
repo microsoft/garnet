@@ -257,6 +257,15 @@ namespace Garnet.test
         }
 
         [Test]
+        public Task XVIMPORTVerifyAsync()
+        {
+            return TestVectorSetCommandAsync(RunCommandAsync);
+
+            static Task RunCommandAsync(IDatabase db, RedisKey againstKey)
+            => db.ExecuteAsync("XVIMPORT", againstKey, "VERIFY", "0", "1");
+        }
+
+        [Test]
         public Task VADDAsync()
         {
             return TestVectorSetCommandAsync(RunCommandAsync);

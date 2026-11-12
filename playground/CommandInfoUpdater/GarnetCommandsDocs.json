@@ -1761,6 +1761,52 @@
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
       {
+        "Command": "CLUSTER_FAILOVER",
+        "Name": "CLUSTER|FAILOVER",
+        "Summary": "Forces a replica to perform a manual failover of its master.",
+        "Group": "Cluster",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "OPTIONS",
+            "Type": "OneOf",
+            "ArgumentFlags": "Optional",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "FORCE",
+                "DisplayText": "force",
+                "Type": "PureToken",
+                "Token": "FORCE"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "TAKEOVER",
+                "DisplayText": "takeover",
+                "Type": "PureToken",
+                "Token": "TAKEOVER"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "ABORT",
+                "DisplayText": "abort",
+                "Type": "PureToken",
+                "Token": "ABORT"
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SECONDS",
+            "DisplayText": "seconds",
+            "Type": "Integer",
+            "Token": "TIMEOUT",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
         "Command": "CLUSTER_PUBLISH",
         "Name": "CLUSTER|PUBLISH",
         "Summary": "Processes a forwarded published message from any node in the cluster",

@@ -48,7 +48,7 @@ namespace Garnet.test.cluster
         [Test, Order(1)]
         [Category("CLUSTER")]
         [TestCase("bumpepoch", new int[] { 1, 2, 3 })]
-        [TestCase("failover", new int[] { 3, 4 })]
+        [TestCase("failover", new int[] { 4, 5 })]
         [TestCase("forget", new int[] { 0, 3, 4 })]
         [TestCase("info", new int[] { 1, 2, 3 })]
         [TestCase("help", new int[] { 1, 2, 3 })]
@@ -429,7 +429,9 @@ namespace Garnet.test.cluster
             var primaryIndex = 0;
             var replicaIndex = 1;
             var nodes_count = 2;
-            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout, replicaSyncTimeout: 1);
+            // Stop-and-wait 128 KiB transfer keeps one chunk in flight, so the timed-out chunk in the message is deterministic.
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout, replicaSyncTimeout: 1,
+                replicaDiskBasedSyncChunkSize: "128k", replicaDiskBasedSyncPipelineDepth: 1);
             context.CreateConnection();
 
             _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
@@ -455,7 +457,7 @@ namespace Garnet.test.cluster
                 ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint);
 
                 var respReplicate = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
-                var expected = "The operation has timed out.";
+                var expected = "Checkpoint acknowledgement timed out for STORE_INDEX [address:0,length:131072]";
                 ClassicAssert.AreEqual(expected, respReplicate);
             }
             finally
@@ -951,6 +953,231 @@ namespace Garnet.test.cluster
 
             // Verify data is still accessible from the primary
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, primaryIndex);
+        }
+
+        [Test, Order(16), CancelAfter(testTimeout)]
+        [Category("REPLICATION")]
+        public async Task ClusterFailoverAbortDuringSyncResetsPrimaryAsync([Values] bool dropPrimaryConnection, CancellationToken cancellationToken)
+        {
+            // An aborted replica failover must restore the primary it already demoted with FAILSTOPWRITES, even
+            // when the connection used for FAILSTOPWRITES is lost before the abort.
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+
+            context.CreateInstances(2, disableObjects: true, enableAOF: true, timeout: timeout);
+            context.CreateConnection();
+            var primaryEndpoint = context.clusterTestUtils.GetEndPoint(primaryIndex);
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+            context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
+            await context.clusterTestUtils.WaitForConnectedReplicaCountAsync(primaryIndex, 1, context.logger).ConfigureAwait(false);
+
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength: 32, kvpairCount: 16, primaryIndex);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+            ClassicAssert.AreEqual(16384, context.clusterTestUtils.GetOwnedSlotsFromNode(primaryIndex, context.logger).Count);
+
+            // Sessions opened on the primary after this point belong to the failover
+            var maxSessionIdBeforeFailover = GetClientSessions(primaryEndpoint).Max(s => s.id);
+
+            const ExceptionInjectionType injection = ExceptionInjectionType.Failover_Pause_Waiting_For_Sync;
+            var parkingSuspended = false;
+            ExceptionInjectionHelper.EnableException(injection);
+            try
+            {
+                resp = context.clusterTestUtils.ClusterFailover(replicaIndex, logger: context.logger);
+                ClassicAssert.AreEqual("OK", resp);
+
+                // The replica parks after the primary has acknowledged FAILSTOPWRITES
+                await ExceptionInjectionHelper.WaitOnClearAsync(injection).WaitAsync(cancellationToken).ConfigureAwait(false);
+                ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(primaryIndex, logger: context.logger).Value,
+                    "FAILSTOPWRITES should have demoted the primary");
+
+                if (dropPrimaryConnection)
+                {
+                    // Simulate losing the replica's failover connection to the primary
+                    var failoverSessions = GetClientSessions(primaryEndpoint)
+                        .Where(s => s.id > maxSessionIdBeforeFailover && s.flags == "N")
+                        .Select(s => s.id)
+                        .ToArray();
+                    ClassicAssert.IsNotEmpty(failoverSessions, "Expected the replica's failover connection on the primary");
+                    foreach (var id in failoverSessions)
+                        _ = context.clusterTestUtils.Execute(primaryEndpoint, "CLIENT", ["KILL", "ID", id], logger: context.logger);
+
+                    while (GetClientSessions(primaryEndpoint).Any(s => failoverSessions.Contains(s.id)))
+                        ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for failover connection to close");
+
+                    // Let the replica-side client observe the close
+                    await Task.Delay(500, cancellationToken).ConfigureAwait(false);
+                }
+
+                resp = context.clusterTestUtils.ClusterFailover(replicaIndex, "ABORT", logger: context.logger);
+                ClassicAssert.AreEqual("OK", resp);
+
+                // Release the parked failover so it observes the abort and rolls back
+                ExceptionInjectionHelper.SuspendParking();
+                parkingSuspended = true;
+                ExceptionInjectionHelper.DisableException(injection);
+
+                while (true)
+                {
+                    var infoItem = context.clusterTestUtils.GetReplicationInfo(replicaIndex,
+                        [ReplicationInfoItem.LAST_FAILOVER_STATE], logger: context.logger);
+                    if (infoItem[0].Item2.Equals("failover-aborted"))
+                        break;
+                    ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for failover to abort");
+                }
+            }
+            finally
+            {
+                if (!parkingSuspended)
+                    ExceptionInjectionHelper.SuspendParking();
+                ExceptionInjectionHelper.DisableException(injection);
+                ExceptionInjectionHelper.ResumeParking();
+            }
+
+            // Allow gossip to settle slot ownership after the reset
+            string primaryRole = null, replicaRole = null;
+            var primarySlots = 0;
+            var settleDeadline = DateTime.UtcNow.AddSeconds(10);
+            while (true)
+            {
+                primaryRole = context.clusterTestUtils.RoleCommand(primaryIndex, logger: context.logger).Value;
+                replicaRole = context.clusterTestUtils.RoleCommand(replicaIndex, logger: context.logger).Value;
+                primarySlots = context.clusterTestUtils.GetOwnedSlotsFromNode(primaryIndex, context.logger).Count;
+                if ((primaryRole == "master" && primarySlots == 16384) || DateTime.UtcNow > settleDeadline)
+                    break;
+                ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for primary to be restored");
+            }
+            context.logger?.LogInformation("After aborted failover: primary role={primaryRole} slots={primarySlots}, replica role={replicaRole}",
+                primaryRole, primarySlots, replicaRole);
+
+            ClassicAssert.AreEqual("slave", replicaRole, "Replica should remain a replica after the aborted failover");
+            ClassicAssert.AreEqual("master", primaryRole,
+                $"Primary should be reset to master after the aborted failover (dropPrimaryConnection={dropPrimaryConnection})");
+            ClassicAssert.AreEqual(16384, primarySlots, "Primary should reclaim its slots after the aborted failover");
+
+            List<(long id, string flags)> GetClientSessions(IPEndPoint endPoint)
+            {
+                var list = (string)context.clusterTestUtils.Execute(endPoint, "CLIENT", ["LIST"], logger: context.logger);
+                var sessions = new List<(long id, string flags)>();
+                foreach (var line in list.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    var fields = line.Split(' ').Select(f => f.Split('=', 2)).Where(kv => kv.Length == 2).ToDictionary(kv => kv[0], kv => kv[1]);
+                    sessions.Add((long.Parse(fields["id"]), fields.GetValueOrDefault("flags")));
+                }
+                return sessions;
+            }
+        }
+
+        [Test, Order(16), CancelAfter(testTimeout)]
+        [Category("REPLICATION")]
+        public void ClusterFailoverDefaultWithTimeoutCompletes(CancellationToken cancellationToken)
+        {
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+
+            context.CreateInstances(2, disableObjects: true, enableAOF: true, timeout: timeout);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+            context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
+
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength: 32, kvpairCount: 16, primaryIndex);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+
+            // Coordinated failover with an explicit TIMEOUT
+            resp = (string)context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(replicaIndex), "CLUSTER", ["FAILOVER", "TIMEOUT", 30], logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+
+            while (true)
+            {
+                var infoItem = context.clusterTestUtils.GetReplicationInfo(replicaIndex,
+                    [ReplicationInfoItem.LAST_FAILOVER_STATE], logger: context.logger);
+                if (infoItem[0].Item2.Equals("failover-completed"))
+                    break;
+                ClassicAssert.AreNotEqual("failover-aborted", infoItem[0].Item2, "Failover with TIMEOUT should not abort");
+                ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for failover to complete");
+            }
+
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(replicaIndex, logger: context.logger).Value);
+        }
+
+        [Test, Order(16), CancelAfter(testTimeout)]
+        [Category("REPLICATION")]
+        public void ClusterFailoverAbortsWhenReplicationStreamIsLost(CancellationToken cancellationToken)
+        {
+#if !DEBUG
+            Assert.Ignore($"Depends on {nameof(ExceptionInjectionHelper)}, which is disabled in non-Debug builds");
+#endif
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+
+            context.CreateInstances(2, disableObjects: true, enableAOF: true, timeout: timeout);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+            context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
+
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength: 32, kvpairCount: 16, primaryIndex);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+
+            // Kill the primary's AOF sync task so the replica falls behind with no stream to catch up from
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Aof_Sync_Task_Consume);
+            try
+            {
+                context.PopulatePrimary(ref context.kvPairs, keyLength: 32, kvpairCount: 16, primaryIndex);
+                while (context.clusterTestUtils.GetReplicationInfo(primaryIndex, [ReplicationInfoItem.CONNECTED_REPLICAS], logger: context.logger)[0].Item2 != "0")
+                    ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for the replication stream to drop");
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Aof_Sync_Task_Consume);
+            }
+
+            // The failover timeout is longer than the test, so only the liveness check can end the wait for sync
+            var start = DateTime.UtcNow;
+            resp = (string)context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(replicaIndex), "CLUSTER", ["FAILOVER", "TIMEOUT", 600], logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+
+            while (true)
+            {
+                var state = context.clusterTestUtils.GetReplicationInfo(replicaIndex,
+                    [ReplicationInfoItem.LAST_FAILOVER_STATE], logger: context.logger)[0].Item2;
+                if (state.Equals("failover-aborted"))
+                    break;
+                ClassicAssert.AreNotEqual("failover-completed", state, "Failover must not complete while the replica is behind");
+                ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for failover to abort");
+            }
+            var elapsed = DateTime.UtcNow - start;
+            ClassicAssert.Less(elapsed, TimeSpan.FromSeconds(timeout), "Failover should abort on the lost stream before the cluster timeout");
+
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(replicaIndex, logger: context.logger).Value);
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primaryIndex, logger: context.logger).Value,
+                "The primary should be reset after the aborted failover");
         }
 
         [Test, Order(17), CancelAfter(testTimeout)]

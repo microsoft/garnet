@@ -152,8 +152,8 @@ namespace Tsavorite.core
             /// <list type="bullet">
             ///     <item>If it is a <see cref="LogRecord"/>, it comes from the log or possibly an iterator; we copy the inline record data into a <see cref="SectorAlignedMemory"/>
             ///         and then reassign its ObjectIds to the <paramref name="transientObjectIdMap"/>.</item>
-            ///     <item>Otherwise it is a <see cref="DiskLogRecord"/> and we can transfer its <see cref="SectorAlignedMemory"/> into the local <see cref="DiskLogRecord"/>.
-            ///         It will already have a <paramref name="transientObjectIdMap"/> in its contained <see cref="LogRecord"/>.</item>
+            ///     <item>Otherwise it is a <see cref="DiskLogRecord"/>. Transfer its owned buffer, or copy borrowed frame bytes and
+            ///         transfer its heap ownership into <paramref name="transientObjectIdMap"/> before the frame is reused.</item>
             /// </list>
             /// </summary>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -171,13 +171,13 @@ namespace Tsavorite.core
                 Debug.Assert(srcLogRecord.IsDiskLogRecord, $"Unknown SrcLogRecord implementation: {srcLogRecord}");
                 ref var inputDiskLogRecord = ref srcLogRecord.AsDiskLogRecordRef();
                 // If the inputDiskLogRecord owns its memory this will efficiently transfer it to the local diskLogRecord; otherwise it will deep copy.
-                diskLogRecord = DiskLogRecord.TransferFrom(ref inputDiskLogRecord, bufferPool);
+                diskLogRecord = DiskLogRecord.TransferFrom(ref inputDiskLogRecord, bufferPool, transientObjectIdMap);
             }
 
-            internal void TransferFrom(ref DiskLogRecord inputDiskLogRecord, SectorAlignedBufferPool bufferPool)
+            internal void TransferFrom(ref DiskLogRecord inputDiskLogRecord, SectorAlignedBufferPool bufferPool, ObjectIdMap transientObjectIdMap)
             {
                 Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset pendingState.diskLogRecord");
-                diskLogRecord = DiskLogRecord.TransferFrom(ref inputDiskLogRecord, bufferPool);
+                diskLogRecord = DiskLogRecord.TransferFrom(ref inputDiskLogRecord, bufferPool, transientObjectIdMap);
             }
 
             #endregion // Serialized Record Creation
