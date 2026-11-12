@@ -43,6 +43,9 @@ namespace Tsavorite.core
         /// <summary>Read buffers if Reading ObjectAllocator.</summary>
         public CircularDiskReadBuffer readBuffers;
 
+        /// <summary>Object ownership for a scan-frame read; null for resident recovery pages.</summary>
+        internal ObjectScanFrame objectFrame;
+
         /// <summary>Number of bytes read.</summary>
         public uint numBytesRead;
 

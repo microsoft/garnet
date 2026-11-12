@@ -1364,8 +1364,23 @@
                 "DisplayText": "takeover",
                 "Type": "PureToken",
                 "Token": "TAKEOVER"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "ABORT",
+                "DisplayText": "abort",
+                "Type": "PureToken",
+                "Token": "ABORT"
               }
             ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SECONDS",
+            "DisplayText": "seconds",
+            "Type": "Integer",
+            "Token": "TIMEOUT",
+            "ArgumentFlags": "Optional"
           }
         ]
       },

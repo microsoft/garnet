@@ -207,5 +207,21 @@ namespace Garnet.common
         /// Server network sender: pause after a send timeout closes the socket, before waiting for its send slot.
         /// </summary>
         Sender_Pause_Before_Timed_Out_Slot_Wait,
+        /// <summary>
+        /// Checkpoint sender: pause while holding its plaintext send-buffer pointer, before copying the payload.
+        /// </summary>
+        Checkpoint_Pause_Before_Payload_Copy,
+        /// <summary>
+        /// TLS handler: signal that receive-side resource cleanup has finished.
+        /// </summary>
+        Tls_Signal_After_Handler_Dispose,
+        /// <summary>
+        /// Replica checkpoint writer: hold each overlapped file write until cleared.
+        /// </summary>
+        Replication_Hold_Snapshot_Write,
+        /// <summary>
+        /// Replica failover: pause after the primary acknowledged FAILSTOPWRITES, before waiting for the replica to catch up.
+        /// </summary>
+        Failover_Pause_Waiting_For_Sync,
     }
 }
