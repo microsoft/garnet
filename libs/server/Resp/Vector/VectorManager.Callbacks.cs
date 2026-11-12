@@ -796,7 +796,7 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext)
         {
-            const int MaxCopyOnStackBytes = 1_024;
+            const int MaximumOnStackAllocationBytes = 1_024;
 
             Debug.Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
 
@@ -824,7 +824,8 @@ namespace Garnet.server
             // If we cancelled the RMW because of being a shallow copy, look through older contexts for the record (if any) to copy
             if (!ActiveThreadShallowCopyBackReferences.IsEmpty && status.IsCanceled)
             {
-                Span<byte> copyDataSpan = stackalloc byte[MaxCopyOnStackBytes];
+                Span<byte> copyDataSpan = writeLength <= MaximumOnStackAllocationBytes ? stackalloc byte[MaximumOnStackAllocationBytes] : default;
+
                 var remainingContexts = ActiveThreadShallowCopyBackReferences.Span;
 
                 while (!remainingContexts.IsEmpty)
@@ -836,41 +837,57 @@ namespace Garnet.server
                     VectorInput copyReadInput = default;
                     copyReadInput.ReadDesiredSize = (int)writeLength;
 
-                    VectorOutput copyOutput = new(SpanByteAndMemory.FromPinnedSpan(copyDataSpan));
-                    var copyReadRes = ctx.Read(copyFromKeyWithNamespace, ref copyReadInput, ref copyOutput);
-                    if (copyReadRes.IsPending)
+                    // Sometimes we're just gonna have to allocate here, but try and avoid it when we can
+                    VectorOutput copyOutput;
+                    if (copyDataSpan.IsEmpty)
                     {
-                        CompletePending(ref status, ref copyOutput, ref ctx);
+                        copyOutput = new(new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent((int)writeLength), (int)writeLength));
+                    }
+                    else
+                    {
+                        copyOutput = new(SpanByteAndMemory.FromPinnedSpan(copyDataSpan));
                     }
 
-                    if (copyReadRes.Found)
+                    try
                     {
-                        // If we found a record, we need to copy it _BUT_ we cannot overwrite any other record
-                        // since we might be racing other redirected RMWs or Upserts
-
-                        VectorInput copyWriteInput = default;
-                        copyWriteInput.CopyOnWrite = VectorInput.CopyOnWriteOperation.DisallowOverwrite;
-
-                        VectorOutput ignored = default;
-
-                        var copyWriteRes = ctx.RMW(keyWithNamespace, ref copyWriteInput, ref copyOutput);
-                        if (copyWriteRes.IsPending)
+                        var copyReadRes = ctx.Read(copyFromKeyWithNamespace, ref copyReadInput, ref copyOutput);
+                        if (copyReadRes.IsPending)
                         {
-                            CompletePending(ref copyWriteRes, ref ignored, ref ctx);
+                            CompletePending(ref status, ref copyOutput, ref ctx);
                         }
 
+                        if (copyReadRes.Found)
+                        {
+                            // If we found a record, we need to copy it _BUT_ we cannot overwrite any other record
+                            // since we might be racing other redirected RMWs or Upserts
+
+                            VectorInput copyWriteInput = default;
+                            copyWriteInput.CopyOnWrite = VectorInput.CopyOnWriteOperation.DisallowOverwrite;
+
+                            VectorOutput ignored = default;
+
+                            var copyWriteRes = ctx.RMW(keyWithNamespace, ref copyWriteInput, ref copyOutput);
+                            if (copyWriteRes.IsPending)
+                            {
+                                CompletePending(ref copyWriteRes, ref ignored, ref ctx);
+                            }
+
+
+                            if (copyWriteRes.IsCompletedSuccessfully || copyWriteRes.IsCanceled)
+                            {
+                                // If we did the copy OR conflicted with another update, retry but with no COW chaining
+                                input.CopyOnWrite = default;
+                                goto retryInitialRMW;
+                            }
+
+                            // If something else went wrong, fail the RMW
+                            RestoreKeyLengthPrefix(keyData, keyLength);
+                            return 0;
+                        }
+                    }
+                    finally
+                    {
                         copyOutput.SpanByteAndMemory.Dispose();
-
-                        if (copyWriteRes.IsCompletedSuccessfully || copyWriteRes.IsCanceled)
-                        {
-                            // If we did the copy OR conflicted with another update, retry but with no COW chaining
-                            input.CopyOnWrite = default;
-                            goto retryInitialRMW;
-                        }
-
-                        // If something else went wrong, fail the RMW
-                        RestoreKeyLengthPrefix(keyData, keyLength);
-                        return 0;
                     }
 
                     // Didn't find anything to copy, move on to next context

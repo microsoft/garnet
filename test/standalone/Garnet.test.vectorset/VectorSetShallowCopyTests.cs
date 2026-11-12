@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -92,6 +93,83 @@ namespace Garnet.test.vectorset
                     ClassicAssert.AreEqual(baseRes.Score, copyRes.Score);
                     ClassicAssert.AreEqual(baseRes.AttributesJson, copyRes.AttributesJson);
                 }
+            }
+        }
+
+        [Test]
+        public async Task AddToCopyAsync()
+        {
+            const string CopyVectorSetKey = nameof(AddToCopyAsync);
+            const string AddedElementKey = nameof(AddToCopyAsync) + "_Added";
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            var baseSet = await MakeRandomVectorSetAsync(db).ConfigureAwait(false);
+            var copySetRes = (string)await db.ExecuteAsync("XVSCOPY", baseSet.Name, CopyVectorSetKey).ConfigureAwait(false);
+            ClassicAssert.AreEqual("OK", copySetRes);
+
+            var rand = new Random(baseSet.Seed);
+
+            var values = new float[baseSet.Dimensions];
+            for (var i = 0; i < values.Length; i++)
+            {
+                values[i] = rand.Next(256);
+            }
+
+            ClassicAssert.IsTrue(await db.VectorSetAddAsync(CopyVectorSetKey, VectorSetAddRequest.Member(AddedElementKey, values, "{\"foo\":\"bar\"}")).ConfigureAwait(false));
+
+            using var baseEmbRes = await db.VectorSetGetApproximateVectorAsync(baseSet.Name, AddedElementKey).ConfigureAwait(false);
+            ClassicAssert.IsTrue(baseEmbRes.IsEmpty);
+
+            using var copyEmbRes = await db.VectorSetGetApproximateVectorAsync(CopyVectorSetKey, AddedElementKey).ConfigureAwait(false);
+            ClassicAssert.IsTrue(values.SequenceEqual(copyEmbRes.Span));
+        }
+
+        [Test]
+        public async Task UpdateCopyAsync()
+        {
+            const string CopyVectorSetKey = nameof(UpdateCopyAsync);
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            var baseSet = await MakeRandomVectorSetAsync(db).ConfigureAwait(false);
+            var copySetRes = (string)await db.ExecuteAsync("XVSCOPY", baseSet.Name, CopyVectorSetKey).ConfigureAwait(false);
+            ClassicAssert.AreEqual("OK", copySetRes);
+
+            // Mutate every vector in the copy
+            foreach (var (elem, oldValues, oldAttributes) in VectorSetValuesForSeed(baseSet.Seed))
+            {
+                var newValues = oldValues.Select(static i => i + 1).ToArray();
+                var newAttrs = $"{{\"{elem}\": \"{elem}\"}}";
+                ClassicAssert.IsFalse(await db.VectorSetAddAsync(CopyVectorSetKey, VectorSetAddRequest.Member(elem, newValues, newAttrs)).ConfigureAwait(false));
+            }
+
+            // Scan both to ensure changes isolated
+            foreach (var (elem, oldValues, oldAttributes) in VectorSetValuesForSeed(baseSet.Seed))
+            {
+                using var baseEmbRes = await db.VectorSetGetApproximateVectorAsync(baseSet.Name, elem).ConfigureAwait(false);
+                var baseAttrRes = await db.VectorSetGetAttributesJsonAsync(baseSet.Name, elem).ConfigureAwait(false);
+
+                ClassicAssert.IsTrue(baseEmbRes.Span.SequenceEqual(oldValues));
+                if (oldAttributes == null)
+                {
+                    ClassicAssert.IsNull(baseAttrRes);
+                }
+                else
+                {
+                    ClassicAssert.AreEqual(oldAttributes, baseAttrRes);
+                }
+
+                var newValues = oldValues.Select(static i => i + 1).ToArray();
+                var newAttrs = $"{{\"{elem}\": \"{elem}\"}}";
+
+                using var copyEmbRes = await db.VectorSetGetApproximateVectorAsync(CopyVectorSetKey, elem).ConfigureAwait(false);
+                var copyAttrRes = await db.VectorSetGetAttributesJsonAsync(CopyVectorSetKey, elem).ConfigureAwait(false);
+
+                ClassicAssert.IsTrue(copyEmbRes.Span.SequenceEqual(newValues));
+                ClassicAssert.AreEqual(newAttrs, copyAttrRes);
             }
         }
 
