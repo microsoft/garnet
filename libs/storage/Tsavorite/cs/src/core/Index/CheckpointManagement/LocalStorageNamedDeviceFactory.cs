@@ -91,6 +91,17 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
+        public Stream OpenRead(FileDescriptor fileInfo)
+        {
+            if (deviceType is DeviceType.Null or DeviceType.LocalMemory)
+                throw new NotSupportedException($"Device type {deviceType} does not persist metadata files");
+
+            return new FileStream(
+                Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName + ".0"),
+                FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        }
+
+        /// <inheritdoc />
         public uint GetSectorSize(FileDescriptor fileInfo)
         {
             // Mirrors the device types created by Devices.CreateLogDevice: every local-disk device takes its sector size
