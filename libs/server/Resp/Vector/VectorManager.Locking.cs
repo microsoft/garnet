@@ -125,7 +125,11 @@ namespace Garnet.server
                 ClearActiveThreadSession();
 
                 VectorSetLock.ReleaseLockImpl(in lockableCtx, lockToken0, ref elementLock0);
-                VectorSetLock.ReleaseLockImpl(in lockableCtx, lockToken1, ref elementLock1);
+
+                if (!lockToken1.IsDefault)
+                {
+                    VectorSetLock.ReleaseLockImpl(in lockableCtx, lockToken1, ref elementLock1);
+                }
             }
         }
 
