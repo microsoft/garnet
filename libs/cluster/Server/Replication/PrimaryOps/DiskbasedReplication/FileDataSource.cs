@@ -17,11 +17,6 @@ namespace Garnet.cluster
     /// </summary>
     internal class FileDataSource : ISnapshotDataSource
     {
-        /// <summary>
-        /// Default batch size for non-segmented checkpoint files.
-        /// </summary>
-        internal const int DefaultBatchSize = 1 << 17;
-
         private readonly int maxBatchSize;
         private readonly TimeSpan timeout;
         private readonly ILogger logger;
@@ -29,6 +24,7 @@ namespace Garnet.cluster
         private readonly SemaphoreSlim signalCompletion;
         private readonly IOCallbackContext ioContext = new();
         private volatile uint lastIOErrorCode;
+        private volatile uint lastIOBytes;
 
         public CheckpointFileType Type { get; }
         public Guid Token { get; }
@@ -47,7 +43,7 @@ namespace Garnet.cluster
         /// <param name="device">The initialized device to read from.</param>
         /// <param name="startOffset">The start offset.</param>
         /// <param name="endOffset">The end offset.</param>
-        /// <param name="maxBatchSize">Maximum bytes to read per chunk (will be further capped by sector alignment).</param>
+        /// <param name="maxBatchSize">Maximum bytes per chunk; must be a positive multiple of the device sector size.</param>
         /// <param name="timeout">Timeout for async read operations.</param>
         /// <param name="bufferPool">Shared sector-aligned buffer pool for read operations.</param>
         /// <param name="signalCompletion">Shared semaphore for async I/O completion signaling.</param>
@@ -64,6 +60,9 @@ namespace Garnet.cluster
             SemaphoreSlim signalCompletion,
             ILogger logger = null)
         {
+            if (maxBatchSize < device.SectorSize || maxBatchSize % device.SectorSize != 0)
+                throw new ArgumentException($"Chunk size {maxBatchSize} must be a positive multiple of device sector size {device.SectorSize}.", nameof(maxBatchSize));
+
             Type = type;
             Token = token;
             Device = device;
@@ -89,6 +88,8 @@ namespace Garnet.cluster
             var chunkStartAddress = CurrentOffset;
             var remainingBytes = EndOffset - CurrentOffset;
             var size = (int)Math.Min(remainingBytes, maxBatchSize);
+            if (Device.SegmentSize > 0)
+                size = (int)Math.Min(size, Device.SegmentSize - CurrentOffset % Device.SegmentSize);
 
             var (buffer, bytesRead) = await ReadIntoAsync(Device, (ulong)CurrentOffset, size, cancellationToken).ConfigureAwait(false);
             CurrentOffset += bytesRead;
@@ -102,9 +103,9 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="device">The device to read from.</param>
         /// <param name="address">The address to read from.</param>
-        /// <param name="size">The requested number of bytes (will be sector-aligned).</param>
+        /// <param name="size">The required logical byte count; the device request is rounded up to a sector boundary.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
-        /// <returns>A tuple of the allocated buffer and the actual (sector-aligned) bytes read.</returns>
+        /// <returns>The allocated buffer and sector-aligned transfer length, including any zero-filled unread suffix.</returns>
         protected virtual async Task<(SectorAlignedMemory buffer, int bytesRead)> ReadIntoAsync(
             IDevice device,
             ulong address,
@@ -114,7 +115,8 @@ namespace Garnet.cluster
             long numBytesToRead = size;
             numBytesToRead = (numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1);
 
-            var buffer = bufferPool.Get((int)numBytesToRead);
+            // Validate completion before sending; full reads overwrite the entire transfer buffer.
+            var buffer = bufferPool.Get((int)numBytesToRead, clearOnReturn: false);
             ioContext.Buffer = buffer;
 
             unsafe
@@ -133,11 +135,11 @@ namespace Garnet.cluster
                     $"Timed out reading {Type} checkpoint file at address {address} (requested {numBytesToRead} bytes)"));
             }
 
-            return HandleIOError(buffer, address, numBytesToRead);
+            return HandleIOError(buffer, address, size, numBytesToRead);
         }
 
         private (SectorAlignedMemory buffer, int bytesRead) HandleIOError(
-            SectorAlignedMemory buffer, ulong address, long numBytesToRead)
+            SectorAlignedMemory buffer, ulong address, int requiredBytes, long numBytesToRead)
         {
             var errorCode = lastIOErrorCode;
             Debug.Assert(errorCode == 0, $"I/O error {errorCode} reading {Type} checkpoint file at address {address}");
@@ -147,12 +149,26 @@ namespace Garnet.cluster
                     $"I/O error {errorCode} reading {Type} checkpoint file at address {address} (requested {numBytesToRead} bytes)"));
             }
 
+            var bytesRead = lastIOBytes;
+            // EndOffset describes required checkpoint data. Only the sector-rounding suffix may be absent.
+            // A known short read inside that range is missing data, not padding to manufacture as zeros.
+            if (bytesRead < requiredBytes)
+            {
+                buffer.Return();
+                throw new GarnetException(
+                    $"Short read of {bytesRead} bytes reading {Type} checkpoint file at address {address} " +
+                    $"(required {requiredBytes} bytes, requested {numBytesToRead} bytes)");
+            }
+            if (bytesRead < numBytesToRead)
+                buffer.GetSlice((int)numBytesToRead)[(int)bytesRead..].Clear();
+
             return (buffer, (int)numBytesToRead);
         }
 
         private void IOCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             lastIOErrorCode = errorCode;
+            lastIOBytes = numBytes;
             if (errorCode != 0)
             {
                 var errorMessage = Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
