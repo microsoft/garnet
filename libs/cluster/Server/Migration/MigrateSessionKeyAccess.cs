@@ -17,7 +17,7 @@ namespace Garnet.cluster
         private ValueTask<bool> WaitForConfigPropagationAsync()
         {
             if (transferOption == TransferOption.KEYS)
-                return clusterSession.UnsafeBumpAndWaitForEpochTransitionAsync();
+                return clusterSession.UnsafeBumpAndWaitForEpochTransitionAsync(migrationCancellationToken);
             else if (transferOption == TransferOption.SLOTS)
                 return clusterProvider.BumpAndWaitForEpochTransitionAsync(migrationCancellationToken);
             else

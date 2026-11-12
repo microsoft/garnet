@@ -79,8 +79,33 @@ namespace Garnet.test.cluster
                 .GetField("migrateOperation", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(migration);
 
         static CancellationToken GetCancellationToken(MigrateSession migration)
-            => ((CancellationTokenSource)typeof(MigrateSession)
-                .GetField("migrationCancellationSource", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(migration)).Token;
+            => GetCancellationSource(migration).Token;
+
+        static CancellationTokenSource GetCancellationSource(MigrateSession migration)
+            => (CancellationTokenSource)typeof(MigrateSession)
+                .GetField("migrationCancellationSource", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(migration);
+
+        async Task<ClusterSession> CreateClusterSessionAsync(TcpClient connection, CancellationToken token, ClusterSession excluded = null)
+        {
+            await connection.ConnectAsync(IPAddress.Loopback, ClusterTestContext.Port, token);
+            var stream = connection.GetStream();
+            await stream.WriteAsync("*1\r\n$4\r\nPING\r\n"u8.ToArray(), token);
+            await stream.ReadExactlyAsync(new byte[7], token);
+            var server = (GarnetServerTcp)provider.storeWrapper.Servers[0];
+            var caller = server.ActiveClusterSessions().OfType<ClusterSession>().Single(candidate => candidate != excluded);
+            Assert.That(() => caller.LocalCurrentEpoch, Is.Zero.After(5_000, 10));
+            return caller;
+        }
+
+        void CreateKeysMigration(ClusterSession caller)
+        {
+            var nodeId = provider.clusterManager.CurrentConfig.LocalNodeId;
+            var sketch = new Sketch(keyCount: 64);
+            sketch.HashAndStore(PinnedSpanByte.FromPinnedSpan("cancelled-migration-key"u8));
+            session = new MigrateSession(caller, provider, "127.0.0.1", ClusterTestContext.Port,
+                nodeId, null, null, nodeId, false, false, 10000, [0], sketch, TransferOption.KEYS);
+            operation = GetOperations(session)[0];
+        }
 
         bool RegisterTask(out MigrateSession migration, SketchStatus status = SketchStatus.DELETING,
             HashSet<int> slots = null, string targetNodeId = null, TransferOption transferOption = TransferOption.KEYS)
@@ -301,6 +326,132 @@ namespace Garnet.test.cluster
             Assert.That(operation.sketch.Probe(hash, out _), Is.False);
         }
 
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task KeysEpochBarrierReleasesAndRestoresCaller(bool cancel)
+        {
+            using var callerConnection = new TcpClient();
+            using var readerConnection = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var cancellation = new CancellationTokenSource();
+            var caller = await CreateClusterSessionAsync(callerConnection, deadline.Token);
+            var reader = await CreateClusterSessionAsync(readerConnection, deadline.Token, caller);
+            Task<bool> barrier = null;
+            try
+            {
+                caller.AcquireCurrentEpoch();
+                reader.AcquireCurrentEpoch();
+                barrier = caller.UnsafeBumpAndWaitForEpochTransitionAsync(cancellation.Token).AsTask();
+                Assert.That(caller.LocalCurrentEpoch, Is.Zero);
+                Assert.That(barrier.IsCompleted, Is.False);
+                if (cancel)
+                    cancellation.Cancel();
+                else
+                    reader.ReleaseCurrentEpoch();
+
+                Assert.That(await barrier.WaitAsync(deadline.Token), Is.EqualTo(!cancel));
+                Assert.That(caller.LocalCurrentEpoch, Is.EqualTo(provider.garnetEpoch.GetCurrentEpoch()));
+            }
+            finally
+            {
+                cancellation.Cancel();
+                reader.ReleaseCurrentEpoch();
+                try
+                {
+                    if (barrier != null)
+                        await barrier.WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                finally
+                {
+                    caller.ReleaseCurrentEpoch();
+                }
+            }
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task KeysMigrationAbortsWhenBarrierCancelled(bool deleting)
+        {
+            using var connection = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var reader = await CreateClusterSessionAsync(connection, deadline.Token);
+            var caller = new ClusterSession(provider, null, null, null, null, default, default, default, null);
+            CreateKeysMigration(caller);
+            var key = operation.sketch.Keys[0].Item1;
+            Assert.That(operation.LocalSession.BasicGarnetApi.SET(key, PinnedSpanByte.FromPinnedSpan("value"u8)), Is.EqualTo(GarnetStatus.OK));
+            operation.sketch.Keys[0] = (key, true);
+            var cancellation = GetCancellationSource(session);
+            Task<bool> migrate = null;
+            try
+            {
+                caller.AcquireCurrentEpoch();
+                reader.AcquireCurrentEpoch();
+                migrate = deleting
+                    ? (Task<bool>)typeof(MigrateSession).GetMethod("DeleteKeysAsync", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(session, null)
+                    : session.MigrateKeysAsync();
+                Assert.That(() => operation.sketch.Status,
+                    Is.EqualTo(deleting ? SketchStatus.DELETING : SketchStatus.TRANSMITTING).After(5_000, 10));
+                Assert.That(() => provider.garnetEpoch.GetCurrentEpoch(),
+                    Is.GreaterThan(reader.LocalCurrentEpoch).After(5_000, 10));
+                Assert.That(migrate.IsCompleted, Is.False);
+                cancellation.Cancel();
+
+                Assert.That(await migrate.WaitAsync(deadline.Token), Is.False);
+                Assert.That(reader.LocalCurrentEpoch, Is.Not.Zero, "Cancellation must not wait for the other reader to drain.");
+                Assert.That(caller.LocalCurrentEpoch, Is.Not.Zero, "The command session must reacquire its epoch.");
+                Assert.That(operation.LocalSession.BasicGarnetApi.EXISTS(key), Is.EqualTo(GarnetStatus.OK));
+            }
+            finally
+            {
+                cancellation.Cancel();
+                reader.ReleaseCurrentEpoch();
+                try
+                {
+                    if (migrate != null)
+                        await migrate.WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                finally
+                {
+                    caller.ReleaseCurrentEpoch();
+                }
+            }
+        }
+
+        [Test]
+        public void KeysDeletionHonorsCancellationWhenBarrierIsAlreadyQuiesced()
+        {
+            var caller = new ClusterSession(provider, null, null, null, null, default, default, default, null);
+            CreateKeysMigration(caller);
+            var key = operation.sketch.Keys[0].Item1;
+            Assert.That(operation.LocalSession.BasicGarnetApi.SET(key, PinnedSpanByte.FromPinnedSpan("value"u8)), Is.EqualTo(GarnetStatus.OK));
+            operation.sketch.Keys[0] = (key, true);
+            GetCancellationSource(session).Cancel();
+            try
+            {
+                Assert.ThrowsAsync<OperationCanceledException>(() => (Task<bool>)typeof(MigrateSession)
+                    .GetMethod("DeleteKeysAsync", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(session, null));
+                Assert.That(operation.LocalSession.BasicGarnetApi.EXISTS(key), Is.EqualTo(GarnetStatus.OK));
+                Assert.That(caller.LocalCurrentEpoch, Is.Not.Zero);
+            }
+            finally
+            {
+                caller.ReleaseCurrentEpoch();
+            }
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task KeysMigrationReportsCancellationOrDisposalAsFailure(bool dispose)
+        {
+            CreateOperation(1);
+            if (dispose)
+                session.Dispose();
+            else
+                GetCancellationSource(session).Cancel();
+
+            Assert.That(await session.MigrateKeysAsync().WaitAsync(TimeSpan.FromSeconds(5)), Is.False);
+        }
+
 #if DEBUG
         [TestCase(false)]
         [TestCase(true)]
@@ -309,15 +460,8 @@ namespace Garnet.test.cluster
             var operations = CreateSlotOperations();
             using var connection = new TcpClient();
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            await connection.ConnectAsync(IPAddress.Loopback, ClusterTestContext.Port, deadline.Token);
-            var stream = connection.GetStream();
-            await stream.WriteAsync("*1\r\n$4\r\nPING\r\n"u8.ToArray(), deadline.Token);
-            await stream.ReadExactlyAsync(new byte[7], deadline.Token);
-            var server = (GarnetServerTcp)provider.storeWrapper.Servers[0];
-            var reader = server.ActiveClusterSessions().OfType<ClusterSession>().Single();
-            Assert.That(() => reader.LocalCurrentEpoch, Is.Zero.After(5_000, 10));
-            var cancellation = (CancellationTokenSource)typeof(MigrateSession)
-                .GetField("migrationCancellationSource", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(session);
+            var reader = await CreateClusterSessionAsync(connection, deadline.Token);
+            var cancellation = GetCancellationSource(session);
             const ExceptionInjectionType pause = ExceptionInjectionType.RangeIndex_Migration_After_Transmitting;
             Task<bool> migrate = null;
             try

@@ -257,12 +257,18 @@ namespace Garnet.cluster
         /// <summary>
         /// Release epoch, wait for config transition and re-acquire the epoch
         /// </summary>
-        public async ValueTask<bool> UnsafeBumpAndWaitForEpochTransitionAsync()
+        /// <param name="token">Cancellation token for the transition wait.</param>
+        public async ValueTask<bool> UnsafeBumpAndWaitForEpochTransitionAsync(CancellationToken token = default)
         {
             ReleaseCurrentEpoch();
-            var result = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
-            AcquireCurrentEpoch();
-            return result;
+            try
+            {
+                return await clusterProvider.BumpAndWaitForEpochTransitionAsync(token).ConfigureAwait(false);
+            }
+            finally
+            {
+                AcquireCurrentEpoch();
+            }
         }
 
         /// <summary>

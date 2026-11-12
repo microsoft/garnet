@@ -333,7 +333,12 @@ namespace Garnet.cluster
 
                     // Transition EPSM to MIGRATING
                     migrateOperation.sketch.SetStatus(SketchStatus.TRANSMITTING);
-                    await migrateOperation.session.WaitForConfigPropagationAsync().ConfigureAwait(false);
+                    if (!await migrateOperation.session.WaitForConfigPropagationAsync().ConfigureAwait(false))
+                    {
+                        logger?.LogError("Failed to protect MIGRATE KEYS namespace batch");
+                        return false;
+                    }
+                    migrateOperation.ThrowIfCancelled();
 
                     // Transmit all keys gathered
                     if (!await migrateOperation.TransmitSlotsAsync().ConfigureAwait(false))
@@ -344,7 +349,12 @@ namespace Garnet.cluster
 
                     // Transition EPSM to DELETING
                     migrateOperation.sketch.SetStatus(SketchStatus.DELETING);
-                    await migrateOperation.session.WaitForConfigPropagationAsync().ConfigureAwait(false);
+                    if (!await migrateOperation.session.WaitForConfigPropagationAsync().ConfigureAwait(false))
+                    {
+                        logger?.LogError("Failed to protect MIGRATE KEYS namespace batch deletion");
+                        return false;
+                    }
+                    migrateOperation.ThrowIfCancelled();
 
                     // Clear keys from buffer
                     migrateOperation.sketch.Clear();
