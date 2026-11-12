@@ -181,6 +181,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_OK => "+OK\r\n"u8;
         public static ReadOnlySpan<byte> RESP_ERRNOTFOUND => "$-1\r\n"u8;
         public static ReadOnlySpan<byte> RESP_EMPTYLIST => "*0\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_EMPTYMAP => "%0\r\n"u8;
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_1 => ":1\r\n"u8;
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_0 => ":0\r\n"u8;
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_N1 => ":-1\r\n"u8;
