@@ -271,16 +271,15 @@ namespace Garnet.server
                 get;
             }
 
-            private readonly ReadOnlySpan<byte> NamespaceBytes
+            public ReadOnlySpan<byte> NamespaceBytes
             {
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get
-                {
-                    return namespaceBytes;
-                }
+                get => namespaceBytes;
+
+                set => namespaceBytes = value;
             }
 
-            private readonly ReadOnlySpan<byte> namespaceBytes;
+            private ReadOnlySpan<byte> namespaceBytes;
             private readonly PinnedSpanByte lengthPrefixedKeys;
 
             private readonly Span<ulong> foundBitmap;
@@ -677,7 +676,8 @@ namespace Garnet.server
         )
         {
             // dataCallback takes: index, dataCallbackContext, data pointer, data length, and returns nothing
-            Span<byte> nsBytes = stackalloc byte[sizeof(uint)];
+            Span<byte> nsBytesRaw = stackalloc byte[sizeof(uint)];
+            Span<byte> nsBytes = nsBytesRaw;
             StoreContextInNamespace(context, ref nsBytes);
 
             // Calculate optimal read options for this batch
@@ -732,7 +732,9 @@ namespace Garnet.server
                     var nextContext = nextRootContext | (context & (ContextStep - 1));
 
                     // Update namespace for the enumerable
+                    nsBytes = nsBytesRaw;
                     StoreContextInNamespace(nextContext, ref nsBytes);
+                    enumerable.NamespaceBytes = nsBytes;
                 }
             }
         }
@@ -932,8 +934,10 @@ namespace Garnet.server
                         // If we have other contexts to check, walk through them before giving up
                         if (!remainingContexts.IsEmpty)
                         {
-                            context = remainingContexts[0];
+                            var nextRootContext = remainingContexts[0];
                             remainingContexts = remainingContexts[1..];
+
+                            context = nextRootContext | (context & (ContextStep - 1));
                             nsBytes = nsBytesRaw;
                             StoreContextInNamespace(context, ref nsBytes);
                             keyWithNamespace = new(nsBytes, key);
