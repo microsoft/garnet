@@ -27,9 +27,9 @@ namespace Garnet.cluster
                 var useScanAheadMigration = session.clusterProvider.serverOptions.UseScanAheadMigration;
                 using var scanSession = session.GetLocalSession();
                 using var scanCancellation = useScanAheadMigration
-                    ? CancellationTokenSource.CreateLinkedTokenSource(session.cancellationToken)
+                    ? CancellationTokenSource.CreateLinkedTokenSource(session.migrationCancellationToken)
                     : null;
-                var token = scanCancellation?.Token ?? session.cancellationToken;
+                var token = scanCancellation?.Token ?? session.migrationCancellationToken;
                 var pending = new Sketch(keyCount: sketchBitCount, maxBatchSize: collectionBatchCapacity);
                 Task<long> scanTask = null;
 

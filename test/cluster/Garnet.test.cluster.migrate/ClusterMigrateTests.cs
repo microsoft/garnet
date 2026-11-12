@@ -608,6 +608,32 @@ namespace Garnet.test.cluster
             }
         }
 
+        [TestCase("ERR syntax error", "KEYS")]
+        [TestCase("ERR syntax error", "SLOTS")]
+        [TestCase("ERR incomplete slotrange", "SLOTSRANGE")]
+        [TestCase("ERR incomplete slotrange", "SLOTSRANGE", "0")]
+        [TestCase("ERR incomplete slotrange", "SLOTSRANGE", "0", "0", "1")]
+        [TestCase("ERR syntax error", "SLOTSRANGE", "1", "0")]
+        [TestCase("ERR syntax error", "SLOTSRANGE", "0", "0", "2", "1")]
+        [Category("CLUSTER")]
+        public void ClusterMigrateRejectsInvalidTransfer(string expectedError, params string[] transferArguments)
+        {
+            context.CreateInstances(2, useTLS: UseTLS);
+            context.CreateConnection(useTLS: UseTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+            var source = context.clusterTestUtils.GetServer(0);
+            var target = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+            Assert.That((int)source.Execute("CLUSTER", "MTASKS"), Is.Zero);
+            var args = new List<object> { target.Address.ToString(), target.Port, "", 0, 10000 };
+            args.AddRange(transferArguments);
+
+            var error = Assert.Throws<RedisServerException>(() =>
+                source.Execute(0, "MIGRATE", args));
+
+            Assert.That(error.Message, Is.EqualTo(expectedError));
+            Assert.That((int)source.Execute("CLUSTER", "MTASKS"), Is.Zero);
+        }
+
         [Test]
         [Category("CLUSTER")]
         public void ClusterMigrateRejectsMalformedBatch()

@@ -50,7 +50,7 @@ namespace Garnet.cluster
 
             public IEnumerable<byte[]> RangeIndexKeys => rangeIndexKeysToMigrate.Keys;
 
-            public void ThrowIfCancelled() => session.cancellationToken.ThrowIfCancellationRequested();
+            public void ThrowIfCancelled() => session.migrationCancellationToken.ThrowIfCancellationRequested();
 
             public bool Contains(int slot) => session._sslots.Contains(slot);
 
@@ -185,7 +185,7 @@ namespace Garnet.cluster
 
                     try
                     {
-                        var resp = await response.WaitAsync(session._timeout, session.cancellationToken).ConfigureAwait(false);
+                        var resp = await response.WaitAsync(session._timeout, session.migrationCancellationToken).ConfigureAwait(false);
                         Volatile.Write(ref pendingResponses[responseHead], null);
                         responseHead = (responseHead + 1) % pendingResponses.Length;
                         responseCount--;

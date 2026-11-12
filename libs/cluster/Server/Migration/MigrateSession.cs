@@ -47,8 +47,8 @@ namespace Garnet.cluster
         SingleWriterMultiReaderLock _disposed;
 
         readonly HashSet<int> _sslots;
-        readonly CancellationTokenSource _cts = new();
-        readonly CancellationToken cancellationToken;
+        readonly CancellationTokenSource migrationCancellationSource = new();
+        readonly CancellationToken migrationCancellationToken;
 
         HashSet<ulong> _namespaces;
         FrozenDictionary<ulong, ulong> _namespaceMap;
@@ -149,7 +149,7 @@ namespace Garnet.cluster
             this._sslots = _slots;
             this._slotRanges = GetRanges();
             this.transferOption = transferOption;
-            cancellationToken = _cts.Token;
+            migrationCancellationToken = migrationCancellationSource.Token;
             clusterProvider.serverOptions.ValidateMigrationOptions();
 
             Status = MigrateState.PENDING;
@@ -189,8 +189,8 @@ namespace Garnet.cluster
         public void Dispose()
         {
             if (!_disposed.TryWriteLock()) return;
-            _cts?.Cancel();
-            _cts?.Dispose();
+            migrationCancellationSource?.Cancel();
+            migrationCancellationSource?.Dispose();
 
             for (var i = 0; i < migrateOperation.Length; i++)
                 migrateOperation[i].Dispose();
@@ -205,7 +205,7 @@ namespace Garnet.cluster
                 {
                     try
                     {
-                        var authResp = await client.Authenticate(_username, _passwd).WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+                        var authResp = await client.Authenticate(_username, _passwd).WaitAsync(_timeout, migrationCancellationSource.Token).ConfigureAwait(false);
 
                         if (!authResp.Equals("OK", StringComparison.Ordinal))
                         {

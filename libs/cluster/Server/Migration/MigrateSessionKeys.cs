@@ -137,7 +137,7 @@ namespace Garnet.cluster
 
                     foreach (var key in rangeIndexKeysToMigrate)
                     {
-                        if (!await TransmitRangeIndexAsync(migrateTask, key, RangeIndexManager.DefaultMigrationChunkSize, _cts.Token).ConfigureAwait(false))
+                        if (!await TransmitRangeIndexAsync(migrateTask, key, RangeIndexManager.DefaultMigrationChunkSize, migrationCancellationSource.Token).ConfigureAwait(false))
                         {
                             logger?.LogError("Failed to migrate RangeIndex key via KEYS path");
                             return false;

@@ -116,7 +116,12 @@ namespace Garnet.cluster
 
                 // Block writes during snapshot + transmit
                 migrateOperation.sketch.SetStatus(SketchStatus.TRANSMITTING);
-                await WaitForConfigPropagationAsync().ConfigureAwait(false);
+                if (!await WaitForConfigPropagationAsync().ConfigureAwait(false))
+                {
+                    migrateActivity.OnError("Failed to protect RangeIndex batch");
+                    logger?.LogError("MigrateRangeIndexKeysAsync: failed to protect RangeIndex batch");
+                    return false;
+                }
                 migrateActivity.OnTransmitting();
 
                 await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.RangeIndex_Migration_After_Transmitting).ConfigureAwait(false);
@@ -137,7 +142,12 @@ namespace Garnet.cluster
 
                 // Block reads + writes during delete
                 migrateOperation.sketch.SetStatus(SketchStatus.DELETING);
-                await WaitForConfigPropagationAsync().ConfigureAwait(false);
+                if (!await WaitForConfigPropagationAsync().ConfigureAwait(false))
+                {
+                    migrateActivity.OnError("Failed to protect RangeIndex batch deletion");
+                    logger?.LogError("MigrateRangeIndexKeysAsync: failed to protect RangeIndex batch deletion");
+                    return false;
+                }
                 migrateActivity.OnDeleting();
 
                 await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.RangeIndex_Migration_After_Deleting).ConfigureAwait(false);

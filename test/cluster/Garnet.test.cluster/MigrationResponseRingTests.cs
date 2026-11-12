@@ -5,6 +5,8 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
 using System.Threading;
@@ -78,17 +80,31 @@ namespace Garnet.test.cluster
 
         static CancellationToken GetCancellationToken(MigrateSession migration)
             => ((CancellationTokenSource)typeof(MigrateSession)
-                .GetField("_cts", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(migration)).Token;
+                .GetField("migrationCancellationSource", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(migration)).Token;
 
         bool RegisterTask(out MigrateSession migration, SketchStatus status = SketchStatus.DELETING,
-            HashSet<int> slots = null, string targetNodeId = null)
+            HashSet<int> slots = null, string targetNodeId = null, TransferOption transferOption = TransferOption.KEYS)
         {
             var sketch = new Sketch(keyCount: 64);
             sketch.HashAndStore(PinnedSpanByte.FromPinnedSpan("task-store-access"u8));
             sketch.SetStatus(status);
             var nodeId = provider.clusterManager.CurrentConfig.LocalNodeId;
             return taskStore.TryAddMigrateSession(null, provider, nodeId, "127.0.0.1", ClusterTestContext.Port,
-                targetNodeId ?? nodeId, null, null, false, false, 10000, slots ?? [0], sketch, TransferOption.KEYS, out migration);
+                targetNodeId ?? nodeId, null, null, false, false, 10000, slots ?? [0], sketch, transferOption, out migration);
+        }
+
+        [TestCase(TransferOption.KEYS)]
+        [TestCase(TransferOption.SLOTS)]
+        public void TaskStoreRejectsEmptySlots(TransferOption transferOption)
+        {
+            taskStore = new MigrateSessionTaskStore();
+            Assert.That(RegisterTask(out session, slots: [], transferOption: transferOption), Is.False);
+            Assert.That(session, Is.Null);
+            Assert.That(taskStore.GetNumSessions(), Is.Zero);
+            Assert.That(RegisterTask(out session), Is.True);
+            Assert.That(taskStore.GetNumSessions(), Is.EqualTo(1));
+            Assert.That(taskStore.TryRemove(session), Is.True);
+            Assert.That(taskStore.GetNumSessions(), Is.Zero);
         }
 
         [TestCase(false)]
@@ -286,6 +302,71 @@ namespace Garnet.test.cluster
         }
 
 #if DEBUG
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task RangeIndexBatchAbortsWhenBarrierFails(bool deleting)
+        {
+            var operations = CreateSlotOperations();
+            using var connection = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await connection.ConnectAsync(IPAddress.Loopback, ClusterTestContext.Port, deadline.Token);
+            var stream = connection.GetStream();
+            await stream.WriteAsync("*1\r\n$4\r\nPING\r\n"u8.ToArray(), deadline.Token);
+            await stream.ReadExactlyAsync(new byte[7], deadline.Token);
+            var server = (GarnetServerTcp)provider.storeWrapper.Servers[0];
+            var reader = server.ActiveClusterSessions().OfType<ClusterSession>().Single();
+            Assert.That(() => reader.LocalCurrentEpoch, Is.Zero.After(5_000, 10));
+            var cancellation = (CancellationTokenSource)typeof(MigrateSession)
+                .GetField("migrationCancellationSource", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(session);
+            const ExceptionInjectionType pause = ExceptionInjectionType.RangeIndex_Migration_After_Transmitting;
+            Task<bool> migrate = null;
+            try
+            {
+                if (deleting)
+                    ExceptionInjectionHelper.EnableException(pause);
+                else
+                    reader.AcquireCurrentEpoch();
+
+                // An empty batch isolates the two barriers without snapshot or network transfer work.
+                migrate = (Task<bool>)typeof(MigrateSession)
+                    .GetMethod("MigrateRangeIndexKeysAsync", BindingFlags.Instance | BindingFlags.NonPublic)
+                    .Invoke(session, [operations[0], Array.Empty<byte[]>(), cancellation.Token]);
+                if (deleting)
+                {
+                    Assert.That(() => ExceptionInjectionHelper.IsEnabled(pause), Is.False.After(5_000, 10));
+                    reader.AcquireCurrentEpoch();
+                    ExceptionInjectionHelper.EnableException(pause);
+                }
+
+                Assert.That(() => operations[0].sketch.Status,
+                    Is.EqualTo(deleting ? SketchStatus.DELETING : SketchStatus.TRANSMITTING).After(5_000, 10));
+                Assert.That(() => provider.garnetEpoch.GetCurrentEpoch(),
+                    Is.GreaterThan(reader.LocalCurrentEpoch).After(5_000, 10));
+                Assert.That(migrate.IsCompleted, Is.False);
+                cancellation.Cancel();
+
+                Assert.That(await migrate.WaitAsync(deadline.Token), Is.False);
+                Assert.That(reader.LocalCurrentEpoch, Is.Not.Zero, "The reader has not drained.");
+                Assert.That(operations[0].sketch.argSliceVector.IsEmpty, Is.True);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.SuspendParking();
+                ExceptionInjectionHelper.DisableException(pause);
+                cancellation.Cancel();
+                reader.ReleaseCurrentEpoch();
+                try
+                {
+                    if (migrate != null)
+                        await migrate.WaitAsync(deadline.Token);
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.ResumeParking();
+                }
+            }
+        }
+
         [Test]
         public async Task RangeIndexBatchRejectsIncompleteProtection()
         {

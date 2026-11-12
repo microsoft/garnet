@@ -37,7 +37,7 @@ namespace Garnet.cluster
                 logger?.LogTrace("Sending CLUSTER SETSLOTRANGE {state} {nodeid} {slots}", state, nodeid ?? "null", ClusterManager.GetRange([.. _sslots]));
 
                 var result = await client.SetSlotRange(stateBytes, nodeid, _slotRanges)
-                    .WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+                    .WaitAsync(_timeout, migrationCancellationSource.Token).ConfigureAwait(false);
 
                 // Check if setslotsrange executed correctly
                 if (!result.Equals("OK", StringComparison.Ordinal))
@@ -141,7 +141,7 @@ namespace Garnet.cluster
                 for (; enteredWorkers < migrateOperation.Length; enteredWorkers++)
                     migrateOperation[enteredWorkers].EnterWorker();
 
-                clusterProvider.storeWrapper.store.PauseRevivification(_timeout, _cts.Token);
+                clusterProvider.storeWrapper.store.PauseRevivification(_timeout, migrationCancellationSource.Token);
 
                 // Set target node to import state
                 if (!await TrySetSlotRangesAsync(GetSourceNodeId, MigrateState.IMPORT).ConfigureAwait(false))

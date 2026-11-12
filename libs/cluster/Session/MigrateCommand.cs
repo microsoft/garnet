@@ -32,7 +32,8 @@ namespace Garnet.cluster
             NOTMIGRATING,
             MULTI_TRANSFER_OPTION,
             FAILEDTOADDKEY,
-            HOSTNAME_RESOLUTION_FAILED
+            HOSTNAME_RESOLUTION_FAILED,
+            INVALID_TRANSFER
         }
 
         private bool HandleCommandParsingErrors(MigrateCmdParseState mpState, string targetAddress, int targetPort, int slotMultiRef)
@@ -53,6 +54,7 @@ namespace Garnet.cluster
                 MigrateCmdParseState.NOTMIGRATING => CmdStrings.RESP_ERR_GENERIC_SLOTNOTMIGRATING,
                 MigrateCmdParseState.FAILEDTOADDKEY => CmdStrings.RESP_ERR_GENERIC_FAILEDTOADDKEY,
                 MigrateCmdParseState.HOSTNAME_RESOLUTION_FAILED => CmdStrings.RESP_ERR_GENERIC_HOSTNAME_RESOLUTION_FAILED,
+                MigrateCmdParseState.INVALID_TRANSFER => CmdStrings.RESP_SYNTAX_ERROR,
                 _ => CmdStrings.RESP_ERR_GENERIC_PARSING,
             };
             while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
@@ -291,6 +293,12 @@ namespace Garnet.cluster
                         // Skip if previous error encountered
                         if (pstate != MigrateCmdParseState.SUCCESS) continue;
 
+                        if (slotStart > slotEnd)
+                        {
+                            pstate = MigrateCmdParseState.INVALID_TRANSFER;
+                            break;
+                        }
+
                         for (var slot = slotStart; slot <= slotEnd; slot++)
                         {
                             // Check if slot is in valid range
@@ -324,6 +332,9 @@ namespace Garnet.cluster
             #endregion
 
             #region checkParseErrors
+            if (pstate == MigrateCmdParseState.SUCCESS && slots is { Count: 0 })
+                pstate = MigrateCmdParseState.INVALID_TRANSFER;
+
             if (clusterProvider.clusterManager != null && targetNodeId != null && current.GetNodeRoleFromNodeId(targetNodeId) != NodeRole.PRIMARY)
                 pstate = MigrateCmdParseState.TARGETNODENOTMASTER;
 

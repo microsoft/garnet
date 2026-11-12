@@ -19,7 +19,7 @@ namespace Garnet.cluster
             if (transferOption == TransferOption.KEYS)
                 return clusterSession.UnsafeBumpAndWaitForEpochTransitionAsync();
             else if (transferOption == TransferOption.SLOTS)
-                return clusterProvider.BumpAndWaitForEpochTransitionAsync(cancellationToken);
+                return clusterProvider.BumpAndWaitForEpochTransitionAsync(migrationCancellationToken);
             else
                 throw new GarnetException($"MigrateSession Invalid TransferOption {transferOption}");
         }

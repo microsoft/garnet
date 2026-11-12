@@ -107,7 +107,7 @@ namespace Garnet.cluster
                 var allRunners = Task.WhenAll(migrateOperationRunners);
                 try
                 {
-                    var scanResults = await allRunners.WaitAsync(_timeout, cancellationToken).ConfigureAwait(false);
+                    var scanResults = await allRunners.WaitAsync(_timeout, migrationCancellationToken).ConfigureAwait(false);
                     if (!scanResults.All(static x => x))
                     {
                         logger?.LogWarning("Aborting migration due to ScanStoreTask failure");
@@ -119,7 +119,7 @@ namespace Garnet.cluster
 
                     foreach (var batch in rangeIndexKeys.Chunk(migrateOperation[0].KeySendBatchSize))
                     {
-                        if (!await MigrateRangeIndexKeysAsync(migrateOperation[0], batch, _cts.Token).ConfigureAwait(false))
+                        if (!await MigrateRangeIndexKeysAsync(migrateOperation[0], batch, migrationCancellationSource.Token).ConfigureAwait(false))
                             return false;
                     }
 
@@ -193,8 +193,8 @@ namespace Garnet.cluster
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "{CreateAndRunMigrateTasks}: {beginAddress} {tailAddress} {pageSize}", nameof(CreateAndRunMigrateTasksAsync), beginAddress, tailAddress, pageSize);
-                    if (!cancellationToken.IsCancellationRequested)
-                        await _cts.CancelAsync().ConfigureAwait(false);
+                    if (!migrationCancellationToken.IsCancellationRequested)
+                        await migrationCancellationSource.CancelAsync().ConfigureAwait(false);
                     return false;
                 }
                 finally

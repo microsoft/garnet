@@ -72,6 +72,13 @@ namespace Garnet.cluster
             TransferOption transferOption,
             out MigrateSession mSession)
         {
+            if (slots.Count == 0)
+            {
+                mSession = null;
+                logger?.LogError("Failed to add new MigrateSession with no slots");
+                return false;
+            }
+
             var success = true;
             mSession = new MigrateSession(
                 clusterSession,
