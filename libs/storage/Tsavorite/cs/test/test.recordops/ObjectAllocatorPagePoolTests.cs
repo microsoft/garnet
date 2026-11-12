@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if DEBUG
 using System;
+#endif
 using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
 
@@ -17,14 +17,13 @@ namespace Tsavorite.test.Objects
 
     /// <summary>
     /// With a <see cref="LogSizeTracker{TStoreFunctions, TAllocator}"/>, a freed ObjectAllocator page enters a pool that
-    /// <c>AllocatePage</c> draws from on a page turn. The page must be fully cleared before it enters the pool: a page turn
-    /// can take it from the pool immediately, and any clearing still in progress would then erase records written to it.
+    /// <c>AllocatePage</c> draws from on a page turn. A page turn can take the page as soon as it is added, so the page must be
+    /// fully cleared before it is added.
     /// </summary>
     [TestFixture]
     internal unsafe class ObjectAllocatorPagePoolTests : TestBase
     {
-        // Large pages make clearing slow enough that taking the page from the pool overlaps any clearing still in progress.
-        const int PageSizeBits = 24;
+        const int PageSizeBits = 16;
         const int PageSize = 1 << PageSizeBits;
         const long LogMemorySize = (long)PageSize << 3;
 
@@ -32,11 +31,7 @@ namespace Tsavorite.test.Objects
         const int FreedPageIndex = 4;
         const int ReusedPageIndex = 5;
 
-        const int StampStride = 4096;
         const byte Stamp = 0xA5;
-        const int Iterations = 8;
-
-        static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
 
         TsavoriteKV<ObjStoreFunctions, ObjAllocator> store;
         IDevice log, objlog;
@@ -77,51 +72,45 @@ namespace Tsavorite.test.Objects
         [Test, Category(TsavoriteKVTestCategory), Category(SmokeTestCategory)]
         public void PageTakenFromPoolKeepsWhatIsWrittenToIt()
         {
+#if !DEBUG
+            Assert.Ignore("Requires a test hook that exists only in DEBUG builds");
+#else
             var hlog = store.hlog;
             var hlogBase = store.hlogBase;
+            var hlogImpl = (ObjectAllocatorImpl<ObjStoreFunctions>)hlogBase;
             Assert.That(hlogBase.IsAllocated(FreedPageIndex) || hlogBase.IsAllocated(ReusedPageIndex), Is.False);
 
-            for (var iteration = 0; iteration < Iterations; iteration++)
+            hlog.AllocatePage(FreedPageIndex);
+            Assert.That(hlog.OverflowPageCount, Is.Zero);
+            var freedPage = PageStart(FreedPageIndex);
+
+            // Take the page from the pool and write to it at the first point a concurrent page turn can: as soon as it is added,
+            // before FreePage returns.
+            long reusedPage = 0;
+            hlogImpl.testOnPageAddedToPool = () =>
             {
-                hlog.AllocatePage(FreedPageIndex);
-                Assert.That(hlog.OverflowPageCount, Is.Zero);
-
-                using var ready = new ManualResetEventSlim();
-                using var freed = new ManualResetEventSlim();
-
-                // Take the page as soon as it is pooled, as a concurrent page turn would, and write to it from the end backward
-                // so the writes land ahead of any clearing still in progress.
-                var reuse = Task.Factory.StartNew(() =>
-                {
-                    ready.Set();
-                    while (hlog.OverflowPageCount == 0)
-                        Thread.SpinWait(1);
-                    hlog.AllocatePage(ReusedPageIndex);
-
-                    var page = (byte*)hlogBase.GetPhysicalAddress(hlogBase.GetLogicalAddressOfStartOfPage(ReusedPageIndex));
-                    for (var offset = PageSize - StampStride; offset >= StampStride; offset -= StampStride)
-                        page[offset] = Stamp;
-
-                    freed.Wait();
-                    var lost = 0;
-                    for (var offset = StampStride; offset < PageSize; offset += StampStride)
-                    {
-                        if (page[offset] != Stamp)
-                            lost++;
-                    }
-                    return lost;
-                }, TaskCreationOptions.LongRunning);
-
-                Assert.That(ready.Wait(Timeout), Is.True);
+                hlog.AllocatePage(ReusedPageIndex);
+                reusedPage = PageStart(ReusedPageIndex);
+                PageBody(reusedPage).Fill(Stamp);
+            };
+            try
+            {
                 hlog.FreePage(FreedPageIndex);
-                freed.Set();
-
-                Assert.That(reuse.Wait(Timeout), Is.True, "The reusing thread did not complete");
-                Assert.That(reuse.Result, Is.Zero, $"Iteration {iteration}: freeing the page erased writes made after it was taken from the pool");
-
-                // Return the reused page so the next iteration starts by taking it back from the pool.
-                hlog.FreePage(ReusedPageIndex);
             }
+            finally
+            {
+                hlogImpl.testOnPageAddedToPool = null;
+            }
+
+            Assert.That(reusedPage, Is.EqualTo(freedPage), "The freed page was not taken from the pool");
+            Assert.That(PageBody(reusedPage).IndexOfAnyExcept(Stamp), Is.EqualTo(-1), "Freeing the page erased writes made after it was taken from the pool");
+
+            hlog.FreePage(ReusedPageIndex);
+
+            long PageStart(int page) => hlogBase.GetPhysicalAddress(hlogBase.GetLogicalAddressOfStartOfPage(page));
+
+            static Span<byte> PageBody(long pageStart) => new((byte*)pageStart + PageHeader.Size, PageSize - PageHeader.Size);
+#endif
         }
     }
 }

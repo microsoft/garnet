@@ -174,12 +174,27 @@ namespace Tsavorite.core
                         pointer = pagePointers[index],
                         value = objectPages[index]
                     });
+                    OnPageAddedToPoolTestHook();    // Test only; compiled out of Release builds.
                 }
                 pageArrays[index] = default;
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
             }
         }
+
+        /// <summary>Test only, compiled out of Release builds: invokes <c>testOnPageAddedToPool</c>.</summary>
+        [Conditional("DEBUG")]
+        private void OnPageAddedToPoolTestHook()
+        {
+#if DEBUG
+            testOnPageAddedToPool?.Invoke();
+#endif
+        }
+
+#if DEBUG
+        /// <summary>Test only, DEBUG builds only: if set, <see cref="ReturnPage"/> invokes it right after adding a page to the free-page pool.</summary>
+        internal Action testOnPageAddedToPool;
+#endif
 
         internal void FreePage(long page)
         {
