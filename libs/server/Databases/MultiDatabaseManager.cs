@@ -716,11 +716,9 @@ namespace Garnet.server
 
             try
             {
-                var databaseMapSnapshot = databases.Map;
-                var enableAof = StoreWrapper.serverOptions.EnableAOF;
-                databaseMapSnapshot[dbId1] = new GarnetDatabase(dbId1, db2, enableAof, copyLastSaveData: true);
-                databaseMapSnapshot[dbId2] = new GarnetDatabase(dbId2, db1, enableAof, copyLastSaveData: true);
-
+                // SWAPDB is rejected while another session is connected. The check precedes every mutation, so a
+                // rejected swap leaves the databases and the sessions as they were.
+                RespServerSession onlySession = null;
                 var activeSessions = 0;
                 foreach (var server in StoreWrapper.Servers)
                 {
@@ -729,13 +727,19 @@ namespace Garnet.server
                     foreach (var session in serverBase.ActiveConsumers())
                     {
                         if (session is not RespServerSession respServerSession) continue;
-                        activeSessions++;
 
-                        if (activeSessions > 1) return false;
+                        if (++activeSessions > 1) return false;
 
-                        respServerSession.TrySwapDatabaseSessions(dbId1, dbId2);
+                        onlySession = respServerSession;
                     }
                 }
+
+                var databaseMapSnapshot = databases.Map;
+                var enableAof = StoreWrapper.serverOptions.EnableAOF;
+                databaseMapSnapshot[dbId1] = new GarnetDatabase(dbId1, db2, enableAof, copyLastSaveData: true);
+                databaseMapSnapshot[dbId2] = new GarnetDatabase(dbId2, db1, enableAof, copyLastSaveData: true);
+
+                onlySession?.TrySwapDatabaseSessions(dbId1, dbId2);
             }
             finally
             {

@@ -86,6 +86,9 @@ namespace Garnet.test.cluster
         void Failover(int replicaIndex, string option = null)
         {
             _ = context.clusterTestUtils.ClusterFailover(replicaIndex, option, logger: context.logger);
+
+            // The primary role is visible before recovery finishes and slots can serve writes.
+            context.clusterTestUtils.WaitForFailoverCompleted(replicaIndex, context.logger);
             context.clusterTestUtils.WaitForPrimaryRole(replicaIndex, context.logger);
         }
 

@@ -187,6 +187,35 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Read length-prefixed metadata through the non-creating API, retaining the same stream for the prefix
+        /// and body so concurrent deletion cannot cause a second open to create or select a different file.
+        /// </summary>
+        /// <param name="fileDescriptor">Metadata file to read.</param>
+        /// <returns>The metadata payload without its length prefix or sector padding.</returns>
+        protected byte[] ReadStreamMetadata(FileDescriptor fileDescriptor)
+        {
+            try
+            {
+                using var stream = deviceFactory.OpenRead(fileDescriptor);
+                using var reader = new BinaryReader(stream);
+                var size = reader.ReadInt32();
+                ThrowIfInvalidMetadataSize(size, fileDescriptor);
+                var metadata = new byte[size];
+                stream.ReadExactly(metadata);
+                return metadata;
+            }
+            catch (EndOfStreamException ex)
+            {
+                throw new TsavoriteException($"Checkpoint metadata is truncated in {Path.Combine(fileDescriptor.directoryName ?? string.Empty, fileDescriptor.fileName ?? string.Empty)}", ex);
+            }
+            catch (Exception ex) when (deviceFactory.IsFileNotFound(ex))
+            {
+                throw new FileNotFoundException("Checkpoint metadata disappeared during inspection",
+                    Path.Combine(fileDescriptor.directoryName ?? string.Empty, fileDescriptor.fileName ?? string.Empty), ex);
+            }
+        }
+
+        /// <summary>
         /// Upper bound on metadata length, orders of magnitude above the kilobytes real checkpoint and log-commit
         /// metadata occupies. Turns a corrupt length into a named error instead of a huge allocation, and keeps
         /// <see cref="ReadInto"/>'s sector rounding clear of <see cref="int"/> overflow.
@@ -269,6 +298,10 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
+        public byte[] ReadIndexCheckpointMetadata(Guid indexToken)
+            => ReadStreamMetadata(checkpointNamingScheme.IndexCheckpointMetadata(indexToken));
+
+        /// <inheritdoc />
         public void CommitLogCheckpointMetadata(Guid logToken, byte[] commitMetadata)
         {
             using var device = NextLogCheckpointDevice(logToken);
@@ -318,6 +351,10 @@ namespace Tsavorite.core
 
             return body.AsSpan().Slice(sizeof(int), size).ToArray();
         }
+
+        /// <inheritdoc />
+        public byte[] ReadLogCheckpointMetadata(Guid logToken)
+            => ReadStreamMetadata(checkpointNamingScheme.LogCheckpointMetadata(logToken));
 
         /// <inheritdoc />
         public IDevice GetIndexDevice(Guid indexToken)

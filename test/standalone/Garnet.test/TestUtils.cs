@@ -530,7 +530,8 @@ namespace Garnet.test
             int? sessionParseStateMaxRetainedArgs = null,
             int? networkSendThrottleMax = null,
             TimeSpan? networkSendTimeout = null,
-            TimeSpan? tlsHandshakeTimeout = null
+            TimeSpan? tlsHandshakeTimeout = null,
+            bool replicaDiskBasedSyncWriteBuffersConcurrently = false
         )
         {
             if (useAzureStorage)
@@ -630,6 +631,7 @@ namespace Garnet.test
                 ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
                 EnableVectorSetPreview = enableVectorSetPreview,
                 EnableRangeIndexPreview = enableRangeIndexPreview,
+                ReplicaDiskBasedSyncWriteBuffersConcurrently = replicaDiskBasedSyncWriteBuffersConcurrently,
                 CopyReadsToTail = copyReadsToTail,
                 FailOnRecoveryError = failOnRecoveryError,
                 AofReplayClearAboveTail = aofReplayClearAboveTail,
@@ -829,7 +831,11 @@ namespace Garnet.test
             int threadPoolMinIOCompletionThreads = 0,
             bool enableRangeIndexPreview = false,
             TimeSpan? networkSendTimeout = null,
-            bool enableVectorSetPreview = true)
+            bool enableVectorSetPreview = true,
+            string replicaDiskBasedSyncChunkSize = "16m",
+            int replicaDiskBasedSyncPipelineDepth = 4,
+            int replicaDiskBasedSyncWriteBuffers = 1,
+            bool replicaDiskBasedSyncWriteBuffersConcurrently = false)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -900,7 +906,11 @@ namespace Garnet.test
                     threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
                     enableRangeIndexPreview: enableRangeIndexPreview,
                     networkSendTimeout: networkSendTimeout,
-                    enableVectorSetPreview: enableVectorSetPreview);
+                    enableVectorSetPreview: enableVectorSetPreview,
+                    replicaDiskBasedSyncChunkSize: replicaDiskBasedSyncChunkSize,
+                    replicaDiskBasedSyncPipelineDepth: replicaDiskBasedSyncPipelineDepth,
+                    replicaDiskBasedSyncWriteBuffers: replicaDiskBasedSyncWriteBuffers,
+                    replicaDiskBasedSyncWriteBuffersConcurrently: replicaDiskBasedSyncWriteBuffersConcurrently);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -987,7 +997,11 @@ namespace Garnet.test
             bool enableRangeIndexPreview = false,
             int vectorSetQuantizationTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
-            TimeSpan? networkSendTimeout = null)
+            TimeSpan? networkSendTimeout = null,
+            string replicaDiskBasedSyncChunkSize = "16m",
+            int replicaDiskBasedSyncPipelineDepth = 4,
+            int replicaDiskBasedSyncWriteBuffers = 1,
+            bool replicaDiskBasedSyncWriteBuffersConcurrently = false)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -1108,6 +1122,10 @@ namespace Garnet.test
                 CheckpointThrottleFlushDelayMs = checkpointThrottleFlushDelayMs,
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
+                ReplicaDiskBasedSyncChunkSize = replicaDiskBasedSyncChunkSize,
+                ReplicaDiskBasedSyncPipelineDepth = replicaDiskBasedSyncPipelineDepth,
+                ReplicaDiskBasedSyncWriteBuffers = replicaDiskBasedSyncWriteBuffers,
+                ReplicaDiskBasedSyncWriteBuffersConcurrently = replicaDiskBasedSyncWriteBuffersConcurrently,
                 AofPhysicalSublogCount = sublogCount,
                 AofReplayTaskCount = replayTaskCount,
                 EnableVectorSetPreview = enableVectorSetPreview,
