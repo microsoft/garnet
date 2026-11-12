@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers.Binary;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -79,14 +80,45 @@ namespace Garnet.test.cluster
             => ((CancellationTokenSource)typeof(MigrateSession)
                 .GetField("_cts", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(migration)).Token;
 
-        bool RegisterTask(out MigrateSession migration, SketchStatus status = SketchStatus.DELETING)
+        bool RegisterTask(out MigrateSession migration, SketchStatus status = SketchStatus.DELETING,
+            HashSet<int> slots = null, string targetNodeId = null)
         {
             var sketch = new Sketch(keyCount: 64);
             sketch.HashAndStore(PinnedSpanByte.FromPinnedSpan("task-store-access"u8));
             sketch.SetStatus(status);
             var nodeId = provider.clusterManager.CurrentConfig.LocalNodeId;
             return taskStore.TryAddMigrateSession(null, provider, nodeId, "127.0.0.1", ClusterTestContext.Port,
-                nodeId, null, null, false, false, 10000, [0], sketch, TransferOption.KEYS, out migration);
+                targetNodeId ?? nodeId, null, null, false, false, 10000, slots ?? [0], sketch, TransferOption.KEYS, out migration);
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void TaskStoreCountsSessionsRatherThanSlots(bool byTarget)
+        {
+            taskStore = new MigrateSessionTaskStore();
+            Assert.That(taskStore.GetNumSessions(), Is.Zero);
+            Assert.That(RegisterTask(out session, slots: [0, 1, 2]), Is.True);
+            var first = session;
+            Assert.That(taskStore.GetNumSessions(), Is.EqualTo(1));
+            Assert.That(RegisterTask(out var second, slots: [3, 4]), Is.True);
+            Assert.That(taskStore.GetNumSessions(), Is.EqualTo(2));
+            Assert.That(RegisterTask(out var otherTarget, slots: [5, 6], targetNodeId: "other-target"), Is.True);
+            Assert.That(taskStore.GetNumSessions(), Is.EqualTo(3));
+            Assert.That(RegisterTask(out _, slots: [2, 7]), Is.False);
+            Assert.That(taskStore.GetNumSessions(), Is.EqualTo(3));
+
+            for (var i = 0; i < 2; i++)
+            {
+                Assert.That(byTarget ? taskStore.TryRemove(first.GetTargetNodeId) : taskStore.TryRemove(first), Is.True);
+                Assert.That(taskStore.GetNumSessions(), Is.EqualTo(byTarget ? 1 : 2));
+            }
+
+            Assert.That(taskStore.TryRemove(first), Is.True);
+            Assert.That(taskStore.TryRemove(second), Is.True);
+            Assert.That(taskStore.GetNumSessions(), Is.EqualTo(1));
+            Assert.That(taskStore.TryRemove(otherTarget), Is.True);
+            Assert.That(taskStore.TryRemove(otherTarget), Is.True);
+            Assert.That(taskStore.GetNumSessions(), Is.Zero);
         }
 
         [TestCase(false)]
@@ -108,12 +140,16 @@ namespace Garnet.test.cluster
                 ? taskStore.TryRemove(captured.GetTargetNodeId)
                 : taskStore.TryRemove(captured), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
             Task<bool> access = null;
+            Task<int> count = null;
             try
             {
                 Assert.That(disposing.Wait(TimeSpan.FromSeconds(5)), Is.True);
                 access = Task.Run(() => taskStore.CanAccessKey(key, 0, readOnly: false));
                 Assert.That(await access.WaitAsync(TimeSpan.FromSeconds(5)), Is.False,
                     "Admission must remain protected without waiting for the writer's disposal callback.");
+                count = Task.Run(taskStore.GetNumSessions);
+                Assert.That(await count.WaitAsync(TimeSpan.FromSeconds(5)), Is.EqualTo(1),
+                    "Counting must not wait for the writer's disposal callback.");
             }
             finally
             {
@@ -121,7 +157,10 @@ namespace Garnet.test.cluster
                 Assert.That(await removal.WaitAsync(TimeSpan.FromSeconds(10)), Is.True);
                 if (access != null)
                     await access.WaitAsync(TimeSpan.FromSeconds(10));
+                if (count != null)
+                    await count.WaitAsync(TimeSpan.FromSeconds(10));
             }
+            Assert.That(taskStore.GetNumSessions(), Is.Zero);
             Assert.That(taskStore.CanAccessKey(key, 0, readOnly: false), Is.True);
             Assert.That(captured.CanAccessKey(key, 0, readOnly: false), Is.False,
                 "A captured session must retain usable admission metadata after disposal.");
@@ -170,6 +209,7 @@ namespace Garnet.test.cluster
                     CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)).ToArray();
                 await Task.WhenAll(others).WaitAsync(TimeSpan.FromSeconds(5));
                 Assert.That(winner.IsCompleted, Is.False);
+                Assert.That(taskStore.GetNumSessions(), Is.Zero);
                 Assert.That(Volatile.Read(ref slots[0]), Is.SameAs(captured),
                     "Later disposers must return without running the winner's table cleanup.");
             }
@@ -200,6 +240,7 @@ namespace Garnet.test.cluster
                     {
                         _ = taskStore.CanAccessKey(key, 0, readOnly: false);
                         _ = taskStore.CanAccessKey(key, 0, readOnly: true);
+                        Assert.That(taskStore.GetNumSessions(), Is.InRange(0, 1));
                     }
                 }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
             }
@@ -214,8 +255,10 @@ namespace Garnet.test.cluster
                 }
                 Assert.That(RegisterTask(out session), Is.True);
                 taskStore.Dispose();
+                Assert.That(taskStore.GetNumSessions(), Is.Zero);
                 Assert.That(taskStore.CanAccessKey(key, 0, readOnly: false), Is.True);
                 Assert.That(RegisterTask(out session), Is.False);
+                Assert.That(taskStore.GetNumSessions(), Is.Zero);
                 Assert.That(() => GetOperations(session)[0].EnterWorker(), Throws.TypeOf<ObjectDisposedException>());
             }
             finally

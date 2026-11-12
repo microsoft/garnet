@@ -15,6 +15,7 @@ namespace Garnet.cluster
         readonly MigrateSession[] sessions;
         SingleWriterMultiReaderLock _lock;
         readonly ILogger logger;
+        int sessionCount;
         private bool _disposed;
 
         public MigrateSessionTaskStore(ILogger logger = null)
@@ -32,6 +33,7 @@ namespace Garnet.cluster
             var skipDispose = _disposed;
 
             Volatile.Write(ref _disposed, true);
+            Volatile.Write(ref sessionCount, 0);
             _lock.WriteUnlock();
 
             if (skipDispose)
@@ -51,27 +53,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <returns></returns>
         public int GetNumSessions()
-        {
-            var count = 0;
-            try
-            {
-                _lock.ReadLock();
-                if (_disposed) return 0;
-
-                HashSet<MigrateSession> ss = [];
-                for (var i = 0; i < sessions.Length; i++)
-                {
-                    if (sessions[i] != null)
-                        _ = ss.Add(sessions[i]);
-                }
-                count = ss.Count;
-            }
-            finally
-            {
-                _lock.ReadUnlock();
-            }
-            return count;
-        }
+            => Volatile.Read(ref sessionCount);
 
         public bool TryAddMigrateSession(
             ClusterSession clusterSession,
@@ -131,6 +113,8 @@ namespace Garnet.cluster
                 // so we can mark them as being associated with this newly added session
                 foreach (var slot in mSession.GetSlots)
                     Volatile.Write(ref sessions[slot], mSession);
+
+                Volatile.Write(ref sessionCount, sessionCount + 1);
             }
             catch (Exception ex)
             {
@@ -162,13 +146,7 @@ namespace Garnet.cluster
                 _lock.WriteLock();
                 if (_disposed) return false;
 
-                // Keep protection published until cancellation and connection shutdown complete.
-                mSession.Dispose();
-                foreach (var slot in mSession.GetSlots)
-                {
-                    if (sessions[slot] == mSession)
-                        Volatile.Write(ref sessions[slot], null);
-                }
+                RemoveSessionUnderLock(mSession);
 
                 return true;
             }
@@ -181,6 +159,24 @@ namespace Garnet.cluster
             {
                 _lock.WriteUnlock();
             }
+        }
+
+        void RemoveSessionUnderLock(MigrateSession mSession)
+        {
+            // Keep protection published until cancellation and connection shutdown complete.
+            mSession.Dispose();
+            var removed = false;
+            foreach (var slot in mSession.GetSlots)
+            {
+                if (sessions[slot] != mSession)
+                    continue;
+
+                Volatile.Write(ref sessions[slot], null);
+                removed = true;
+            }
+
+            if (removed)
+                Volatile.Write(ref sessionCount, sessionCount - 1);
         }
 
         /// <summary>
@@ -198,10 +194,7 @@ namespace Garnet.cluster
                 {
                     var s = sessions[i];
                     if (s != null && s.GetTargetNodeId.Equals(targetNodeId, StringComparison.Ordinal))
-                    {
-                        s.Dispose();
-                        Volatile.Write(ref sessions[i], null);
-                    }
+                        RemoveSessionUnderLock(s);
                 }
 
                 return true;
