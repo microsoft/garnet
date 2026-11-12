@@ -429,7 +429,9 @@ namespace Garnet.test.cluster
             var primaryIndex = 0;
             var replicaIndex = 1;
             var nodes_count = 2;
-            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout, replicaSyncTimeout: 1);
+            // Stop-and-wait 128 KiB transfer keeps one chunk in flight, so the timed-out chunk in the message is deterministic.
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout, replicaSyncTimeout: 1,
+                replicaDiskBasedSyncChunkSize: "128k", replicaDiskBasedSyncPipelineDepth: 1);
             context.CreateConnection();
 
             _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
@@ -455,7 +457,7 @@ namespace Garnet.test.cluster
                 ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint);
 
                 var respReplicate = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
-                var expected = "The operation has timed out.";
+                var expected = "Checkpoint acknowledgement timed out for STORE_INDEX [address:0,length:131072]";
                 ClassicAssert.AreEqual(expected, respReplicate);
             }
             finally

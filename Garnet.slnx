@@ -16,6 +16,7 @@
   <Folder Name="/benchmark/">
     <Project Path="benchmark/BDN.benchmark/BDN.benchmark.csproj" />
     <Project Path="benchmark/Client.benchmark/Client.benchmark.csproj" />
+    <Project Path="benchmark/Replica-transfer.benchmark/Replica-transfer.benchmark.csproj" />
     <Project Path="benchmark/Resp.benchmark/Resp.benchmark.csproj" />
   </Folder>
   <Folder Name="/hosting/" />

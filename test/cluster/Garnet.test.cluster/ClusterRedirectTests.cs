@@ -8,6 +8,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -762,6 +763,33 @@ ClusterRedirectTests.TestFlags testFlags)
             StringAssert.StartsWith("-MOVED", replies[n]);
 
             connections.ToList().ForEach(x => x.Dispose());
+        }
+
+        [Test, Order(7)]
+        [Category("CLUSTER")]
+        public void ClusterSlotErrorsOverflowingTheResponseBufferAreAllDelivered()
+        {
+            // This node owns no slots, so slot verification fails every keyed command with CLUSTERDOWN. Each 35-byte
+            // error is longer than its 20-byte request, so a full receive batch overflows the equally sized response
+            // buffer, and the errors written so far must be sent before writing continues. That send used to measure
+            // the reply from a cluster session field that only CLUSTER commands set, so these errors were dropped or garbled.
+            context.CreateInstances(1);
+
+            using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp) { ReceiveTimeout = 10_000 };
+            socket.Connect(new IPEndPoint(IPAddress.Loopback, ClusterTestContext.Port));
+
+            const int count = 10_000;
+            var payload = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat(Resp("TTL", "k"), count)));
+
+            // Send from another thread, so replies backing up cannot stall the server while this thread is still sending.
+            var sent = 0;
+            var sender = new Thread(() => sent = socket.Send(payload));
+            sender.Start();
+            using var reader = new StreamReader(new NetworkStream(socket), Encoding.ASCII);
+            for (var i = 0; i < count; i++)
+                ClassicAssert.AreEqual("-CLUSTERDOWN Hash slot not served", reader.ReadLine(), $"reply {i}");
+            sender.Join();
+            ClassicAssert.AreEqual(payload.Length, sent);
         }
 
         private string KeyForSlot(int slot)
