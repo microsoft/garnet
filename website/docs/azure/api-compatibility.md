@@ -190,7 +190,7 @@ The Azure Cosmos DB Garnet Cache implements a growing subset of the [open-source
 |  | [FLUSHDB](../commands/server.md#flushdb) | ➕ |  |
 |  | [LASTSAVE](../commands/checkpoint.md#lastsave) | ➖ |  |
 |  | LOLWUT | ➖ |  |
-|  | [MONITOR](../commands/server.md#monitor) | ➖ |  |
+|  | MONITOR | ➖ |  |
 |  | PSYNC | ➖ |  |
 |  | REPLCONF | ➖ |  |
 |  | [REPLICAOF](../commands/server.md#replicaof) | ➖ |  |
