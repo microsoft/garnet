@@ -469,7 +469,7 @@ namespace Garnet.server
                     localIndexValue = remappedIndexValue;
                 }
 
-                ActiveThreadSession = currentSession;
+                SetActiveThreadSession(currentSession, default, context);
                 try
                 {
                     DateTime? expiration = expirationTicks == 0 ? null : new DateTime(expirationTicks, DateTimeKind.Utc);
@@ -477,7 +477,7 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    ActiveThreadSession = null;
+                    ClearActiveThreadSession();
                 }
 
                 // Element records for a migration are all transmitted, applied, and acknowledged before its index
@@ -816,7 +816,7 @@ namespace Garnet.server
                 Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a setattr is successful, so index must exist");
                 Debug.Assert(!importPending, "Replication should only occur when a setattr is successful, so index should not be importing");
 
-                if (!TrySetAttribute(indexSpan, element, attribute))
+                if (!TrySetAttribute(indexSpan, element, attribute, out _))
                 {
                     throw new GarnetException("Failed to set attribute on vector set during AOF sync, this should never happen but will cause data loss if it does");
                 }

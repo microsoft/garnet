@@ -136,6 +136,9 @@ namespace Garnet.test
                         case RespCommand.VSIM:
                             exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "75", "110.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "COUNT", "5", "EPSILON", "1.0", "EF", "40"]));
                             break;
+                        case RespCommand.XVSCOPY:
+                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVSCOPY", "foo", "bar"));
+                            break;
                         default:
                             throw new InvalidOperationException($"Unexpected Vector Set command: {cmd}");
                     }
@@ -664,7 +667,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVCREATE", "vectors", "ef", buildExplorationFactor, "DIM", 8, "NOQUANT"));
             var info = (RedisValue[])db.Execute("VINFO", "vectors");
             ClassicAssert.AreEqual(buildExplorationFactor, (int)info[9]);
-            VectorManager.ReadIndex(ReadRawVectorStub("vectors"), out _, out _, out _, out _, out var storedFactor, out _, out _, out _, out _);
+            VectorManager.ReadIndex(ReadRawVectorStub("vectors"), out _, out _, out _, out _, out var storedFactor, out _, out _, out _, out _, out _);
             ClassicAssert.AreEqual((uint)buildExplorationFactor, storedFactor);
 
             ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVCREATE", "vectors", "DIM", 8, "EF", 38));
@@ -988,7 +991,7 @@ namespace Garnet.test
                 void AssertConfiguration(string key)
                 {
                     VectorManager.ReadIndex(ReadRawVectorStub(key), out _, out var dimensions, out var reduceDims, out var quantType,
-                        out var buildExplorationFactor, out var numLinks, out var metric, out _, out _);
+                        out var buildExplorationFactor, out var numLinks, out var metric, out _, out _, out _);
                     ClassicAssert.AreEqual(8, dimensions);
                     ClassicAssert.AreEqual(0, reduceDims);
                     ClassicAssert.AreEqual(quantizer == "BIN" ? VectorQuantType.Bin : VectorQuantType.Q8, quantType);
@@ -2520,6 +2523,9 @@ namespace Garnet.test
                             case RespCommand.XVIMPORT:
                                 // TODO: Implement later
                                 break;
+                            case RespCommand.XVSCOPY:
+                                // TODO: Implement later
+                                break;
                             default:
                                 Assert.Fail($"No test for command: {cmd}");
                                 return;
@@ -3196,6 +3202,715 @@ namespace Garnet.test
                     batch.CompletePending(ref ignored);
                 }
                 ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
+            }
+        }
+
+        [Test]
+        public unsafe void VectorReadBatchWithContextChainVariants()
+        {
+            // 1 key, hit, no chaining
+            {
+                VectorInput input = default;
+                input.Callback = 5678;
+                input.CallbackContext = 9012;
+
+#pragma warning disable IDE0302 // Collection initializers don't guarantee stackalloc, which matters here
+                ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { (byte)VectorManager.ContextStep };
+#pragma warning restore IDE0302
+
+                var key0 = "hello012"u8.ToArray();
+                var data =
+                    MemoryMarshal.Cast<int, byte>([key0.Length])
+                        .ToArray()
+                        .Concat(key0)
+                        .ToArray();
+                var dataCopy = data.ToArray();
+
+                Span<ulong> foundBitmap = stackalloc ulong[1];
+                Span<ulong> scratchBitmap = stackalloc ulong[1];
+
+                fixed (byte* dataPtr = dataCopy)
+                {
+                    var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
+                    var batch = new VectorManager.VectorReadBatchWithContextChain(input.Callback, input.CallbackContext, foundBitmap, scratchBitmap, 1, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
+
+                    for (var i = 0; i < batch.Count; i++)
+                    {
+                        // Validate Input
+                        batch.GetInput(i, out var inputCopy);
+                        ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                        ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+                        ClassicAssert.AreEqual(i, inputCopy.Index);
+
+                        // Validate key
+                        batch.GetKey(i, out var keyCopy);
+                        ClassicAssert.AreEqual(1, keyCopy.NamespaceBytes.Length);
+                        ClassicAssert.AreEqual(VectorManager.ContextStep, keyCopy.NamespaceBytes[0]);
+                        ClassicAssert.IsTrue(keyCopy.KeyBytes.SequenceEqual(key0));
+
+                        // Validate output doesn't throw
+                        batch.GetOutput(i, out _);
+
+                        batch.SetStatus(i, Status.CreateFound());
+                    }
+
+                    ClassicAssert.IsTrue(batch.ResetAndAdjustCountForFound());
+                }
+            }
+
+            // 1 key, hit, chained
+            {
+                VectorInput input = default;
+                input.Callback = 5678;
+                input.CallbackContext = 9012;
+
+#pragma warning disable IDE0302 // Collection initializers don't guarantee stackalloc, which matters here
+                Span<byte> namespaceBytes = stackalloc byte[1] { (byte)(VectorManager.ContextStep + 1) };
+#pragma warning restore IDE0302
+
+                var key0 = "hello012"u8.ToArray();
+                var data =
+                    MemoryMarshal.Cast<int, byte>([key0.Length])
+                        .ToArray()
+                        .Concat(key0)
+                        .ToArray();
+                var dataCopy = data.ToArray();
+
+                Span<ulong> foundBitmap = stackalloc ulong[1];
+                Span<ulong> scratchBitmap = stackalloc ulong[1];
+
+                fixed (byte* dataPtr = dataCopy)
+                {
+                    var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
+                    var batch = new VectorManager.VectorReadBatchWithContextChain(input.Callback, input.CallbackContext, foundBitmap, scratchBitmap, 1, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
+
+                    // First scan, finds nothing
+                    for (var i = 0; i < batch.Count; i++)
+                    {
+                        // Validate Input
+                        batch.GetInput(i, out var inputCopy);
+                        ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                        ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+                        ClassicAssert.AreEqual(i, inputCopy.Index);
+
+                        // Validate key
+                        batch.GetKey(i, out var keyCopy);
+                        ClassicAssert.AreEqual(1, keyCopy.NamespaceBytes.Length);
+                        ClassicAssert.AreEqual(VectorManager.ContextStep + 1, (ulong)keyCopy.NamespaceBytes[0]);
+                        ClassicAssert.IsTrue(keyCopy.KeyBytes.SequenceEqual(key0));
+
+                        // Validate output doesn't throw
+                        batch.GetOutput(i, out _);
+
+                        batch.SetStatus(i, Status.CreateNotFound());
+                    }
+
+                    ClassicAssert.IsFalse(batch.ResetAndAdjustCountForFound());
+                    ClassicAssert.AreEqual(1, batch.Count);
+
+                    namespaceBytes[0] = (byte)((VectorManager.ContextStep * 2) + 1);
+
+                    // Second scan, finds the key
+                    for (var i = 0; i < batch.Count; i++)
+                    {
+                        // Validate Input
+                        batch.GetInput(i, out var inputCopy);
+                        ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                        ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+                        ClassicAssert.AreEqual(i, inputCopy.Index);
+
+                        // Validate key
+                        batch.GetKey(i, out var keyCopy);
+                        ClassicAssert.AreEqual(1, keyCopy.NamespaceBytes.Length);
+                        ClassicAssert.AreEqual((VectorManager.ContextStep * 2) + 1, (ulong)keyCopy.NamespaceBytes[0]);
+                        ClassicAssert.IsTrue(keyCopy.KeyBytes.SequenceEqual(key0));
+
+                        // Validate output doesn't throw
+                        batch.GetOutput(i, out _);
+
+                        batch.SetStatus(i, Status.CreateFound());
+                    }
+
+                    ClassicAssert.IsTrue(batch.ResetAndAdjustCountForFound());
+                }
+            }
+
+            // 1 key, miss
+            {
+                VectorInput input = default;
+                input.Callback = 5678;
+                input.CallbackContext = 9012;
+
+#pragma warning disable IDE0302 // Collection initializers don't guarantee stackalloc, which matters here
+                Span<byte> namespaceBytes = stackalloc byte[1] { (byte)(VectorManager.ContextStep + 1) };
+#pragma warning restore IDE0302
+
+                var key0 = "hello012"u8.ToArray();
+                var data =
+                    MemoryMarshal.Cast<int, byte>([key0.Length])
+                        .ToArray()
+                        .Concat(key0)
+                        .ToArray();
+                var dataCopy = data.ToArray();
+
+                Span<ulong> foundBitmap = stackalloc ulong[1];
+                Span<ulong> scratchBitmap = stackalloc ulong[1];
+
+                fixed (byte* dataPtr = dataCopy)
+                {
+                    var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
+                    var batch = new VectorManager.VectorReadBatchWithContextChain(input.Callback, input.CallbackContext, foundBitmap, scratchBitmap, 1, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
+
+                    // First scan, finds nothing
+                    for (var i = 0; i < batch.Count; i++)
+                    {
+                        // Validate Input
+                        batch.GetInput(i, out var inputCopy);
+                        ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                        ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+                        ClassicAssert.AreEqual(i, inputCopy.Index);
+
+                        // Validate key
+                        batch.GetKey(i, out var keyCopy);
+                        ClassicAssert.AreEqual(1, keyCopy.NamespaceBytes.Length);
+                        ClassicAssert.AreEqual(VectorManager.ContextStep + 1, (ulong)keyCopy.NamespaceBytes[0]);
+                        ClassicAssert.IsTrue(keyCopy.KeyBytes.SequenceEqual(key0));
+
+                        // Validate output doesn't throw
+                        batch.GetOutput(i, out _);
+
+                        batch.SetStatus(i, Status.CreateNotFound());
+                    }
+
+                    ClassicAssert.IsFalse(batch.ResetAndAdjustCountForFound());
+                    ClassicAssert.AreEqual(1, batch.Count);
+
+                    namespaceBytes[0] = (byte)((VectorManager.ContextStep * 2) + 1);
+
+                    // Second scan, still nothing
+                    for (var i = 0; i < batch.Count; i++)
+                    {
+                        // Validate Input
+                        batch.GetInput(i, out var inputCopy);
+                        ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                        ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+                        ClassicAssert.AreEqual(i, inputCopy.Index);
+
+                        // Validate key
+                        batch.GetKey(i, out var keyCopy);
+                        ClassicAssert.AreEqual(1, keyCopy.NamespaceBytes.Length);
+                        ClassicAssert.AreEqual((VectorManager.ContextStep * 2) + 1, (ulong)keyCopy.NamespaceBytes[0]);
+                        ClassicAssert.IsTrue(keyCopy.KeyBytes.SequenceEqual(key0));
+
+                        // Validate output doesn't throw
+                        batch.GetOutput(i, out _);
+
+                        batch.SetStatus(i, Status.CreateNotFound());
+                    }
+
+                    ClassicAssert.IsFalse(batch.ResetAndAdjustCountForFound());
+                    ClassicAssert.AreEqual(1, batch.Count);
+                }
+            }
+
+            // 4 keys, hit, no chaining
+            {
+                VectorInput input = default;
+                input.Callback = 5678;
+                input.CallbackContext = 9012;
+
+#pragma warning disable IDE0302 // Collection initializers don't guarantee stackalloc, which matters here
+                Span<byte> namespaceBytes = stackalloc byte[1] { (byte)(VectorManager.ContextStep + 1) };
+#pragma warning restore IDE0302
+
+                var key0 = "hello012"u8.ToArray();
+                var key1 = "fizz"u8.ToArray();
+                var key2 = "the quick brown fox jumps over the lazy dog."u8.ToArray();
+                var key3 = Array.Empty<byte>();
+                var data =
+                    MemoryMarshal.Cast<int, byte>([key0.Length])
+                        .ToArray()
+                        .Concat(key0)
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key1.Length]).ToArray()
+                        )
+                        .Concat(
+                            key1
+                        ).Concat(
+                            MemoryMarshal.Cast<int, byte>([key2.Length]).ToArray()
+                        )
+                        .Concat(
+                            key2
+                        )
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key3.Length]).ToArray()
+                        )
+                        .Concat(
+                            key3
+                        )
+                        .ToArray();
+                var dataCopy = data.ToArray();
+
+                Span<ulong> foundBitmap = stackalloc ulong[1];
+                Span<ulong> scratchBitmap = stackalloc ulong[1];
+
+                fixed (byte* dataPtr = dataCopy)
+                {
+                    var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
+                    var batch = new VectorManager.VectorReadBatchWithContextChain(input.Callback, input.CallbackContext, foundBitmap, scratchBitmap, 4, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
+
+                    // First scan, finds everything
+                    for (var i = 0; i < batch.Count; i++)
+                    {
+                        // Validate Input
+                        batch.GetInput(i, out var inputCopy);
+                        ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                        ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+                        ClassicAssert.AreEqual(i, inputCopy.Index);
+
+                        // Validate key
+                        batch.GetKey(i, out var keyCopy);
+                        ClassicAssert.AreEqual(1, keyCopy.NamespaceBytes.Length);
+                        ClassicAssert.AreEqual(VectorManager.ContextStep + 1, (ulong)keyCopy.NamespaceBytes[0]);
+
+                        var expected =
+                            i switch
+                            {
+                                0 => key0,
+                                1 => key1,
+                                2 => key2,
+                                3 => key3,
+                                _ => throw new InvalidOperationException("Unexpected index"),
+                            };
+
+                        ClassicAssert.IsTrue(keyCopy.KeyBytes.SequenceEqual(expected));
+
+                        // Validate output doesn't throw
+                        batch.GetOutput(i, out _);
+
+                        batch.SetStatus(i, Status.CreateFound());
+                    }
+
+                    ClassicAssert.IsTrue(batch.ResetAndAdjustCountForFound());
+                }
+            }
+
+            // 4 keys, hit, chained
+            {
+                VectorInput input = default;
+                input.Callback = 5678;
+                input.CallbackContext = 9012;
+
+#pragma warning disable IDE0302 // Collection initializers don't guarantee stackalloc, which matters here
+                Span<byte> namespaceBytes = stackalloc byte[1] { (byte)(VectorManager.ContextStep + 2) };
+#pragma warning restore IDE0302
+
+                var key0 = "hello012"u8.ToArray();
+                var key1 = "fizz"u8.ToArray();
+                var key2 = "the quick brown fox jumps over the lazy dog."u8.ToArray();
+                var key3 = Array.Empty<byte>();
+                var data =
+                    MemoryMarshal.Cast<int, byte>([key0.Length])
+                        .ToArray()
+                        .Concat(key0)
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key1.Length]).ToArray()
+                        )
+                        .Concat(
+                            key1
+                        ).Concat(
+                            MemoryMarshal.Cast<int, byte>([key2.Length]).ToArray()
+                        )
+                        .Concat(
+                            key2
+                        )
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key3.Length]).ToArray()
+                        )
+                        .Concat(
+                            key3
+                        )
+                        .ToArray();
+                var dataCopy = data.ToArray();
+
+                Span<ulong> foundBitmap = stackalloc ulong[1];
+                Span<ulong> scratchBitmap = stackalloc ulong[1];
+
+                int[][] hitChainOrdering = [
+                    [0],
+                    [1],
+                    [2],
+                    [3],
+                    [0, 1],
+                    [0, 2],
+                    [0, 3],
+                    [1, 2],
+                    [1, 3],
+                    [2, 3],
+                    [0, 1, 2],
+                    [0, 1, 3],
+                    [1, 2, 3],
+                ];
+
+                foreach (var hitChain in hitChainOrdering)
+                {
+                    namespaceBytes[0] = (byte)(VectorManager.ContextStep + 2);
+
+                    fixed (byte* dataPtr = dataCopy)
+                    {
+                        var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
+                        var batch = new VectorManager.VectorReadBatchWithContextChain(input.Callback, input.CallbackContext, foundBitmap, scratchBitmap, 4, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
+
+                        // First scan, stuff in hitChain
+                        for (var i = 0; i < batch.Count; i++)
+                        {
+                            // Validate Input
+                            batch.GetInput(i, out var inputCopy);
+                            ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                            ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+                            ClassicAssert.AreEqual(i, inputCopy.Index);
+
+                            // Validate key
+                            batch.GetKey(i, out var keyCopy);
+                            ClassicAssert.AreEqual(1, keyCopy.NamespaceBytes.Length);
+                            ClassicAssert.AreEqual(VectorManager.ContextStep + 2, (ulong)keyCopy.NamespaceBytes[0]);
+
+                            var expected =
+                                i switch
+                                {
+                                    0 => key0,
+                                    1 => key1,
+                                    2 => key2,
+                                    3 => key3,
+                                    _ => throw new InvalidOperationException("Unexpected index"),
+                                };
+
+                            ClassicAssert.IsTrue(keyCopy.KeyBytes.SequenceEqual(expected));
+
+                            // Validate output doesn't throw
+                            batch.GetOutput(i, out _);
+
+                            // Present if in hitChain, otherwise follow the chain
+                            if (hitChain.Contains(i))
+                            {
+                                batch.SetStatus(i, Status.CreateFound());
+                            }
+                            else
+                            {
+                                batch.SetStatus(i, Status.CreateNotFound());
+                            }
+                        }
+
+                        ClassicAssert.IsFalse(batch.ResetAndAdjustCountForFound());
+                        ClassicAssert.AreEqual(4 - hitChain.Length, batch.Count);
+
+                        namespaceBytes[0] = (byte)((VectorManager.ContextStep * 2) + 2);
+
+                        // Second scan, finds the rest
+                        for (var i = 0; i < batch.Count; i++)
+                        {
+                            // Validate Input
+                            batch.GetInput(i, out var inputCopy);
+                            ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                            ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+
+                            // Now index should reflect the _key_ index, but may not match the iteration index
+                            ClassicAssert.IsFalse(hitChain.Contains(inputCopy.Index));
+
+                            var expected =
+                                inputCopy.Index switch
+                                {
+                                    0 => key0,
+                                    1 => key1,
+                                    2 => key2,
+                                    3 => key3,
+                                    _ => throw new InvalidOperationException("Unexpected index"),
+                                };
+
+                            // Validate key
+                            batch.GetKey(i, out var keyCopy);
+                            ClassicAssert.AreEqual(1, keyCopy.NamespaceBytes.Length);
+                            ClassicAssert.AreEqual((VectorManager.ContextStep * 2) + 2, (ulong)keyCopy.NamespaceBytes[0]);
+                            ClassicAssert.IsTrue(keyCopy.KeyBytes.SequenceEqual(expected));
+
+                            // Validate output doesn't throw
+                            batch.GetOutput(i, out _);
+
+                            batch.SetStatus(i, Status.CreateFound());
+                        }
+
+                        ClassicAssert.IsTrue(batch.ResetAndAdjustCountForFound());
+                    }
+                }
+            }
+
+            // 4 keys, partial hit, chained
+            {
+                VectorInput input = default;
+                input.Callback = 5678;
+                input.CallbackContext = 9012;
+
+#pragma warning disable IDE0302 // Collection initializers don't guarantee stackalloc, which matters here
+                Span<byte> namespaceBytes = stackalloc byte[1] { (byte)(VectorManager.ContextStep + 3) };
+#pragma warning restore IDE0302
+
+                var key0 = "hello012"u8.ToArray();
+                var key1 = "fizz"u8.ToArray();
+                var key2 = "the quick brown fox jumps over the lazy dog."u8.ToArray();
+                var key3 = Array.Empty<byte>();
+                var data =
+                    MemoryMarshal.Cast<int, byte>([key0.Length])
+                        .ToArray()
+                        .Concat(key0)
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key1.Length]).ToArray()
+                        )
+                        .Concat(
+                            key1
+                        ).Concat(
+                            MemoryMarshal.Cast<int, byte>([key2.Length]).ToArray()
+                        )
+                        .Concat(
+                            key2
+                        )
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key3.Length]).ToArray()
+                        )
+                        .Concat(
+                            key3
+                        )
+                        .ToArray();
+                var dataCopy = data.ToArray();
+
+                Span<ulong> foundBitmap = stackalloc ulong[1];
+                Span<ulong> scratchBitmap = stackalloc ulong[1];
+
+                int[][] hitChainOrdering = [
+                    [0],
+                    [1],
+                    [2],
+                    [3],
+                    [0, 1],
+                    [0, 2],
+                    [0, 3],
+                    [1, 2],
+                    [1, 3],
+                    [2, 3],
+                    [0, 1, 2],
+                    [0, 1, 3],
+                    [1, 2, 3],
+                ];
+
+                foreach (var hitChain in hitChainOrdering)
+                {
+                    namespaceBytes[0] = (byte)(VectorManager.ContextStep + 3);
+
+                    fixed (byte* dataPtr = dataCopy)
+                    {
+                        var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
+                        var batch = new VectorManager.VectorReadBatchWithContextChain(input.Callback, input.CallbackContext, foundBitmap, scratchBitmap, 4, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
+
+                        // First scan, stuff in hitChain
+                        for (var i = 0; i < batch.Count; i++)
+                        {
+                            // Validate Input
+                            batch.GetInput(i, out var inputCopy);
+                            ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                            ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+                            ClassicAssert.AreEqual(i, inputCopy.Index);
+
+                            // Validate key
+                            batch.GetKey(i, out var keyCopy);
+                            ClassicAssert.AreEqual(1, keyCopy.NamespaceBytes.Length);
+                            ClassicAssert.AreEqual(VectorManager.ContextStep + 3, (ulong)keyCopy.NamespaceBytes[0]);
+
+                            var expected =
+                                i switch
+                                {
+                                    0 => key0,
+                                    1 => key1,
+                                    2 => key2,
+                                    3 => key3,
+                                    _ => throw new InvalidOperationException("Unexpected index"),
+                                };
+
+                            ClassicAssert.IsTrue(keyCopy.KeyBytes.SequenceEqual(expected));
+
+                            // Validate output doesn't throw
+                            batch.GetOutput(i, out _);
+
+                            // Present if in hitChain, otherwise follow the chain
+                            if (hitChain.Contains(i))
+                            {
+                                batch.SetStatus(i, Status.CreateFound());
+                            }
+                            else
+                            {
+                                batch.SetStatus(i, Status.CreateNotFound());
+                            }
+                        }
+
+                        ClassicAssert.IsFalse(batch.ResetAndAdjustCountForFound());
+                        ClassicAssert.AreEqual(4 - hitChain.Length, batch.Count);
+
+                        namespaceBytes[0] = (byte)((VectorManager.ContextStep * 2) + 3);
+
+                        // Second scan, still misses
+                        for (var i = 0; i < batch.Count; i++)
+                        {
+                            // Validate Input
+                            batch.GetInput(i, out var inputCopy);
+                            ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                            ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+
+                            // Now index should reflect the _key_ index, but may not match the iteration index
+                            ClassicAssert.IsFalse(hitChain.Contains(inputCopy.Index));
+
+                            var expected =
+                                inputCopy.Index switch
+                                {
+                                    0 => key0,
+                                    1 => key1,
+                                    2 => key2,
+                                    3 => key3,
+                                    _ => throw new InvalidOperationException("Unexpected index"),
+                                };
+
+                            // Validate key
+                            batch.GetKey(i, out var keyCopy);
+                            ClassicAssert.AreEqual(1, keyCopy.NamespaceBytes.Length);
+                            ClassicAssert.AreEqual((VectorManager.ContextStep * 2) + 3, (ulong)keyCopy.NamespaceBytes[0]);
+                            ClassicAssert.IsTrue(keyCopy.KeyBytes.SequenceEqual(expected));
+
+                            // Validate output doesn't throw
+                            batch.GetOutput(i, out _);
+
+                            batch.SetStatus(i, Status.CreateNotFound());
+                        }
+
+                        ClassicAssert.IsFalse(batch.ResetAndAdjustCountForFound());
+                        ClassicAssert.AreEqual(4 - hitChain.Length, batch.Count);
+                    }
+                }
+            }
+
+            // 4 keys, miss
+            {
+                VectorInput input = default;
+                input.Callback = 5678;
+                input.CallbackContext = 9012;
+
+#pragma warning disable IDE0302 // Collection initializers don't guarantee stackalloc, which matters here
+                Span<byte> namespaceBytes = stackalloc byte[1] { (byte)(VectorManager.ContextStep + 4) };
+#pragma warning restore IDE0302
+
+                var key0 = "hello012"u8.ToArray();
+                var key1 = "fizz"u8.ToArray();
+                var key2 = "the quick brown fox jumps over the lazy dog."u8.ToArray();
+                var key3 = Array.Empty<byte>();
+                var data =
+                    MemoryMarshal.Cast<int, byte>([key0.Length])
+                        .ToArray()
+                        .Concat(key0)
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key1.Length]).ToArray()
+                        )
+                        .Concat(
+                            key1
+                        ).Concat(
+                            MemoryMarshal.Cast<int, byte>([key2.Length]).ToArray()
+                        )
+                        .Concat(
+                            key2
+                        )
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key3.Length]).ToArray()
+                        )
+                        .Concat(
+                            key3
+                        )
+                        .ToArray();
+                var dataCopy = data.ToArray();
+
+                Span<ulong> foundBitmap = stackalloc ulong[1];
+                Span<ulong> scratchBitmap = stackalloc ulong[1];
+
+                fixed (byte* dataPtr = dataCopy)
+                {
+                    var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
+                    var batch = new VectorManager.VectorReadBatchWithContextChain(input.Callback, input.CallbackContext, foundBitmap, scratchBitmap, 4, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
+
+                    // First scan, stuff in hitChain
+                    for (var i = 0; i < batch.Count; i++)
+                    {
+                        // Validate Input
+                        batch.GetInput(i, out var inputCopy);
+                        ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                        ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+                        ClassicAssert.AreEqual(i, inputCopy.Index);
+
+                        // Validate key
+                        batch.GetKey(i, out var keyCopy);
+                        ClassicAssert.AreEqual(1, keyCopy.NamespaceBytes.Length);
+                        ClassicAssert.AreEqual(VectorManager.ContextStep + 4, (ulong)keyCopy.NamespaceBytes[0]);
+
+                        var expected =
+                            i switch
+                            {
+                                0 => key0,
+                                1 => key1,
+                                2 => key2,
+                                3 => key3,
+                                _ => throw new InvalidOperationException("Unexpected index"),
+                            };
+
+                        ClassicAssert.IsTrue(keyCopy.KeyBytes.SequenceEqual(expected));
+
+                        // Validate output doesn't throw
+                        batch.GetOutput(i, out _);
+
+                        batch.SetStatus(i, Status.CreateNotFound());
+                    }
+
+                    ClassicAssert.IsFalse(batch.ResetAndAdjustCountForFound());
+                    ClassicAssert.AreEqual(4, batch.Count);
+
+                    namespaceBytes[0] = (byte)((VectorManager.ContextStep * 2) + 4);
+
+                    // Second scan, still misses
+                    for (var i = 0; i < batch.Count; i++)
+                    {
+                        // Validate Input
+                        batch.GetInput(i, out var inputCopy);
+                        ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                        ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+                        ClassicAssert.AreEqual(i, inputCopy.Index);
+
+                        var expected =
+                            inputCopy.Index switch
+                            {
+                                0 => key0,
+                                1 => key1,
+                                2 => key2,
+                                3 => key3,
+                                _ => throw new InvalidOperationException("Unexpected index"),
+                            };
+
+                        // Validate key
+                        batch.GetKey(i, out var keyCopy);
+                        ClassicAssert.AreEqual(1, keyCopy.NamespaceBytes.Length);
+                        ClassicAssert.AreEqual((VectorManager.ContextStep * 2) + 4, (ulong)keyCopy.NamespaceBytes[0]);
+                        ClassicAssert.IsTrue(keyCopy.KeyBytes.SequenceEqual(expected));
+
+                        // Validate output doesn't throw
+                        batch.GetOutput(i, out _);
+
+                        batch.SetStatus(i, Status.CreateNotFound());
+                    }
+
+                    ClassicAssert.IsFalse(batch.ResetAndAdjustCountForFound());
+                    ClassicAssert.AreEqual(4, batch.Count);
+                }
             }
         }
 
@@ -5015,7 +5730,7 @@ namespace Garnet.test
         private unsafe byte[] ReadRawVectorTerm(string key, byte termType, ReadOnlySpan<byte> termKey, int bufferSize = 8192)
         {
             var stub = ReadRawVectorStub(key);
-            VectorManager.ReadIndex(stub, out var indexContext, out _, out _, out _, out _, out _, out _, out _, out _);
+            VectorManager.ReadIndex(stub, out var indexContext, out _, out _, out _, out _, out _, out _, out _, out _, out _);
             Span<byte> namespaceBytes = stackalloc byte[sizeof(uint)];
             VectorManager.StoreContextInNamespace(indexContext | termType, ref namespaceBytes);
 
@@ -5757,6 +6472,82 @@ namespace Garnet.test
             // Task count and index mismatch
             var exc7 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", [NotImportingKey, "VERIFY", "1", "1"]));
             ClassicAssert.AreEqual("ERR Task configuration invalid", exc7.Message);
+        }
+
+        [Test]
+        public async Task XVSCOPYValidationAsync()
+        {
+            const string MissingKey = nameof(XVSCOPYValidationAsync) + "_Missing";
+            const string NotVectorSetKey = nameof(XVSCOPYValidationAsync) + "_NotVectorSet";
+            const string VectorSetKey = nameof(XVSCOPYValidationAsync) + "_VectorSet";
+            const string ImportingVectorSetKey = nameof(XVSCOPYValidationAsync) + "_ImportingVectorSet";
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            ClassicAssert.IsTrue(await db.StringSetAsync(NotVectorSetKey, "hello").ConfigureAwait(false));
+
+            ClassicAssert.IsTrue(await db.VectorSetAddAsync(VectorSetKey, VectorSetAddRequest.Member("foo", new[] { 1f, 2f, 3f })).ConfigureAwait(false));
+
+            ClassicAssert.AreEqual("OK", (string)await db.ExecuteAsync("XVCREATE", ImportingVectorSetKey, "DIM", 3, "NOQUANT").ConfigureAwait(false));
+            ClassicAssert.AreEqual("OK", (string)await db.ExecuteAsync("XVIMPORT", ImportingVectorSetKey, "VECTOR", new byte[] { 1, 0, 0, 0 }, MemoryMarshal.AsBytes(new float[] { 1, 2, 3 }).ToArray()).ConfigureAwait(false));
+
+            // Too few keys
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVSCOPY"));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'XVSCOPY' command", exc0.Message);
+
+            var exc1 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVSCOPY", ["foo"]));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'XVSCOPY' command", exc1.Message);
+
+            // Too many keys
+            var exc2 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVSCOPY", ["foo", "bar", "fizz"]));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'XVSCOPY' command", exc2.Message);
+
+            // Copying key that does not exist
+            var exc3 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVSCOPY", [MissingKey, "foo"]));
+            ClassicAssert.AreEqual("ERR vector set does not exist", exc3.Message);
+
+            // Copying key that is not Vector Set
+            var exc4 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVSCOPY", [NotVectorSetKey, "foo"]));
+            ClassicAssert.AreEqual("WRONGTYPE Operation against a key holding the wrong kind of value", exc4.Message);
+
+            // Copying key into itself
+            var exc5 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVSCOPY", [VectorSetKey, VectorSetKey]));
+            ClassicAssert.AreEqual("ERR circular shallow copies are not allowed", exc5.Message);
+
+            // Copying key into key that already exists
+            var exc6 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVSCOPY", [VectorSetKey, NotVectorSetKey]));
+            ClassicAssert.AreEqual("ERR Cannot copy over existing key", exc6.Message);
+
+            // Copying Vector Set which is importing
+            var exc7 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVSCOPY", [ImportingVectorSetKey, "foo"]));
+            ClassicAssert.AreEqual("ERR Vector Set import is not finished", exc7.Message);
+        }
+
+        [Test]
+        public async Task XVSCOPYLeavesSourceReadOnly()
+        {
+            const string SourceKey = nameof(XVSCOPYLeavesSourceReadOnly) + "_Source";
+            const string DestKey = nameof(XVSCOPYLeavesSourceReadOnly) + "_Dest";
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            ClassicAssert.IsTrue(await db.VectorSetAddAsync(SourceKey, VectorSetAddRequest.Member("foo", new[] { 1f, 2f, 3f })).ConfigureAwait(false));
+
+            ClassicAssert.AreEqual("OK", (string)await db.ExecuteAsync("XVSCOPY", [SourceKey, DestKey]).ConfigureAwait(false));
+
+            // VADD
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.VectorSetAddAsync(SourceKey, VectorSetAddRequest.Member("bar", new[] { 1f, 2f, 3f })));
+            ClassicAssert.AreEqual("ERR Vector Set is read only due to being shallow copied", exc0.Message);
+
+            // VREM
+            var exc1 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.VectorSetRemoveAsync(SourceKey, "foo"));
+            ClassicAssert.AreEqual("ERR Vector Set is read only due to being shallow copied", exc1.Message);
+
+            // VSETATTR
+            var exc2 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.VectorSetSetAttributesJsonAsync(SourceKey, "foo", "{\"id\": 123}"));
+            ClassicAssert.AreEqual("ERR Vector Set is read only due to being shallow copied", exc2.Message);
         }
 
         /// <summary>

@@ -177,7 +177,7 @@ namespace Garnet.server
                                     return true;
                                 }
 
-                                ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+                                ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
                                 switch (state.Step)
                                 {

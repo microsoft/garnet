@@ -2,12 +2,14 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Garnet.common;
 using Tsavorite.core;
+using static Garnet.common.ReadOptimizedLock;
 
 namespace Garnet.server
 {
@@ -26,14 +28,15 @@ namespace Garnet.server
         internal readonly ref struct VectorSetLock : IDisposable
         {
             private readonly ref readonly ReadOptimizedLock lockableCtx;
-            private readonly ReadOptimizedLock.LockToken lockToken;
+            private readonly LockToken lockToken;
             private readonly ref int elementLock;
 
-            internal VectorSetLock(ref readonly ReadOptimizedLock lockableCtx, ReadOptimizedLock.LockToken lockToken) : this(in lockableCtx, lockToken, ref Unsafe.NullRef<int>())
+            internal VectorSetLock(ref readonly ReadOptimizedLock lockableCtx, LockToken lockToken) : this(in lockableCtx, lockToken, ref Unsafe.NullRef<int>())
             {
+                Debug.Assert(ActiveThreadSession != null, "Should never construct an actual lock without having set ActiveThreadSession first");
             }
 
-            private VectorSetLock(ref readonly ReadOptimizedLock lockableCtx, ReadOptimizedLock.LockToken lockToken, ref int elementLock)
+            private VectorSetLock(ref readonly ReadOptimizedLock lockableCtx, LockToken lockToken, ref int elementLock)
             {
                 this.lockToken = lockToken;
                 this.lockableCtx = ref lockableCtx;
@@ -52,12 +55,31 @@ namespace Garnet.server
                 return new(in lockableCtx, lockToken, ref elementLock);
             }
 
+            /// <summary>
+            /// Combine two <see cref="VectorSetLock"/>s.
+            /// 
+            /// The original <see cref="VectorSetLock"/>s should not be used (including disposed) after this call.
+            /// </summary>
+            internal VectorSetPairLock PairWith(VectorSetLock otherLock)
+            {
+                Debug.Assert(Unsafe.IsNullRef(in otherLock.lockableCtx) || Unsafe.AreSame(in otherLock.lockableCtx, in lockableCtx), "Should never split lockable contexts");
+
+                return new(in lockableCtx, lockToken, ref elementLock, otherLock.lockToken, ref otherLock.elementLock);
+            }
+
             /// <inheritdoc/>
             public void Dispose()
             {
-                Debug.Assert(ActiveThreadSession != null, "Shouldn't exit context when not in one");
-                ActiveThreadSession = null;
+                ClearActiveThreadSession();
 
+                ReleaseLockImpl(in lockableCtx, lockToken, ref elementLock);
+            }
+
+            /// <summary>
+            /// Common implemenation for releasing a <see cref="VectorSetLock"/> or <see cref="VectorSetPairLock"/>.
+            /// </summary>
+            internal static void ReleaseLockImpl(ref readonly ReadOptimizedLock lockableCtx, LockToken lockToken, ref int elementLock)
+            {
                 if (Unsafe.IsNullRef(in lockableCtx))
                 {
                     return;
@@ -73,10 +95,125 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Used to scope a pair of <see cref="VectorSetLock"/>s.
+        /// </summary>
+        internal readonly ref struct VectorSetPairLock : IDisposable
+        {
+            private readonly ref readonly ReadOptimizedLock lockableCtx;
+
+            private readonly LockToken lockToken0;
+            private readonly ref int elementLock0;
+
+            private readonly LockToken lockToken1;
+            private readonly ref int elementLock1;
+
+            internal VectorSetPairLock(ref readonly ReadOptimizedLock lockableCtx, LockToken lockToken0, ref int elementLock0, LockToken lockToken1, ref int elementLock1)
+            {
+                this.lockableCtx = ref lockableCtx;
+
+                this.lockToken0 = lockToken0;
+                this.elementLock0 = ref elementLock0;
+
+                this.lockToken1 = lockToken1;
+                this.elementLock1 = ref elementLock1;
+            }
+
+            /// <inheritdoc/>
+            public void Dispose()
+            {
+                ClearActiveThreadSession();
+
+                VectorSetLock.ReleaseLockImpl(in lockableCtx, lockToken0, ref elementLock0);
+
+                if (!lockToken1.IsDefault)
+                {
+                    VectorSetLock.ReleaseLockImpl(in lockableCtx, lockToken1, ref elementLock1);
+                }
+            }
+        }
+
         private readonly ReadOptimizedLock vectorSetLocks;
 
         private readonly int vectorSetElementSelectMask;
         private readonly int[] vectorSetElementUpdateLocks;
+
+        /// <summary>
+        /// Set <see cref="ActiveThreadSession"/> and <see cref="ActiveThreadShallowCopyBackReferences"/>.
+        /// </summary>
+        private static void SetActiveThreadSession(StorageSession storageSession, ReadOnlySpan<byte> indexSpan, ulong? knownContext)
+        {
+            const int DefaultLookbackArraySize = 16;
+
+            Debug.Assert(knownContext is not null || indexSpan.Length == Index.Size, "Should have one or the other");
+            Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
+
+            ActiveThreadSession = storageSession;
+
+            ulong shallowCopyOfContext;
+            if (knownContext != null)
+            {
+                Debug.Assert((knownContext.Value % ContextStep) == 0, "Known context must be start context");
+                if (!storageSession.vectorManager.shallowCopyBackReferences.TryGetValue(knownContext.Value, out shallowCopyOfContext))
+                {
+                    shallowCopyOfContext = 0;
+                }
+            }
+            else
+            {
+                ReadIndex(indexSpan, out _, out _, out _, out _, out _, out _, out _, out _, out shallowCopyOfContext, out _);
+            }
+
+            if (shallowCopyOfContext != 0)
+            {
+                var lookupArr = ArrayPool<ulong>.Shared.Rent(DefaultLookbackArraySize);
+                var lookupSpan = lookupArr.AsSpan();
+
+                var curBackRef = shallowCopyOfContext;
+                while (true)
+                {
+                    lookupSpan[0] = curBackRef;
+                    lookupSpan = lookupSpan[1..];
+
+                    if (!storageSession.vectorManager.shallowCopyBackReferences.TryGetValue(curBackRef, out curBackRef))
+                    {
+                        break;
+                    }
+
+                    if (lookupSpan.IsEmpty)
+                    {
+                        var newLookupArr = ArrayPool<ulong>.Shared.Rent(lookupArr.Length * 2);
+                        lookupArr.CopyTo(newLookupArr);
+
+                        lookupSpan = newLookupArr;
+                        lookupSpan = lookupSpan[lookupArr.Length..];
+
+                        ArrayPool<ulong>.Shared.Return(lookupArr);
+                        lookupArr = newLookupArr;
+                    }
+                }
+
+                ActiveThreadShallowCopyBackReferences = lookupArr.AsMemory()[..^lookupSpan.Length];
+            }
+        }
+
+        /// <summary>
+        /// Clear <see cref="ActiveThreadSession"/> and <see cref="ActiveThreadShallowCopyBackReferences"/>.
+        /// </summary>
+        private static void ClearActiveThreadSession()
+        {
+            ActiveThreadSession = null;
+
+            if (!ActiveThreadShallowCopyBackReferences.IsEmpty)
+            {
+                if (MemoryMarshal.TryGetArray(ActiveThreadShallowCopyBackReferences, out var arrSeg) && arrSeg.Array != null && arrSeg.Array.Length > 0)
+                {
+                    ArrayPool<ulong>.Shared.Return(arrSeg.Array);
+                }
+
+                ActiveThreadShallowCopyBackReferences = default;
+            }
+        }
 
         /// <summary>
         /// Returns true for indexes that were created via a previous instance of <see cref="VectorManager"/>.
@@ -85,7 +222,7 @@ namespace Garnet.server
         /// </summary>
         internal bool NeedsRecreate(ReadOnlySpan<byte> indexConfig)
         {
-            ReadIndex(indexConfig, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexConfig, out _, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
             return indexPtr == 0;
         }
@@ -153,8 +290,7 @@ namespace Garnet.server
         {
             Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
 
-            Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
-            ActiveThreadSession = storageSession;
+            var sessionSet = false;
             wouldBlock = false;
             try
             {
@@ -171,7 +307,7 @@ namespace Garnet.server
                     input.header.cmd = readCmd;
                     input.arg1 = 0;
 
-                    ReadOptimizedLock.LockToken lockToken;
+                    LockToken lockToken;
                     if (takeExclusiveLock)
                     {
                         if (nonBlocking)
@@ -226,6 +362,15 @@ namespace Garnet.server
                     bool needsRecreate;
                     if (readRes == GarnetStatus.OK)
                     {
+                        if (sessionSet)
+                        {
+                            ClearActiveThreadSession();
+                            sessionSet = false;
+                        }
+
+                        SetActiveThreadSession(storageSession, indexSpan, null);
+                        sessionSet = true;
+
                         needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
 
                         if (!needsRecreate)
@@ -308,7 +453,13 @@ namespace Garnet.server
                             }
                         }
 
-                        ReadIndex(indexSpan, out var indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _);
+                        if (!sessionSet)
+                        {
+                            SetActiveThreadSession(storageSession, indexSpan, null);
+                            sessionSet = true;
+                        }
+
+                        ReadIndex(indexSpan, out var indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _, out _);
 
                         input.arg1 = RecreateIndexArg;
 
@@ -398,7 +549,10 @@ namespace Garnet.server
                 // If we exit without returning a lock, we'll leave ActiveThreadSession set, this clears it and rethrows
                 //
                 // In the normal exit case, disposing ReadVectorLock will clear ActiveThreadSession
-                ActiveThreadSession = null;
+                if (sessionSet)
+                {
+                    ClearActiveThreadSession();
+                }
 
                 throw;
             }
@@ -442,8 +596,7 @@ namespace Garnet.server
         {
             Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
 
-            Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
-            ActiveThreadSession = storageSession;
+            var sessionSet = false;
             try
             {
                 var keyHash = storageSession.stringBasicContext.GetKeyHash((FixedSpanByteKey)key);
@@ -501,6 +654,16 @@ namespace Garnet.server
                             importPending = true;
                             return default;
                         }
+
+                        if (sessionSet)
+                        {
+                            ClearActiveThreadSession();
+                            sessionSet = false;
+                        }
+
+                        SetActiveThreadSession(storageSession, indexSpan, null);
+                        sessionSet = true;
+
                         needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
                     }
                     else
@@ -549,7 +712,13 @@ namespace Garnet.server
                                 continue;
                             }
 
-                            ReadIndex(indexSpan, out indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _);
+                            if (!sessionSet)
+                            {
+                                SetActiveThreadSession(storageSession, indexSpan, null);
+                                sessionSet = true;
+                            }
+
+                            ReadIndex(indexSpan, out indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _, out _);
 
                             input.arg1 = RecreateIndexArg;
 
@@ -573,6 +742,12 @@ namespace Garnet.server
                             var slot = HashSlotUtils.HashSlot(key);
 
                             indexContext = NextVectorSetContext(slot);
+
+                            if (!sessionSet)
+                            {
+                                SetActiveThreadSession(storageSession, default, indexContext);
+                                sessionSet = true;
+                            }
 
                             var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
                             var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
@@ -679,7 +854,10 @@ namespace Garnet.server
                 // If we exit without returning a lock, we'll leave ActiveThreadSession set, this clears it and rethrows
                 //
                 // In the normal exit case, disposing ReadVectorLock will clear ActiveThreadSession
-                ActiveThreadSession = null;
+                if (sessionSet)
+                {
+                    ClearActiveThreadSession();
+                }
 
                 throw;
             }
@@ -688,42 +866,112 @@ namespace Garnet.server
         /// <summary>
         /// Acquire exclusive lock over a given key.
         /// </summary>
-        private VectorSetLock AcquireExclusiveLocks(StorageSession storageSession, ReadOnlySpan<byte> key)
+        private VectorSetLock AcquireExclusiveLock(StorageSession storageSession, ReadOnlySpan<byte> key)
         {
-            var keyHash = storageSession.stringTransactionalContext.GetKeyHash((FixedSpanByteKey)key);
-
-            vectorSetLocks.AcquireExclusiveLock(keyHash, out var exclusiveLockToken);
-
-            return new(in vectorSetLocks, exclusiveLockToken);
+            var token = AcquireExclusiveLockToken(storageSession, key);
+            return new(in vectorSetLocks, token);
         }
 
         /// <summary>
-        /// Utility method that will read vector set index out, and acquire exclusive locks to allow it to be deleted.
+        /// Acquire exclusive lock token over a given key.
         /// </summary>
-        internal VectorSetLock ReadForDeleteVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
+        private LockToken AcquireExclusiveLockToken(StorageSession storageSession, ReadOnlySpan<byte> key, long? keyHashPrecalc = null)
         {
-            Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
+            var keyHash = keyHashPrecalc ?? storageSession.stringTransactionalContext.GetKeyHash((FixedSpanByteKey)key);
 
-            Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
-            ActiveThreadSession = storageSession;
+            vectorSetLocks.AcquireExclusiveLock(keyHash, out var exclusiveLockToken);
 
-            var indexConfigOutput = StringOutput.FromPinnedSpan(indexSpan);
+            return exclusiveLockToken;
+        }
 
-            // Get the index
-            var acquiredLock = AcquireExclusiveLocks(storageSession, key);
+        /// <summary>
+        /// Utility method that will read a Vector Set index out, and acquire TWO sets of exclusive locks to allow a shallow copy.
+        /// </summary>
+        internal VectorSetPairLock ReadForCopyVectorSetIndexes(StorageSession storageSession, ReadOnlySpan<byte> sourceKey, ReadOnlySpan<byte> destKey, ref StringInput input, scoped Span<byte> sourceIndexSpan, out bool importPending, out GarnetStatus status)
+        {
+            Debug.Assert(sourceIndexSpan.Length == IndexSizeBytes, "Insufficient space for index");
+            Debug.Assert(!sourceKey.SequenceEqual(destKey), "Cannot copy source into itself");
+
+            var indexConfigOutput = StringOutput.FromPinnedSpan(sourceIndexSpan);
+
+            var sourceKeyHash = storageSession.stringTransactionalContext.GetKeyHash((FixedSpanByteKey)sourceKey);
+            var destKeyHash = storageSession.stringTransactionalContext.GetKeyHash((FixedSpanByteKey)destKey);
+
+            var sourceKeyAcquisitonIx = vectorSetLocks.CalculateIndex(sourceKeyHash, 0);
+            var destKeyAcquisitonIx = vectorSetLocks.CalculateIndex(destKeyHash, 0);
+
+            LockToken firstLock;
+            LockToken? secondLock;
+
+            // Ordering of lock acquisition and release matters
+            if (sourceKeyAcquisitonIx < destKeyAcquisitonIx)
+            {
+                // Source key preceeds dest key
+                firstLock = AcquireExclusiveLockToken(storageSession, sourceKey, sourceKeyHash);
+                secondLock = AcquireExclusiveLockToken(storageSession, destKey, destKeyHash);
+            }
+            else if (sourceKeyAcquisitonIx > destKeyAcquisitonIx)
+            {
+                // Dest key preceeds source key
+                firstLock = AcquireExclusiveLockToken(storageSession, destKey, destKeyHash);
+                secondLock = AcquireExclusiveLockToken(storageSession, sourceKey, sourceKeyHash);
+            }
+            else
+            {
+                // Both keys are acquiring the same "slot" in lock set, so just acquire one
+                firstLock = AcquireExclusiveLockToken(storageSession, sourceKey, sourceKeyHash);
+                secondLock = null;
+            }
+
             try
             {
-                status = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+                status = storageSession.Read_MainStore(sourceKey, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
                 Debug.Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
             }
             catch
             {
-                acquiredLock.Dispose();
+                vectorSetLocks.ReleaseLock(firstLock);
+
+                if (secondLock != null)
+                {
+                    vectorSetLocks.ReleaseLock(secondLock.Value);
+                }
 
                 throw;
             }
 
-            return acquiredLock;
+            // Build the lock container now that we have index details
+            VectorSetPairLock acquiredLockPair;
+            if (status == GarnetStatus.OK)
+            {
+                SetActiveThreadSession(storageSession, sourceIndexSpan, null);
+
+                acquiredLockPair = new VectorSetLock(in vectorSetLocks, firstLock).PairWith(secondLock != null ? new VectorSetLock(in vectorSetLocks, secondLock.Value) : default);
+
+                // Can't copy a Vector Set which is being imported, we can't make it read only
+                if (IsImportPending(sourceIndexSpan))
+                {
+                    importPending = true;
+
+                    status = GarnetStatus.WRONGTYPE;
+
+                    return acquiredLockPair;
+                }
+            }
+            else
+            {
+                vectorSetLocks.ReleaseLock(firstLock);
+
+                if (secondLock != null)
+                {
+                    vectorSetLocks.ReleaseLock(secondLock.Value);
+                }
+
+                acquiredLockPair = default;
+            }
+
+            importPending = false;
+            return acquiredLockPair;
         }
     }
 }

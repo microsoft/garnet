@@ -316,7 +316,7 @@ namespace Garnet.test
                 if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var info))
                     continue;
 
-                var isInWriteBlock = (int)cmd >= 1 && (int)cmd <= 122;
+                var isInWriteBlock = (int)cmd is >= ((int)RespCommandExtensions.FirstWriteCommand) and <= ((int)RespCommandExtensions.LastWriteCommand);
                 var isWrite = info.AclCategories.HasFlag(RespAclCategories.Write);
 
                 if (isWrite)

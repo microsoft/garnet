@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -33,6 +34,9 @@ namespace Garnet.server
         /// </summary>
         private const int VectorRecordReadOverheadBytes = 64;
 
+        /// <summary>
+        /// <see cref="IReadArgBatch{TKey, TInput, TOutput}"/> implementation for DiskANN batch reads.
+        /// </summary>
         public unsafe ref struct VectorReadBatch : IReadArgBatch<VectorElementKey, VectorInput, VectorOutput>
         {
             /// <summary>
@@ -40,8 +44,8 @@ namespace Garnet.server
             /// </summary>
             public int Count { get; }
 
-            public readonly ReadOnlySpan<PinnedSpanByte> Parameters
-                => default;
+            /// <inheritdoc/>
+            public readonly ReadOnlySpan<PinnedSpanByte> Parameters => default;
 
             /// <inheritdoc/>
             public readonly int InitialIORecordSize
@@ -232,6 +236,334 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// <see cref="IReadArgBatch{TKey, TInput, TOutput}"/> implementation for DiskANN batch reads, but setup to track following the shallow copy context chain.
+        /// </summary>
+        public unsafe ref struct VectorReadBatchWithContextChain : IReadArgBatch<VectorElementKey, VectorInput, VectorOutput>
+        {
+            /// <summary>
+            /// Total number of keys in batch.
+            /// </summary>
+            public int Count { get; private set; }
+
+            /// <inheritdoc/>
+            public readonly ReadOnlySpan<PinnedSpanByte> Parameters => default;
+
+            /// <inheritdoc/>
+            public readonly int InitialIORecordSize
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get;
+            }
+
+            /// <summary>
+            /// Per-term read-copy policy. Records reused across hops and queries during traversal and rerank —
+            /// NeighborList adjacency, QuantizedVector, the internal/external id maps, and the Metadata term — are
+            /// copied back into memory on a disk read (to <see cref="stubReadCopyTo"/>: the read cache when enabled,
+            /// else the main-log tail) so later reads serve them from memory, bounding disk traffic to the working
+            /// set. The raw FullVector and Attributes are served from disk (CopyTo=None): the FullVector is read once
+            /// per rerank candidate and is large, so for no-quant sets caching it yields no net gain once the working
+            /// set exceeds memory.
+            /// </summary>
+            public readonly ReadCopyOptions ReadCopyOptions
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get;
+            }
+
+            public ReadOnlySpan<byte> NamespaceBytes
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get => namespaceBytes;
+
+                set => namespaceBytes = value;
+            }
+
+            private ReadOnlySpan<byte> namespaceBytes;
+            private readonly PinnedSpanByte lengthPrefixedKeys;
+
+            private readonly Span<ulong> foundBitmap;
+            private readonly Span<ulong> pendingBitmapUpdates;
+
+            public readonly delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void> callback;
+            public readonly nint callbackContext;
+
+            /// <summary>
+            /// Index into keys that <see cref="Count"/> and other <see cref="IReadArgBatch{TKey, TInput, TOutput}"/> methods take and return.
+            /// 
+            /// This is adjusted based on <see cref="foundBitmap"/> so we don't query keys previously found with this enumerable and an early namespace.
+            /// </summary>
+            private int publicCurrentIndex;
+
+            /// <summary>
+            /// Index in <see cref="lengthPrefixedKeys"/> stored keys.
+            /// 
+            /// This differs from <see cref="publicCurrentIndex"/> because it ignored <see cref="foundBitmap"/>.
+            /// </summary>
+            private int internalCurrentIndex;
+
+            private readonly uint internalKeyCount;
+
+            private byte* currentPtr;
+            private int currentLen;
+
+            private bool hasPending;
+
+            public VectorReadBatchWithContextChain(nint callback, nint callbackContext, Span<ulong> foundBitmap, Span<ulong> bitmapScratch, uint keyCount, PinnedSpanByte lengthPrefixedKeys, ReadOnlySpan<byte> namespaceBytes, ReadCopyOptions readOpts, int initialRecordSizeHint)
+            {
+                Debug.Assert(bitmapScratch.Length >= foundBitmap.Length, "Scratch must be at least as large as tracking bitmap");
+
+                this.namespaceBytes = namespaceBytes;
+                this.lengthPrefixedKeys = lengthPrefixedKeys;
+                this.foundBitmap = foundBitmap;
+                pendingBitmapUpdates = bitmapScratch;
+
+                this.foundBitmap.Clear();
+                pendingBitmapUpdates[..this.foundBitmap.Length].Clear();
+
+                this.callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)callback;
+                this.callbackContext = callbackContext;
+
+                ReadCopyOptions = readOpts;
+                InitialIORecordSize = initialRecordSizeHint;
+
+                Count = (int)keyCount;
+                internalKeyCount = keyCount;
+
+                currentPtr = lengthPrefixedKeys.ptr;
+                currentLen = currentPtr != null ? *(int*)currentPtr : 0;
+            }
+
+            /// <summary>
+            /// Reset to start of internal keys, after adjusting to skip any keys already found.
+            /// 
+            /// Returns true if all keys have been found, and thus this enumerable is unusable.
+            /// Returns false if there's at least one remaining key.
+            /// </summary>
+            public bool ResetAndAdjustCountForFound()
+            {
+                Debug.Assert(!hasPending, "Shouldn't reset before all pending operations complete");
+
+                // Union pending changes into effective bitmap
+                for (var i = 0; i < foundBitmap.Length; i++)
+                {
+                    foundBitmap[i] |= pendingBitmapUpdates[i];
+                }
+
+                pendingBitmapUpdates[..foundBitmap.Length].Clear();
+
+                // Adjust Count for previously found keys
+                Count = (int)internalKeyCount;
+                for (var i = 0; i < foundBitmap.Length; i++)
+                {
+                    Count -= BitOperations.PopCount(foundBitmap[i]);
+                }
+
+                if (Count == 0)
+                {
+                    return true;
+                }
+
+                // Force a reset
+                publicCurrentIndex = int.MaxValue;
+                AdvanceTo(0);
+
+                return false;
+            }
+
+            /// <summary>
+            /// Mark a given public index as found  - does not take effect until next <see cref="ResetAndAdjustCountForFound"/> call.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private void MarkPublicFound(int publicIndex)
+            {
+                AdvanceTo(publicIndex);
+
+                MarkInternalFound(internalCurrentIndex);
+            }
+
+            /// <summary>
+            /// Mark a given internal index as found - does not take effect until next <see cref="ResetAndAdjustCountForFound"/> call.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private readonly void MarkInternalFound(int internalIndex)
+            {
+                Debug.Assert(!PreviouslyFound(internalIndex), "Shouldn't be marking found twice");
+
+                pendingBitmapUpdates[internalIndex / 64] |= 1UL << (internalIndex % 64);
+            }
+
+            /// <summary>
+            /// Returns true if the key at the given internal index has previously been found, provided <see cref="ResetAndAdjustCountForFound"/> was called after that update.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private readonly bool PreviouslyFound(int internalIndex)
+            {
+                Debug.Assert(internalIndex >= 0 && internalIndex < internalKeyCount, "Shouldn't check for indexes beyond internal key count");
+
+                return (foundBitmap[internalIndex / 64] & (1UL << (internalIndex % 64))) != 0;
+            }
+
+            /// <summary>
+            /// Move <see cref="publicCurrentIndex"/>, <see cref="internalCurrentIndex"/>, <see cref="currentPtr"/> and <see cref="currentLen"/> to
+            /// a given key indicated by <paramref name="toPublicIndex"/>.
+            /// 
+            /// Optimized for scanning forward, random access will be slower.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private void AdvanceTo(int toPublicIndex)
+            {
+                if (toPublicIndex == publicCurrentIndex)
+                {
+                    return;
+                }
+                else if (toPublicIndex < publicCurrentIndex)
+                {
+                    // Start over from start
+                    currentPtr = lengthPrefixedKeys.ToPointer();
+                    currentLen = *(int*)currentPtr;
+                    publicCurrentIndex = 0;
+                    internalCurrentIndex = 0;
+
+                    // Skip to first not yet found internal index
+                    while (PreviouslyFound(internalCurrentIndex))
+                    {
+                        internalCurrentIndex++;
+                        currentPtr += currentLen + sizeof(int); // Skip length prefix too
+
+                        Debug.Assert(currentPtr < lengthPrefixedKeys.ToPointer() + lengthPrefixedKeys.Length, "About to access out of bounds data");
+
+                        currentLen = *(int*)currentPtr;
+                    }
+                }
+
+                // Scan forward until public index matches target
+                while (publicCurrentIndex != toPublicIndex)
+                {
+                    // Advance one internal key
+                    internalCurrentIndex++;
+                    currentPtr += currentLen + sizeof(int); // Skip length prefix too
+
+                    Debug.Assert(currentPtr < lengthPrefixedKeys.ToPointer() + lengthPrefixedKeys.Length, "About to access out of bounds data");
+
+                    currentLen = *(int*)currentPtr;
+
+                    // Keep skipping if we've already found this key
+                    if (PreviouslyFound(internalCurrentIndex))
+                    {
+                        continue;
+                    }
+
+                    publicCurrentIndex++;
+                }
+            }
+
+            /// <inheritdoc/>
+            public void GetKey(int publicIndex, out VectorElementKey key)
+            {
+                Debug.Assert(publicIndex >= 0 && publicIndex < Count, "Trying to advance out of bounds");
+
+                AdvanceTo(publicIndex);
+
+                ReadOnlySpan<byte> keyBytes = new(currentPtr + 4, currentLen);
+                key = new(NamespaceBytes, keyBytes);
+
+                AssertKeyAlignment(in key);
+
+                [Conditional("DEBUG")]
+                static void AssertKeyAlignment(in VectorElementKey key)
+                {
+                    ulong context;
+                    if (key.NamespaceBytes.Length == 1)
+                    {
+                        context = key.NamespaceBytes[0];
+                    }
+                    else if (key.NamespaceBytes.Length == 4)
+                    {
+                        context = BinaryPrimitives.ReadUInt32LittleEndian(key.NamespaceBytes);
+                    }
+                    else
+                    {
+                        Debug.Fail("Unexpected namespace length");
+                        context = 0;
+                    }
+
+                    var keyLength = key.KeyBytes.Length;
+                    Debug.Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
+                }
+            }
+
+            /// <inheritdoc/>
+            public void GetInput(int publicIndex, out VectorInput input)
+            {
+                Debug.Assert(publicIndex >= 0 && publicIndex < Count, "Trying to advance out of bounds");
+
+                AdvanceTo(publicIndex);
+
+                input = default;
+                input.CallbackContext = callbackContext;
+                input.Callback = (nint)callback;
+
+                // Internal index, because that's the index DiskANN is expecting
+                input.Index = internalCurrentIndex;
+            }
+
+            /// <inheritdoc/>
+            public readonly void GetOutput(int publicIndex, out VectorOutput output)
+            {
+                Debug.Assert(publicIndex >= 0 && publicIndex < Count, "Trying to advance out of bounds");
+
+                // Don't care, won't be used
+                Unsafe.SkipInit(out output);
+            }
+
+            /// <inheritdoc/>
+            public readonly void SetOutput(int publicIndex, VectorOutput output)
+            {
+                Debug.Assert(publicIndex >= 0 && publicIndex < Count, "Trying to advance out of bounds");
+            }
+
+            /// <inheritdoc/>
+            public void SetStatus(int publicIndex, Status status)
+            {
+                Debug.Assert(publicIndex >= 0 && publicIndex < Count, "Trying to advance out of bounds");
+
+                if (status.Found)
+                {
+                    MarkPublicFound(publicIndex);
+                }
+
+                hasPending |= status.IsPending;
+            }
+
+            /// <summary>
+            /// Complete any pending operations that occurred during batch reads.
+            /// </summary>
+            internal void CompletePending(ref VectorBasicContext objectContext)
+            {
+                if (hasPending)
+                {
+                    var res = objectContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                    Debug.Assert(res, "Should have completed pending");
+
+                    using (outputs)
+                    {
+                        while (outputs.Next())
+                        {
+                            var status = outputs.Current.Status;
+                            if (status.Found)
+                            {
+                                // Index provided as part of VectorInput is the internal index
+                                MarkInternalFound(outputs.Current.Input.Index);
+                            }
+                        }
+                    }
+
+                    hasPending = false;
+                }
+            }
+        }
+
         private unsafe delegate* unmanaged[Cdecl]<ulong, uint, uint, nint, nuint, nint, nint, void> ReadCallbackPtr { get; } = &ReadCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> WriteCallbackPtr { get; } = &WriteCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> DeleteCallbackPtr { get; } = &DeleteCallbackUnmanaged;
@@ -248,6 +580,15 @@ namespace Garnet.server
         /// </summary>
         [ThreadStatic]
         internal static StorageSession ActiveThreadSession;
+
+        /// <summary>
+        /// Used to thread the chain of backreferences from shallow copies across p/invoke and reverse p/invoke boundaries.
+        /// 
+        /// Tracks <see cref="ActiveThreadSession"/> closely, but unlike that it is not always set as not all Vector Sets
+        /// start as shallow copies.
+        /// </summary>
+        [ThreadStatic]
+        internal static ReadOnlyMemory<ulong> ActiveThreadShallowCopyBackReferences;
 
         /// <summary>
         /// Destination for copying the small graph "stub" records (NeighborList adjacency, internal/external id
@@ -335,7 +676,8 @@ namespace Garnet.server
         )
         {
             // dataCallback takes: index, dataCallbackContext, data pointer, data length, and returns nothing
-            Span<byte> nsBytes = stackalloc byte[sizeof(uint)];
+            Span<byte> nsBytesRaw = stackalloc byte[sizeof(uint)];
+            Span<byte> nsBytes = nsBytesRaw;
             StoreContextInNamespace(context, ref nsBytes);
 
             // Calculate optimal read options for this batch
@@ -348,13 +690,53 @@ namespace Garnet.server
 
             var valueLengthHintWithOverhead = valueLengthHint + VectorRecordReadOverheadBytes;
 
-            var enumerable = new VectorReadBatch(dataCallback, dataCallbackContext, numKeys, PinnedSpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength), nsBytes, readCopyOptions, (int)valueLengthHintWithOverhead);
+            if (ActiveThreadShallowCopyBackReferences.IsEmpty)
+            {
+                // Fast path when we're never going have to walk the shallow copy context chain
+                var enumerable = new VectorReadBatch(dataCallback, dataCallbackContext, numKeys, PinnedSpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength), nsBytes, readCopyOptions, (int)valueLengthHintWithOverhead);
 
-            ref var ctx = ref ActiveThreadSession.vectorBasicContext;
+                ref var ctx = ref ActiveThreadSession.vectorBasicContext;
 
-            ctx.ReadWithPrefetch(ref enumerable);
+                ctx.ReadWithPrefetch(ref enumerable);
 
-            enumerable.CompletePending(ref ctx);
+                enumerable.CompletePending(ref ctx);
+            }
+            else
+            {
+                // Repeat the batch read until we exhaust the COW context chain or find all keys
+                Span<ulong> notFoundBitmap = stackalloc ulong[(int)(keysLength / 64) + (keysLength % 64 == 0 ? 0 : 1)];
+                Span<ulong> scratchBitmap = stackalloc ulong[notFoundBitmap.Length];
+
+                var enumerable = new VectorReadBatchWithContextChain(dataCallback, dataCallbackContext, notFoundBitmap, scratchBitmap, numKeys, PinnedSpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength), nsBytes, readCopyOptions, (int)valueLengthHintWithOverhead);
+
+                ref var ctx = ref ActiveThreadSession.vectorBasicContext;
+                var remainingContexts = ActiveThreadShallowCopyBackReferences.Span;
+
+                while (true)
+                {
+                    ctx.ReadWithPrefetch(ref enumerable);
+
+                    enumerable.CompletePending(ref ctx);
+
+                    if (enumerable.ResetAndAdjustCountForFound() || remainingContexts.IsEmpty)
+                    {
+                        // Break if we got all hits OR we ran out of the COW chain
+                        break;
+                    }
+
+                    // Move to next context in the COW
+                    var nextRootContext = remainingContexts[0];
+                    remainingContexts = remainingContexts[1..];
+
+                    // Copy the same namespace bits in
+                    var nextContext = nextRootContext | (context & (ContextStep - 1));
+
+                    // Update namespace for the enumerable
+                    nsBytes = nsBytesRaw;
+                    StoreContextInNamespace(nextContext, ref nsBytes);
+                    enumerable.NamespaceBytes = nsBytes;
+                }
+            }
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -414,6 +796,8 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext)
         {
+            const int MaximumOnStackAllocationBytes = 1_024;
+
             Debug.Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
 
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
@@ -425,12 +809,94 @@ namespace Garnet.server
             input.CallbackContext = dataCallbackContext;
             input.WriteDesiredSize = (int)writeLength;
 
+            // If we're modifying a shallow copy, the RMW should _fail_ to create a new record until we consult the (already immutable) chain of contexts
+            input.CopyOnWrite = !ActiveThreadShallowCopyBackReferences.IsEmpty ? VectorInput.CopyOnWriteOperation.DisallowCreate : default;
+
+        retryInitialRMW:
             var status = ctx.RMW(keyWithNamespace, ref input);
             if (status.IsPending)
             {
                 VectorOutput ignored = new();
 
                 CompletePending(ref status, ref ignored, ref ctx);
+            }
+
+            // If we cancelled the RMW because of being a shallow copy, look through older contexts for the record (if any) to copy
+            if (!ActiveThreadShallowCopyBackReferences.IsEmpty && status.IsCanceled)
+            {
+                Span<byte> copyDataSpan = writeLength <= MaximumOnStackAllocationBytes ? stackalloc byte[MaximumOnStackAllocationBytes] : default;
+
+                var remainingContexts = ActiveThreadShallowCopyBackReferences.Span;
+
+                while (!remainingContexts.IsEmpty)
+                {
+                    // Attempt to copy the value from a prior context
+                    var effectiveNamespace = remainingContexts[0] | (context & (ContextStep - 1));
+                    var copyFromKeyWithNamespace = MakeVectorElementKey(effectiveNamespace, keyData, keyLength);
+
+                    VectorInput copyReadInput = default;
+                    copyReadInput.ReadDesiredSize = (int)writeLength;
+
+                    // Sometimes we're just gonna have to allocate here, but try and avoid it when we can
+                    VectorOutput copyOutput;
+                    if (copyDataSpan.IsEmpty)
+                    {
+                        copyOutput = new(new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent((int)writeLength), (int)writeLength));
+                    }
+                    else
+                    {
+                        copyOutput = new(SpanByteAndMemory.FromPinnedSpan(copyDataSpan));
+                    }
+
+                    try
+                    {
+                        var copyReadRes = ctx.Read(copyFromKeyWithNamespace, ref copyReadInput, ref copyOutput);
+                        if (copyReadRes.IsPending)
+                        {
+                            CompletePending(ref status, ref copyOutput, ref ctx);
+                        }
+
+                        if (copyReadRes.Found)
+                        {
+                            // If we found a record, we need to copy it _BUT_ we cannot overwrite any other record
+                            // since we might be racing other redirected RMWs or Upserts
+
+                            VectorInput copyWriteInput = default;
+                            copyWriteInput.CopyOnWrite = VectorInput.CopyOnWriteOperation.DisallowOverwrite;
+
+                            VectorOutput ignored = default;
+
+                            var copyWriteRes = ctx.RMW(keyWithNamespace, ref copyWriteInput, ref copyOutput);
+                            if (copyWriteRes.IsPending)
+                            {
+                                CompletePending(ref copyWriteRes, ref ignored, ref ctx);
+                            }
+
+
+                            if (copyWriteRes.IsCompletedSuccessfully || copyWriteRes.IsCanceled)
+                            {
+                                // If we did the copy OR conflicted with another update, retry but with no COW chaining
+                                input.CopyOnWrite = default;
+                                goto retryInitialRMW;
+                            }
+
+                            // If something else went wrong, fail the RMW
+                            RestoreKeyLengthPrefix(keyData, keyLength);
+                            return 0;
+                        }
+                    }
+                    finally
+                    {
+                        copyOutput.SpanByteAndMemory.Dispose();
+                    }
+
+                    // Didn't find anything to copy, move on to next context
+                    remainingContexts = remainingContexts[1..];
+                }
+
+                // Found nothing to copy, redo the RMW with no COW chaining
+                input.CopyOnWrite = default;
+                goto retryInitialRMW;
             }
 
             RestoreKeyLengthPrefix(keyData, keyLength);
@@ -455,12 +921,15 @@ namespace Garnet.server
         {
             Debug.Assert(context <= uint.MaxValue, "Contexts > 2^32-1 are not supported");
 
-            Span<byte> nsBytes = stackalloc byte[sizeof(uint)];
+            Span<byte> nsBytesRaw = stackalloc byte[sizeof(uint)];
+            var nsBytes = nsBytesRaw;
             StoreContextInNamespace(context, ref nsBytes);
 
             VectorElementKey keyWithNamespace = new(nsBytes, key);
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
+
+            var remainingContexts = ActiveThreadShallowCopyBackReferences.Span;
 
             while (true)
             {
@@ -479,10 +948,27 @@ namespace Garnet.server
 
                     if (!status.Found)
                     {
+                        // If we have other contexts to check, walk through them before giving up
+                        if (!remainingContexts.IsEmpty)
+                        {
+                            var nextRootContext = remainingContexts[0];
+                            remainingContexts = remainingContexts[1..];
+
+                            context = nextRootContext | (context & (ContextStep - 1));
+                            nsBytes = nsBytesRaw;
+                            StoreContextInNamespace(context, ref nsBytes);
+                            keyWithNamespace = new(nsBytes, key);
+
+                            input.ReadDesiredSize = -1;
+
+                            continue;
+                        }
+
                         value.Length = 0;
                         return false;
                     }
 
+                    // We got a hit, but we didn't allocate a large enough buffer - try again with the correct size
                     if (input.ReadDesiredSize > asSpanByte.SpanByteAndMemory.Length)
                     {
                         value.Memory?.Dispose();

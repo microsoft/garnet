@@ -63,6 +63,8 @@ namespace Garnet.server
                 case RespCommand.XVIMPORT:
                     // These operations should never create a new record in InitialUpdate, only VADD should.
                     return false;
+                case RespCommand.XVSCOPY:
+                    return true;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -307,6 +309,7 @@ namespace Garnet.server
                         logRecord.SetDataHeader(dataHeader);
                     }
                     break;
+                case RespCommand.XVSCOPY:
                 case RespCommand.VADD:
                     {
                         // NeedInitialUpdate ensures that only these args reach here
@@ -344,7 +347,11 @@ namespace Garnet.server
 
                         var startPointId = input.parseState.Count >= 14 ? MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(13).Span) : VectorManager.DefaultStartPointId;
 
-                        functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, index, logRecord.ValueSpan, startPointId);
+                        var copyOfContext = cmd == RespCommand.XVSCOPY && input.parseState.Count >= 15 ? MemoryMarshal.Read<ulong>(input.parseState.GetArgSliceByRef(14).Span) : 0;
+
+                        Debug.Assert((cmd == RespCommand.XVSCOPY && copyOfContext > 0 && (copyOfContext % VectorManager.ContextStep) == 0) || (cmd != RespCommand.XVSCOPY && copyOfContext == 0), "Copy context provided in illegal command");
+
+                        functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, index, logRecord.ValueSpan, startPointId, copyOfContext);
 
                         if (expirationTicks != 0)
                         {
@@ -875,6 +882,11 @@ namespace Garnet.server
                     }
                     return IPUResult.Succeeded;
 
+                case RespCommand.XVSCOPY:
+                    // XVSCOPY should _always_ create a record, but shouldn't overwrite one
+                    rmwInfo.Action = RMWAction.CancelOperation;
+                    return IPUResult.Failed;
+
                 case RespCommand.VADD:
                     // If the key was concurrently deleted and re-typed (e.g. a raced String SET) the record is no longer
                     // an index; cancel so no AOF entry is emitted.
@@ -900,13 +912,27 @@ namespace Garnet.server
                         functionsState.vectorManager.RecreateIndex(newIndexPtr, logRecord.ValueSpan);
                     }
 
-                    if (input.arg1 is VectorManager.VADDSetFlagsArg or VectorManager.SetImportStateArg)
+                    if (input.arg1 is VectorManager.VADDSetFlagsArg or VectorManager.SetImportStateArg or VectorManager.XVSCopySourceArg)
                     {
                         // Update flags on the index
                         var flags = MemoryMarshal.Read<VectorSetFlags>(input.parseState.GetArgSliceByRef(0).Span);
 
-                        VectorManager.SetIndexFlags(logRecord.ValueSpan, flags,
-                            input.arg1 == VectorManager.SetImportStateArg ? VectorSetFlags.ImportPending | VectorSetFlags.ImportCompleted | VectorSetFlags.ImportFailed : VectorSetFlags.SuppressCleanup);
+                        // Preserve anything not in the related update set
+                        VectorSetFlags flagsMask;
+                        if (input.arg1 == VectorManager.SetImportStateArg)
+                        {
+                            flagsMask = VectorSetFlags.ImportPending | VectorSetFlags.ImportCompleted | VectorSetFlags.ImportFailed;
+                        }
+                        else if (input.arg1 == VectorManager.XVSCopySourceArg)
+                        {
+                            flagsMask = VectorSetFlags.ShallowCopySource;
+                        }
+                        else
+                        {
+                            flagsMask = VectorSetFlags.SuppressCleanup;
+                        }
+
+                        VectorManager.SetIndexFlags(logRecord.ValueSpan, flags, flagsMask);
                     }
 
                     // Ignore everything else
@@ -1469,6 +1495,11 @@ namespace Garnet.server
                 case RespCommand.XVIMPORT:
                     oldValue.CopyTo(dstLogRecord.ValueSpan);
                     break;
+
+                case RespCommand.XVSCOPY:
+                    // XVSCOPY should never update an existing value, should always be creating new
+                    rmwInfo.Action = RMWAction.CancelOperation;
+                    return false;
 
                 case RespCommand.VADD:
                     // NeedCopyUpdate cancels when the record is no longer an index, so CopyUpdater is only reached for a genuine index record.

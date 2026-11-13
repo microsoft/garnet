@@ -204,9 +204,14 @@ namespace Garnet.server
         ImportFailed = 1 << 3,
 
         /// <summary>
+        /// Vector Set has been shallow copied.  This implies the Vector Set is read only.
+        /// </summary>
+        ShallowCopySource = 1 << 4,
+
+        /// <summary>
         /// Covers all legal flag options
         /// </summary>
-        All = SuppressCleanup | ImportPending | ImportCompleted | ImportFailed,
+        All = SuppressCleanup | ImportPending | ImportCompleted | ImportFailed | ShallowCopySource,
     }
 
     /// <summary>
@@ -262,7 +267,7 @@ namespace Garnet.server
                 (uint)buildExplorationFactor, (uint)numLinks, distanceMetric, quantState.HasValue, quantState.GetValueOrDefault().ReadOnlySpan, startPointId, out result, out errorMsg);
         }
 
-        /// <inheritdoc/>
+        /// <inheritdoc cref="IGarnetApi.VectorSetImport"/>
         public GarnetStatus VectorSetImport(PinnedSpanByte key, VectorImportTermType termType, PinnedSpanByte id, PinnedSpanByte value,
             out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
@@ -303,7 +308,7 @@ namespace Garnet.server
             }
         }
 
-        /// <inheritdoc/>
+        /// <inheritdoc cref="IGarnetApi.VectorSetVerifyImport"/>
         public GarnetStatus VectorSetVerifyImport(PinnedSpanByte key, int taskIndex, int taskCount, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
             if (taskCount < 0 || taskIndex < 0 || taskIndex >= taskCount)
@@ -338,7 +343,7 @@ namespace Garnet.server
             }
         }
 
-        /// <inheritdoc/>
+        /// <inheritdoc cref="IGarnetApi.VectorSetFinishImport"/>
         public GarnetStatus VectorSetFinishImport(PinnedSpanByte key, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
             parseState.InitializeWithArgument(key);
@@ -363,6 +368,25 @@ namespace Garnet.server
                 }
 
                 return GarnetStatus.OK;
+            }
+        }
+
+        /// <inheritdoc cref="IGarnetApi.VectorSetShallowCopy"/>
+        public GarnetStatus VectorSetShallowCopy(PinnedSpanByte sourceKey, PinnedSpanByte destKey, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        {
+            parseState.InitializeWithArgument(sourceKey);
+            var input = new StringInput(RespCommand.XVSCOPY, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadForCopyVectorSetIndexes(this, sourceKey, destKey, ref input, indexSpan, out var importPending, out var res))
+            {
+                if (res != GarnetStatus.OK)
+                {
+                    result = importPending ? VectorManagerResult.ImportingPending : VectorManagerResult.Invalid;
+                    errorMsg = default;
+                    return res;
+                }
+
+                return vectorManager.ShallowCopy(this, sourceKey, indexSpan, destKey, out result, out errorMsg);
             }
         }
 
@@ -422,7 +446,7 @@ namespace Garnet.server
         /// Implement Vector Set Remove - returns not found if the element is not present, or the vector set does not exist.
         /// </summary>
         [SkipLocalsInit]
-        public GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element, out bool importPending)
+        public GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element, out bool importPending, out VectorManagerResult vectorManagerResult)
         {
             parseState.InitializeWithArgument(key);
 
@@ -433,14 +457,15 @@ namespace Garnet.server
             {
                 if (status != GarnetStatus.OK)
                 {
+                    vectorManagerResult = VectorManagerResult.Invalid;
                     return status;
                 }
 
                 // After a successful read we remove the vector while holding a shared lock
                 // That lock prevents deletion, but everything else can proceed in parallel
-                var res = vectorManager.TryRemove(indexSpan, element.ReadOnlySpan);
+                vectorManagerResult = vectorManager.TryRemove(indexSpan, element.ReadOnlySpan);
 
-                if (res == VectorManagerResult.OK)
+                if (vectorManagerResult == VectorManagerResult.OK)
                 {
                     // On successful removal, we need to manually replicate the write
                     vectorManager.ReplicateVectorSetRemove(key, element, ref input, ref stringBasicContext);
@@ -460,7 +485,7 @@ namespace Garnet.server
         /// Removing an attribute is modelled as setting an empty attribute.
         /// </summary>
         [SkipLocalsInit]
-        public GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute, out bool importPending)
+        public GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute, out bool importPending, out VectorManagerResult vectorManagerResult)
         {
             parseState.InitializeWithArguments([key, element, attribute]);
 
@@ -470,10 +495,11 @@ namespace Garnet.server
             {
                 if (status != GarnetStatus.OK)
                 {
+                    vectorManagerResult = VectorManagerResult.Invalid;
                     return status;
                 }
 
-                if (vectorManager.TrySetAttribute(indexSpan, element, attribute))
+                if (vectorManager.TrySetAttribute(indexSpan, element, attribute, out vectorManagerResult))
                 {
                     // On successful update, we need to manually replicate the write
                     vectorManager.ReplicateVectorSetSetAttribute(key, element, attribute, ref input, ref stringBasicContext);
@@ -607,7 +633,7 @@ namespace Garnet.server
                 }
 
                 // After a successful read we extract metadata
-                VectorManager.ReadIndex(indexSpan, out _, out var dimensionsUS, out var reducedDimensionsUS, out _, out _, out _, out _, out _, out _);
+                VectorManager.ReadIndex(indexSpan, out _, out var dimensionsUS, out var reducedDimensionsUS, out _, out _, out _, out _, out _, out _, out _);
 
                 dimensions = (int)(reducedDimensionsUS == 0 ? dimensionsUS : reducedDimensionsUS);
 
@@ -650,7 +676,7 @@ namespace Garnet.server
                 }
 
                 // After a successful read we extract metadata
-                VectorManager.ReadIndex(indexSpan, out var context, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out distanceMetricType, out var flags, out var indexPtr);
+                VectorManager.ReadIndex(indexSpan, out var context, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out distanceMetricType, out var flags, out _, out var indexPtr);
                 if (importPendingBool)
                 {
                     // Can't check cardinality if Vector Set is being imported
@@ -687,7 +713,7 @@ namespace Garnet.server
                 }
 
                 // After a successful read we extract metadata
-                VectorManager.ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+                VectorManager.ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
                 var cardinality = NativeDiskANNMethods.card(context, indexPtr);
                 card = cardinality == ulong.MaxValue ? -1 : (long)cardinality;
 

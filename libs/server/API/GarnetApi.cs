@@ -425,16 +425,20 @@ namespace Garnet.server
         => storageSession.VectorSetFinishImport(key, out result, out errorMsg);
 
         /// <inheritdoc />
+        public GarnetStatus VectorSetShallowCopy(PinnedSpanByte sourceKey, PinnedSpanByte destKey, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        => storageSession.VectorSetShallowCopy(sourceKey, destKey, out result, out errorMsg);
+
+        /// <inheritdoc />
         public GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte values, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         => storageSession.VectorSetAdd(key, reduceDims, valueType, values, element, quantizer, buildExplorationFactor, attributes, numLinks, distanceMetric, out result, out errorMsg);
 
         /// <inheritdoc />
-        public GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element, out bool importPending)
-        => storageSession.VectorSetRemove(key, element, out importPending);
+        public GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element, out bool importPending, out VectorManagerResult vectorManagerResult)
+        => storageSession.VectorSetRemove(key, element, out importPending, out vectorManagerResult);
 
         /// <inheritdoc />
-        public GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute, out bool importPending)
-        => storageSession.VectorSetSetAttribute(key, element, attribute, out importPending);
+        public GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute, out bool importPending, out VectorManagerResult vectorManagerResult)
+        => storageSession.VectorSetSetAttribute(key, element, attribute, out importPending, out vectorManagerResult);
 
         /// <inheritdoc />
         public GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte values, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, out ReadOnlySpan<byte> errorMessage, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)

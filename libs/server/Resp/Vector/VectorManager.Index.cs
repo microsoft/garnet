@@ -49,7 +49,7 @@ namespace Garnet.server
             [FieldOffset(44)]
             public uint StartPointId;
             [FieldOffset(48)]
-            private ulong unused0;
+            public ulong ShallowCopyOfContext;
         }
 
         /// <summary>
@@ -65,11 +65,13 @@ namespace Garnet.server
             ulong newContext,
             nint newIndexPtr,
             Span<byte> indexSpan,
-            uint startPointId)
+            uint startPointId,
+            ulong copyOfContext)
         {
             AssertHaveStorageSession();
 
             Debug.Assert((newContext % 8) == 0 && newContext != 0, "Illegal context provided");
+            Debug.Assert((copyOfContext % 8) == 0, "Illegal copy context provided");
             Debug.Assert(Unsafe.SizeOf<Index>() == Index.Size, "Constant index size is incorrect");
 
             if (indexSpan.Length != Index.Size)
@@ -88,6 +90,7 @@ namespace Garnet.server
             asIndex.DistanceMetric = distanceMetric;
             asIndex.StartPointId = startPointId;
             asIndex.Flags = VectorSetFlags.None;
+            asIndex.ShallowCopyOfContext = copyOfContext;
             asIndex.IndexPtr = (ulong)newIndexPtr;
         }
 
@@ -106,7 +109,7 @@ namespace Garnet.server
                 throw new GarnetException($"Acquired space for vector set index does not match expectations, {indexSpan.Length} != {Index.Size}");
             }
 
-            ReadIndex(indexSpan, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexSpan, out _, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
             Debug.Assert(indexPtr == 0, "Shouldn't be recreating an index if we already have a pointer");
 
             ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexSpan));
@@ -118,7 +121,7 @@ namespace Garnet.server
         /// </summary>
         internal void DropIndex(ReadOnlySpan<byte> indexValue)
         {
-            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
             if (indexPtr == 0)
             {
@@ -142,6 +145,7 @@ namespace Garnet.server
             out uint numLinks,
             out VectorDistanceMetricType distanceMetric,
             out VectorSetFlags flags,
+            out ulong shallowCopyOfContext,
             out nint indexPtr
         )
         {
@@ -157,6 +161,7 @@ namespace Garnet.server
             numLinks = asIndex.NumLinks;
             distanceMetric = asIndex.DistanceMetric;
             flags = asIndex.Flags;
+            shallowCopyOfContext = asIndex.ShallowCopyOfContext;
             indexPtr = (nint)asIndex.IndexPtr;
 
             Debug.Assert((context % ContextStep) == 0, $"Context ({context}) not as expected (% 4 == {context % 4}), vector set index is probably corrupted");
