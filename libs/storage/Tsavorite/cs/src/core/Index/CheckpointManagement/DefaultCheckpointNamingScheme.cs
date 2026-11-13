@@ -46,7 +46,21 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public Guid Token(FileDescriptor fileDescriptor) => Guid.Parse(new DirectoryInfo(fileDescriptor.directoryName).Name);
         /// <inheritdoc />
-        public long CommitNumber(FileDescriptor fileDescriptor) => long.Parse(fileDescriptor.fileName.Split('.')[^2]);
+        /// <remarks>
+        /// Commit n's metadata is segment 0 of the device that <see cref="TsavoriteLogCommitMetadata"/> names, so its file is
+        /// commit.n.0, or commit.n.s.0 for sublog s. The sublogs of a sharded log share the directory, so a sublog's files are
+        /// those that carry its index.
+        /// </remarks>
+        public long CommitNumber(FileDescriptor fileDescriptor)
+        {
+            var parts = fileDescriptor.fileName.Split('.');
+            if (SublogIdx == -1)
+                return long.Parse(parts[^2]);
+
+            return parts.Length >= 4 && long.TryParse(parts[^2], out var sublogIdx) && sublogIdx == SublogIdx && long.TryParse(parts[^3], out var commitNumber)
+                ? commitNumber
+                : -1;
+        }
 
         /// <inheritdoc />
         public string IndexCheckpointBasePath => "index-checkpoints";

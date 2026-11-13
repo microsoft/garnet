@@ -152,7 +152,9 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public IEnumerable<long> ListCommits()
         {
-            return deviceFactory.ListContents(checkpointNamingScheme.TsavoriteLogCommitBasePath).Select(checkpointNamingScheme.CommitNumber).OrderByDescending(e => e);
+            // The naming scheme returns -1 for a file that is not one of this log's, such as another sublog's
+            return deviceFactory.ListContents(checkpointNamingScheme.TsavoriteLogCommitBasePath).Select(checkpointNamingScheme.CommitNumber)
+                .Where(commitNum => commitNum >= 0).OrderByDescending(e => e);
         }
 
         /// <inheritdoc />

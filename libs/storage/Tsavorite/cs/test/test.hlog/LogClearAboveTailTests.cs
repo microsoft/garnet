@@ -20,8 +20,9 @@ namespace Tsavorite.test
     /// </summary>
     /// <remarks>
     /// Most tests write a log and close it, then open a new log over the same files to recover and clear it, and finally check
-    /// the files directly. All logs in a test share one commit manager and its commit-metadata files. <see cref="WriteCommits"/>
-    /// returns the tail of each commit indexed by its number, so tails[n] is where commit n ends.
+    /// the files directly. All logs in a test share one commit manager and its commit-metadata files, except where a test models
+    /// the sublogs of a sharded log, which have one each. <see cref="WriteCommits"/> returns the tail of each commit indexed by
+    /// its number, so tails[n] is where commit n ends.
     /// </remarks>
     [TestFixture]
     internal class LogClearAboveTailTests : TestBase
@@ -646,6 +647,77 @@ namespace Tsavorite.test
         }
 
         /// <summary>
+        /// The sublogs of a sharded log are separate logs that keep their commit-metadata files in one directory, named by commit
+        /// and sublog, so each sublog's commit manager must list only its own. Once truncation removes a sublog's first segments,
+        /// recovery can start only from its newest file, which records the new begin address. Clearing above a sublog's tail
+        /// removes its own files above the tail, and none of the other sublog's.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteLog")]
+        public async Task EachSublogUsesOnlyItsOwnCommitMetadata()
+        {
+            const int SublogCount = 2;
+            var entry = CreateEntry(100, seed: 22);
+            var sublogPaths = new string[SublogCount];
+            var sublogManagers = new DeviceLogCommitCheckpointManager[SublogCount];
+            var sublogCommits = new NotifyingLogCommitManager[SublogCount];
+            var expected = new (long BeginAddress, long TailAddress, long[] Commits)[SublogCount];
+            try
+            {
+                for (var sublog = 0; sublog < SublogCount; sublog++)
+                {
+                    sublogPaths[sublog] = Path.Join(TestUtils.MethodTestDir, $"s{sublog}.log");
+                    sublogManagers[sublog] = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactoryCreator(),
+                        new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir, sublog), removeOutdated: false);
+                    sublogCommits[sublog] = new NotifyingLogCommitManager(sublogManagers[sublog]);
+
+                    // Sublog 0 writes eight commits and sublog 1 nine, which span three segments
+                    using var log = new TestLog(sublogPaths[sublog], sublogCommits[sublog]);
+                    var commitCount = 8 + sublog;
+                    var tails = WriteCommits(log.Log, commitCount, entriesPerCommit: 48, entry, sublogCommits[sublog]);
+
+                    // Truncate at the start of the last commit, above segment 0. The next commit writes a commit-metadata file for the
+                    // new begin address, and then removes the segments below it.
+                    var beginAddress = tails[commitCount - 1];
+                    Assert.That(beginAddress >> SegmentSizeBits, Is.GreaterThan(0), "the truncation should remove segment 0");
+                    log.Log.TruncateUntil(beginAddress);
+                    _ = log.Log.Enqueue(entry);
+                    ClassicAssert.IsTrue(log.Log.CommitStrongly(out var tail, out var commitNum, spinWait: true));
+                    sublogCommits[sublog].WaitForMetadata(commitNum, tail);
+                    ClassicAssert.IsTrue(SpinWait.SpinUntil(() => !File.Exists($"{sublogPaths[sublog]}.0"), TimeSpan.FromSeconds(10)),
+                        $"sublog {sublog}: segment 0 should be removed");
+                    expected[sublog] = (beginAddress, tail, [.. Enumerable.Range(1, (int)commitNum).Select(n => (long)n).Reverse()]);
+                }
+
+                // Each sublog recovers from its own newest file, and lists only its own commits
+                for (var sublog = 0; sublog < SublogCount; sublog++)
+                {
+                    using (var recovered = new TestLog(sublogPaths[sublog], sublogCommits[sublog]))
+                    {
+                        await recovered.Log.RecoverAsync().ConfigureAwait(false);
+                        ClassicAssert.AreEqual(expected[sublog].BeginAddress, recovered.Log.BeginAddress, $"sublog {sublog}");
+                        ClassicAssert.AreEqual(expected[sublog].TailAddress, recovered.Log.TailAddress, $"sublog {sublog}");
+                    }
+                    Assert.That(sublogManagers[sublog].ListCommits(), Is.EqualTo(expected[sublog].Commits), $"sublog {sublog}");
+                }
+
+                // Clearing sublog 1 after a reset removes all of its files above commit 0, and none of sublog 0's
+                using (var reset = new TestLog(sublogPaths[1], sublogCommits[1]))
+                {
+                    reset.Log.Reset();
+                    reset.Log.PrepareToAppend();
+                }
+                Assert.That(sublogManagers[1].ListCommits(), Has.None.GreaterThan(0));
+                Assert.That(sublogManagers[0].ListCommits(), Is.EqualTo(expected[0].Commits));
+            }
+            finally
+            {
+                foreach (var sublogManager in sublogManagers)
+                    sublogManager?.Dispose();
+            }
+        }
+
+        /// <summary>
         /// A recovery that fails before it restores the log leaves it empty, while the device still holds its commits, so
         /// PrepareToAppend throws rather than erase them, and the segment and commit-metadata files are left unchanged
         /// </summary>
@@ -676,10 +748,10 @@ namespace Tsavorite.test
 
         /// <summary>
         /// Append <paramref name="commitCount"/> commits of <paramref name="entriesPerCommit"/> entries each, and wait for their
-        /// commit-metadata files
+        /// commit-metadata files, which the log passes through <paramref name="logCommits"/>, or else the fixture's commit manager
         /// </summary>
         /// <returns>The tail of each commit, indexed by commit number</returns>
-        List<long> WriteCommits(TsavoriteLog log, int commitCount, int entriesPerCommit, byte[] entry)
+        List<long> WriteCommits(TsavoriteLog log, int commitCount, int entriesPerCommit, byte[] entry, NotifyingLogCommitManager logCommits = null)
         {
             List<long> tails = [0];
             long commitNum = 0, tail = 0;
@@ -691,7 +763,7 @@ namespace Tsavorite.test
                 ClassicAssert.AreEqual(tails.Count, commitNum);
                 tails.Add(tail);
             }
-            commits.WaitForMetadata(commitNum, tail);
+            (logCommits ?? commits).WaitForMetadata(commitNum, tail);
             return tails;
         }
 
