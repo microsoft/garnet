@@ -181,6 +181,19 @@ namespace Garnet.server
 
         #endregion
 
+        #region TOUCH
+
+        /// <summary>
+        /// Touches a key using the normal read path without returning its value.
+        /// </summary>
+        /// <param name="key">The key to touch.</param>
+        /// <param name="input">The TOUCH command input.</param>
+        /// <param name="output">The unified store output.</param>
+        /// <returns>OK if the key exists; otherwise NOTFOUND.</returns>
+        GarnetStatus TOUCH(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output);
+
+        #endregion
+
         #region EXPIRE
         /// <summary>
         /// Set a timeout on key
