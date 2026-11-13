@@ -399,6 +399,68 @@ namespace Garnet.test.cluster
             Assert.That(filter.Contains(hash), Is.True);
         }
 
+        [Test]
+        public void BucketedFilterClearsLogicallyAndZerosBucketsOnFirstInsertion()
+        {
+            var filter = new BucketedBloomFilter(bucketCount: 2, bfSize: 64, hashCount: 3);
+            const ulong newHash = (1UL << 16) | (1UL << 32) | (1UL << 48);
+            filter.Add(0);
+            filter.Add(1);
+            var bitmap = (byte[])typeof(BucketedBloomFilter)
+                .GetField("bitmap", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(filter);
+            var previousBitmap = bitmap.ToArray();
+
+            filter.Clear();
+
+            Assert.That(bitmap, Is.EqualTo(previousBitmap), "Logical clearing must not zero bitmap bytes.");
+            Assert.That(filter.Contains(0), Is.False);
+            Assert.That(filter.Contains(1), Is.False);
+
+            filter.Add(newHash);
+            Assert.That(filter.Contains(newHash), Is.True);
+            Assert.That(filter.Contains(0), Is.False, "The touched bucket must not retain old bits.");
+            Assert.That(filter.Contains(1), Is.False, "Untouched stale buckets remain logically empty.");
+            Assert.That(bitmap[8], Is.EqualTo(previousBitmap[8]), "Other buckets must not be physically cleared.");
+
+            filter.Add(1);
+            Assert.That(filter.Contains(1), Is.True);
+            filter.Add(0);
+            Assert.That(filter.Contains(newHash), Is.True, "Subsequent insertions must not reset a current bucket.");
+            Assert.That(filter.Contains(0), Is.True);
+            filter.Clear();
+            filter.Clear();
+            filter.Add(0);
+            Assert.That(filter.Contains(0), Is.True);
+            Assert.That(filter.Contains(newHash), Is.False);
+            Assert.That(filter.Contains(1), Is.False);
+        }
+
+        [Test]
+        public void BucketedFilterGenerationWrapDoesNotResurrectOldMembership()
+        {
+            var filter = new BucketedBloomFilter(bucketCount: 2, bfSize: 64, hashCount: 3);
+            filter.Add(0);
+            filter.Clear();
+            filter.Add(0);
+            typeof(BucketedBloomFilter)
+                .GetField("currentGeneration", BindingFlags.Instance | BindingFlags.NonPublic)
+                .SetValue(filter, uint.MaxValue);
+            filter.Add(1);
+
+            filter.Clear();
+
+            Assert.That(filter.Contains(0), Is.False, "Restarting at generation one must invalidate its old tags.");
+            Assert.That(filter.Contains(1), Is.False);
+            const ulong newHash = (1UL << 16) | (1UL << 32) | (1UL << 48);
+            filter.Add(newHash);
+            Assert.That(filter.Contains(newHash), Is.True);
+            Assert.That(filter.Contains(0), Is.False, "Reusing a bucket after wraparound must clear its old bits.");
+            filter.Clear();
+            filter.Add(0);
+            Assert.That(filter.Contains(newHash), Is.False);
+            Assert.That(filter.Contains(0), Is.True);
+        }
+
         [TestCase(0u)]
         [TestCase(7u)]
         [TestCase(uint.MaxValue)]

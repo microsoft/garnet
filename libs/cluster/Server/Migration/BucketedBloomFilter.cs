@@ -4,6 +4,7 @@
 using System;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using Garnet.common;
 
 namespace Garnet.cluster
@@ -26,10 +27,11 @@ namespace Garnet.cluster
     /// N = configured maximum keys per batch, per worker
     /// B = NextPowerOfTwo(Ceiling(N / 64)) buckets
     /// S = 16384 bits per bucket; k = 3 probes
-    /// Memory per worker = B * S / 8 = B * 2048 bytes
-    /// Memory for 16 workers = 16 * B * 2048 bytes
+    /// Bitmap per worker = B * S / 8 = B * 2048 bytes
+    /// Bitmap for 16 workers = 16 * B * 2048 bytes
+    /// Generation tags per worker = B * sizeof(uint) = B * 4 bytes
     ///
-    /// At power-of-two batch sizes, this budgets 256 bits (32 bytes) per key.
+    /// At power-of-two batch sizes, the bitmap budgets 256 bits (32 bytes) per key.
     /// Rounding other batch sizes up keeps the average occupancy at most 64 keys per bucket;
     /// individual buckets can contain more keys. This is not a per-bucket capacity limit.
     /// </code>
@@ -38,7 +40,9 @@ namespace Garnet.cluster
     /// Across the supported batch-size range [1024, 262143], it consumes the same bitmap memory.
     /// Its false-positive rate is approximately 0.006056%. The table assumes n = N inserted distinct
     /// keys and uniformly distributed, independent hash pieces; rates are theoretical per filter,
-    /// not aggregate probabilities across workers. Memory excludes key collections and other buffers.
+    /// not aggregate probabilities across workers. The table excludes generation tags, key collections,
+    /// and other buffers. Tags add approximately 0.195% to the bitmap budget: at most 16 KiB per worker
+    /// or 256 KiB for 16 workers over the supported migration batch-size range.
     /// </para>
     /// <code>
     /// Batch keys | Buckets | Bitmap/worker* | Bitmap/16 workers* | Bucketed FPR (%) |
@@ -73,6 +77,20 @@ namespace Garnet.cluster
     /// P_global = (1-U_1)/M + (1-1/M)*(1-2*U_1+U_2)
     /// </code>
     /// <para>
+    /// Clear advances a generation instead of zeroing the bitmap. Queries treat a mismatched bucket tag
+    /// as empty; the first insertion into that bucket clears its bytes and publishes its current tag
+    /// after setting the new key's bits. Generation zero uses the runtime-zeroed bitmap directly.
+    /// Counter wraparound invalidates all bucket tags before restarting at generation one, without
+    /// clearing the bitmap. False-positive rates are unchanged for the same current-generation keys.
+    /// </para>
+    /// <para>
+    /// Clearing is normally O(1), with an O(bucket count) tag reset on wraparound. Full batches still
+    /// zero essentially every bucket during rebuilding. Tag publication does not replace the migration
+    /// epoch barriers: the single writer initializes membership before publishing batch protection,
+    /// and must finish the protected work before advancing the generation. Arbitrary concurrent mutation
+    /// and lookup are not supported.
+    /// </para>
+    /// <para>
     /// The third probe improves precision at the same memory budget, but adds an insertion bit update.
     /// Bucket selection is address calculation, not an additional membership probe. A bucket occupies
     /// 2 KiB, not one cache line; sizing alone does not establish a CPU or throughput improvement.
@@ -90,11 +108,13 @@ namespace Garnet.cluster
         const int HashBits = 64 - BucketIndexBits;
 
         readonly byte[] bitmap;
+        readonly uint[] bucketGenerations;
         readonly int bucketMask;
         readonly int bytesPerBucket;
         readonly int bitMask;
         readonly int hashShift;
         readonly int hashCount;
+        uint currentGeneration;
         bool hasEntries;
 
         /// <summary>
@@ -140,6 +160,7 @@ namespace Garnet.cluster
             bitMask = bfSize - 1;
             this.hashCount = hashCount;
             bitmap = GC.AllocateArray<byte>(bucketCount * bytesPerBucket, pinned: true);
+            bucketGenerations = new uint[bucketCount];
         }
 
         /// <summary>
@@ -158,7 +179,12 @@ namespace Garnet.cluster
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Add(ulong hash)
         {
-            var bucketOffset = ((int)hash & bucketMask) * bytesPerBucket;
+            var bucket = (int)hash & bucketMask;
+            var bucketOffset = bucket * bytesPerBucket;
+            var generation = currentGeneration;
+            var initializeBucket = bucketGenerations[bucket] != generation;
+            if (initializeBucket)
+                Array.Clear(bitmap, bucketOffset, bytesPerBucket);
             hash >>= BucketIndexBits;
             for (var i = 0; i < hashCount; i++)
             {
@@ -166,6 +192,8 @@ namespace Garnet.cluster
                 bitmap[bucketOffset + (bit >> 3)] |= (byte)(1 << (bit & 7));
                 hash >>= hashShift;
             }
+            if (initializeBucket)
+                Volatile.Write(ref bucketGenerations[bucket], generation);
             hasEntries = true;
         }
 
@@ -187,7 +215,11 @@ namespace Garnet.cluster
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Contains(ulong hash)
         {
-            var bucketOffset = ((int)hash & bucketMask) * bytesPerBucket;
+            var bucket = (int)hash & bucketMask;
+            var generation = Volatile.Read(ref currentGeneration);
+            if (Volatile.Read(ref bucketGenerations[bucket]) != generation)
+                return false;
+            var bucketOffset = bucket * bytesPerBucket;
             hash >>= BucketIndexBits;
             for (var i = 0; i < hashCount; i++)
             {
@@ -200,13 +232,20 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Clear all membership without reallocating the bitmap or writing an already empty bitmap.
+        /// Logically clear membership; bucket bytes are zeroed lazily on their next insertion.
+        /// Empty filters are unchanged. Generation wraparound resets tags, not the bitmap.
         /// </summary>
         public void Clear()
         {
             if (!hasEntries)
                 return;
-            Array.Clear(bitmap);
+            var generation = unchecked(currentGeneration + 1);
+            if (generation == 0)
+            {
+                Array.Clear(bucketGenerations);
+                generation = 1;
+            }
+            Volatile.Write(ref currentGeneration, generation);
             hasEntries = false;
         }
     }
