@@ -188,6 +188,49 @@ namespace Tsavorite.test
         }
 
         /// <summary>
+        /// A TsavoriteLog page has no page header, so above page 0 its first entry starts at its first byte, and the zeros after
+        /// its last entry are padding to its end. Here one page holds only a short entry, since the entry after it fills a whole
+        /// page and so starts the next one. Recovery from the start of the log must cross that page and find the commit beyond it.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteLog")]
+        public async Task FastCommitRecoveryCrossesAPageThatHoldsOnlyAShortEntry([Values(4, 8)] int shortEntryLength)
+        {
+            // Without checksums, an entry's header is its 4-byte length
+            const int HeaderSize = 4;
+            var pageSize = 1 << SmallPageSizeBits;
+
+            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "shortEntry.log"), deleteOnClose: true);
+            var logSettings = SmallPageFastCommitSettings(device);
+            logSettings.LogChecksum = LogChecksumType.None;
+
+            var fillsPage0 = new byte[pageSize - (int)LogAddress.FirstValidAddress - HeaderSize];
+            var shortEntry = new byte[shortEntryLength];
+            var fillsAPage = new byte[pageSize - HeaderSize];
+            var random = new Random(24);
+            random.NextBytes(fillsPage0);
+            random.NextBytes(shortEntry);
+            random.NextBytes(fillsAPage);
+
+            // The first entry fills page 0, the short entry starts page 1, and the entry after it starts page 2
+            log = new TsavoriteLog(logSettings);
+            ClassicAssert.AreEqual(LogAddress.FirstValidAddress, log.Enqueue(fillsPage0));
+            ClassicAssert.AreEqual(pageSize, log.Enqueue(shortEntry));
+            ClassicAssert.AreEqual(2 * pageSize, log.Enqueue(fillsAPage));
+            ClassicAssert.IsTrue(log.CommitStrongly(out var commitTail, out _, spinWait: true));
+            log.Dispose();
+            log = null;
+
+            // Without commit-metadata files, recovery scans for commit records from the start of the log
+            manager.RemoveAllCommits();
+
+            log = new TsavoriteLog(logSettings);
+            await log.RecoverAsync().ConfigureAwait(false);
+            ClassicAssert.AreEqual(commitTail, log.TailAddress);
+            Assert.That(ReadEntries(log), Is.EqualTo([fillsPage0, shortEntry, fillsAPage]));
+        }
+
+        /// <summary>
         /// Only the end of the written log ends the recovery scan quietly. A device error leaves the end of the log unknown, so
         /// recovery fails rather than drop the commits the error may hide, unless device failures are tolerated. Either way the
         /// error is logged, and PrepareToAppend refuses to clear above the tail.
