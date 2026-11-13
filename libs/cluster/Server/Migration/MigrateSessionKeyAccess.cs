@@ -39,7 +39,15 @@ namespace Garnet.cluster
                 return true;
 
             var keyHash = HashUtils.MurmurHash2x64A(key.ToPointer(), key.Length);
-            foreach (var migrateTask in migrateOperation)
+            return transferOption == TransferOption.SLOTS
+                ? CanAccessKey(migrateOperation, keyHash, readOnly)
+                : CanAccessKey(keysMigrateOperation, keyHash, readOnly);
+        }
+
+        static bool CanAccessKey<TFilter>(MigrateOperation<TFilter>[] operations, ulong keyHash, bool readOnly)
+            where TFilter : struct, IBloomFilter
+        {
+            foreach (var migrateTask in operations)
             {
                 if (!migrateTask.sketch.Probe(keyHash, out var state))
                     continue;

@@ -26,7 +26,7 @@ namespace Garnet.test.cluster
         ClusterTestContext context;
         ClusterProvider provider;
         MigrateSession session;
-        MigrateSession.MigrateOperation operation;
+        MigrateSession.MigrateOperation<KeysMigrationFilter> operation;
         MigrateSessionTaskStore taskStore;
 
         [SetUp]
@@ -49,34 +49,40 @@ namespace Garnet.test.cluster
 
         void CreateOperation(int depth, bool copy = false, int keySendBatchSize = 1024, int deleteBatchSize = 256, HashSet<int> slots = null)
         {
+            provider.serverOptions.ParallelMigrateTaskCount = 1;
             provider.serverOptions.MigrationPipelineDepth = depth;
             provider.serverOptions.MigrationDeleteBatchSize = deleteBatchSize;
             provider.serverOptions.MigrateKeySendBatchSize = keySendBatchSize;
             var nodeId = provider.clusterManager.CurrentConfig.LocalNodeId;
             session = new MigrateSession(null, provider, "127.0.0.1", ClusterTestContext.Port,
                 nodeId, null, null, nodeId, copy, false, 10000, slots ?? [0], null, TransferOption.KEYS);
-            operation = new MigrateSession.MigrateOperation(session);
+            operation = GetOperations(session)[0];
         }
 
-        MigrateSession.MigrateOperation[] CreateSlotOperations()
+        MigrateSession.MigrateOperation<BucketedBloomFilter>[] CreateSlotOperations()
         {
             provider.serverOptions.ParallelMigrateTaskCount = 2;
             var nodeId = provider.clusterManager.CurrentConfig.LocalNodeId;
             session = new MigrateSession(null, provider, "127.0.0.1", ClusterTestContext.Port,
                 nodeId, null, null, nodeId, false, false, 10000, [0], null, TransferOption.SLOTS);
-            var operations = GetOperations(session);
+            var operations = GetSlotOperations(session);
             for (var i = 0; i < operations.Length; i++)
             {
                 operations[i].Dispose();
                 provider.serverOptions.MigrateKeySendBatchSize = 1 << (10 + (i * 4));
-                operations[i] = new MigrateSession.MigrateOperation(session);
+                var batchSize = provider.serverOptions.MigrateKeySendBatchSize;
+                operations[i] = new(session, new(new BucketedBloomFilter(batchSize), maxBatchSize: batchSize + 1));
             }
             return operations;
         }
 
-        static MigrateSession.MigrateOperation[] GetOperations(MigrateSession migration)
-            => (MigrateSession.MigrateOperation[])typeof(MigrateSession)
+        static MigrateSession.MigrateOperation<BucketedBloomFilter>[] GetSlotOperations(MigrateSession migration)
+            => (MigrateSession.MigrateOperation<BucketedBloomFilter>[])typeof(MigrateSession)
                 .GetField("migrateOperation", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(migration);
+
+        static MigrateSession.MigrateOperation<KeysMigrationFilter>[] GetOperations(MigrateSession migration)
+            => (MigrateSession.MigrateOperation<KeysMigrationFilter>[])typeof(MigrateSession)
+                .GetField("keysMigrateOperation", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(migration);
 
         static CancellationToken GetCancellationToken(MigrateSession migration)
             => GetCancellationSource(migration).Token;
@@ -100,7 +106,7 @@ namespace Garnet.test.cluster
         void CreateKeysMigration(ClusterSession caller)
         {
             var nodeId = provider.clusterManager.CurrentConfig.LocalNodeId;
-            var sketch = new MigrationBatch(bucketCount: 1, bfSize: 64);
+            var sketch = new MigrationBatch<KeysMigrationFilter>(new());
             sketch.HashAndStore(PinnedSpanByte.FromPinnedSpan("cancelled-migration-key"u8));
             session = new MigrateSession(caller, provider, "127.0.0.1", ClusterTestContext.Port,
                 nodeId, null, null, nodeId, false, false, 10000, [0], sketch, TransferOption.KEYS);
@@ -110,7 +116,7 @@ namespace Garnet.test.cluster
         bool RegisterTask(out MigrateSession migration, SketchStatus status = SketchStatus.DELETING,
             HashSet<int> slots = null, string targetNodeId = null, TransferOption transferOption = TransferOption.KEYS)
         {
-            var sketch = new MigrationBatch(bucketCount: 1, bfSize: 64);
+            var sketch = new MigrationBatch<KeysMigrationFilter>(new());
             sketch.HashAndStore(PinnedSpanByte.FromPinnedSpan("task-store-access"u8));
             sketch.SetStatus(status);
             var nodeId = provider.clusterManager.CurrentConfig.LocalNodeId;
@@ -348,6 +354,80 @@ namespace Garnet.test.cluster
             }
         }
 
+        [Test]
+        public void KeysSketchKeepsSingleHashInlineAndBoundsBitmapAfterPromotion()
+        {
+            CreateOperation(1);
+            var sketch = operation.sketch;
+            var filterField = typeof(MigrationBatch<KeysMigrationFilter>).GetField("membershipFilter", BindingFlags.Instance | BindingFlags.NonPublic);
+            var bitmapField = typeof(KeysMigrationFilter).GetField("bitmap", BindingFlags.Instance | BindingFlags.NonPublic);
+            byte[] GetBitmap() => (byte[])bitmapField.GetValue(filterField.GetValue(sketch));
+            var key = PinnedSpanByte.FromPinnedSpan("migration-filter-key"u8);
+            var hash = HashUtils.MurmurHash2x64A(key.ReadOnlySpan);
+            sketch.HashAndStore(key);
+            sketch.HashAndStore(key);
+            Assert.That(GetBitmap(), Is.Null, "A single distinct key must not allocate a bitmap.");
+            Assert.That(sketch.Probe(hash, out _), Is.True);
+            Assert.That(sketch.Probe(hash ^ (1UL << 20), out _), Is.False);
+
+            var secondKey = PinnedSpanByte.FromPinnedSpan("another-filter-key"u8);
+            var secondHash = HashUtils.MurmurHash2x64A(secondKey.ReadOnlySpan);
+            sketch.HashAndStore(secondKey);
+            var bitmap = GetBitmap();
+            Assert.That(bitmap, Has.Length.EqualTo(128 * 1024));
+            Assert.That(sketch.Probe(hash, out _), Is.True);
+            Assert.That(sketch.Probe(secondHash, out _), Is.True);
+            Assert.That(sketch.Probe(hash ^ (1UL << 20), out _), Is.True);
+            Assert.That(sketch.Probe(hash ^ (1UL << 52), out _), Is.True);
+            Assert.That(sketch.Probe(hash ^ (1UL << 19), out _), Is.False);
+            Assert.That(sketch.Probe(hash ^ (1UL << 51), out _), Is.False);
+
+            sketch.Clear();
+            Assert.That(sketch.Probe(hash, out _), Is.False);
+            Assert.That(sketch.Probe(secondHash, out _), Is.False);
+            sketch.HashAndStore(key);
+            Assert.That(sketch.Probe(hash, out _), Is.True);
+            Assert.That(sketch.Probe(secondHash, out _), Is.False);
+            Assert.That(GetBitmap(), Is.SameAs(bitmap));
+        }
+
+        [Test]
+        public void KeysFilterRetainsZeroHashAcrossPromotionAndClear()
+        {
+            var filter = new KeysMigrationFilter();
+            Assert.That(filter.Contains(0), Is.False);
+            filter.Add([]);
+            Assert.That(filter.Contains(0), Is.True);
+            filter.Add("second-key"u8);
+            Assert.That(filter.Contains(0), Is.True);
+            Assert.That(filter.Contains(HashUtils.MurmurHash2x64A("second-key"u8)), Is.True);
+            filter.Clear();
+            Assert.That(filter.Contains(0), Is.False);
+            filter.Add([]);
+            Assert.That(filter.Contains(0), Is.True);
+            Assert.That(filter.Contains(HashUtils.MurmurHash2x64A("second-key"u8)), Is.False);
+        }
+
+        [Test]
+        public void KeysSketchPreservesNamespaceCapacityAndSeededMembership()
+        {
+            var sketch = new MigrationBatch<KeysMigrationFilter>(new());
+            var key = PinnedSpanByte.FromPinnedSpan("vector-index-key"u8);
+            sketch.HashAndStore(key);
+            for (var i = 0; i < 1025; i++)
+                Assert.That(sketch.TryHashAndStore([7], BitConverter.GetBytes(i)), Is.True);
+            var seededHash = HashUtils.MurmurHash2x64A(BitConverter.GetBytes(1024), seed: 7);
+            Assert.That(sketch.Probe(seededHash, out _), Is.True);
+            Assert.That(sketch.Probe(HashUtils.MurmurHash2x64A(key.ReadOnlySpan), out _), Is.True);
+            Assert.That(sketch.Keys, Has.Count.EqualTo(1));
+
+            sketch.Clear();
+            Assert.That(sketch.Probe(seededHash, out _), Is.False);
+            Assert.That(sketch.TryHashAndStore([7], "new-namespaced-key"u8), Is.True);
+            Assert.That(sketch.Probe(HashUtils.MurmurHash2x64A("new-namespaced-key"u8, seed: 7), out _), Is.True);
+            Assert.That(sketch.Probe(seededHash, out _), Is.False);
+        }
+
         [TestCase(1024, 16)]
         [TestCase(1025, 32)]
         [TestCase(4096, 64)]
@@ -360,7 +440,12 @@ namespace Garnet.test.cluster
         [TestCase(262143, 4096)]
         public void ConfiguredBatchSizeTargets64KeysPerBloomBucket(int keySendBatchSize, int bucketCount)
         {
-            CreateOperation(1, keySendBatchSize: keySendBatchSize);
+            provider.serverOptions.ParallelMigrateTaskCount = 1;
+            provider.serverOptions.MigrateKeySendBatchSize = keySendBatchSize;
+            var nodeId = provider.clusterManager.CurrentConfig.LocalNodeId;
+            session = new MigrateSession(null, provider, "127.0.0.1", ClusterTestContext.Port,
+                nodeId, null, null, nodeId, false, false, 10000, [0], null, TransferOption.SLOTS);
+            var operation = GetSlotOperations(session)[0];
             ReadOnlySpan<byte> key = "migration-filter-key"u8;
             Assert.That(operation.sketch.TryHashAndStore(key), Is.True);
             var hash = HashUtils.MurmurHash2x64A(key);
@@ -442,9 +527,11 @@ namespace Garnet.test.cluster
             filter.Add(0);
             filter.Clear();
             filter.Add(0);
+            object boxedFilter = filter;
             typeof(BucketedBloomFilter)
                 .GetField("currentGeneration", BindingFlags.Instance | BindingFlags.NonPublic)
-                .SetValue(filter, uint.MaxValue);
+                .SetValue(boxedFilter, uint.MaxValue);
+            filter = (BucketedBloomFilter)boxedFilter;
             filter.Add(1);
 
             filter.Clear();
@@ -568,7 +655,7 @@ namespace Garnet.test.cluster
         [TestCase(4, 65536, 3)]
         public void SketchMembershipRequiresEveryPosition(int namespaceLength, int bucketCount, int hashCount)
         {
-            var sketch = new MigrationBatch(bucketCount: bucketCount, bfSize: 64, hashCount: hashCount);
+            var sketch = new MigrationBatch<BucketedBloomFilter>(new(bucketCount: bucketCount, bfSize: 64, hashCount: hashCount));
             ReadOnlySpan<byte> key = "migration-filter-key"u8;
             ulong hash;
             if (namespaceLength == 0)
@@ -590,7 +677,7 @@ namespace Garnet.test.cluster
         [TestCase(65536, 3)]
         public void ExplicitKeysSketchRequiresEveryPosition(int bucketCount, int hashCount)
         {
-            var sketch = new MigrationBatch(bucketCount: bucketCount, bfSize: 64, hashCount: hashCount);
+            var sketch = new MigrationBatch<BucketedBloomFilter>(new(bucketCount: bucketCount, bfSize: 64, hashCount: hashCount));
             var key = PinnedSpanByte.FromPinnedSpan("migration-filter-key"u8);
             sketch.HashAndStore(key);
             AssertSketchMembership(sketch, HashUtils.MurmurHash2x64A(key.ReadOnlySpan), hashCount);
@@ -601,7 +688,7 @@ namespace Garnet.test.cluster
         {
             var bucketCount = bucketed ? 1 << 16 : 1;
             var hashCount = bucketed ? 3 : 2;
-            var sketch = new MigrationBatch(bucketCount: bucketCount, bfSize: 64, hashCount: hashCount);
+            var sketch = new MigrationBatch<BucketedBloomFilter>(new(bucketCount: bucketCount, bfSize: 64, hashCount: hashCount));
             Assert.That(sketch.TryHashAndStore("previous-filter-key"u8), Is.True);
             var previousHash = HashUtils.MurmurHash2x64A("previous-filter-key"u8);
             sketch.SetStatus(SketchStatus.MIGRATED);
@@ -664,7 +751,7 @@ namespace Garnet.test.cluster
             Assert.That(status, Is.EqualTo(SketchStatus.DELETING));
         }
 
-        static void AssertSketchMembership(MigrationBatch sketch, ulong hash, int hashCount = 2)
+        static void AssertSketchMembership(MigrationBatch<BucketedBloomFilter> sketch, ulong hash, int hashCount = 2)
         {
             var hashBits = 48 / hashCount;
             var positions = Enumerable.Range(0, hashCount)

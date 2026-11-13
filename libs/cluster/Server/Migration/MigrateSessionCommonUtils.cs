@@ -16,7 +16,8 @@ namespace Garnet.cluster
 {
     internal sealed partial class MigrateSession : IDisposable
     {
-        private unsafe ValueTask<bool> WriteOrSendRecordAsync(MigrateOperation operation, PinnedSpanByte namespaceBytes, PinnedSpanByte key, ref VectorInput input, ref VectorOutput output, out GarnetStatus status)
+        private unsafe ValueTask<bool> WriteOrSendRecordAsync<TFilter>(MigrateOperation<TFilter> operation, PinnedSpanByte namespaceBytes, PinnedSpanByte key, ref VectorInput input, ref VectorOutput output, out GarnetStatus status)
+            where TFilter : struct, IBloomFilter
         {
             var gcs = operation.Client;
             var localServerSession = operation.LocalSession;
@@ -81,7 +82,8 @@ namespace Garnet.cluster
         readonly byte[] chunkedKeyLengthPrefix = new byte[sizeof(int)];
         readonly byte[] chunkedValueLengthPrefix = new byte[sizeof(int)];
 
-        private unsafe ValueTask<bool> WriteOrSendRecordAsync(MigrateOperation operation, PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, out GarnetStatus status)
+        private unsafe ValueTask<bool> WriteOrSendRecordAsync<TFilter>(MigrateOperation<TFilter> operation, PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, out GarnetStatus status)
+            where TFilter : struct, IBloomFilter
         {
             var gcs = operation.Client;
             var localServerSession = operation.LocalSession;
@@ -151,7 +153,8 @@ namespace Garnet.cluster
         /// final byte). Each overflow key/value is preceded by its 4-byte little-endian length; an object value is streamed with no
         /// prefix (its length is derived by the receiver). The concatenated pieces form exactly the stream the receiver reassembles.
         /// </summary>
-        private async ValueTask<bool> WriteOrSendAccumulatedRecordAsync(MigrateOperation operation, ReadOnlyMemory<byte> inline, MigrationChunkWriterAccumulator acc)
+        private async ValueTask<bool> WriteOrSendAccumulatedRecordAsync<TFilter>(MigrateOperation<TFilter> operation, ReadOnlyMemory<byte> inline, MigrationChunkWriterAccumulator acc)
+            where TFilter : struct, IBloomFilter
         {
             var gcs = operation.Client;
             var maxChunk = NetworkBufferSettings.MaxSendBufferContentSize;
@@ -257,7 +260,8 @@ namespace Garnet.cluster
         /// Send a serialized record larger than one send buffer as a sequence of <see cref="MigrationRecordSpanType.ChunkedLogRecord"/>
         /// chunks, flushing and retrying when the client buffer fills. The receiver reassembles the chunks and deserializes.
         /// </summary>
-        private async ValueTask<bool> WriteOrSendChunkedRecordAsync(MigrateOperation operation, ReadOnlyMemory<byte> record)
+        private async ValueTask<bool> WriteOrSendChunkedRecordAsync<TFilter>(MigrateOperation<TFilter> operation, ReadOnlyMemory<byte> record)
+            where TFilter : struct, IBloomFilter
         {
             var gcs = operation.Client;
             var maxChunk = NetworkBufferSettings.MaxSendBufferContentSize;
@@ -290,7 +294,8 @@ namespace Garnet.cluster
         /// single buffer cannot hold) as a sequence of <see cref="MigrationRecordSpanType.ChunkedLogRecord"/> chunks. The chunks
         /// carry the concatenated segment bytes; the continuation flag is set until the record's final byte.
         /// </summary>
-        private async ValueTask<bool> WriteOrSendSegmentedRecordAsync(MigrateOperation operation, List<byte[]> segments)
+        private async ValueTask<bool> WriteOrSendSegmentedRecordAsync<TFilter>(MigrateOperation<TFilter> operation, List<byte[]> segments)
+            where TFilter : struct, IBloomFilter
         {
             var gcs = operation.Client;
             var maxChunk = NetworkBufferSettings.MaxSendBufferContentSize;
@@ -334,7 +339,8 @@ namespace Garnet.cluster
         /// <param name="type"></param>
         /// <param name="span"></param>
         /// <returns>True on success, else false</returns>
-        private ValueTask<bool> WriteOrSendRecordSpanAsync(MigrateOperation operation, MigrationRecordSpanType type, ReadOnlySpan<byte> span)
+        private ValueTask<bool> WriteOrSendRecordSpanAsync<TFilter>(MigrateOperation<TFilter> operation, MigrationRecordSpanType type, ReadOnlySpan<byte> span)
+            where TFilter : struct, IBloomFilter
         {
             var gcs = operation.Client;
             // Check if we need to initialize cluster migrate command arguments

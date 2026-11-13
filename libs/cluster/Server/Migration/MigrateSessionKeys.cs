@@ -25,7 +25,7 @@ namespace Garnet.cluster
         /// <returns>True on success, false otherwise</returns>
         private async Task<bool> MigrateKeysFromStoreAsync()
         {
-            var migrateTask = migrateOperation[0];
+            var migrateTask = keysMigrateOperation[0];
 
             try
             {
@@ -163,7 +163,7 @@ namespace Garnet.cluster
             }
             finally
             {
-                migrateOperation[0].sketch.SetStatus(SketchStatus.INITIALIZING);
+                keysMigrateOperation[0].sketch.SetStatus(SketchStatus.INITIALIZING);
             }
         }
 
@@ -172,7 +172,7 @@ namespace Garnet.cluster
         /// </summary>
         private async Task<bool> DeleteKeysAsync()
         {
-            var migrateTask = migrateOperation[0];
+            var migrateTask = keysMigrateOperation[0];
             // Transition to deleting to block read requests                
             migrateTask.sketch.SetStatus(SketchStatus.DELETING);
             if (!await WaitForConfigPropagationAsync().ConfigureAwait(false))
@@ -203,7 +203,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public async Task<bool> MigrateKeysAsync()
         {
-            var migrateTask = migrateOperation[0];
+            var migrateTask = keysMigrateOperation[0];
             var enteredWorker = false;
             try
             {

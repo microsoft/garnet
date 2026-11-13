@@ -28,7 +28,7 @@ namespace Garnet.test.cluster
         ClusterTestContext context;
         ClusterProvider provider;
         MigrateSession session;
-        MigrateSession.MigrateOperation operation;
+        MigrateSession.MigrateOperation<BucketedBloomFilter> operation;
         GarnetClientSession source;
         GarnetClientSession target;
         Task<bool> migration;
@@ -119,7 +119,8 @@ namespace Garnet.test.cluster
                 null, null, sourceId, copy, false, 10000, [slot], null, TransferOption.SLOTS);
             Assert.That(await session.TrySetSlotRangesAsync(sourceId, MigrateState.IMPORT), Is.True);
             Assert.That(session.TryPrepareLocalForMigration(), Is.True);
-            operation = new MigrateSession.MigrateOperation(session);
+            operation = ((MigrateSession.MigrateOperation<BucketedBloomFilter>[])typeof(MigrateSession)
+                .GetField("migrateOperation", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(session))[0];
             Assert.That(await operation.InitializeAsync(), Is.True);
         }
 
@@ -170,11 +171,11 @@ namespace Garnet.test.cluster
                 null, null, false, false, 10000, [slot], null, TransferOption.SLOTS, out session), Is.True);
 
             // Replace the worker before starting: a small internal capacity avoids hundreds of native snapshots.
-            var operations = (MigrateSession.MigrateOperation[])typeof(MigrateSession)
+            var operations = (MigrateSession.MigrateOperation<BucketedBloomFilter>[])typeof(MigrateSession)
                 .GetField("migrateOperation", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(session);
             operations[0].Dispose();
             provider.serverOptions.MigrateKeySendBatchSize = batchSize;
-            operations[0] = new MigrateSession.MigrateOperation(session);
+            operations[0] = new(session, new(new BucketedBloomFilter(batchSize), maxBatchSize: batchSize + 1));
             provider.serverOptions.MigrateKeySendBatchSize = KeySendBatchSize;
 
             var updatedKey = -1;

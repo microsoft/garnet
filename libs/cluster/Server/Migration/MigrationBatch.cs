@@ -4,43 +4,29 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Garnet.server;
 using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal class MigrationBatch
+    internal sealed class MigrationBatch<TFilter>
+        where TFilter : struct, IBloomFilter
     {
-        readonly BucketedBloomFilter bloomFilter;
+        TFilter membershipFilter;
         public ArgSliceVector argSliceVector { get; private set; }
 
         public List<(PinnedSpanByte, bool)> Keys { private set; get; }
         public SketchStatus Status { private set; get; }
 
         /// <summary>
-        /// Create a migration sketch with a batch-sized filter and one reserved key collection entry.
+        /// Create a migration sketch with a specialized filter and a bounded key collection.
         /// </summary>
-        /// <param name="keySendBatchSize">Maximum keys per migration batch.</param>
-        public MigrationBatch(int keySendBatchSize)
-            : this(new BucketedBloomFilter(keySendBatchSize), maxBatchSize: keySendBatchSize + 1)
-        {
-        }
-
-        /// <summary>
-        /// Create a migration sketch with independently sized Bloom buckets and a bounded key collection.
-        /// </summary>
-        /// <param name="bucketCount">Number of Bloom buckets.</param>
-        /// <param name="bfSize">Bloom-filter bits per bucket.</param>
+        /// <param name="membershipFilter">Filter stored inline and mutated in place.</param>
         /// <param name="maxBatchSize">Key collection capacity, including its reserved entry.</param>
-        /// <param name="hashCount">Number of Bloom probes derived from the upper 48 hash bits.</param>
-        public MigrationBatch(int bucketCount = BucketedBloomFilter.DefaultBucketCount, int bfSize = BucketedBloomFilter.DefaultBfSize, int maxBatchSize = 1 << 18, int hashCount = BucketedBloomFilter.DefaultMigrationHashCount)
-            : this(new BucketedBloomFilter(bucketCount, bfSize, hashCount), maxBatchSize)
+        public MigrationBatch(TFilter membershipFilter, int maxBatchSize = 1 << 18)
         {
-        }
-
-        MigrationBatch(BucketedBloomFilter bloomFilter, int maxBatchSize)
-        {
-            this.bloomFilter = bloomFilter;
+            this.membershipFilter = membershipFilter;
             Status = SketchStatus.INITIALIZING;
             Keys = [];
             argSliceVector = new(maxBatchSize);
@@ -53,7 +39,7 @@ namespace Garnet.cluster
             if (!argSliceVector.TryAddItem(key))
                 return false;
 
-            bloomFilter.Add(key);
+            membershipFilter.Add(key);
 
             return true;
         }
@@ -67,7 +53,7 @@ namespace Garnet.cluster
 
             var nsRaw = VectorManager.ExtractContextFromNamespaces(ns);
 
-            bloomFilter.Add(key, seed: (uint)nsRaw);
+            membershipFilter.Add(key, seed: (uint)nsRaw);
 
             return true;
         }
@@ -78,7 +64,7 @@ namespace Garnet.cluster
         /// <param name="key"></param>
         public void HashAndStore(PinnedSpanByte key)
         {
-            bloomFilter.Add(key.ReadOnlySpan);
+            membershipFilter.Add(key.ReadOnlySpan);
             Keys.Add((key, false));
         }
 
@@ -98,7 +84,7 @@ namespace Garnet.cluster
             foreach (var (ns, key, hasNamespace) in batch)
             {
                 var seed = hasNamespace ? (uint)VectorManager.ExtractContextFromNamespaces(ns.ReadOnlySpan) : 0;
-                bloomFilter.Add(key.ReadOnlySpan, seed);
+                membershipFilter.Add(key.ReadOnlySpan, seed);
             }
             return previous;
         }
@@ -109,9 +95,10 @@ namespace Garnet.cluster
         /// <param name="keyHash">Unmasked MurmurHash2x64A key hash.</param>
         /// <param name="status"></param>
         /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Probe(ulong keyHash, out SketchStatus status)
         {
-            var exists = bloomFilter.Contains(keyHash);
+            var exists = membershipFilter.Contains(keyHash);
             status = exists ? Status : SketchStatus.INITIALIZING;
             return exists;
         }
@@ -137,7 +124,7 @@ namespace Garnet.cluster
 
         void ClearMembership()
         {
-            bloomFilter.Clear();
+            membershipFilter.Clear();
             Status = SketchStatus.INITIALIZING;
         }
 

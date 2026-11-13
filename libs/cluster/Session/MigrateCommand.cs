@@ -98,7 +98,7 @@ namespace Garnet.cluster
             var replaceOption = false;
             string username = null;
             string passwd = null;
-            MigrationBatch sketch = null;
+            MigrationBatch<KeysMigrationFilter> sketch = null;
             HashSet<int> slots = null;
 
             ClusterConfig current = null;
@@ -161,7 +161,7 @@ namespace Garnet.cluster
             if (keySlice.Length > 0)
             {
                 transferOption = TransferOption.KEYS;
-                sketch = new();
+                sketch = new(new KeysMigrationFilter());
                 sketch.HashAndStore(keySlice);
             }
 
@@ -190,7 +190,7 @@ namespace Garnet.cluster
                         pstate = MigrateCmdParseState.MULTI_TRANSFER_OPTION;
 
                     transferOption = TransferOption.KEYS;
-                    sketch ??= new();
+                    sketch ??= new(new KeysMigrationFilter());
                     while (currTokenIdx < parseState.Count)
                     {
                         var currKeySlice = parseState.GetArgSliceByRef(currTokenIdx++);

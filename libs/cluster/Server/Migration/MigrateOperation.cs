@@ -18,11 +18,12 @@ namespace Garnet.cluster
 {
     internal sealed partial class MigrateSession : IDisposable
     {
-        internal sealed partial class MigrateOperation
+        internal sealed partial class MigrateOperation<TFilter>
+            where TFilter : struct, IBloomFilter
         {
-            public readonly MigrationBatch sketch;
+            public readonly MigrationBatch<TFilter> sketch;
             public readonly List<byte[]> keysToDelete;
-            public StoreScan storeScan;
+            public StoreScan<TFilter> storeScan;
 
             private readonly ConcurrentDictionary<byte[], (byte[] Value, DateTime? Expiration)> vectorSetsIndexKeysToMigrate;
             private readonly ConcurrentDictionary<byte[], byte> rangeIndexKeysToMigrate;
@@ -68,7 +69,7 @@ namespace Garnet.cluster
 
             public void AddRangeIndexKey(byte[] key) => rangeIndexKeysToMigrate.TryAdd(key, 0);
 
-            public MigrateOperation(MigrateSession session, MigrationBatch sketch = null)
+            public MigrateOperation(MigrateSession session, MigrationBatch<TFilter> sketch)
             {
                 this.session = session;
                 var keySendBatchSize = session.clusterProvider.serverOptions.MigrateKeySendBatchSize;
@@ -78,8 +79,8 @@ namespace Garnet.cluster
                 pendingResponses = new Task<string>[session.clusterProvider.serverOptions.MigrationPipelineDepth];
                 gcs = session.GetGarnetClient();
                 localServerSession = session.GetLocalSession();
-                this.sketch = sketch ?? new(keySendBatchSize);
-                storeScan = new StoreScan(this);
+                this.sketch = sketch;
+                storeScan = new StoreScan<TFilter>(this);
                 keysToDelete = [];
                 vectorSetsIndexKeysToMigrate = new(ByteArrayComparer.Instance);
                 rangeIndexKeysToMigrate = new(ByteArrayComparer.Instance);

@@ -11,14 +11,15 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class MigrateSession
     {
-        internal sealed unsafe class StoreScan : IScanIteratorFunctions
+        internal sealed unsafe class StoreScan<TFilter> : IScanIteratorFunctions
+            where TFilter : struct, IBloomFilter
         {
-            readonly MigrateOperation migrateOperation;
+            readonly MigrateOperation<TFilter> migrateOperation;
             readonly ArgSliceVector destination;
             readonly bool keysOnly;
             readonly CancellationToken cancellationToken;
 
-            internal StoreScan(MigrateOperation migrateOperation, ArgSliceVector destination = null, CancellationToken cancellationToken = default)
+            internal StoreScan(MigrateOperation<TFilter> migrateOperation, ArgSliceVector destination = null, CancellationToken cancellationToken = default)
             {
                 this.migrateOperation = migrateOperation;
                 this.destination = destination;

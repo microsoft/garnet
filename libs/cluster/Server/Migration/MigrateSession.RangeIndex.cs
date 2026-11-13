@@ -25,7 +25,8 @@ namespace Garnet.cluster
         /// Uses <see cref="RangeIndexManager.SnapshotRangeIndexAndCreateReader"/> to obtain an async
         /// migration reader that snapshots and streams the BfTree data.
         /// </summary>
-        private async Task<bool> TransmitRangeIndexAsync(MigrateOperation migrateOperation, byte[] keyBytes, int chunkSize, CancellationToken cancellationToken)
+        private async Task<bool> TransmitRangeIndexAsync<TFilter>(MigrateOperation<TFilter> migrateOperation, byte[] keyBytes, int chunkSize, CancellationToken cancellationToken)
+            where TFilter : struct, IBloomFilter
         {
             if (!clusterProvider.serverOptions.EnableRangeIndexPreview)
             {
@@ -93,7 +94,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Migrate a bounded batch of RangeIndex keys with epoch barriers protecting transmission and deletion.
         /// </summary>
-        private async Task<bool> MigrateRangeIndexKeysAsync(MigrateOperation migrateOperation, IReadOnlyCollection<byte[]> rangeIndexKeys, CancellationToken cancellationToken)
+        private async Task<bool> MigrateRangeIndexKeysAsync(MigrateOperation<BucketedBloomFilter> migrateOperation, IReadOnlyCollection<byte[]> rangeIndexKeys, CancellationToken cancellationToken)
         {
             var migrateActivity = RangeIndexMigrationActivities.MigrateActivity.StartActivity(rangeIndexKeys.Count);
 

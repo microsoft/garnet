@@ -106,7 +106,8 @@ namespace Garnet.cluster
         /// <summary>
         /// MigrateTask for background slot migrate tasks
         /// </summary>
-        readonly MigrateOperation[] migrateOperation;
+        readonly MigrateOperation<BucketedBloomFilter>[] migrateOperation;
+        readonly MigrateOperation<KeysMigrationFilter>[] keysMigrateOperation;
 
         /// <summary>
         /// MigrateSession Constructor
@@ -138,7 +139,7 @@ namespace Garnet.cluster
             bool _replaceOption,
             int _timeout,
             HashSet<int> _slots,
-            MigrationBatch sketch,
+            MigrationBatch<KeysMigrationFilter> sketch,
             TransferOption transferOption)
         {
             this.logger = clusterProvider.loggerFactory.CreateLogger($"MigrateSession - {GetHashCode()}"); ;
@@ -169,14 +170,14 @@ namespace Garnet.cluster
 
             if (transferOption == TransferOption.SLOTS)
             {
-                migrateOperation = new MigrateOperation[clusterProvider.serverOptions.ParallelMigrateTaskCount];
+                var keySendBatchSize = clusterProvider.serverOptions.MigrateKeySendBatchSize;
+                migrateOperation = new MigrateOperation<BucketedBloomFilter>[clusterProvider.serverOptions.ParallelMigrateTaskCount];
                 for (var i = 0; i < migrateOperation.Length; i++)
-                    migrateOperation[i] = new MigrateOperation(this);
+                    migrateOperation[i] = new(this, new(new BucketedBloomFilter(keySendBatchSize), maxBatchSize: keySendBatchSize + 1));
             }
             else
             {
-                migrateOperation = new MigrateOperation[1];
-                migrateOperation[0] = new MigrateOperation(this, sketch: sketch);
+                keysMigrateOperation = [new(this, sketch ?? new(new KeysMigrationFilter()))];
             }
         }
 
@@ -205,8 +206,13 @@ namespace Garnet.cluster
             migrationCancellationSource?.Cancel();
             migrationCancellationSource?.Dispose();
 
-            for (var i = 0; i < migrateOperation.Length; i++)
-                migrateOperation[i].Dispose();
+            if (transferOption == TransferOption.SLOTS)
+            {
+                for (var i = 0; i < migrateOperation.Length; i++)
+                    migrateOperation[i].Dispose();
+            }
+            else
+                keysMigrateOperation[0].Dispose();
         }
 
         private async ValueTask<bool> CheckConnectionAsync(GarnetClientSession client)

@@ -96,11 +96,10 @@ namespace Garnet.cluster
     /// 2 KiB, not one cache line; sizing alone does not establish a CPU or throughput improvement.
     /// </para>
     /// </remarks>
-    internal sealed class BucketedBloomFilter
+    internal struct BucketedBloomFilter : IBloomFilter
     {
         public const int MaxBucketCount = 1 << 16;
         public const int MaxBfSize = 1 << 16;
-        public const int DefaultBucketCount = 1024;
         public const int DefaultBfSize = 16384;
         public const int DefaultMigrationHashCount = 3;
         const int TargetKeysPerBucket = 64;

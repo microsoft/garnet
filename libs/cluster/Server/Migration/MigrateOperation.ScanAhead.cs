@@ -15,7 +15,8 @@ namespace Garnet.cluster
 {
     internal sealed partial class MigrateSession
     {
-        internal sealed partial class MigrateOperation
+        internal sealed partial class MigrateOperation<TFilter>
+            where TFilter : struct, IBloomFilter
         {
             /// <summary>
             /// Migrate slot key batches, optionally gathering the next batch while the active batch is shipped.
@@ -110,7 +111,7 @@ namespace Garnet.cluster
                 long ScanBatch(ArgSliceVector destination, long cursor)
                 {
                     token.ThrowIfCancellationRequested();
-                    var scanner = new StoreScan(this, destination, token);
+                    var scanner = new StoreScan<TFilter>(this, destination, token);
                     scanSession.BasicGarnetApi.IterateStore(ref scanner, ref cursor, endAddress, maxAddress, includeTombstones: true);
                     token.ThrowIfCancellationRequested();
                     return cursor;

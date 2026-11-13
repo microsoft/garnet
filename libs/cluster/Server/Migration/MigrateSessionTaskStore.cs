@@ -68,7 +68,7 @@ namespace Garnet.cluster
             bool replaceOption,
             int timeout,
             HashSet<int> slots,
-            MigrationBatch sketch,
+            MigrationBatch<KeysMigrationFilter> sketch,
             TransferOption transferOption,
             out MigrateSession mSession)
         {
