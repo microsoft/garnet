@@ -125,7 +125,9 @@ Garnet clears its AOF this way unless `--aof-replay-clear-above-tail` is turned 
    Steps 2 to 4 change the device from the highest address down. If clearing is interrupted, what remains above the
    tail is the lower part of what was there, so the next attempt finds it, and recovery can adopt only a commit that was
    already there.
-5. **Commit metadata for the tail:** writes a commit-metadata file for the tail, so recovery starts there.
+5. **Commit metadata for the tail:** writes a commit-metadata file for the tail, so recovery starts there. An empty log
+   with commit number 0 and no cookie gets none if no commit-metadata file remains, since recovery then finds the same
+   empty log without one.
 
 Clearing costs a few reads when nothing is above the tail, which is usual after a clean shutdown: a directory listing,
 and the rest of the tail's segment, which usually lies past the end of the file. After a crash it zeroes the data that

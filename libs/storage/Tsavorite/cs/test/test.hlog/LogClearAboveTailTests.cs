@@ -647,6 +647,40 @@ namespace Tsavorite.test
         }
 
         /// <summary>
+        /// Without a commit-metadata file, recovery finds an empty log at the first valid address. So clearing an empty log
+        /// writes no file when none remains: for a fresh log, and for a log reset after commits, whose files clearing removes.
+        /// Recovery then finds the empty log, not the commits the reset replaced.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteLog")]
+        public async Task ClearingAnEmptyLogWritesNoCommitMetadata([Values] bool afterReset)
+        {
+            var entry = CreateEntry(100, seed: 21);
+            using (var log = new TestLog(logPath, commits))
+            {
+                if (afterReset)
+                {
+                    _ = WriteCommits(log.Log, commitCount: 3, entriesPerCommit: 10, entry);
+                    log.Log.Reset();
+                    log.Log.PrepareToAppend();
+                }
+                else
+                {
+                    await log.Log.RecoverAsync(-1, clearAboveTail: true).ConfigureAwait(false);
+                }
+                ClassicAssert.AreEqual(LogAddress.FirstValidAddress, log.Log.TailAddress);
+            }
+
+            Assert.That(manager.ListCommits(), Is.Empty);
+            AssertNoDataFrom(LogAddress.FirstValidAddress);
+
+            using var recovered = new TestLog(logPath, commits);
+            await recovered.Log.RecoverAsync().ConfigureAwait(false);
+            ClassicAssert.AreEqual(LogAddress.FirstValidAddress, recovered.Log.BeginAddress);
+            ClassicAssert.AreEqual(LogAddress.FirstValidAddress, recovered.Log.TailAddress);
+        }
+
+        /// <summary>
         /// The sublogs of a sharded log are separate logs that keep their commit-metadata files in one directory, named by commit
         /// and sublog, so each sublog's commit manager must list only its own. Once truncation removes a sublog's first segments,
         /// recovery can start only from its newest file, which records the new begin address. Clearing above a sublog's tail

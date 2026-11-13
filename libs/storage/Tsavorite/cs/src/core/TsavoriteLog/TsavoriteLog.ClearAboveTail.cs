@@ -48,8 +48,9 @@ namespace Tsavorite.core
         /// same as part of recovery.
         /// </para>
         /// <para>
-        /// This also removes commit-metadata files for commits above the tail and writes one for the tail. It does nothing if the
-        /// log has already been cleared since it was positioned. It must not run concurrently with appends.
+        /// This also removes commit-metadata files for commits above the tail and writes one for the tail, unless the log is empty
+        /// and none remains, since recovery then finds the same empty log without one. It does nothing if the log has already been
+        /// cleared since it was positioned. It must not run concurrently with appends.
         /// </para>
         /// </remarks>
         public void PrepareToAppend()
@@ -89,10 +90,17 @@ namespace Tsavorite.core
         {
             // Remove the metadata of commits above the tail before clearing their data, so that a crash in between recovers an
             // earlier commit over unchanged data
-            RemoveCommitMetadataAboveTail(tailAddress);
+            var metadataRemains = RemoveCommitMetadataAboveTail(tailAddress);
 
             if (!allocator.IsNullDevice)
                 ClearDeviceAboveTail(tailAddress);
+
+            // Without a commit-metadata file, recovery finds an empty log at the first valid address, with commit number 0 and no
+            // cookie. When that is this log and no file remains, writing one would change nothing, so clearing a fresh log, such
+            // as a replica's before it syncs, does no commit-metadata I/O.
+            if (!metadataRemains && beginAddress == LogAddress.FirstValidAddress && tailAddress == LogAddress.FirstValidAddress
+                && commitNum == 0 && positionedCookie is null)
+                return;
 
             // Recovery starts from the newest commit-metadata file, which is now this one
             var info = new TsavoriteLogRecoveryInfo { BeginAddress = beginAddress, UntilAddress = tailAddress, CommitNum = commitNum, Cookie = positionedCookie };
@@ -115,8 +123,10 @@ namespace Tsavorite.core
         /// cannot tell the two apart, so the file is loaded, and kept only if its commit ends at or below the tail.
         /// </para>
         /// </remarks>
-        void RemoveCommitMetadataAboveTail(long tailAddress)
+        /// <returns>Whether any commit-metadata file remains</returns>
+        bool RemoveCommitMetadataAboveTail(long tailAddress)
         {
+            var remains = false;
             foreach (var metadataCommit in (long[])[.. logCommitManager.ListCommits()])
             {
                 var remove = metadataCommit > commitNum;
@@ -135,7 +145,10 @@ namespace Tsavorite.core
 
                 if (remove)
                     logCommitManager.RemoveCommit(metadataCommit);
+                else
+                    remains = true;
             }
+            return remains;
         }
 
         /// <summary>
