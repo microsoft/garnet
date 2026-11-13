@@ -1332,6 +1332,10 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                         SendAndReset();
                 }
+
+                // Abort the transaction if the command was rejected while queuing
+                if (txnManager.state == TxnState.Started)
+                    txnManager.Abort();
             }
             return cmd;
         }

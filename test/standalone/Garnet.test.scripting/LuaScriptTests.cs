@@ -111,8 +111,6 @@ namespace Garnet.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
-            TimeSpan? timeout = string.IsNullOrEmpty(limitTimeout) ? null : TimeSpan.ParseExact(limitTimeout, "c", CultureInfo.InvariantCulture);
-
             aclFile = Path.GetTempFileName();
             File.WriteAllLines(
                 aclFile,
@@ -123,6 +121,13 @@ namespace Garnet.test
                 ]
             );
 
+            StartServer(luaTransactionMode: false);
+        }
+
+        private void StartServer(bool luaTransactionMode)
+        {
+            TimeSpan? timeout = string.IsNullOrEmpty(limitTimeout) ? null : TimeSpan.ParseExact(limitTimeout, "c", CultureInfo.InvariantCulture);
+
             loggerOutput = new();
             server =
                 TestUtils.CreateGarnetServer(
@@ -131,6 +136,7 @@ namespace Garnet.test
                     luaMemoryMode: allocMode,
                     luaMemoryLimit: limitBytes,
                     luaTimeout: timeout,
+                    luaTransactionMode: luaTransactionMode,
                     useAcl: true,
                     aclFile: aclFile,
                     logTo: loggerOutput
@@ -1846,6 +1852,19 @@ return retArray";
 
         [Test]
         public void NoScriptCommandsForbidden()
+            => AssertNoScriptCommandsForbidden([]);
+
+        [Test]
+        public void NoScriptCommandsForbiddenInTransactionMode()
+        {
+            // Scripts with keys run as transactions in this mode
+            server.Dispose();
+            StartServer(luaTransactionMode: true);
+
+            AssertNoScriptCommandsForbidden(["key"]);
+        }
+
+        private static void AssertNoScriptCommandsForbidden(RedisKey[] keys)
         {
             ClassicAssert.True(RespCommandsInfo.TryGetRespCommandsInfo(out var allCommands, externalOnly: true));
 
@@ -1856,14 +1875,14 @@ return retArray";
 
             foreach (var (cmd, _) in fullCommands)
             {
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"redis.call('{cmd}')"));
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"redis.call('{cmd}')", keys));
                 ClassicAssert.True(exc.Message.StartsWith("ERR This Redis command is not allowed from script"), $"Allowed NoScript command: {cmd}");
             }
 
             var subCommands = allCommands.Where(static kv => (kv.Value.SubCommands?.Length ?? 0) > 0).SelectMany(static kv => kv.Value.SubCommands.Where(static t => t.Flags.HasFlag(RespCommandFlags.NoScript)).Select(t => (kv.Key, t.Name.Split('|')[1])));
             foreach (var (cmd, subCmd) in subCommands)
             {
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"redis.call('{cmd}', '{subCmd}')"));
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"redis.call('{cmd}', '{subCmd}')", keys));
                 ClassicAssert.True(exc.Message.StartsWith("ERR This Redis command is not allowed from script"), $"Allowed NoScript command: {cmd}|{subCmd}");
             }
         }
