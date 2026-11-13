@@ -796,7 +796,13 @@ namespace Tsavorite.core
                 }
             }
             else
-                Debug.Assert(asyncResult.flushRequestState != FlushRequestState.Recovery, "FlushRequestState.IsForRecovery should always be done an entire page at a time");
+            {
+                // A recovery flush covers the rest of its page from fromAddress. It starts past the first record only on the snapshot recovery boundary page, at
+                // the boundary (recoveryFormerFlushedUntilAddress): the records below it are already durable on the main log, so only the records copied from
+                // the snapshot are written.
+                Debug.Assert(asyncResult.flushRequestState != FlushRequestState.Recovery || asyncResult.fromAddress >= asyncResult.recoveryFormerFlushedUntilAddress,
+                    $"A recovery flush may start mid-page only at the snapshot boundary: fromAddress {asyncResult.fromAddress}, boundary {asyncResult.recoveryFormerFlushedUntilAddress}");
+            }
 
             var alignedStartOffset = RoundDown(startOffset, (int)device.SectorSize);
             var startPadding = startOffset - alignedStartOffset;
@@ -889,8 +895,9 @@ namespace Tsavorite.core
                 // For recovery flushes we don't re-serialize; rather we just update the object lengths and positions in the log file using deserialized
                 // Overflow and/or Object information. That means we also have to track the increasing object log position "as if" we were re-serializing
                 // the objects (because it is recovery, the lengths will not change--even if this is a page from snapshot, in which case we still don't
-                // want to write to an object-log segment; that is ONLY done on OnPagesMarkedReadOnly.
-                ref var pageHeader = ref *(PageHeader*)recordsBasePtr;
+                // want to write to an object-log segment; that is ONLY done on OnPagesMarkedReadOnly. Read the page header from the page itself: srcBuffer
+                // starts at alignedStartOffset, so it does not hold the header when a flush starts mid-page.
+                ref var pageHeader = ref *(PageHeader*)logPagePointer;
 
                 var recoveryOngoingPageHeader = asyncResult.flushRequestState == FlushRequestState.Recovery ? pageHeader.GetLowestObjectLogPosition(objectLogTail.SegmentSizeBits) : default;
                 var endLogicalAddress = logicalAddress + (endPhysicalAddress - physicalAddress);
@@ -1326,7 +1333,7 @@ namespace Tsavorite.core
             {
                 var recovering = result.recoveryPhase != RecoveryPhase.None;
                 var objectIdMapToUse = recovering ? objectPages[result.page % BufferSize].objectIdMap : result.objectFrame?.objectIdMap ?? transientObjectIdMap;
-                DeserializeObjectsOnPage((long)result.destinationPtr, result.maxAddressOffsetOnPage, objectIdMapToUse, result.readBuffers,
+                DeserializeObjectsOnPage((long)result.destinationPtr, PageHeader.Size, result.maxAddressOffsetOnPage, objectIdMapToUse, result.readBuffers,
                     trackHeapSize: recovering, result.objectFrame);
             }
 
@@ -1340,19 +1347,20 @@ namespace Tsavorite.core
         /// Scans records to determine object log ranges, reads from the object log via the provided readBuffers, and deserializes objects.
         /// </summary>
         /// <param name="pageStartPhysicalAddress">Physical start address of the page in memory</param>
+        /// <param name="minAddressOffsetOnPage">Offset on the page of the first record to deserialize (<see cref="PageHeader.Size"/> for the whole page)</param>
         /// <param name="maxAddressOffsetOnPage">Maximum offset on the page (PageSize or less for partial pages)</param>
         /// <param name="objectIdMap">The ObjectIdMap to use for deserialized objects</param>
         /// <param name="readBuffers">The circular read buffers for object log reading</param>
         /// <param name="trackHeapSize">Whether the destination is a resident recovery page rather than a temporary scan frame</param>
         /// <param name="objectFrame">Ownership and initialized extent for a scan frame</param>
-        private void DeserializeObjectsOnPage(long pageStartPhysicalAddress, long maxAddressOffsetOnPage, ObjectIdMap objectIdMap, CircularDiskReadBuffer readBuffers,
-            bool trackHeapSize, ObjectScanFrame objectFrame = null)
+        private void DeserializeObjectsOnPage(long pageStartPhysicalAddress, long minAddressOffsetOnPage, long maxAddressOffsetOnPage, ObjectIdMap objectIdMap,
+            CircularDiskReadBuffer readBuffers, bool trackHeapSize, ObjectScanFrame objectFrame = null)
         {
             objectFrame?.Initialize(pageStartPhysicalAddress);
             ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
             var endKeyLength = 0;
             ulong endValueLength = 0;
-            var recordAddress = pageStartPhysicalAddress + PageHeader.Size;
+            var recordAddress = pageStartPhysicalAddress + minAddressOffsetOnPage;
             var endAddress = pageStartPhysicalAddress + maxAddressOffsetOnPage;
 
             // First pass: determine the range of object log bytes to read
@@ -1378,7 +1386,7 @@ namespace Tsavorite.core
 
             // Second pass: deserialize objects
             readBuffers.nextFileReadPosition = startPosition;
-            recordAddress = pageStartPhysicalAddress + PageHeader.Size;
+            recordAddress = pageStartPhysicalAddress + minAddressOffsetOnPage;
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
             logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
 
@@ -1479,7 +1487,10 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal override void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice)
+        /// <remarks>Objects are loaded for every record on the page below <paramref name="untilAddress"/>, not only from <paramref name="fromAddress"/>: a page's
+        ///     objects are either all loaded or none (an empty ObjectIdMap is how recovery eviction recognizes a page whose load was deferred). A page can hold both
+        ///     main-log records and records read from the snapshot file when <paramref name="snapshotFromAddress"/> falls on it, so each range is read from its own device.</remarks>
+        internal override void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice snapshotObjectLogDevice, long snapshotFromAddress)
         {
             var pageStartAddress = GetFirstValidLogicalAddressOnPage(page);
             var address = Math.Max(fromAddress, pageStartAddress);
@@ -1487,11 +1498,23 @@ namespace Tsavorite.core
             if (address >= endAddress)
                 return;
 
-            var pagePhysicalAddress = GetPhysicalAddress(GetLogicalAddressOfStartOfPage(page));
-            var maxOffset = endAddress - GetLogicalAddressOfStartOfPage(page);
+            var pageLogicalAddress = GetLogicalAddressOfStartOfPage(page);
+            var pagePhysicalAddress = GetPhysicalAddress(pageLogicalAddress);
+            var maxOffset = endAddress - pageLogicalAddress;
             var objectIdMapToUse = objectPages[page % BufferSize].objectIdMap;
-            using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
-            DeserializeObjectsOnPage(pagePhysicalAddress, maxOffset, objectIdMapToUse, readBuffers, trackHeapSize: true);
+
+            // Records below snapshotOffset reference the main object log, and the rest the snapshot object log.
+            var snapshotOffset = Math.Clamp(snapshotFromAddress - pageLogicalAddress, PageHeader.Size, maxOffset);
+            if (snapshotOffset > PageHeader.Size)
+            {
+                using var mainReadBuffers = CreateCircularReadBuffers(objectLogDevice: null, logger);
+                DeserializeObjectsOnPage(pagePhysicalAddress, PageHeader.Size, snapshotOffset, objectIdMapToUse, mainReadBuffers, trackHeapSize: true);
+            }
+            if (snapshotOffset < maxOffset)
+            {
+                using var snapshotReadBuffers = CreateCircularReadBuffers(snapshotObjectLogDevice, logger);
+                DeserializeObjectsOnPage(pagePhysicalAddress, snapshotOffset, maxOffset, objectIdMapToUse, snapshotReadBuffers, trackHeapSize: true);
+            }
         }
 
         /// <inheritdoc/>

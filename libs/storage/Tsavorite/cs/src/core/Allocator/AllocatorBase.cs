@@ -35,8 +35,9 @@ namespace Tsavorite.core
         internal virtual void SetObjectLogTail(ObjectLogFilePositionInfo tail) { }
         /// <summary>Calculate the total serialized object size on a loaded page. Only implemented by ObjectAllocator.</summary>
         internal virtual long CalculatePageObjectSizes(long page, long startAddress, long untilAddress) => 0;
-        /// <summary>Load objects for records on an already-loaded page for recovery pass 2.</summary>
-        internal virtual void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice) { }
+        /// <summary>Load objects for records on an already-loaded page for recovery pass 2; records at or above <paramref name="snapshotFromAddress"/> read theirs
+        ///     from <paramref name="snapshotObjectLogDevice"/>, and records below it from the main object log.</summary>
+        internal virtual void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice snapshotObjectLogDevice, long snapshotFromAddress) { }
     }
 
     /// <summary>
@@ -2386,10 +2387,11 @@ namespace Tsavorite.core
                     page = flushPage,
                     context = context,
                     count = 1,
-                    // A recovery flush starts at scanFromAddress, which may be mid-page at the first record past the PageHeader.
-                    // In that case it is a front-partial flush: the write length is derived from untilAddress (the page end)
-                    // rather than a full page, and the PageHeader is re-included when the page is written. The snapshot/hybrid-log
-                    // boundary that selects which records copy their objects is carried separately via formerFlushedUntilAddress.
+                    // A recovery flush starts at scanFromAddress, which may be mid-page. In that case it is a front-partial flush: the write length is derived
+                    // from untilAddress (the page end) rather than a full page. At the first record past the PageHeader the PageHeader is re-included when the
+                    // page is written; further in, which happens only on the snapshot recovery boundary page, only the records from there on need writing, as
+                    // those below it are already on the main log. The snapshot/hybrid-log boundary that selects which records copy their objects is carried
+                    // separately via formerFlushedUntilAddress.
                     partial = flushFromAddress > pageStartAddress,
                     fromAddress = flushFromAddress,
                     untilAddress = GetLogicalAddressOfStartOfPage(flushPage + 1),
