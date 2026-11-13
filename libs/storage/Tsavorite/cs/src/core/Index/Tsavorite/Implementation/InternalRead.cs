@@ -89,9 +89,13 @@ namespace Tsavorite.core
                         readInfo.Address = kInvalidAddress;     // ReadCache addresses are not valid for indexing etc. so pass kInvalidAddress.
 
                         srcLogRecord = stackCtx.recSrc.CreateLogRecord();
-                        return sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo)
-                            ? OperationStatus.SUCCESS
-                            : CheckFalseActionStatus(ref readInfo);
+                        if (sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo))
+                        {
+                            return operationState.readCopyOptions.CopyFrom != ReadCopyFrom.AllImmutable
+                                ? OperationStatus.SUCCESS
+                                : ReadCacheCopyToTail(in srcLogRecord, sessionFunctions, ref operationState, ref stackCtx);
+                        }
+                        return CheckFalseActionStatus(ref readInfo);
                     }
 
                     // FindInReadCache updated recSrc so update the readInfo accordingly.

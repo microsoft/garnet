@@ -13,6 +13,7 @@ namespace Garnet.cluster
     internal sealed class MigrateSessionTaskStore
     {
         readonly MigrateSession[] sessions;
+        readonly HashSet<MigrateSession> removals = [];
         SingleWriterMultiReaderLock _lock;
         readonly ILogger logger;
         int sessionCount;
@@ -153,9 +154,8 @@ namespace Garnet.cluster
                 _lock.WriteLock();
                 if (_disposed) return false;
 
-                RemoveSessionUnderLock(mSession);
-
-                return true;
+                if (!removals.Add(mSession))
+                    return true;
             }
             catch (Exception ex)
             {
@@ -166,12 +166,46 @@ namespace Garnet.cluster
             {
                 _lock.WriteUnlock();
             }
+
+            DisposeRemoved([mSession]);
+            return true;
+        }
+
+        /// <summary>
+        /// Cancels sessions outside the store lock, then removes their published admission state.
+        /// Cancellation may resume a driver that reenters removal; each session has one removal owner.
+        /// </summary>
+        /// <param name="toDispose">Sessions to dispose</param>
+        void DisposeRemoved(IEnumerable<MigrateSession> toDispose)
+        {
+            foreach (var s in toDispose)
+            {
+                try
+                {
+                    s.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "Error disposing removed MigrateSession");
+                }
+                finally
+                {
+                    _lock.WriteLock();
+                    try
+                    {
+                        RemoveSessionUnderLock(s);
+                        _ = removals.Remove(s);
+                    }
+                    finally
+                    {
+                        _lock.WriteUnlock();
+                    }
+                }
+            }
         }
 
         void RemoveSessionUnderLock(MigrateSession mSession)
         {
-            // Keep protection published until cancellation and connection shutdown complete.
-            mSession.Dispose();
             var removed = false;
             foreach (var slot in mSession.GetSlots)
             {
@@ -182,7 +216,7 @@ namespace Garnet.cluster
                 removed = true;
             }
 
-            if (removed)
+            if (removed && !_disposed)
                 Volatile.Write(ref sessionCount, sessionCount - 1);
         }
 
@@ -193,6 +227,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool TryRemove(string targetNodeId)
         {
+            HashSet<MigrateSession> removed = null;
             try
             {
                 _lock.WriteLock();
@@ -200,11 +235,11 @@ namespace Garnet.cluster
                 for (var i = 0; i < sessions.Length; i++)
                 {
                     var s = sessions[i];
-                    if (s != null && s.GetTargetNodeId.Equals(targetNodeId, StringComparison.Ordinal))
-                        RemoveSessionUnderLock(s);
+                    if (s != null && s.GetTargetNodeId.Equals(targetNodeId, StringComparison.Ordinal) && removals.Add(s))
+                    {
+                        _ = (removed ??= []).Add(s);
+                    }
                 }
-
-                return true;
             }
             catch (Exception ex)
             {
@@ -215,6 +250,10 @@ namespace Garnet.cluster
             {
                 _lock.WriteUnlock();
             }
+
+            if (removed != null)
+                DisposeRemoved(removed);
+            return true;
         }
 
         /// <summary>

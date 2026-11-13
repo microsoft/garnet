@@ -155,7 +155,7 @@ namespace Garnet.cluster
             bool CanOperateOnKey(ref PinnedSpanByte key, int slot, bool readOnly, out bool retry)
             {
                 retry = false;
-                var epoch = LocalCurrentEpoch;
+                var epoch = EpochForWait;
                 // Probes scan migration workers, so bound CPU-local retries before parking this synchronous caller.
                 var spinner = ConfiguredSpinWait.CpuLocal();
                 migrationAccessBackoff.Reset();
@@ -164,11 +164,11 @@ namespace Garnet.cluster
                 // as long as the key is being actively migrated
                 while (!clusterProvider.migrationManager.CanAccessKey(key, slot, readOnly))
                 {
-                    ReleaseCurrentEpoch();
+                    ReleaseEpochForWait();
                     if (!spinner.TryWait())
                         Thread.Sleep(migrationAccessBackoff.RecordFailure());
-                    AcquireCurrentEpoch();
-                    if (epoch != LocalCurrentEpoch)
+                    AcquireEpochAfterWait();
+                    if (epoch != EpochForWait)
                     {
                         retry = true;
                         return false;
@@ -186,9 +186,9 @@ namespace Garnet.cluster
 
                 do
                 {
-                    ReleaseCurrentEpoch();
+                    ReleaseEpochForWait();
                     _ = Thread.Yield();
-                    AcquireCurrentEpoch();
+                    AcquireEpochAfterWait();
 
                     config = clusterProvider.clusterManager.CurrentConfig;
                 }

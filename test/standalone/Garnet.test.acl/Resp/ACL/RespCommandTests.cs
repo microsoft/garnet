@@ -3173,6 +3173,27 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task TouchACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "TOUCH",
+                [DoTouchAsync, DoTouchMultiAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoTouchAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("TOUCH", ["foo"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            static async Task DoTouchMultiAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("TOUCH", ["foo", "bar"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
         public async Task ExpireACLsAsync()
         {
             await CheckCommandsAsync(

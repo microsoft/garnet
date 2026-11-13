@@ -325,31 +325,34 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// EXISTS multiple keys
+        /// EXISTS or TOUCH multiple keys.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool NetworkEXISTS<TGarnetApi>(ref TGarnetApi storageApi)
+        private bool NetworkEXISTS<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             var count = parseState.Count;
             if (count < 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXISTS));
+                return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
             var exists = 0;
 
             // Prepare input
-            var input = new UnifiedInput(RespCommand.EXISTS);
+            var input = new UnifiedInput(command);
 
             var output = new UnifiedOutput();
 
             for (var i = 0; i < parseState.Count; i++)
             {
                 var key = parseState.GetArgSliceByRef(i);
-                var status = storageApi.EXISTS(key, ref input, ref output);
+                var status = command == RespCommand.TOUCH
+                    ? storageApi.TOUCH(key, ref input, ref output)
+                    : storageApi.EXISTS(key, ref input, ref output);
                 if (status == GarnetStatus.OK)
                     exists++;
             }

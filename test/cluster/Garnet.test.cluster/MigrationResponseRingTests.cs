@@ -252,6 +252,65 @@ namespace Garnet.test.cluster
                 "A captured session must retain usable admission metadata after disposal.");
         }
 
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task TaskStoreCancellationCanReenterRemovalWithoutDroppingProtection(bool byTarget)
+        {
+            taskStore = new MigrateSessionTaskStore();
+            Assert.That(RegisterTask(out session), Is.True);
+            var captured = session;
+            var key = PinnedSpanByte.FromPinnedSpan("task-store-access"u8);
+            var nestedRemoval = false;
+            var protectedDuringCancellation = false;
+            var countDuringCancellation = -1;
+            using var registration = GetCancellationToken(captured).Register(() =>
+            {
+                nestedRemoval = taskStore.TryRemove(captured);
+                protectedDuringCancellation = !taskStore.CanAccessKey(key, 0, readOnly: false);
+                countDuringCancellation = taskStore.GetNumSessions();
+            });
+
+            var removal = Task.Factory.StartNew(() => byTarget
+                ? taskStore.TryRemove(captured.GetTargetNodeId)
+                : taskStore.TryRemove(captured), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
+            Assert.That(await removal.WaitAsync(TimeSpan.FromSeconds(10)), Is.True);
+            Assert.That(nestedRemoval, Is.True);
+            Assert.That(protectedDuringCancellation, Is.True);
+            Assert.That(countDuringCancellation, Is.EqualTo(1));
+            Assert.That(taskStore.GetNumSessions(), Is.Zero);
+            Assert.That(taskStore.CanAccessKey(key, 0, readOnly: false), Is.True);
+        }
+
+        [Test]
+        public async Task TaskStoreShutdownDuringRemovalPreservesZeroCount()
+        {
+            taskStore = new MigrateSessionTaskStore();
+            Assert.That(RegisterTask(out session), Is.True);
+            var captured = session;
+            using var disposing = new ManualResetEventSlim();
+            using var release = new ManualResetEventSlim();
+            using var registration = GetCancellationToken(captured).Register(() =>
+            {
+                disposing.Set();
+                release.Wait();
+            });
+            var removal = Task.Factory.StartNew(() => taskStore.TryRemove(captured), CancellationToken.None,
+                TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            try
+            {
+                Assert.That(disposing.Wait(TimeSpan.FromSeconds(5)), Is.True);
+                taskStore.Dispose();
+                Assert.That(taskStore.GetNumSessions(), Is.Zero);
+            }
+            finally
+            {
+                release.Set();
+                Assert.That(await removal.WaitAsync(TimeSpan.FromSeconds(10)), Is.True);
+            }
+            Assert.That(taskStore.GetNumSessions(), Is.Zero);
+        }
+
         [Test]
         public void TaskStoreRetiredRemovalPreservesReplacement()
         {

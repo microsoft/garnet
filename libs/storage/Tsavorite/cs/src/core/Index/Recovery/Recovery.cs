@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -160,7 +161,14 @@ namespace Tsavorite.core
     /// </summary>
     public struct LogFileInfo
     {
-        /// <summary>Snapshot file end address (start address is always 0).</summary>
+        /// <summary>Snapshot file start address: the start of the page holding <see cref="HybridLogRecoveryInfo.flushedLogicalAddress"/>, where recovery
+        /// starts reading the snapshot file (it reads everything below <see cref="HybridLogRecoveryInfo.flushedLogicalAddress"/> from the main log). The
+        /// snapshot flush skips pages that eviction passes during the flush, all of which lie below this address, so the file may lack data there.
+        /// Equal to <see cref="snapshotFileEndAddress"/> when recovery reads no snapshot page.</summary>
+        public long snapshotFileStartAddress;
+
+        /// <summary>Snapshot file end address. Snapshot file addresses are offsets in the snapshot file, whose offset 0 holds the page of
+        /// <see cref="HybridLogRecoveryInfo.snapshotStartFlushedLogicalAddress"/>.</summary>
         public long snapshotFileEndAddress;
 
         /// <summary>Hybrid log file start address</summary>
@@ -169,8 +177,12 @@ namespace Tsavorite.core
         /// <summary>Hybrid log file end address</summary>
         public long hybridLogFileEndAddress;
 
-        /// <summary>True if this snapshot had object log records</summary>
+        /// <summary>True if the snapshot object log has data; otherwise <see cref="snapshotObjectFileEndAddress"/> is 0</summary>
         public bool hasSnapshotObjects;
+
+        /// <summary>True if the main object log has data; otherwise <see cref="hybridLogObjectFileStartAddress"/> and
+        /// <see cref="hybridLogObjectFileEndAddress"/> are 0</summary>
+        public bool hasHybridLogObjects;
 
         /// <summary>Address of <see cref="HybridLogRecoveryInfo.beginAddressObjectLogSegment"/>; the start of the lowest object log segment
         /// in use by the hybrid log at snapshot PREPARE time</summary>
@@ -219,6 +231,35 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Inspect checkpoint metadata without creating storage or pinning checkpoints against deletion.
+        /// Tokens that disappear before they can be read are skipped. The result reflects metadata observed
+        /// during this scan, not a guarantee that its files still exist when the method returns.
+        /// </summary>
+        /// <param name="hlogToken">Latest readable HybridLog token, or default if none was observed.</param>
+        /// <param name="indexToken">Compatible readable index token, or default if none was observed.</param>
+        /// <param name="storeVersion">Next version of the selected checkpoint, or -1 if none was observed.</param>
+        /// <param name="cookie">Cookie captured from the selected HybridLog metadata.</param>
+        public void GetLatestCheckpointTokensForInspection(out Guid hlogToken, out Guid indexToken, out long storeVersion, out byte[] cookie)
+        {
+            GetClosestHybridLogCheckpointInfo(-1, out hlogToken, out var recoveredHlcInfo, out cookie, out _,
+                checkpointManager.ReadLogCheckpointMetadata);
+            try
+            {
+                indexToken = default;
+                storeVersion = -1;
+                if (hlogToken == default)
+                    return;
+
+                storeVersion = recoveredHlcInfo.info.nextVersion;
+                GetClosestIndexCheckpointInfo(ref recoveredHlcInfo, out indexToken, out _, checkpointManager.ReadIndexCheckpointMetadata);
+            }
+            finally
+            {
+                recoveredHlcInfo.Dispose();
+            }
+        }
+
+        /// <summary>
         /// Get HLog latest version
         /// </summary>
         public long GetLatestCheckpointVersion()
@@ -241,7 +282,18 @@ namespace Tsavorite.core
             using var current = new HybridLogCheckpointInfo();
             current.Recover(token, checkpointManager, out var _);
             var hasSnapshotObjects = current.info.snapshotEndObjectLogTail.HasData;
+            var hasHybridLogObjects = current.info.hlogEndObjectLogTail.HasData;
             var snapshotDeviceOffset = hlogBase.GetLogicalAddressOfStartOfPage(hlogBase.GetPage(current.info.snapshotStartFlushedLogicalAddress));
+            var snapshotFileEndAddress = current.info.snapshotFinalLogicalAddress - snapshotDeviceOffset;
+
+            // Recovery (see GetSnapshotPageRangesToRead) reads the main log below flushedLogicalAddress and the snapshot file from the page holding it,
+            // but only if the snapshot extends past both flushedLogicalAddress and that page's first valid address. Otherwise the range is empty, because
+            // the snapshot's last page may then be one the flush skipped: eviction can pass the snapshot's end, which also moves flushedLogicalAddress past it.
+            var flushedPage = hlogBase.GetPage(current.info.flushedLogicalAddress);
+            var snapshotFileStartAddress = current.info.snapshotFinalLogicalAddress > Math.Max(current.info.flushedLogicalAddress, hlogBase.GetFirstValidLogicalAddressOnPage(flushedPage))
+                ? hlogBase.GetLogicalAddressOfStartOfPage(flushedPage) - snapshotDeviceOffset
+                : snapshotFileEndAddress;
+
             return new LogFileInfo
             {
                 // Hybrid (main log file) info:
@@ -251,11 +303,13 @@ namespace Tsavorite.core
                 //   - The snapshot address range starts at 0 in the snapshot files and includes all main-log data until the final TailAddress. In detail, it is from:
                 //     - 0, but the start offset is FlushedUntilAddress taken at the start of WAIT_FLUSH (which is used to calculate this.snapshotDeviceOffset) to...
                 //     - TailAddress taken at the start of WAIT_FLUSH minus the start offset. This TailAddress is the maximum logical address that will be written to the snapshot.
+                //     Recovery reads only from snapshotFileStartAddress, and the flush may skip pages below it.
                 // The overlap between the FlushedUntilAddress for the main log being recorded after the flush completes and the FlushedUntilAddress for the snapshot 
                 // being recorded before the flush starts ensures there is no gap.
                 hybridLogFileStartAddress = hlogBase.GetLogicalAddressOfStartOfPage(hlogBase.GetPage(current.info.beginAddress)),
                 hybridLogFileEndAddress = current.info.flushedLogicalAddress,
-                snapshotFileEndAddress = current.info.snapshotFinalLogicalAddress - snapshotDeviceOffset,
+                snapshotFileStartAddress = snapshotFileStartAddress,
+                snapshotFileEndAddress = snapshotFileEndAddress,
 
                 // Object log file info:
                 //   - The object log address range is from:
@@ -269,9 +323,12 @@ namespace Tsavorite.core
                 //       up to the TailAddress at the start of WAIT_FLUSH.
                 // Note that there are no object-log segments for the mutable region of the hybrid log; they are not written until ReadOnlyAddress growth triggers
                 // a main-log Flush. However the snapshot does cause object-log segments for the mutable range to be written.
+                // Each object log range is set only if that object log has data. The two are independent: a snapshot whose records have no objects says
+                // nothing about older, flushed records that do.
                 hasSnapshotObjects = hasSnapshotObjects,
-                hybridLogObjectFileStartAddress = hasSnapshotObjects ? (long)current.info.beginAddressObjectLogSegment << current.info.hlogEndObjectLogTail.SegmentSizeBits : 0,
-                hybridLogObjectFileEndAddress = hasSnapshotObjects ? (long)current.info.hlogEndObjectLogTail.CurrentAddress : 0,
+                hasHybridLogObjects = hasHybridLogObjects,
+                hybridLogObjectFileStartAddress = hasHybridLogObjects ? (long)current.info.beginAddressObjectLogSegment << current.info.hlogEndObjectLogTail.SegmentSizeBits : 0,
+                hybridLogObjectFileEndAddress = hasHybridLogObjects ? (long)current.info.hlogEndObjectLogTail.CurrentAddress : 0,
                 snapshotObjectFileEndAddress = hasSnapshotObjects ? (long)current.info.snapshotEndObjectLogTail.CurrentAddress : 0,
 
             };
@@ -290,7 +347,7 @@ namespace Tsavorite.core
         }
 
         private void GetClosestHybridLogCheckpointInfo(long requestedVersion, out Guid closestToken, out HybridLogCheckpointInfo closest, out byte[] cookie,
-            out HybridLogCheckpointScanStats scanStats)
+            out HybridLogCheckpointScanStats scanStats, Func<Guid, byte[]> readMetadata = null)
         {
             HybridLogCheckpointInfo current;
             var closestVersion = long.MaxValue;
@@ -315,7 +372,15 @@ namespace Tsavorite.core
                 try
                 {
                     current = new HybridLogCheckpointInfo();
-                    current.Recover(hybridLogToken, checkpointManager, out var currCookie);
+                    byte[] currCookie;
+                    if (readMetadata == null)
+                        current.Recover(hybridLogToken, checkpointManager, out currCookie);
+                    else
+                    {
+                        using var reader = new StreamReader(new MemoryStream(readMetadata(hybridLogToken)));
+                        current.info.Initialize(reader);
+                        currCookie = current.info.cookie;
+                    }
                     var distanceToTarget = (requestedVersion == -1 ? long.MaxValue : requestedVersion) - current.info.version;
 
                     // This is larger than intended version, cannot recover to this.
@@ -352,6 +417,11 @@ namespace Tsavorite.core
                         current.Dispose();
                     }
                 }
+                catch (FileNotFoundException) when (readMetadata != null)
+                {
+                    logger?.LogDebug("HybridLog checkpoint disappeared during inspection: {hybridLogToken}", hybridLogToken);
+                    continue;
+                }
                 catch (Exception ex)
                 {
                     // A checkpoint whose metadata cannot be read is skipped in favor of an older one. Report it so
@@ -367,7 +437,8 @@ namespace Tsavorite.core
             scanStats = new HybridLogCheckpointScanStats(candidateTokenCount, unreadableTokenCount);
         }
 
-        private void GetClosestIndexCheckpointInfo(ref HybridLogCheckpointInfo recoveredHlcInfo, out Guid closestToken, out IndexCheckpointInfo recoveredICInfo)
+        private void GetClosestIndexCheckpointInfo(ref HybridLogCheckpointInfo recoveredHlcInfo, out Guid closestToken, out IndexCheckpointInfo recoveredICInfo,
+            Func<Guid, byte[]> readMetadata = null)
         {
             closestToken = default;
             recoveredICInfo = default;
@@ -377,7 +448,18 @@ namespace Tsavorite.core
                 {
                     // Recovery appropriate context information
                     recoveredICInfo = new IndexCheckpointInfo();
-                    recoveredICInfo.Recover(indexToken, checkpointManager);
+                    if (readMetadata == null)
+                        recoveredICInfo.Recover(indexToken, checkpointManager);
+                    else
+                    {
+                        using var reader = new StreamReader(new MemoryStream(readMetadata(indexToken)));
+                        recoveredICInfo.info.Initialize(reader);
+                    }
+                }
+                catch (FileNotFoundException) when (readMetadata != null)
+                {
+                    logger?.LogDebug("Index checkpoint disappeared during inspection: {indexToken}", indexToken);
+                    continue;
                 }
                 catch (Exception ex)
                 {

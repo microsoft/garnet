@@ -198,21 +198,33 @@ namespace Garnet.cluster
             => new(clusterProvider.storeWrapper);
 
         /// <summary>
-        /// Dispose
+        /// Ends the migration: cancels it and closes its connections, so a task waiting on a send or a reply fails
+        /// fast. Each worker defers resource disposal until its owner and child scans have finished.
         /// </summary>
         public void Dispose()
         {
             if (!_disposed.TryWriteLock()) return;
-            migrationCancellationSource?.Cancel();
-            migrationCancellationSource?.Dispose();
-
-            if (transferOption == TransferOption.SLOTS)
+            try
             {
-                for (var i = 0; i < migrateOperation.Length; i++)
-                    migrateOperation[i].Dispose();
+                migrationCancellationSource.Cancel();
             }
-            else
-                keysMigrateOperation[0].Dispose();
+            finally
+            {
+                try
+                {
+                    if (transferOption == TransferOption.SLOTS)
+                    {
+                        for (var i = 0; i < migrateOperation.Length; i++)
+                            migrateOperation[i].Dispose();
+                    }
+                    else
+                        keysMigrateOperation[0].Dispose();
+                }
+                finally
+                {
+                    migrationCancellationSource.Dispose();
+                }
+            }
         }
 
         private async ValueTask<bool> CheckConnectionAsync(GarnetClientSession client)

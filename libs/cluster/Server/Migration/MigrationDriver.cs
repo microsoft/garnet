@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading.Tasks;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -193,6 +194,7 @@ namespace Garnet.cluster
                 // Lock config merge to avoid a background epoch bump
                 clusterProvider.clusterManager.SuspendConfigMerge();
                 configResumed = false;
+                await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.Migration_Hold_Ownership_Transfer).ConfigureAwait(false);
                 await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false).ConfigureAwait(false);
 
                 // Change ownership of slots to target node.
@@ -230,12 +232,18 @@ namespace Garnet.cluster
                 {
                     if (!configResumed) clusterProvider.clusterManager.ResumeConfigMerge();
                     clusterProvider.storeWrapper.store.ResumeRevivification();
-                    _ = clusterProvider.migrationManager.TryRemoveMigrationTask(this);
                 }
                 finally
                 {
-                    for (var i = 0; i < enteredWorkers; i++)
-                        migrateOperation[i].ExitWorker();
+                    try
+                    {
+                        _ = clusterProvider.migrationManager.TryRemoveMigrationTask(this);
+                    }
+                    finally
+                    {
+                        for (var i = 0; i < enteredWorkers; i++)
+                            migrateOperation[i].ExitWorker();
+                    }
                 }
             }
         }

@@ -43,9 +43,10 @@ namespace Garnet.server
         internal SingleWriterMultiReaderLock ObserverStatusLock;
 
         /// <summary>
-        /// Semaphore to notify the ResultSet status
+        /// Wakes the waiting session: released once when the broker's first attempt finds no item and leaves the
+        /// observer waiting on its keys, which starts the timeout, and once when the result is set
         /// </summary>
-        internal SemaphoreSlim ResultFoundSemaphore { get; } = new(0, 1);
+        internal SemaphoreSlim WakeupSemaphore { get; } = new(0, 2);
 
         /// <summary>
         /// Cancellation token to signal the semaphore awaiter to stop
@@ -82,7 +83,7 @@ namespace Garnet.server
                 // Set the result, update the status and release the semaphore
                 Result = result;
                 Status = ObserverStatus.ResultSet;
-                ResultFoundSemaphore.Release();
+                WakeupSemaphore.Release();
             }
             finally
             {
@@ -107,7 +108,7 @@ namespace Garnet.server
                 // Set the result, update the status and release the semaphore
                 Result = throwError ? CollectionItemResult.ForceUnblocked : CollectionItemResult.Empty;
                 Status = ObserverStatus.ResultSet;
-                ResultFoundSemaphore.Release();
+                WakeupSemaphore.Release();
                 return true;
             }
             finally

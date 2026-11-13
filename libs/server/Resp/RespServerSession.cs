@@ -53,6 +53,21 @@ namespace Garnet.server
         public CommandStats GetCommandStats => commandStats;
 
         /// <summary>
+        /// Updates the session's command counters for a command that did not pass through the message loop,
+        /// as the loop does for each command it processes.
+        /// </summary>
+        /// <param name="cmd">The command that was executed or rejected.</param>
+        internal void CountCommandProcessed(RespCommand cmd)
+        {
+            if (sessionMetrics == null)
+                return;
+
+            sessionMetrics.total_commands_processed++;
+            sessionMetrics.total_write_commands_processed += cmd.OneIfWrite();
+            sessionMetrics.total_read_commands_processed += cmd.OneIfRead();
+        }
+
+        /// <summary>
         /// Get a copy of latencyMetrics
         /// </summary>
         public GarnetLatencyMetricsSession GetLatencyMetrics() => LatencyMetrics;
@@ -337,6 +352,7 @@ namespace Garnet.server
             clusterSession = cp?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, storageSession.stringBasicContext, storageSession.vectorBasicContext, networkSender, logger);
             clusterSession?.SetUserHandle(this._userHandle);
             sessionScriptCache?.SetUserHandle(this._userHandle);
+            sessionScriptCache?.SetEpochOwner(clusterSession);
 
             parseState.Initialize();
             readHead = 0;
@@ -915,7 +931,8 @@ namespace Garnet.server
                 RespCommand.DEL => NetworkDEL(ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(ref storageApi),
                 RespCommand.RENAMENX => NetworkRENAMENX(ref storageApi),
-                RespCommand.EXISTS => NetworkEXISTS(ref storageApi),
+                RespCommand.EXISTS => NetworkEXISTS(RespCommand.EXISTS, ref storageApi),
+                RespCommand.TOUCH => NetworkEXISTS(RespCommand.TOUCH, ref storageApi),
                 RespCommand.EXPIRE => NetworkEXPIRE(RespCommand.EXPIRE, ref storageApi),
                 RespCommand.PEXPIRE => NetworkEXPIRE(RespCommand.PEXPIRE, ref storageApi),
                 RespCommand.EXPIRETIME => NetworkEXPIRETIME(RespCommand.EXPIRETIME, ref storageApi),

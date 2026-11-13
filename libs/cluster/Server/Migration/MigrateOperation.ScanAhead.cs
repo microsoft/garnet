@@ -43,6 +43,9 @@ namespace Garnet.cluster
                         token.ThrowIfCancellationRequested();
                         var nextBatch = sketch.ReplaceBatch(pending);
                         sketch.SetStatus(SketchStatus.TRANSMITTING);
+#if DEBUG
+                        await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Migration_Slot_Keys_Transmitting).ConfigureAwait(false);
+#endif
                         if (!await session.WaitForConfigPropagationAsync().ConfigureAwait(false))
                         {
                             session.logger?.LogError("Failed to protect migration batch");
