@@ -76,8 +76,9 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             var popCount = 1;
+            var hasCount = parseState.Count == 2;
 
-            if (parseState.Count == 2)
+            if (hasCount)
             {
                 // Read count
                 if (!parseState.TryGetInt(1, out popCount) || (popCount < 0))
@@ -93,8 +94,9 @@ namespace Garnet.server
                 };
 
             // Prepare input
+            // arg2 flags the count form, which always replies with an array
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
-            var input = new ObjectInput(header, popCount);
+            var input = new ObjectInput(header, popCount, hasCount ? 1 : 0);
 
             // Prepare output
             var output = GetObjectOutput();
@@ -110,7 +112,10 @@ namespace Garnet.server
                     ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    WriteNull();
+                    if (hasCount)
+                        WriteNullArray();
+                    else
+                        WriteNull();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
