@@ -804,6 +804,19 @@ namespace Garnet.server
         public GarnetStatus SetDiffStore(PinnedSpanByte key, PinnedSpanByte[] keys, out int count);
         #endregion
 
+        #region SORT
+        /// <summary>
+        /// Sorts the elements of the list, set or sorted set at <paramref name="key"/> and stores them as a list at
+        /// <paramref name="destination"/> (SORT ... STORE). If the result is empty, the destination is deleted.
+        /// </summary>
+        /// <param name="key">The key holding the list, set or sorted set.</param>
+        /// <param name="destination">The key to store the result in.</param>
+        /// <param name="options">Parsed SORT options.</param>
+        /// <param name="count">The number of elements stored.</param>
+        /// <param name="invalidScore">True if a numeric sort found a value that is not a valid double; nothing is stored.</param>
+        GarnetStatus SortStore(PinnedSpanByte key, PinnedSpanByte destination, SortOptions options, out int count, out bool invalidScore);
+        #endregion
+
         #region List Methods
 
         #region ListPush Methods
@@ -1848,6 +1861,15 @@ namespace Garnet.server
         /// <param name="members"></param>
         /// <returns></returns>
         GarnetStatus SetDiff(PinnedSpanByte[] keys, out HashSet<byte[]> members);
+
+        /// <summary>
+        /// Sorts the elements of the list, set or sorted set at <paramref name="key"/> (SORT / SORT_RO without STORE).
+        /// </summary>
+        /// <param name="key">The key holding the list, set or sorted set.</param>
+        /// <param name="options">Parsed SORT options.</param>
+        /// <param name="result">The reply elements. When GET patterns are used, a null entry is a nil reply.</param>
+        /// <param name="invalidScore">True if a numeric sort found a value that is not a valid double.</param>
+        GarnetStatus Sort(PinnedSpanByte key, SortOptions options, out List<byte[]> result, out bool invalidScore);
 
         /// <summary>
         /// Returns the cardinality of the intersection between multiple sets.

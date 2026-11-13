@@ -1173,6 +1173,8 @@ namespace Garnet.server
             {
                 RespCommand.AUTH => NetworkAUTH(),
                 RespCommand.MEMORY_USAGE => NetworkMemoryUsage(ref storageApi),
+                RespCommand.SORT => NetworkSORT(readOnly: false, ref storageApi),
+                RespCommand.SORT_RO => NetworkSORT(readOnly: true, ref storageApi),
                 RespCommand.OBJECT_ENCODING => NetworkOBJECT(RespCommand.OBJECT_ENCODING, ref storageApi),
                 RespCommand.OBJECT_FREQ => NetworkOBJECT(RespCommand.OBJECT_FREQ, ref storageApi),
                 RespCommand.OBJECT_IDLETIME => NetworkOBJECT(RespCommand.OBJECT_IDLETIME, ref storageApi),

@@ -950,7 +950,7 @@ namespace Garnet.server
             else
             {
                 var step = keySpec.BeginSearch.Index < 0 ? -1 : 1;
-                for (var i = beginSearchIdx; i < parseState.Count; i += step)
+                for (var i = beginSearchIdx; i >= 0 && i < parseState.Count; i += step)
                 {
                     if (parseState.GetArgSliceByRef(i).ReadOnlySpan
                         .EqualsUpperCaseSpanIgnoringCase(keySpec.BeginSearch.Keyword))
@@ -960,6 +960,10 @@ namespace Garnet.server
                         break;
                     }
                 }
+
+                // The keyword is optional (e.g. STORE); if it is absent, or is the last argument, this spec has no keys
+                if (firstKeyIdx < 0 || firstKeyIdx >= parseState.Count)
+                    return false;
             }
 
             // Next, determine the first, last, and step arguments for key searching based on the find keys specification

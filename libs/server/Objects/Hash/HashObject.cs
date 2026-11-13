@@ -449,6 +449,11 @@ namespace Garnet.server
             CleanupExpirationStructuresIfEmpty();
         }
 
+        /// <summary>
+        /// Gets the value of a live (non-expired) field without mutating the object.
+        /// </summary>
+        internal bool TryGetFieldValue(ByteSpan field, out byte[] value) => TryGetValue(field, out value);
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TryGetValue(ByteSpan key, out byte[] value)
         {

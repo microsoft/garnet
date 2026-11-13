@@ -7792,6 +7792,181 @@
     ]
   },
   {
+    "Command": "SORT",
+    "Name": "SORT",
+    "Summary": "Sorts the elements in a list, a set, or a sorted set, optionally storing the result.",
+    "Group": "Generic",
+    "Complexity": "O(N+M*log(M)) where N is the number of elements in the list or set to sort, and M the number of returned elements. When the elements are not sorted, complexity is O(N).",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "BY-PATTERN",
+        "DisplayText": "pattern",
+        "Type": "Pattern",
+        "Token": "BY",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "LIMIT",
+        "Type": "Block",
+        "Token": "LIMIT",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFFSET",
+            "DisplayText": "offset",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "GET-PATTERN",
+        "DisplayText": "pattern",
+        "Type": "Pattern",
+        "Token": "GET",
+        "ArgumentFlags": "Optional, Multiple"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ORDER",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ASC",
+            "DisplayText": "asc",
+            "Type": "PureToken",
+            "Token": "ASC"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "DESC",
+            "DisplayText": "desc",
+            "Type": "PureToken",
+            "Token": "DESC"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SORTING",
+        "DisplayText": "sorting",
+        "Type": "PureToken",
+        "Token": "ALPHA",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "Token": "STORE",
+        "ArgumentFlags": "Optional",
+        "KeySpecIndex": 2
+      }
+    ]
+  },
+  {
+    "Command": "SORT_RO",
+    "Name": "SORT_RO",
+    "Summary": "Returns the sorted elements of a list, a set, or a sorted set.",
+    "Group": "Generic",
+    "Complexity": "O(N+M*log(M)) where N is the number of elements in the list or set to sort, and M the number of returned elements. When the elements are not sorted, complexity is O(N).",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "BY-PATTERN",
+        "DisplayText": "pattern",
+        "Type": "Pattern",
+        "Token": "BY",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "LIMIT",
+        "Type": "Block",
+        "Token": "LIMIT",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFFSET",
+            "DisplayText": "offset",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "GET-PATTERN",
+        "DisplayText": "pattern",
+        "Type": "Pattern",
+        "Token": "GET",
+        "ArgumentFlags": "Optional, Multiple"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ORDER",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ASC",
+            "DisplayText": "asc",
+            "Type": "PureToken",
+            "Token": "ASC"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "DESC",
+            "DisplayText": "desc",
+            "Type": "PureToken",
+            "Token": "DESC"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SORTING",
+        "DisplayText": "sorting",
+        "Type": "PureToken",
+        "Token": "ALPHA",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
     "Command": "SPOP",
     "Name": "SPOP",
     "Summary": "Returns one or more random members from a set after removing them. Deletes the set if the last member was popped.",
