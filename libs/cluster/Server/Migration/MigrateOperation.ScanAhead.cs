@@ -87,7 +87,7 @@ namespace Garnet.cluster
                         pending = nextBatch;
                     }
 
-                    sketch.Clear();
+                    sketch.RetireBatch();
                     return true;
                 }
                 finally

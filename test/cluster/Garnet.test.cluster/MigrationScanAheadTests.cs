@@ -316,6 +316,20 @@ namespace Garnet.test.cluster
             Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo("0"));
         }
 
+        [Test]
+        public async Task CompletedScanRetiresBatchWithoutClearingMembership([Values] bool useScanAheadMigration)
+        {
+            await CreateOperationAsync(3, keyCount: 1, useScanAheadMigration: useScanAheadMigration);
+            Assert.That(await StartMigration().WaitAsync(TimeSpan.FromSeconds(10)), Is.True);
+            Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("0"));
+            Assert.That(await TargetAsync("GET", Key(0)), Is.EqualTo("value-0"));
+            Assert.That(operation.sketch.argSliceVector.IsEmpty, Is.True);
+            var hash = HashUtils.MurmurHash2x64A(Encoding.ASCII.GetBytes(Key(0)));
+            Assert.That(operation.sketch.Probe(hash, out var status), Is.True,
+                "Completion must not physically clear the final batch's bitmap.");
+            Assert.That(status, Is.EqualTo(SketchStatus.INITIALIZING));
+        }
+
 #if DEBUG
         [TestCase(1024, false)]
         [TestCase(1024, true)]

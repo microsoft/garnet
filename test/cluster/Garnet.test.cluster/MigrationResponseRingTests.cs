@@ -383,6 +383,7 @@ namespace Garnet.test.cluster
             var filter = new BucketedBloomFilter(bucketCount, bfSize: 64, hashCount: hashCount);
             var hash = BucketedFilterHash(bucketCount, hashCount);
             Assert.That(filter.Contains(hash), Is.False);
+            filter.Clear();
             filter.Add(hash);
             Assert.That(filter.Contains(hash), Is.True);
             for (var i = 0; i < hashCount; i++)
@@ -569,6 +570,36 @@ namespace Garnet.test.cluster
                 Assert.That(previous.IsEmpty, Is.True);
             Assert.That(sketch.Probe(previousHash, out _), Is.False);
             AssertSketchMembership(sketch, hash, hashCount);
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void RetiredBatchAllowsAccessAndClearsMembershipBeforeReuse(bool reuseCollection)
+        {
+            var operations = CreateSlotOperations();
+            var sketch = operations[0].sketch;
+            var key = PinnedSpanByte.FromPinnedSpan("migration-access-key"u8);
+            var hash = HashUtils.MurmurHash2x64A(key.ReadOnlySpan);
+            Assert.That(sketch.TryHashAndStore(key.ReadOnlySpan), Is.True);
+            sketch.SetStatus(SketchStatus.DELETING);
+            Assert.That(session.CanAccessKey(key, 0, readOnly: false), Is.False);
+
+            sketch.RetireBatch();
+
+            Assert.That(sketch.argSliceVector.IsEmpty, Is.True);
+            Assert.That(sketch.Probe(hash, out var status), Is.True, "Retirement retains the physical bitmap.");
+            Assert.That(status, Is.EqualTo(SketchStatus.INITIALIZING));
+            Assert.That(session.CanAccessKey(key, 0, readOnly: false), Is.True);
+            Assert.That(session.CanAccessKey(key, 0, readOnly: true), Is.True);
+
+            var batch = reuseCollection ? sketch.argSliceVector : new ArgSliceVector();
+            Assert.That(batch.TryAddItem("next-filter-key"u8), Is.True);
+            sketch.ReplaceBatch(batch);
+            sketch.SetStatus(SketchStatus.DELETING);
+            Assert.That(sketch.Probe(hash, out _), Is.False, "Rebuilding removes retired membership.");
+            var nextHash = HashUtils.MurmurHash2x64A("next-filter-key"u8);
+            Assert.That(sketch.Probe(nextHash, out status), Is.True);
+            Assert.That(status, Is.EqualTo(SketchStatus.DELETING));
         }
 
         static void AssertSketchMembership(Sketch sketch, ulong hash, int hashCount = 2)

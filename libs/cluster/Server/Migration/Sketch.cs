@@ -125,6 +125,16 @@ namespace Garnet.cluster
             ClearMembership();
         }
 
+        /// <summary>
+        /// Release batch protection and collected keys without zeroing the membership bitmap.
+        /// Clear or replace the batch before building protection for another batch.
+        /// </summary>
+        public void RetireBatch()
+        {
+            argSliceVector.Clear();
+            Status = SketchStatus.INITIALIZING;
+        }
+
         void ClearMembership()
         {
             bloomFilter.Clear();

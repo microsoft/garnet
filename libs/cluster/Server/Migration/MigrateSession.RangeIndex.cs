@@ -177,7 +177,7 @@ namespace Garnet.cluster
             finally
             {
                 // Always clean up the sketch, even on failure, to unblock client operations
-                migrateOperation.sketch.Clear();
+                migrateOperation.sketch.RetireBatch();
                 migrateActivity.EndAndLogActivity(logger);
             }
         }

@@ -19,6 +19,7 @@ namespace Garnet.cluster
     /// current batch's key count. The batch-size constructor targets 64 keys per bucket with
     /// 16384 bits per bucket and three probes. The key collection's reserved entry is excluded from the batch size.
     /// Buckets are reused and cleared between batches; scan-ahead does not allocate another bitmap.
+    /// Empty filters skip clearing, and completed batches can retain their bitmap until the next rebuild.
     /// Explicitly supplied sketches and other users of this class can choose different dimensions.
     /// </para>
     /// <code>
@@ -40,16 +41,16 @@ namespace Garnet.cluster
     /// not aggregate probabilities across workers. Memory excludes key collections and other buffers.
     /// </para>
     /// <code>
-    /// Batch keys | Buckets | Bitmap/worker* | Bitmap/16 workers* | Bucketed FPR (%) | FPR improvement
-    /// -----------+---------+----------------+--------------------+------------------+----------------
-    ///       1024 |      16 |         32 KiB |            512 KiB |       0.00016502 |    36.70 times
-    ///       4096 |      64 |        128 KiB |              2 MiB |       0.00016536 |    36.62 times
-    ///       8192 |     128 |        256 KiB |              4 MiB |       0.00016542 |    36.61 times
-    ///      16384 |     256 |        512 KiB |              8 MiB |       0.00016545 |    36.60 times
-    ///      32768 |     512 |          1 MiB |             16 MiB |       0.00016546 |    36.60 times
-    ///      65536 |    1024 |          2 MiB |             32 MiB |       0.00016547 |    36.60 times
-    ///     131072 |    2048 |          4 MiB |             64 MiB |       0.00016547 |    36.60 times
-    ///     262143 |    4096 |          8 MiB |            128 MiB |       0.00016547 |    36.60 times
+    /// Batch keys | Buckets | Bitmap/worker* | Bitmap/16 workers* | Bucketed FPR (%) |
+    /// -----------+---------+----------------+--------------------+------------------+
+    ///       1024 |      16 |         32 KiB |            512 KiB |       0.00016502 |
+    ///       4096 |      64 |        128 KiB |              2 MiB |       0.00016536 |
+    ///       8192 |     128 |        256 KiB |              4 MiB |       0.00016542 |
+    ///      16384 |     256 |        512 KiB |              8 MiB |       0.00016545 |
+    ///      32768 |     512 |          1 MiB |             16 MiB |       0.00016546 |
+    ///      65536 |    1024 |          2 MiB |             32 MiB |       0.00016547 |
+    ///     131072 |    2048 |          4 MiB |             64 MiB |       0.00016547 |
+    ///     262143 |    4096 |          8 MiB |            128 MiB |       0.00016547 |
     ///
     /// * Both bucketed and global bitmaps have these memory sizes: bucketed/global memory = 1.
     /// FPR improvement = global FPR / bucketed FPR; larger values mean fewer false positives.
@@ -94,6 +95,7 @@ namespace Garnet.cluster
         readonly int bitMask;
         readonly int hashShift;
         readonly int hashCount;
+        bool hasEntries;
 
         /// <summary>
         /// Create a migration filter targeting 64 keys per bucket, 16384 bits per bucket, and three probes.
@@ -164,6 +166,7 @@ namespace Garnet.cluster
                 bitmap[bucketOffset + (bit >> 3)] |= (byte)(1 << (bit & 7));
                 hash >>= hashShift;
             }
+            hasEntries = true;
         }
 
         /// <summary>
@@ -197,8 +200,14 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Clear all membership without reallocating the bitmap.
+        /// Clear all membership without reallocating the bitmap or writing an already empty bitmap.
         /// </summary>
-        public void Clear() => Array.Clear(bitmap);
+        public void Clear()
+        {
+            if (!hasEntries)
+                return;
+            Array.Clear(bitmap);
+            hasEntries = false;
+        }
     }
 }
