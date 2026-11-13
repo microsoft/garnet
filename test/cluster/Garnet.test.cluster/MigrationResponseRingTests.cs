@@ -100,7 +100,7 @@ namespace Garnet.test.cluster
         void CreateKeysMigration(ClusterSession caller)
         {
             var nodeId = provider.clusterManager.CurrentConfig.LocalNodeId;
-            var sketch = new Sketch(keyCount: 64);
+            var sketch = new Sketch(bucketCount: 1, bfSize: 64);
             sketch.HashAndStore(PinnedSpanByte.FromPinnedSpan("cancelled-migration-key"u8));
             session = new MigrateSession(caller, provider, "127.0.0.1", ClusterTestContext.Port,
                 nodeId, null, null, nodeId, false, false, 10000, [0], sketch, TransferOption.KEYS);
@@ -110,7 +110,7 @@ namespace Garnet.test.cluster
         bool RegisterTask(out MigrateSession migration, SketchStatus status = SketchStatus.DELETING,
             HashSet<int> slots = null, string targetNodeId = null, TransferOption transferOption = TransferOption.KEYS)
         {
-            var sketch = new Sketch(keyCount: 64);
+            var sketch = new Sketch(bucketCount: 1, bfSize: 64);
             sketch.HashAndStore(PinnedSpanByte.FromPinnedSpan("task-store-access"u8));
             sketch.SetStatus(status);
             var nodeId = provider.clusterManager.CurrentConfig.LocalNodeId;
@@ -348,31 +348,164 @@ namespace Garnet.test.cluster
             }
         }
 
-        [TestCase(1024, 262144)]
-        [TestCase(1025, 524288)]
-        [TestCase(4096, 1048576)]
-        [TestCase(262143, 67108864)]
-        public void ConfiguredBatchSizeControlsBloomFilter(int keySendBatchSize, int bitmapBitCount)
+        [TestCase(1024, 16)]
+        [TestCase(1025, 32)]
+        [TestCase(4096, 64)]
+        [TestCase(4097, 128)]
+        [TestCase(8192, 128)]
+        [TestCase(16384, 256)]
+        [TestCase(32768, 512)]
+        [TestCase(65536, 1024)]
+        [TestCase(131072, 2048)]
+        [TestCase(262143, 4096)]
+        public void ConfiguredBatchSizeTargets64KeysPerBloomBucket(int keySendBatchSize, int bucketCount)
         {
             CreateOperation(1, keySendBatchSize: keySendBatchSize);
             ReadOnlySpan<byte> key = "migration-filter-key"u8;
             Assert.That(operation.sketch.TryHashAndStore(key), Is.True);
             var hash = HashUtils.MurmurHash2x64A(key);
             Assert.That(operation.sketch.Probe(hash, out _), Is.True);
-            Assert.That(operation.sketch.Probe(hash ^ (uint)bitmapBitCount, out _), Is.True);
-            Assert.That(operation.sketch.Probe(hash ^ ((ulong)bitmapBitCount << 32), out _), Is.True);
-            Assert.That(operation.sketch.Probe(hash ^ (uint)(bitmapBitCount >> 1), out _), Is.False);
-            Assert.That(operation.sketch.Probe(hash ^ ((ulong)(bitmapBitCount >> 1) << 32), out _), Is.False);
+            Assert.That(operation.sketch.Probe(hash ^ (uint)bucketCount, out _), Is.True);
+            Assert.That(operation.sketch.Probe(hash ^ (uint)(bucketCount >> 1), out _), Is.False);
+            for (var i = 0; i < 3; i++)
+            {
+                var shift = 16 + i * 16;
+                Assert.That(operation.sketch.Probe(hash ^ (1UL << (shift + 14)), out _), Is.True);
+                Assert.That(operation.sketch.Probe(hash ^ (1UL << (shift + 13)), out _), Is.False);
+            }
             operation.sketch.Clear();
             Assert.That(operation.sketch.Probe(hash, out _), Is.False);
         }
 
-        [TestCase(0)]
-        [TestCase(1)]
-        [TestCase(4)]
-        public void SketchMembershipRequiresBothPositions(int namespaceLength)
+        [Test]
+        public void BucketedFilterRequiresEveryPosition([Values(1, 16, 65536)] int bucketCount, [Values(1, 2, 3, 4)] int hashCount)
         {
-            var sketch = new Sketch(keyCount: 64);
+            var filter = new BucketedBloomFilter(bucketCount, bfSize: 64, hashCount: hashCount);
+            var hash = BucketedFilterHash(bucketCount, hashCount);
+            Assert.That(filter.Contains(hash), Is.False);
+            filter.Add(hash);
+            Assert.That(filter.Contains(hash), Is.True);
+            for (var i = 0; i < hashCount; i++)
+                Assert.That(filter.Contains(BucketedFilterHash(bucketCount, hashCount, i)), Is.False);
+            if (bucketCount > 1)
+                Assert.That(filter.Contains(hash ^ 1), Is.False);
+            if (bucketCount < BucketedBloomFilter.MaxBucketCount)
+                Assert.That(filter.Contains(hash ^ (uint)bucketCount), Is.True);
+
+            filter.Clear();
+            Assert.That(filter.Contains(hash), Is.False);
+            filter.Add(hash);
+            Assert.That(filter.Contains(hash), Is.True);
+        }
+
+        [TestCase(0u)]
+        [TestCase(7u)]
+        [TestCase(uint.MaxValue)]
+        public void BucketedFilterKeyAndHashOverloadsShareMembership(uint seed)
+        {
+            var filter = new BucketedBloomFilter(batchSize: 1024);
+            ReadOnlySpan<byte> key = "migration-filter-key"u8;
+            var hash = HashUtils.MurmurHash2x64A(key, seed);
+            Assert.That(filter.Contains(key, seed), Is.False);
+
+            filter.Add(key, seed);
+            Assert.That(filter.Contains(key, seed), Is.True);
+            Assert.That(filter.Contains(hash), Is.True);
+            Assert.That(filter.Contains(key, seed ^ 1), Is.False);
+
+            filter.Clear();
+            filter.Add(hash);
+            Assert.That(filter.Contains(key, seed), Is.True);
+        }
+
+        [TestCase(0)]
+        [TestCase(-1)]
+        [TestCase(4194305)]
+        [TestCase(int.MaxValue)]
+        public void BucketedFilterRejectsUnsupportedBatchSize(int batchSize)
+        {
+            Assert.That(() => new BucketedBloomFilter(batchSize),
+                Throws.TypeOf<ArgumentOutOfRangeException>());
+        }
+
+        static ulong BucketedFilterHash(int bucketCount, int hashCount, int changedHash = -1)
+        {
+            var hashBits = 48 / hashCount;
+            var hash = (ulong)(bucketCount - 1);
+            for (var i = 0; i < hashCount; i++)
+                hash |= (ulong)(i == changedHash ? i + 1 : 63 - i) << (16 + i * hashBits);
+            return hash;
+        }
+
+        [TestCase(0, 64, 2)]
+        [TestCase(-64, 64, 2)]
+        [TestCase(3, 64, 2)]
+        [TestCase(131072, 64, 2)]
+        [TestCase(1, 0, 2)]
+        [TestCase(1, -64, 2)]
+        [TestCase(1, 3, 2)]
+        [TestCase(1, 131072, 2)]
+        [TestCase(1, 64, 0)]
+        [TestCase(1, 64, 49)]
+        [TestCase(65536, 65536, 4)]
+        public void BucketedFilterRejectsInvalidConfiguration(int bucketCount, int bfSize, int hashCount)
+        {
+            Assert.That(() => new BucketedBloomFilter(bucketCount, bfSize, hashCount),
+                Throws.InstanceOf<ArgumentException>());
+        }
+
+        [TestCase(1, 1, 48)]
+        [TestCase(4, 4, 3)]
+        public void BucketedFilterSupportsSubByteBitmaps(int bucketCount, int bfSize, int hashCount)
+        {
+            var filter = new BucketedBloomFilter(bucketCount, bfSize, hashCount);
+            filter.Add(ulong.MaxValue);
+            Assert.That(filter.Contains(ulong.MaxValue), Is.True);
+            filter.Clear();
+            Assert.That(filter.Contains(ulong.MaxValue), Is.False);
+        }
+
+        [Test]
+        public void BucketedFilterRetainsAllInsertedHashes()
+        {
+            var filter = new BucketedBloomFilter(bucketCount: 1 << 16, bfSize: 16, hashCount: 3);
+            var hashes = new ulong[4096];
+            var random = new Random(42);
+            Span<byte> bytes = stackalloc byte[sizeof(ulong)];
+            for (var i = 0; i < hashes.Length; i++)
+            {
+                random.NextBytes(bytes);
+                hashes[i] = i switch { 0 => 0, 1 => ulong.MaxValue, _ => BinaryPrimitives.ReadUInt64LittleEndian(bytes) };
+                filter.Add(hashes[i]);
+            }
+            Assert.That(hashes.All(filter.Contains), Is.True);
+            filter.Clear();
+            Assert.That(hashes.All(hash => !filter.Contains(hash)), Is.True);
+        }
+
+        [Test]
+        public void BucketedFilterSupportsMaximumDimensions()
+        {
+            var filter = new BucketedBloomFilter(bucketCount: 1 << 16, bfSize: 1 << 16, hashCount: 3);
+            filter.Add(0);
+            filter.Add(ulong.MaxValue);
+            Assert.That(filter.Contains(0), Is.True);
+            Assert.That(filter.Contains(ulong.MaxValue), Is.True);
+            Assert.That(filter.Contains(0xffff000000000001), Is.False);
+            filter.Clear();
+            Assert.That(filter.Contains(0), Is.False);
+            Assert.That(filter.Contains(ulong.MaxValue), Is.False);
+        }
+
+        [TestCase(0, 1, 2)]
+        [TestCase(1, 1, 2)]
+        [TestCase(4, 1, 2)]
+        [TestCase(0, 65536, 3)]
+        [TestCase(1, 65536, 3)]
+        [TestCase(4, 65536, 3)]
+        public void SketchMembershipRequiresEveryPosition(int namespaceLength, int bucketCount, int hashCount)
+        {
+            var sketch = new Sketch(bucketCount: bucketCount, bfSize: 64, hashCount: hashCount);
             ReadOnlySpan<byte> key = "migration-filter-key"u8;
             ulong hash;
             if (namespaceLength == 0)
@@ -387,22 +520,25 @@ namespace Garnet.test.cluster
                 Assert.That(sketch.TryHashAndStore(ns, key), Is.True);
                 hash = HashUtils.MurmurHash2x64A(key, seed: (uint)VectorManager.ExtractContextFromNamespaces(ns));
             }
-            AssertSketchMembership(sketch, hash);
+            AssertSketchMembership(sketch, hash, hashCount);
         }
 
-        [Test]
-        public void ExplicitKeysSketchRequiresBothPositions()
+        [TestCase(1, 2)]
+        [TestCase(65536, 3)]
+        public void ExplicitKeysSketchRequiresEveryPosition(int bucketCount, int hashCount)
         {
-            var sketch = new Sketch(keyCount: 64);
+            var sketch = new Sketch(bucketCount: bucketCount, bfSize: 64, hashCount: hashCount);
             var key = PinnedSpanByte.FromPinnedSpan("migration-filter-key"u8);
             sketch.HashAndStore(key);
-            AssertSketchMembership(sketch, HashUtils.MurmurHash2x64A(key.ReadOnlySpan));
+            AssertSketchMembership(sketch, HashUtils.MurmurHash2x64A(key.ReadOnlySpan), hashCount);
         }
 
         [Test]
-        public void CollectedBatchRebuildsProtection([Values(0, 1, 4)] int namespaceLength, [Values] bool reuseCollection)
+        public void CollectedBatchRebuildsProtection([Values(0, 1, 4)] int namespaceLength, [Values] bool reuseCollection, [Values] bool bucketed)
         {
-            var sketch = new Sketch(keyCount: 64);
+            var bucketCount = bucketed ? 1 << 16 : 1;
+            var hashCount = bucketed ? 3 : 2;
+            var sketch = new Sketch(bucketCount: bucketCount, bfSize: 64, hashCount: hashCount);
             Assert.That(sketch.TryHashAndStore("previous-filter-key"u8), Is.True);
             var previousHash = HashUtils.MurmurHash2x64A("previous-filter-key"u8);
             sketch.SetStatus(SketchStatus.MIGRATED);
@@ -432,24 +568,26 @@ namespace Garnet.test.cluster
             if (!reuseCollection)
                 Assert.That(previous.IsEmpty, Is.True);
             Assert.That(sketch.Probe(previousHash, out _), Is.False);
-            AssertSketchMembership(sketch, hash);
+            AssertSketchMembership(sketch, hash, hashCount);
         }
 
-        static void AssertSketchMembership(Sketch sketch, ulong hash)
+        static void AssertSketchMembership(Sketch sketch, ulong hash, int hashCount = 2)
         {
-            var first = (uint)hash & 63;
-            var second = (uint)(hash >> 32) & 63;
-            var missing = (first + 1) & 63;
-            if (missing == second)
-                missing = (missing + 1) & 63;
+            var hashBits = 48 / hashCount;
+            var positions = Enumerable.Range(0, hashCount)
+                .Select(i => (int)(hash >> (16 + i * hashBits)) & 63).ToArray();
+            var missing = Enumerable.Range(0, 64).First(bit => !positions.Contains(bit));
 
             sketch.SetStatus(SketchStatus.DELETING);
             Assert.That(sketch.Probe(hash, out var status), Is.True);
             Assert.That(status, Is.EqualTo(SketchStatus.DELETING));
-            Assert.That(sketch.Probe(((ulong)missing << 32) | first, out status), Is.False);
-            Assert.That(status, Is.EqualTo(SketchStatus.INITIALIZING));
-            Assert.That(sketch.Probe(((ulong)second << 32) | missing, out status), Is.False);
-            Assert.That(status, Is.EqualTo(SketchStatus.INITIALIZING));
+            for (var i = 0; i < hashCount; i++)
+            {
+                var shift = 16 + i * hashBits;
+                var absent = (hash & ~(63UL << shift)) | ((ulong)missing << shift);
+                Assert.That(sketch.Probe(absent, out status), Is.False);
+                Assert.That(status, Is.EqualTo(SketchStatus.INITIALIZING));
+            }
 
             sketch.Clear();
             Assert.That(sketch.Probe(hash, out status), Is.False);

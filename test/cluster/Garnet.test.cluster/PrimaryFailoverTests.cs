@@ -1242,7 +1242,7 @@ namespace Garnet.test.cluster
             var pin = GCHandle.Alloc(keyBytes, GCHandleType.Pinned);
             var key = MakePinnedKey(pin.AddrOfPinnedObject(), keyBytes.Length);
             var slot = HashSlotUtils.HashSlot(key);
-            var sketch = new Sketch(keyCount: 64);
+            var sketch = new Sketch(bucketCount: 1, bfSize: 64);
             sketch.HashAndStore(key);
             sketch.SetStatus(SketchStatus.DELETING);
             const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;

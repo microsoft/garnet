@@ -4,8 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
-using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
 
@@ -13,19 +11,36 @@ namespace Garnet.cluster
 {
     internal class Sketch
     {
-        readonly byte[] bitmap;
-        readonly int size;
+        readonly BucketedBloomFilter bloomFilter;
         public ArgSliceVector argSliceVector { get; private set; }
 
         public List<(PinnedSpanByte, bool)> Keys { private set; get; }
         public SketchStatus Status { private set; get; }
 
-        public Sketch(int keyCount = 1 << 20, int maxBatchSize = 1 << 18)
+        /// <summary>
+        /// Create a migration sketch with a batch-sized filter and one reserved key collection entry.
+        /// </summary>
+        /// <param name="keySendBatchSize">Maximum keys per migration batch.</param>
+        public Sketch(int keySendBatchSize)
+            : this(new BucketedBloomFilter(keySendBatchSize), maxBatchSize: keySendBatchSize + 1)
         {
-            if (!(keyCount > 0 && (keyCount & (keyCount - 1)) == 0))
-                throw new GarnetException($"{nameof(Sketch)} size should be power of 2!");
-            size = keyCount;
-            bitmap = GC.AllocateArray<byte>(keyCount >> 3, pinned: true);
+        }
+
+        /// <summary>
+        /// Create a migration sketch with independently sized Bloom buckets and a bounded key collection.
+        /// </summary>
+        /// <param name="bucketCount">Number of Bloom buckets.</param>
+        /// <param name="bfSize">Bloom-filter bits per bucket.</param>
+        /// <param name="maxBatchSize">Key collection capacity, including its reserved entry.</param>
+        /// <param name="hashCount">Number of Bloom probes derived from the upper 48 hash bits.</param>
+        public Sketch(int bucketCount = BucketedBloomFilter.DefaultBucketCount, int bfSize = BucketedBloomFilter.DefaultBfSize, int maxBatchSize = 1 << 18, int hashCount = BucketedBloomFilter.DefaultMigrationHashCount)
+            : this(new BucketedBloomFilter(bucketCount, bfSize, hashCount), maxBatchSize)
+        {
+        }
+
+        Sketch(BucketedBloomFilter bloomFilter, int maxBatchSize)
+        {
+            this.bloomFilter = bloomFilter;
             Status = SketchStatus.INITIALIZING;
             Keys = [];
             argSliceVector = new(maxBatchSize);
@@ -38,7 +53,7 @@ namespace Garnet.cluster
             if (!argSliceVector.TryAddItem(key))
                 return false;
 
-            AddHash(HashUtils.MurmurHash2x64A(key));
+            bloomFilter.Add(key);
 
             return true;
         }
@@ -52,7 +67,7 @@ namespace Garnet.cluster
 
             var nsRaw = VectorManager.ExtractContextFromNamespaces(ns);
 
-            AddHash(HashUtils.MurmurHash2x64A(key, seed: (uint)nsRaw));
+            bloomFilter.Add(key, seed: (uint)nsRaw);
 
             return true;
         }
@@ -63,7 +78,7 @@ namespace Garnet.cluster
         /// <param name="key"></param>
         public void HashAndStore(PinnedSpanByte key)
         {
-            AddHash(HashUtils.MurmurHash2x64A(key.ReadOnlySpan));
+            bloomFilter.Add(key.ReadOnlySpan);
             Keys.Add((key, false));
         }
 
@@ -79,27 +94,14 @@ namespace Garnet.cluster
             if (previous != batch)
                 previous.Clear();
             argSliceVector = batch;
-            ClearBitmap();
+            ClearMembership();
             foreach (var (ns, key, hasNamespace) in batch)
             {
                 var seed = hasNamespace ? (uint)VectorManager.ExtractContextFromNamespaces(ns.ReadOnlySpan) : 0;
-                AddHash(HashUtils.MurmurHash2x64A(key.ReadOnlySpan, seed));
+                bloomFilter.Add(key.ReadOnlySpan, seed);
             }
             return previous;
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void AddHash(ulong keyHash)
-        {
-            SetBit((int)keyHash & (size - 1));
-            SetBit((int)(keyHash >> 32) & (size - 1));
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void SetBit(int slot) => bitmap[slot >> 3] |= (byte)(1 << (slot & 7));
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool IsSet(int slot) => (bitmap[slot >> 3] & (1 << (slot & 7))) != 0;
 
         /// <summary>
         /// Probe sketch using a precomputed key hash.
@@ -109,8 +111,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool Probe(ulong keyHash, out SketchStatus status)
         {
-            var exists = IsSet((int)keyHash & (size - 1)) &&
-                IsSet((int)(keyHash >> 32) & (size - 1));
+            var exists = bloomFilter.Contains(keyHash);
             status = exists ? Status : SketchStatus.INITIALIZING;
             return exists;
         }
@@ -121,13 +122,12 @@ namespace Garnet.cluster
         public void Clear()
         {
             argSliceVector.Clear();
-            ClearBitmap();
+            ClearMembership();
         }
 
-        void ClearBitmap()
+        void ClearMembership()
         {
-            for (var i = 0; i < (size >> 3); i++)
-                bitmap[i] = 0;
+            bloomFilter.Clear();
             Status = SketchStatus.INITIALIZING;
         }
 

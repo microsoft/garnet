@@ -1,0 +1,204 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
+using System.Numerics;
+using System.Runtime.CompilerServices;
+using Garnet.common;
+
+namespace Garnet.cluster
+{
+    /// <summary>
+    /// Single-writer Bloom filter with equally sized buckets in one contiguous bitmap.
+    /// Callers coordinate construction and clearing with readers before publishing membership.
+    /// Key overloads use MurmurHash2x64A; hash overloads allow one hash to be reused across filters.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// SLOTS migration sizes each worker's filter once from its configured maximum batch size, not the
+    /// current batch's key count. The batch-size constructor targets 64 keys per bucket with
+    /// 16384 bits per bucket and three probes. The key collection's reserved entry is excluded from the batch size.
+    /// Buckets are reused and cleared between batches; scan-ahead does not allocate another bitmap.
+    /// Explicitly supplied sketches and other users of this class can choose different dimensions.
+    /// </para>
+    /// <code>
+    /// N = configured maximum keys per batch, per worker
+    /// B = NextPowerOfTwo(Ceiling(N / 64)) buckets
+    /// S = 16384 bits per bucket; k = 3 probes
+    /// Memory per worker = B * S / 8 = B * 2048 bytes
+    /// Memory for 16 workers = 16 * B * 2048 bytes
+    ///
+    /// At power-of-two batch sizes, this budgets 256 bits (32 bytes) per key.
+    /// Rounding other batch sizes up keeps the average occupancy at most 64 keys per bucket;
+    /// individual buckets can contain more keys. This is not a per-bucket capacity limit.
+    /// </code>
+    /// <para>
+    /// The comparison global bitmap uses M = NextPowerOfTwo(N * 256) bits and two probes.
+    /// Across the supported batch-size range [1024, 262143], it consumes the same bitmap memory.
+    /// Its false-positive rate is approximately 0.006056%. The table assumes n = N inserted distinct
+    /// keys and uniformly distributed, independent hash pieces; rates are theoretical per filter,
+    /// not aggregate probabilities across workers. Memory excludes key collections and other buffers.
+    /// </para>
+    /// <code>
+    /// Batch keys | Buckets | Bitmap/worker* | Bitmap/16 workers* | Bucketed FPR (%) | FPR improvement
+    /// -----------+---------+----------------+--------------------+------------------+----------------
+    ///       1024 |      16 |         32 KiB |            512 KiB |       0.00016502 |    36.70 times
+    ///       4096 |      64 |        128 KiB |              2 MiB |       0.00016536 |    36.62 times
+    ///       8192 |     128 |        256 KiB |              4 MiB |       0.00016542 |    36.61 times
+    ///      16384 |     256 |        512 KiB |              8 MiB |       0.00016545 |    36.60 times
+    ///      32768 |     512 |          1 MiB |             16 MiB |       0.00016546 |    36.60 times
+    ///      65536 |    1024 |          2 MiB |             32 MiB |       0.00016547 |    36.60 times
+    ///     131072 |    2048 |          4 MiB |             64 MiB |       0.00016547 |    36.60 times
+    ///     262143 |    4096 |          8 MiB |            128 MiB |       0.00016547 |    36.60 times
+    ///
+    /// * Both bucketed and global bitmaps have these memory sizes: bucketed/global memory = 1.
+    /// FPR improvement = global FPR / bucketed FPR; larger values mean fewer false positives.
+    /// </code>
+    /// <para>
+    /// The following calculation includes bucket-load variance and coincident probe positions.
+    /// A_j is the probability that none of j specified positions in the query's bucket are set.
+    /// q_j is the probability that the query's three probes select exactly j distinct positions.
+    /// P and P_global are probabilities; multiply by 100 for the percentages in the table.
+    /// Evaluate with high precision to avoid cancellation in the inclusion-exclusion terms.
+    /// </para>
+    /// <code>
+    /// A_j = (1 - (1 - (1 - j/S)^3) / B)^n, for j = 1, 2, 3
+    /// q_1 = 1/S^2
+    /// q_2 = 3*(S-1)/S^2
+    /// q_3 = (S-1)*(S-2)/S^2
+    /// P = q_1*(1-A_1) + q_2*(1-2*A_1+A_2) + q_3*(1-3*A_1+3*A_2-A_3)
+    ///
+    /// U_j = (1 - j/M)^(2*n), for j = 1, 2
+    /// P_global = (1-U_1)/M + (1-1/M)*(1-2*U_1+U_2)
+    /// </code>
+    /// <para>
+    /// The third probe improves precision at the same memory budget, but adds an insertion bit update.
+    /// Bucket selection is address calculation, not an additional membership probe. A bucket occupies
+    /// 2 KiB, not one cache line; sizing alone does not establish a CPU or throughput improvement.
+    /// </para>
+    /// </remarks>
+    internal sealed class BucketedBloomFilter
+    {
+        public const int MaxBucketCount = 1 << 16;
+        public const int MaxBfSize = 1 << 16;
+        public const int DefaultBucketCount = 1024;
+        public const int DefaultBfSize = 16384;
+        public const int DefaultMigrationHashCount = 3;
+        const int TargetKeysPerBucket = 64;
+        const int BucketIndexBits = 16;
+        const int HashBits = 64 - BucketIndexBits;
+
+        readonly byte[] bitmap;
+        readonly int bucketMask;
+        readonly int bytesPerBucket;
+        readonly int bitMask;
+        readonly int hashShift;
+        readonly int hashCount;
+
+        /// <summary>
+        /// Create a migration filter targeting 64 keys per bucket, 16384 bits per bucket, and three probes.
+        /// </summary>
+        /// <param name="batchSize">Maximum keys per batch, excluding the key collection's reserved entry.</param>
+        public BucketedBloomFilter(int batchSize)
+            : this(GetBucketCountForBatch(batchSize), DefaultBfSize, DefaultMigrationHashCount)
+        {
+        }
+
+        static int GetBucketCountForBatch(int batchSize)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(batchSize, 1);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(batchSize, MaxBucketCount * TargetKeysPerBucket);
+            return (int)BitOperations.RoundUpToPowerOf2((uint)(((batchSize - 1) / TargetKeysPerBucket) + 1));
+        }
+
+        /// <summary>
+        /// Use the low 16 hash bits to select a bucket and split the remaining 48 bits into equal-width indices.
+        /// Unused high bits are ignored.
+        /// </summary>
+        /// <param name="bucketCount">Number of buckets, a positive power of two no greater than 65536.</param>
+        /// <param name="bfSize">Bits per bucket, a positive power of two no greater than 65536.</param>
+        /// <param name="hashCount">Number of indices, each wide enough to address every bit in its bucket.</param>
+        /// <remarks>Each bucket is rounded up to a whole byte.</remarks>
+        public BucketedBloomFilter(int bucketCount, int bfSize, int hashCount = 2)
+        {
+            if (!BitOperations.IsPow2(bucketCount) || bucketCount > MaxBucketCount)
+                throw new ArgumentOutOfRangeException(nameof(bucketCount), "Bucket count must be a positive power of two no greater than 65536.");
+            if (!BitOperations.IsPow2(bfSize) || bfSize > MaxBfSize)
+                throw new ArgumentOutOfRangeException(nameof(bfSize), "Bits per bucket must be a positive power of two no greater than 65536.");
+
+            ArgumentOutOfRangeException.ThrowIfLessThan(hashCount, 1);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(hashCount, HashBits);
+
+            hashShift = HashBits / hashCount;
+            if (hashShift < BitOperations.Log2((uint)bfSize))
+                throw new ArgumentException("Hash indices must be wide enough to address the entire bucket.", nameof(hashCount));
+
+            bucketMask = bucketCount - 1;
+            bytesPerBucket = (bfSize + 7) >> 3;
+            bitMask = bfSize - 1;
+            this.hashCount = hashCount;
+            bitmap = GC.AllocateArray<byte>(bucketCount * bytesPerBucket, pinned: true);
+        }
+
+        /// <summary>
+        /// Hash a key and add its membership.
+        /// </summary>
+        /// <param name="key">Key bytes.</param>
+        /// <param name="seed">Hash seed, including any namespace context.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Add(ReadOnlySpan<byte> key, uint seed = 0)
+            => Add(HashUtils.MurmurHash2x64A(key, seed));
+
+        /// <summary>
+        /// Add membership using a precomputed, uniformly distributed hash.
+        /// </summary>
+        /// <param name="hash">The full key hash.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Add(ulong hash)
+        {
+            var bucketOffset = ((int)hash & bucketMask) * bytesPerBucket;
+            hash >>= BucketIndexBits;
+            for (var i = 0; i < hashCount; i++)
+            {
+                var bit = (int)hash & bitMask;
+                bitmap[bucketOffset + (bit >> 3)] |= (byte)(1 << (bit & 7));
+                hash >>= hashShift;
+            }
+        }
+
+        /// <summary>
+        /// Hash a key and check its membership; positive results may be false positives.
+        /// </summary>
+        /// <param name="key">Key bytes.</param>
+        /// <param name="seed">The same hash seed used when adding the key.</param>
+        /// <returns>Whether every selected bit is set.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Contains(ReadOnlySpan<byte> key, uint seed = 0)
+            => Contains(HashUtils.MurmurHash2x64A(key, seed));
+
+        /// <summary>
+        /// Check membership using a precomputed hash; positive results may be false positives.
+        /// </summary>
+        /// <param name="hash">The full key hash.</param>
+        /// <returns>Whether every selected bit is set.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Contains(ulong hash)
+        {
+            var bucketOffset = ((int)hash & bucketMask) * bytesPerBucket;
+            hash >>= BucketIndexBits;
+            for (var i = 0; i < hashCount; i++)
+            {
+                var bit = (int)hash & bitMask;
+                if ((bitmap[bucketOffset + (bit >> 3)] & (1 << (bit & 7))) == 0)
+                    return false;
+                hash >>= hashShift;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Clear all membership without reallocating the bitmap.
+        /// </summary>
+        public void Clear() => Array.Clear(bitmap);
+    }
+}

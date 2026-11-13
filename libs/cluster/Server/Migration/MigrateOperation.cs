@@ -5,7 +5,6 @@ using System;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Numerics;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -73,14 +72,13 @@ namespace Garnet.cluster
             {
                 this.session = session;
                 var keySendBatchSize = session.clusterProvider.serverOptions.MigrateKeySendBatchSize;
-                var sketchBitCount = (int)BitOperations.RoundUpToPowerOf2((uint)(keySendBatchSize << 8));
                 // ArgSliceVector reserves one slot beyond the usable key limit.
                 collectionBatchCapacity = keySendBatchSize + 1;
                 deleteBatchSize = session.clusterProvider.serverOptions.MigrationDeleteBatchSize;
                 pendingResponses = new Task<string>[session.clusterProvider.serverOptions.MigrationPipelineDepth];
                 gcs = session.GetGarnetClient();
                 localServerSession = session.GetLocalSession();
-                this.sketch = sketch ?? new(keyCount: sketchBitCount, maxBatchSize: collectionBatchCapacity);
+                this.sketch = sketch ?? new(keySendBatchSize);
                 storeScan = new StoreScan(this);
                 keysToDelete = [];
                 vectorSetsIndexKeysToMigrate = new(ByteArrayComparer.Instance);
