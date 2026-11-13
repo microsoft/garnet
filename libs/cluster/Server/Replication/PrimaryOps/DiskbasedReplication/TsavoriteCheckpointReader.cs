@@ -59,7 +59,7 @@ namespace Garnet.cluster
                     logFileInfo.hybridLogFileStartAddress,
                     logFileInfo.hybridLogFileEndAddress));
 
-                if (logFileInfo.hasSnapshotObjects)
+                if (logFileInfo.hasHybridLogObjects)
                     fileDataSources.Add(CreateFileDataSource(
                         CheckpointFileType.STORE_HLOG_OBJ,
                         checkpointEntry.metadata.storeHlogToken,
@@ -74,21 +74,25 @@ namespace Garnet.cluster
                 0,
                 indexSize));
 
-            // 3. Send snapshot files
-            if (logFileInfo.snapshotFileEndAddress > PageHeader.Size)
+            // 3. Send snapshot files. The replica's recovery reads the snapshot file only from snapshotFileStartAddress, and the snapshot flush skips
+            // pages that eviction passes, all below that address, so the file may lack them. The snapshot object log is written sequentially from 0,
+            // so it has no gaps and is sent whole whenever it has data.
+            if (logFileInfo.snapshotFileStartAddress < logFileInfo.snapshotFileEndAddress)
             {
                 fileDataSources.Add(CreateFileDataSource(
                     CheckpointFileType.STORE_SNAPSHOT,
                     checkpointEntry.metadata.storeHlogToken,
-                    0,
+                    logFileInfo.snapshotFileStartAddress,
                     logFileInfo.snapshotFileEndAddress));
+            }
 
-                if (logFileInfo.hasSnapshotObjects)
-                    fileDataSources.Add(CreateFileDataSource(
-                        CheckpointFileType.STORE_SNAPSHOT_OBJ,
-                        checkpointEntry.metadata.storeHlogToken,
-                        0,
-                        logFileInfo.snapshotObjectFileEndAddress));
+            if (logFileInfo.hasSnapshotObjects)
+            {
+                fileDataSources.Add(CreateFileDataSource(
+                    CheckpointFileType.STORE_SNAPSHOT_OBJ,
+                    checkpointEntry.metadata.storeHlogToken,
+                    0,
+                    logFileInfo.snapshotObjectFileEndAddress));
             }
 
             // 4. Metadata sources
