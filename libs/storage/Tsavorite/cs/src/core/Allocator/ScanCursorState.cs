@@ -8,7 +8,7 @@ namespace Tsavorite.core
         internal IScanIteratorFunctions functions;
         internal long acceptedCount;     // Number of records pushed to and accepted by the caller
         internal bool endBatch;          // End the batch (but return a valid cursor for the next batch, as if "count" records had been returned)
-        internal bool retryLastRecord;   // Retry the last record when returning a valid cursor
+        internal long retryAddress;     // Earliest original address requested for retry in this batch
         internal bool stop;              // Stop the operation (as if all records in the db had been returned)
 
         internal void Initialize(IScanIteratorFunctions scanIteratorFunctions)
@@ -16,7 +16,7 @@ namespace Tsavorite.core
             functions = scanIteratorFunctions;
             acceptedCount = 0;
             endBatch = false;
-            retryLastRecord = false;
+            retryAddress = long.MaxValue;
             stop = false;
         }
     }

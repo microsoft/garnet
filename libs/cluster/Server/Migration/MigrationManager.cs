@@ -41,7 +41,7 @@ namespace Garnet.cluster
             this.logger = logger;
             this.migrationTaskStore = new MigrateSessionTaskStore(logger);
             this.clusterProvider = clusterProvider;
-            var sendBufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
+            var sendBufferSize = clusterProvider.serverOptions.GetMigrationSendBufferSize();
             this.networkBufferSettings = new NetworkBufferSettings(sendBufferSize, initialReceiveBufferSize);
             this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: PoolOwnerType.Migration, logger: logger);
 
@@ -49,7 +49,10 @@ namespace Garnet.cluster
             logger?.LogInformation("NetworkBufferSettings.initialReceiveBufferSize:{initialReceiveBufferSize}", networkBufferSettings.initialReceiveBufferSize);
             logger?.LogInformation("NetworkBufferSettings.maxReceiveBufferSize:{maxReceiveBufferSize}", networkBufferSettings.maxReceiveBufferSize);
             logger?.LogInformation("ParallelMigrateTasks:{ParallelMigrateTasks}", clusterProvider.serverOptions.ParallelMigrateTaskCount);
-            logger?.LogInformation("FastMigrate:{FastMigrate}", clusterProvider.serverOptions.FastMigrate ? "Enabled" : "Disabled");
+            logger?.LogInformation("MigrateKeySendBatchSize:{MigrateKeySendBatchSize}", clusterProvider.serverOptions.MigrateKeySendBatchSize);
+            logger?.LogInformation("UseScanAheadMigration:{UseScanAheadMigration}", clusterProvider.serverOptions.UseScanAheadMigration);
+            logger?.LogInformation("MigrationPipelineDepth:{MigrationPipelineDepth}", clusterProvider.serverOptions.MigrationPipelineDepth);
+            logger?.LogInformation("MigrationDeleteBatchSize:{MigrationDeleteBatchSize}", clusterProvider.serverOptions.MigrationDeleteBatchSize);
             logger?.LogInformation("ServerOptions.LoggingFrequency:{LoggingFrequency}", clusterProvider.serverOptions.LoggingFrequency);
             logger?.LogInformation("StoreWrapper.LoggingFrequency:{LoggingFrequency}", clusterProvider.storeWrapper.loggingFrequency);
         }
@@ -107,7 +110,7 @@ namespace Garnet.cluster
             bool replaceOption,
             int timeout,
             HashSet<int> slots,
-            Sketch sketch,
+            MigrationBatch<KeysMigrationFilter> sketch,
             TransferOption transferOption,
             out MigrateSession mSession) => migrationTaskStore.TryAddMigrateSession(
                 clusterSession,

@@ -38,7 +38,7 @@ namespace Garnet.cluster
                 logger?.LogTrace("Sending CLUSTER SETSLOTRANGE {state} {nodeid} {slots}", state, nodeid ?? "null", ClusterManager.GetRange([.. _sslots]));
 
                 var result = await client.SetSlotRange(stateBytes, nodeid, _slotRanges)
-                    .WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+                    .WaitAsync(_timeout, migrationCancellationSource.Token).ConfigureAwait(false);
 
                 // Check if setslotsrange executed correctly
                 if (!result.Equals("OK", StringComparison.Ordinal))
@@ -91,7 +91,7 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Begin migration task, which owns the reference the task store took for it when the session was added
+        /// Begin migration task
         /// </summary>
         /// <returns></returns>
         public async ValueTask<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryStartMigrationTaskAsync()
@@ -115,12 +115,11 @@ namespace Garnet.cluster
                 {
                     if (!clusterProvider.migrationManager.TryRemoveMigrationTask(this))
                         logger?.LogError("Could not remove MIGRATE KEYS session");
-                    ReleaseReference();
                 }
             }
             else
             {
-                // This will execute as a background task for the slots or slotsrange variant, which takes over the reference
+                // This will execute as a background task for the slots or slotsrange variant
                 _ = BeginAsyncMigrationTaskAsync();
             }
 
@@ -128,7 +127,7 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Migrate slots session background task, which owns a reference to the session
+        /// Migrate slots session background task
         /// </summary>
         private async Task BeginAsyncMigrationTaskAsync()
         {
@@ -136,9 +135,14 @@ namespace Garnet.cluster
             await Task.Yield();
 
             var configResumed = true;
+            var enteredWorkers = 0;
             try
             {
-                clusterProvider.storeWrapper.store.PauseRevivification(_timeout, _cts.Token);
+                // Each operation has one owner; child scans join before the driver releases these lifetimes.
+                for (; enteredWorkers < migrateOperation.Length; enteredWorkers++)
+                    migrateOperation[enteredWorkers].EnterWorker();
+
+                clusterProvider.storeWrapper.store.PauseRevivification(_timeout, migrationCancellationSource.Token);
 
                 // Set target node to import state
                 if (!await TrySetSlotRangesAsync(GetSourceNodeId, MigrateState.IMPORT).ConfigureAwait(false))
@@ -226,15 +230,20 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    // Throws if the node has disposed its cluster manager while shutting down
                     if (!configResumed) clusterProvider.clusterManager.ResumeConfigMerge();
                     clusterProvider.storeWrapper.store.ResumeRevivification();
                 }
                 finally
                 {
-                    // Shutdown waits for the migration operations, which this reference keeps alive
-                    _ = clusterProvider.migrationManager.TryRemoveMigrationTask(this);
-                    ReleaseReference();
+                    try
+                    {
+                        _ = clusterProvider.migrationManager.TryRemoveMigrationTask(this);
+                    }
+                    finally
+                    {
+                        for (var i = 0; i < enteredWorkers; i++)
+                            migrateOperation[i].ExitWorker();
+                    }
                 }
             }
         }

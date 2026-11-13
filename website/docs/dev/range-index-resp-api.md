@@ -2740,7 +2740,7 @@ The stream format across one or more chunks:
    `SnapshotRangeIndexAndCreateReader`. The key is **not** added to the scan sketch — it
    is handled out-of-band after the scan completes.
 
-2. **Sketch-protected batch migration.** After all parallel scan tasks complete,
+2. **MigrationBatch-protected batch migration.** After all parallel scan tasks complete,
    `MigrateRangeIndexKeysAsync` runs a single sketch cycle for all discovered RI keys:
 
    ```
@@ -2845,7 +2845,7 @@ When a slot is in `MIGRATING` state, `CanOperateOnKey` calls
 `migrationManager.CanAccessKey(key, slot, readOnly)`, which probes the sketch. Behavior
 depends on the sketch status:
 
-| Sketch Status | Read commands (RI.GET, RI.SCAN…) | Write commands (RI.SET, RI.CREATE…) |
+| MigrationBatch Status | Read commands (RI.GET, RI.SCAN…) | Write commands (RI.SET, RI.CREATE…) |
 |---|---|---|
 | `INITIALIZING` | ✅ Allowed | ✅ Allowed |
 | `TRANSMITTING` | ✅ Allowed | ❌ **Returns `-TRYAGAIN`** |

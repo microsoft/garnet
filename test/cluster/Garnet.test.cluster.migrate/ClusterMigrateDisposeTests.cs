@@ -134,7 +134,7 @@ namespace Garnet.test.cluster
         static extern ref MigrateSession[] MigrateSessions(MigrateSessionTaskStore store);
 
         [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "migrateOperation")]
-        static extern ref MigrateSession.MigrateOperation[] MigrateOperations(MigrateSession session);
+        static extern ref MigrateSession.MigrateOperation<BucketedBloomFilter>[] MigrateOperations(MigrateSession session);
 
         /// <summary>
         /// Creates a two node cluster with every slot on the first node, and stores the key on it.

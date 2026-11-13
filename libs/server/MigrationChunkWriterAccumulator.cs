@@ -53,6 +53,15 @@ namespace Garnet.server
         /// <summary>Length of the record's inline portion (in <see cref="UnifiedOutput.SpanByteAndMemory"/>); set by the writer.</summary>
         public int InlineLength { get; set; }
 
+        /// <summary>The current record type, used to defer specialized migration until after key discovery.</summary>
+        public byte RecordType { get; set; }
+
+        /// <summary>Vector index metadata captured by the protected migration read.</summary>
+        public byte[] VectorIndexValue { get; set; }
+
+        /// <summary>Absolute expiration of the captured vector index, if present.</summary>
+        public DateTime? VectorIndexExpiration { get; set; }
+
         /// <summary>Reset for reuse before capturing the next record.</summary>
         public void Reset()
         {
@@ -62,6 +71,9 @@ namespace Garnet.server
             objectValueChunks.Reset();
             hasObjectValue = false;
             InlineLength = 0;
+            RecordType = 0;
+            VectorIndexValue = null;
+            VectorIndexExpiration = null;
         }
 
         /// <summary>Release the pooled chunk buffers of the last captured record. <see cref="Reset"/> only runs when another

@@ -25,7 +25,8 @@ namespace Garnet.cluster
         /// Uses <see cref="RangeIndexManager.SnapshotRangeIndexAndCreateReader"/> to obtain an async
         /// migration reader that snapshots and streams the BfTree data.
         /// </summary>
-        private async Task<bool> TransmitRangeIndexAsync(MigrateOperation migrateOperation, byte[] keyBytes, int chunkSize, CancellationToken cancellationToken)
+        private async Task<bool> TransmitRangeIndexAsync<TFilter>(MigrateOperation<TFilter> migrateOperation, byte[] keyBytes, int chunkSize, CancellationToken cancellationToken)
+            where TFilter : struct, IBloomFilter
         {
             if (!clusterProvider.serverOptions.EnableRangeIndexPreview)
             {
@@ -37,6 +38,7 @@ namespace Garnet.cluster
 
             var sessionClient = migrateOperation.Client;
             var buffer = ArrayPool<byte>.Shared.Rent(chunkSize);
+            var sendChunkSize = Math.Min(chunkSize, NetworkBufferSettings.MaxSendBufferContentSize);
             var transmitActivity = RangeIndexMigrationActivities.TransmitActivity.StartActivity();
             try
             {
@@ -47,15 +49,16 @@ namespace Garnet.cluster
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    var payloadLen = await reader.ReadNextChunkAsync(buffer, cancellationToken).ConfigureAwait(false);
+                    // Drain the reader's independent file buffer in send-sized chunks without splitting framing elements.
+                    var payloadLen = await reader.ReadNextChunkAsync(buffer.AsMemory(0, sendChunkSize), cancellationToken).ConfigureAwait(false);
                     if (payloadLen == 0)
                     {
                         transmitActivity.OnError("Zero-length payload from reader");
-                        logger?.LogError("TransmitRangeIndexAsync: reader returned zero-length payload with a {Size}-byte buffer for key {key}", chunkSize, Encoding.UTF8.GetString(keyBytes));
+                        logger?.LogError("TransmitRangeIndexAsync: reader returned zero-length payload with a {Size}-byte buffer for key {key}", sendChunkSize, Encoding.UTF8.GetString(keyBytes));
                         return false;
                     }
 
-                    if (!await WriteOrSendRecordSpanAsync(sessionClient, MigrationRecordSpanType.SerializedRangeIndexStream, buffer.AsSpan(0, payloadLen)).ConfigureAwait(false))
+                    if (!await WriteOrSendRecordSpanAsync(migrateOperation, MigrationRecordSpanType.SerializedRangeIndexStream, buffer.AsSpan(0, payloadLen)).ConfigureAwait(false))
                     {
                         transmitActivity.OnError("Failed to write chunk");
                         logger?.LogError("TransmitRangeIndexAsync: failed to write chunk for key {key}", Encoding.UTF8.GetString(keyBytes));
@@ -66,7 +69,7 @@ namespace Garnet.cluster
                 }
 
                 // Force flush and await ACK
-                if (!await HandleMigrateTaskResponseAsync(sessionClient.SendAndResetIterationBuffer()).ConfigureAwait(false))
+                if (!await migrateOperation.HandleMigrateTaskResponseAsync(sessionClient.SendAndResetIterationBuffer(), drain: true).ConfigureAwait(false))
                 {
                     transmitActivity.OnError("Flush failed");
                     logger?.LogError("TransmitRangeIndexAsync: flush failed for key {key}", Encoding.UTF8.GetString(keyBytes));
@@ -89,11 +92,9 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Migrate a batch of RangeIndex keys with sketch protection.
-        /// Adds all keys to the sketch, transitions through TRANSMITTING → DELETING → MIGRATED
-        /// with epoch barriers, ensuring concurrent operations are properly gated.
+        /// Migrate a bounded batch of RangeIndex keys with epoch barriers protecting transmission and deletion.
         /// </summary>
-        private async Task<bool> MigrateRangeIndexKeysAsync(MigrateOperation migrateOperation, HashSet<byte[]> rangeIndexKeys, CancellationToken cancellationToken)
+        private async Task<bool> MigrateRangeIndexKeysAsync(MigrateOperation<BucketedBloomFilter> migrateOperation, IReadOnlyCollection<byte[]> rangeIndexKeys, CancellationToken cancellationToken)
         {
             var migrateActivity = RangeIndexMigrationActivities.MigrateActivity.StartActivity(rangeIndexKeys.Count);
 
@@ -105,13 +106,25 @@ namespace Garnet.cluster
                 migrateOperation.sketch.Clear();
                 migrateOperation.sketch.SetStatus(SketchStatus.INITIALIZING);
                 foreach (var key in rangeIndexKeys)
-                    migrateOperation.sketch.TryHashAndStore(key);
+                {
+                    if (!migrateOperation.sketch.TryHashAndStore(key))
+                    {
+                        migrateActivity.OnError("Failed to protect RangeIndex batch");
+                        logger?.LogError("MigrateRangeIndexKeysAsync: failed to protect all {count} RangeIndex keys", rangeIndexKeys.Count);
+                        return false;
+                    }
+                }
 
                 ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.RangeIndex_Migration_Before_Transmitting);
 
                 // Block writes during snapshot + transmit
                 migrateOperation.sketch.SetStatus(SketchStatus.TRANSMITTING);
-                await WaitForConfigPropagationAsync().ConfigureAwait(false);
+                if (!await WaitForConfigPropagationAsync().ConfigureAwait(false))
+                {
+                    migrateActivity.OnError("Failed to protect RangeIndex batch");
+                    logger?.LogError("MigrateRangeIndexKeysAsync: failed to protect RangeIndex batch");
+                    return false;
+                }
                 migrateActivity.OnTransmitting();
 
                 await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.RangeIndex_Migration_After_Transmitting).ConfigureAwait(false);
@@ -132,7 +145,12 @@ namespace Garnet.cluster
 
                 // Block reads + writes during delete
                 migrateOperation.sketch.SetStatus(SketchStatus.DELETING);
-                await WaitForConfigPropagationAsync().ConfigureAwait(false);
+                if (!await WaitForConfigPropagationAsync().ConfigureAwait(false))
+                {
+                    migrateActivity.OnError("Failed to protect RangeIndex batch deletion");
+                    logger?.LogError("MigrateRangeIndexKeysAsync: failed to protect RangeIndex batch deletion");
+                    return false;
+                }
                 migrateActivity.OnDeleting();
 
                 await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.RangeIndex_Migration_After_Deleting).ConfigureAwait(false);
@@ -160,7 +178,7 @@ namespace Garnet.cluster
             finally
             {
                 // Always clean up the sketch, even on failure, to unblock client operations
-                migrateOperation.sketch.Clear();
+                migrateOperation.sketch.RetireBatch();
                 migrateActivity.EndAndLogActivity(logger);
             }
         }

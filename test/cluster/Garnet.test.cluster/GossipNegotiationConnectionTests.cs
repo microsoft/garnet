@@ -314,11 +314,18 @@ namespace Garnet.test.cluster
                 await Task.Delay(retryDelay + TimeSpan.FromMilliseconds(50), guard.Token);
 
                 using var pause = ExceptionInjectionHelper.EnabledScope(ExceptionInjectionType.GarnetClient_Connect_Pause_Before_Publish);
-                reconnect = Task.Run(async () => await node.TryInitializeAsync());
+                var initializationReturned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                reconnect = Task.Run(async () =>
+                {
+                    var initialization = node.TryInitializeAsync();
+                    initializationReturned.SetResult();
+                    return await initialization;
+                });
                 try
                 {
                     await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.GarnetClient_Connect_Pause_Before_Publish)
                         .WaitAsync(guard.Token);
+                    await initializationReturned.Task.WaitAsync(guard.Token);
                     Assert.That(node.Client, Is.SameAs(previous));
                     Assert.That(previous.Disposed, Is.False);
                     if (disposeDuringConnect)

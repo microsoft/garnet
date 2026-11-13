@@ -305,6 +305,181 @@ namespace Garnet.test
                 $"Properties in {typeof(Options)} should not use {nameof(OptionAttribute)}.{nameof(OptionAttribute.Default)}. All default values should be specified in defaults.conf.");
         }
 
+        [TestCase("32m", null, 33554432)]
+        [TestCase("1m", null, 1048576)]
+        [TestCase("32m", "16k", 16384)]
+        [TestCase("4k", "64k", 65536)]
+        [TestCase("32m", "48k", 32768)]
+        public void MigrationSendBufferSizeOptions(string pageSize, string sendBufferSize, int expectedBytes)
+        {
+            var args = new List<string> { "--page", pageSize };
+            if (sendBufferSize != null)
+                args.AddRange(["--migrate-send-buffer-size", sendBufferSize]);
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(args.ToArray(), out var options, out _, out _, out _, silentMode: true), Is.True);
+            var serverOptions = options.GetServerOptions();
+            Assert.That(serverOptions.GetMigrationSendBufferSize(), Is.EqualTo(expectedBytes));
+            Assert.That(serverOptions.PageSize, Is.EqualTo(pageSize));
+            if (sendBufferSize != null)
+            {
+                serverOptions.PageSize = "8m";
+                Assert.That(serverOptions.GetMigrationSendBufferSize(), Is.EqualTo(expectedBytes));
+            }
+        }
+
+        [TestCase("0")]
+        [TestCase("512")]
+        [TestCase("2g")]
+        public void MigrationSendBufferSizeRejectsInvalidSize(string sendBufferSize)
+        {
+            var serverOptions = new GarnetServerOptions { MigrationSendBufferSize = sendBufferSize };
+            Assert.Throws<GarnetException>(() => serverOptions.GetMigrationSendBufferSize());
+        }
+
+        [TestCase(null)]
+        [TestCase(1024)]
+        [TestCase(4096)]
+        [TestCase(262143)]
+        public void MigrateKeySendBatchSizeOptions(int? batchSize)
+        {
+            string[] args = batchSize.HasValue ? ["--migrate-key-send-batch-size", batchSize.Value.ToString()] : [];
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.GetServerOptions().MigrateKeySendBatchSize, Is.EqualTo(batchSize.GetValueOrDefault(262143)));
+        }
+
+        [TestCase(1024)]
+        [TestCase(4096)]
+        public void MigrateKeySendBatchSizeConfiguration(int batchSize)
+        {
+            var json = JsonSerializer.Serialize(new { MigrateKeySendBatchSize = batchSize });
+            Assert.That(TryParseGarnetConfOptions(json, out var options, out _, out _), Is.True);
+            Assert.That(options.GetServerOptions().MigrateKeySendBatchSize, Is.EqualTo(batchSize));
+        }
+
+        [TestCase(0)]
+        [TestCase(-1)]
+        [TestCase(1)]
+        [TestCase(1023)]
+        [TestCase(262144)]
+        public void MigrateKeySendBatchSizeRejectsInvalidSize(int batchSize)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(["--migrate-key-send-batch-size", batchSize.ToString()],
+                out _, out _, out _, out _, silentMode: true), Is.False);
+            var json = JsonSerializer.Serialize(new { MigrateKeySendBatchSize = batchSize });
+            Assert.That(TryParseGarnetConfOptions(json, out _, out _, out _), Is.False);
+            var options = new GarnetServerOptions { MigrateKeySendBatchSize = batchSize };
+            Assert.Throws<ArgumentOutOfRangeException>(() => new GarnetServer(options));
+        }
+
+        [Test]
+        public void MigrationPipelineOptions()
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments([], out var defaults, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(defaults.GetServerOptions().MigrationPipelineDepth, Is.EqualTo(1));
+            foreach (var depth in new[] { "1", "4", "64" })
+            {
+                Assert.That(ServerSettingsManager.TryParseCommandLineArguments(["--migrate-pipeline-depth", depth], out var options, out _, out _, out _, silentMode: true), Is.True);
+                Assert.That(options.GetServerOptions().MigrationPipelineDepth, Is.EqualTo(int.Parse(depth)));
+            }
+            foreach (var depth in new[] { "0", "-1", "65" })
+                Assert.That(ServerSettingsManager.TryParseCommandLineArguments(["--migrate-pipeline-depth", depth], out _, out _, out _, out _, silentMode: true), Is.False);
+        }
+
+        [TestCase(null)]
+        [TestCase(1)]
+        [TestCase(256)]
+        [TestCase(512)]
+        [TestCase(int.MaxValue)]
+        public void MigrationDeleteBatchSizeOptions(int? batchSize)
+        {
+            string[] args = batchSize.HasValue ? ["--migrate-delete-batch-size", batchSize.Value.ToString()] : [];
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.GetServerOptions().MigrationDeleteBatchSize, Is.EqualTo(batchSize.GetValueOrDefault(256)));
+        }
+
+        [TestCase(1)]
+        [TestCase(512)]
+        public void MigrationDeleteBatchSizeConfiguration(int batchSize)
+        {
+            var json = JsonSerializer.Serialize(new { MigrationDeleteBatchSize = batchSize });
+            Assert.That(TryParseGarnetConfOptions(json, out var options, out _, out _), Is.True);
+            Assert.That(options.GetServerOptions().MigrationDeleteBatchSize, Is.EqualTo(batchSize));
+        }
+
+        [TestCase(0)]
+        [TestCase(-1)]
+        public void MigrationDeleteBatchSizeRejectsInvalidSize(int batchSize)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(["--migrate-delete-batch-size", batchSize.ToString()], out _, out _, out _, out _, silentMode: true), Is.False);
+            var json = JsonSerializer.Serialize(new { MigrationDeleteBatchSize = batchSize });
+            Assert.That(TryParseGarnetConfOptions(json, out _, out _, out _), Is.False);
+            var options = new GarnetServerOptions { MigrationDeleteBatchSize = batchSize };
+            Assert.Throws<ArgumentOutOfRangeException>(() => new GarnetServer(options));
+        }
+
+        [TestCase(null)]
+        [TestCase(true)]
+        [TestCase(false)]
+        public void ScanAheadMigrationOptions(bool? enabled)
+        {
+            string[] args = enabled.HasValue ? ["--use-scan-ahead-migration", enabled.Value.ToString()] : [];
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.GetServerOptions().UseScanAheadMigration, Is.EqualTo(enabled.GetValueOrDefault()));
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void ScanAheadMigrationConfiguration(bool enabled)
+        {
+            var json = JsonSerializer.Serialize(new { UseScanAheadMigration = enabled });
+            Assert.That(TryParseGarnetConfOptions(json, out var options, out _, out _), Is.True);
+            Assert.That(options.GetServerOptions().UseScanAheadMigration, Is.EqualTo(enabled));
+        }
+
+        [TestCase(1, true)]
+        [TestCase(4, true)]
+        [TestCase(64, true)]
+        [TestCase(0, false)]
+        [TestCase(65, false)]
+        public void MigrationPipelineConfiguration(int depth, bool valid)
+        {
+            var json = JsonSerializer.Serialize(new { MigrationPipelineDepth = depth });
+            Assert.That(TryParseGarnetConfOptions(json, out var options, out _, out _), Is.EqualTo(valid));
+            if (valid)
+            {
+                var serverOptions = options.GetServerOptions();
+                Assert.That(serverOptions.MigrationPipelineDepth, Is.EqualTo(depth));
+                Assert.DoesNotThrow(serverOptions.ValidateMigrationOptions);
+            }
+        }
+
+        [TestCase(0)]
+        [TestCase(65)]
+        public void MigrationPipelineRejectsInvalidServerDepth(int depth)
+        {
+            var options = new GarnetServerOptions { MigrationPipelineDepth = depth };
+            Assert.Throws<ArgumentOutOfRangeException>(() => new GarnetServer(options));
+        }
+
+        [TestCase("0", true)]
+        [TestCase("1", true)]
+        [TestCase("16", true)]
+        [TestCase("16384", true)]
+        [TestCase("-1", false)]
+        [TestCase("16385", false)]
+        public void ParallelMigrateTaskOptions(string count, bool valid)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(["--parallel-migrate-task-count", count], out var options, out _, out _, out _, silentMode: true), Is.EqualTo(valid));
+            if (valid)
+                Assert.That(options.GetServerOptions().ParallelMigrateTaskCount, Is.EqualTo(int.Parse(count)));
+        }
+
+        [TestCase("--pmt", "16")]
+        [TestCase("--fast-migrate", "true")]
+        public void RemovedMigrationOptionsAreRejected(string option, string value)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments([option, value], out _, out _, out _, out _, silentMode: true), Is.False);
+        }
+
         [Test]
         public void ClusterPeerEndpointOptions()
         {

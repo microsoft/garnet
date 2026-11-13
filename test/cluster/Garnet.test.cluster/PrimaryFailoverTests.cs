@@ -1300,7 +1300,7 @@ namespace Garnet.test.cluster
             var pin = GCHandle.Alloc(keyBytes, GCHandleType.Pinned);
             var key = MakePinnedKey(pin.AddrOfPinnedObject(), keyBytes.Length);
             var slot = HashSlotUtils.HashSlot(key);
-            var sketch = new Sketch(keyCount: 64);
+            var sketch = new MigrationBatch<KeysMigrationFilter>(new());
             sketch.HashAndStore(key);
             sketch.SetStatus(SketchStatus.DELETING);
             const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
@@ -1309,6 +1309,7 @@ namespace Garnet.test.cluster
             var verify = typeof(ClusterSession).GetMethod("SingleKeySlotVerify", flags);
             MigrateSession migration = null;
             Task<object> pending = null;
+            Thread worker = null;
             var ownsRecovery = false;
             try
             {
@@ -1325,6 +1326,7 @@ namespace Garnet.test.cluster
                 object[] args = [migrating, key, readOnly, false, false, (int)slot];
                 pending = Task.Run(() =>
                 {
+                    Volatile.Write(ref worker, Thread.CurrentThread);
                     epochSession.AcquireCurrentEpoch();
                     try
                     {
@@ -1335,7 +1337,12 @@ namespace Garnet.test.cluster
                         epochSession.ReleaseCurrentEpoch();
                     }
                 });
-                Assert.That(() => epochSession.LocalCurrentEpoch, Is.Not.Zero.After(5_000, 10));
+                Assert.That(() =>
+                {
+                    var thread = Volatile.Read(ref worker);
+                    return thread != null && (thread.ThreadState & ThreadState.WaitSleepJoin) != 0 &&
+                        epochSession.LocalCurrentEpoch == 0;
+                }, Is.True.After(5_000, 1), "Migration waits must park without holding GarnetEpoch.");
                 Assert.That(pending.IsCompleted, Is.False);
                 // Cross an epoch while migration blocks, proving the initial recovery check has completed.
                 Assert.That(await provider.BumpAndWaitForEpochTransitionAsync().AsTask().WaitAsync(token), Is.True);

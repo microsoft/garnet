@@ -580,6 +580,30 @@ namespace Garnet.test.cluster
             AssertMovedFrom(primary0, "RI.GET", riKey, "field1");
         }
 
+        [TestCase("16k")]
+        [TestCase("256k")]
+        [Category("CLUSTER")]
+        public void ClusterMigrateRangeIndexWithSmallSendBuffer(string sendBufferSize)
+        {
+            context.CreateInstances(2, enableRangeIndexPreview: true, migrationSendBufferSize: sendBufferSize);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var source = Endpoint(0);
+            var target = Endpoint(1);
+            var riKey = FindKeyOwnedByNode(0);
+            var slot = context.clusterTestUtils.HashSlot(riKey);
+            var fields = Enumerable.Range(0, 640)
+                .Select(i => ($"field_{i:D4}", $"{i:D4}_{new string('x', 512)}"))
+                .ToList();
+            CreateRangeIndexWithFields(source, riKey, fields);
+
+            MigrateSlotsAndWaitOwnership(source, target, [slot]);
+
+            VerifyFieldsOnEndpoint(target, riKey, fields);
+            AssertMovedFrom(source, "RI.GET", riKey, fields[0].Item1);
+        }
+
         /// <summary>
         /// Key-based migration of multiple RI keys in random order.
         /// </summary>
@@ -1336,7 +1360,7 @@ namespace Garnet.test.cluster
 
         /// <summary>
         /// Inject an exception during the transmit phase. Verifies that on failure:
-        /// - Sketch is cleared (operations unblocked)
+        /// - MigrationBatch is cleared (operations unblocked)
         /// - Source data remains intact
         /// </summary>
         [Test]

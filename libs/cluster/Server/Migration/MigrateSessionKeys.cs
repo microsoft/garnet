@@ -25,13 +25,18 @@ namespace Garnet.cluster
         /// <returns>True on success, false otherwise</returns>
         private async Task<bool> MigrateKeysFromStoreAsync()
         {
-            var migrateTask = migrateOperation[0];
+            var migrateTask = keysMigrateOperation[0];
 
             try
             {
                 // Transition keys to MIGRATING status
                 migrateTask.sketch.SetStatus(SketchStatus.TRANSMITTING);
-                await WaitForConfigPropagationAsync().ConfigureAwait(false);
+                if (!await WaitForConfigPropagationAsync().ConfigureAwait(false))
+                {
+                    logger?.LogError("Failed to protect MIGRATE KEYS batch");
+                    return false;
+                }
+                migrationCancellationToken.ThrowIfCancellationRequested();
 
                 // Discover Vector Sets linked namespaces
                 var allKeys = migrateTask.sketch.Keys.Select(t => t.Item1);
@@ -101,17 +106,17 @@ namespace Garnet.cluster
                             VectorManager.SerializeMigratedIndexKey(serializeBufferArr.AsSpan(), key, value, expiration);
 
                             if (gcs.NeedsInitialization)
-                                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: true);
+                                SetMigrateHeader(gcs, isVectorSets: true);
 
                             while (!gcs.TryWriteRecordSpan(serializeBufferArr.AsSpan()[..neededSpace], MigrationRecordSpanType.VectorSetIndex, out var task))
                             {
-                                if (!await HandleMigrateTaskResponseAsync(task).ConfigureAwait(false))
+                                if (!await migrateTask.HandleMigrateTaskResponseAsync(task).ConfigureAwait(false))
                                 {
                                     logger?.LogCritical("Failed to migrate Vector Set key {key} during migration", SpanByte.ToShortString(key));
                                     return false;
                                 }
 
-                                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: true);
+                                SetMigrateHeader(gcs, isVectorSets: true);
                             }
                         }
                     }
@@ -120,7 +125,7 @@ namespace Garnet.cluster
                         ArrayPool<byte>.Shared.Return(serializeBufferArr);
                     }
 
-                    if (!await HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer()).ConfigureAwait(false))
+                    if (!await migrateTask.HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer(), drain: true).ConfigureAwait(false))
                     {
                         logger?.LogCritical("Final flush after Vector Set migration failed");
                         return false;
@@ -137,7 +142,7 @@ namespace Garnet.cluster
 
                     foreach (var key in rangeIndexKeysToMigrate)
                     {
-                        if (!await TransmitRangeIndexAsync(migrateTask, key, RangeIndexManager.DefaultMigrationChunkSize, _cts.Token).ConfigureAwait(false))
+                        if (!await TransmitRangeIndexAsync(migrateTask, key, RangeIndexManager.DefaultMigrationChunkSize, migrationCancellationToken).ConfigureAwait(false))
                         {
                             logger?.LogError("Failed to migrate RangeIndex key via KEYS path");
                             return false;
@@ -154,31 +159,41 @@ namespace Garnet.cluster
                 }
 
                 // Final cleanup, which will also delete Vector Sets
-                await DeleteKeysAsync().ConfigureAwait(false);
+                return await DeleteKeysAsync().ConfigureAwait(false);
             }
             finally
             {
-                migrateOperation[0].sketch.SetStatus(SketchStatus.INITIALIZING);
+                keysMigrateOperation[0].sketch.SetStatus(SketchStatus.INITIALIZING);
             }
-            return true;
         }
 
         /// <summary>
         /// Delete local copy of keys if _copyOption is set to false.
         /// </summary>
-        private async Task DeleteKeysAsync()
+        private async Task<bool> DeleteKeysAsync()
         {
-            var migrateTask = migrateOperation[0];
+            var migrateTask = keysMigrateOperation[0];
             // Transition to deleting to block read requests                
             migrateTask.sketch.SetStatus(SketchStatus.DELETING);
-            await WaitForConfigPropagationAsync().ConfigureAwait(false);
+            if (!await WaitForConfigPropagationAsync().ConfigureAwait(false))
+            {
+                logger?.LogError("Failed to protect MIGRATE KEYS batch deletion");
+                return false;
+            }
+            migrationCancellationToken.ThrowIfCancellationRequested();
 
             // Delete keys
             migrateTask.DeleteKeys();
 
             // Transition to MIGRATED to release waiting operations
             migrateTask.sketch.SetStatus(SketchStatus.MIGRATED);
-            await WaitForConfigPropagationAsync().ConfigureAwait(false);
+            if (!await WaitForConfigPropagationAsync().ConfigureAwait(false))
+            {
+                logger?.LogError("Failed to release MIGRATE KEYS batch protection");
+                return false;
+            }
+            migrationCancellationToken.ThrowIfCancellationRequested();
+            return true;
         }
 
         /// <summary>
@@ -188,9 +203,13 @@ namespace Garnet.cluster
         /// <returns></returns>
         public async Task<bool> MigrateKeysAsync()
         {
+            var migrateTask = keysMigrateOperation[0];
+            var enteredWorker = false;
             try
             {
-                var migrateTask = migrateOperation[0];
+                migrateTask.EnterWorker();
+                enteredWorker = true;
+                migrationCancellationToken.ThrowIfCancellationRequested();
                 if (!await migrateTask.InitializeAsync().ConfigureAwait(false))
                     return false;
 
@@ -198,9 +217,20 @@ namespace Garnet.cluster
                 if (!await MigrateKeysFromStoreAsync().ConfigureAwait(false))
                     return false;
             }
+            catch (OperationCanceledException) when (migrationCancellationToken.IsCancellationRequested)
+            {
+                logger?.LogWarning("MIGRATE KEYS was cancelled");
+                return false;
+            }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "An error has occurred");
+                return false;
+            }
+            finally
+            {
+                if (enteredWorker)
+                    migrateTask.ExitWorker();
             }
             return true;
         }

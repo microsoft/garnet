@@ -27,8 +27,8 @@ namespace Garnet.test.cluster
     /// Component tests for <see cref="RangeIndexMigrationReceiveState"/> focused on the
     /// dispose-vs-in-flight-<c>ProcessRecord</c> race that <see cref="Garnet.common.CooperativeDisposeGuard"/>
     /// guards. A receiving node may dispose its <c>ClusterSession</c> (on one networking thread)
-    /// while a migration chunk is still being processed (on another, e.g. the FastMigrate
-    /// <c>Task.Run</c> path) — the disposal must never run concurrently with, nor abort, an
+    /// while a migration chunk is still being processed on another thread.
+    /// The disposal must never run concurrently with, nor abort, an
     /// in-flight <c>ProcessRecord</c>; cleanup is deferred to the worker's exit.
     /// </summary>
     [TestFixture, NonParallelizable]

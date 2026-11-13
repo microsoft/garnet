@@ -67,9 +67,49 @@ namespace Garnet.server
         public int ParallelMigrateTaskCount = 1;
 
         /// <summary>
-        /// When migrating slots 1. write directly to network buffer to avoid unecessary copies, 2. do not wait for ack from target before sending next batch of keys.
+        /// Maximum keys collected per slot migration batch (1024-262143). Network buffers may split a batch into smaller sends.
         /// </summary>
-        public bool FastMigrate = false;
+        public int MigrateKeySendBatchSize = (1 << 18) - 1;
+
+        /// <summary>
+        /// Gather the next slot-migration key batch while the active batch is shipped.
+        /// </summary>
+        public bool UseScanAheadMigration = false;
+
+        /// <summary>
+        /// Migration client send-buffer size, rounded down to a power of two. Null uses the log page size.
+        /// Records larger than the buffer are chunked.
+        /// </summary>
+        public string MigrationSendBufferSize = null;
+
+        /// <summary>
+        /// Resolve the migration send-buffer size independently of the log page size when configured.
+        /// </summary>
+        public int GetMigrationSendBufferSize()
+            => PowerOf2SizeOrDefault(MigrationSendBufferSize, 1 << PageSizeBits(), nameof(MigrationSendBufferSize));
+
+        /// <summary>
+        /// Maximum unacknowledged migration batches per worker, from 1 to 64.
+        /// Batches are processed synchronously before acknowledgment.
+        /// </summary>
+        public int MigrationPipelineDepth = 1;
+
+        /// <summary>
+        /// Maximum eligible source keys deleted per epoch-protected migration scope. Must be positive.
+        /// </summary>
+        public int MigrationDeleteBatchSize = 256;
+
+        /// <summary>
+        /// Validate migration settings.
+        /// </summary>
+        public void ValidateMigrationOptions()
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(MigrateKeySendBatchSize, 1024);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(MigrateKeySendBatchSize, (1 << 18) - 1);
+            ArgumentOutOfRangeException.ThrowIfLessThan(MigrationPipelineDepth, 1);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(MigrationPipelineDepth, 64);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(MigrationDeleteBatchSize);
+        }
 
         /// <summary>
         /// Authentication settings

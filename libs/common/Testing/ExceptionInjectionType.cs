@@ -58,6 +58,14 @@ namespace Garnet.common
         /// </summary>
         Migration_Slot_End_Scan_Range_Acquisition,
         /// <summary>
+        /// Pause after gathering the next slot-migration batch, before protecting or reading its values.
+        /// </summary>
+        Migration_Slot_After_Scan_Ahead,
+        /// <summary>
+        /// Pause after processing a migration batch, before returning its acknowledgment.
+        /// </summary>
+        Migration_Before_Batch_Response,
+        /// <summary>
         /// Wait at migration slot driver right after the keys of a scanned batch become inaccessible to writers
         /// </summary>
         Migration_Slot_Keys_Transmitting,
