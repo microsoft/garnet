@@ -508,7 +508,7 @@ namespace Garnet.server
 
                             if (respProtocolVersion >= 3)
                             {
-                                WriteDoubleNumeric(double.Parse(score.ReadOnlySpan));
+                                WriteDoubleNumeric(ParseUtils.ReadDouble(score, canBeInfinite: true));
                             }
                             else
                             {
