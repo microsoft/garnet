@@ -98,7 +98,7 @@ namespace Garnet.cluster
             var replaceOption = false;
             string username = null;
             string passwd = null;
-            Sketch sketch = null;
+            MigrationBatch sketch = null;
             HashSet<int> slots = null;
 
             ClusterConfig current = null;

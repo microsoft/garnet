@@ -20,7 +20,7 @@ namespace Garnet.cluster
     {
         internal sealed partial class MigrateOperation
         {
-            public readonly Sketch sketch;
+            public readonly MigrationBatch sketch;
             public readonly List<byte[]> keysToDelete;
             public StoreScan storeScan;
 
@@ -68,7 +68,7 @@ namespace Garnet.cluster
 
             public void AddRangeIndexKey(byte[] key) => rangeIndexKeysToMigrate.TryAdd(key, 0);
 
-            public MigrateOperation(MigrateSession session, Sketch sketch = null)
+            public MigrateOperation(MigrateSession session, MigrationBatch sketch = null)
             {
                 this.session = session;
                 var keySendBatchSize = session.clusterProvider.serverOptions.MigrateKeySendBatchSize;
@@ -318,7 +318,7 @@ namespace Garnet.cluster
                 while (true)
                 {
                     var current = cursor;
-                    // Build Sketch
+                    // Build MigrationBatch
                     migrateOperation.sketch.SetStatus(SketchStatus.INITIALIZING);
                     migrateOperation.Scan(ref current, workerEndAddress, workerEndAddress);
 

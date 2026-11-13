@@ -9,7 +9,7 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal class Sketch
+    internal class MigrationBatch
     {
         readonly BucketedBloomFilter bloomFilter;
         public ArgSliceVector argSliceVector { get; private set; }
@@ -21,7 +21,7 @@ namespace Garnet.cluster
         /// Create a migration sketch with a batch-sized filter and one reserved key collection entry.
         /// </summary>
         /// <param name="keySendBatchSize">Maximum keys per migration batch.</param>
-        public Sketch(int keySendBatchSize)
+        public MigrationBatch(int keySendBatchSize)
             : this(new BucketedBloomFilter(keySendBatchSize), maxBatchSize: keySendBatchSize + 1)
         {
         }
@@ -33,12 +33,12 @@ namespace Garnet.cluster
         /// <param name="bfSize">Bloom-filter bits per bucket.</param>
         /// <param name="maxBatchSize">Key collection capacity, including its reserved entry.</param>
         /// <param name="hashCount">Number of Bloom probes derived from the upper 48 hash bits.</param>
-        public Sketch(int bucketCount = BucketedBloomFilter.DefaultBucketCount, int bfSize = BucketedBloomFilter.DefaultBfSize, int maxBatchSize = 1 << 18, int hashCount = BucketedBloomFilter.DefaultMigrationHashCount)
+        public MigrationBatch(int bucketCount = BucketedBloomFilter.DefaultBucketCount, int bfSize = BucketedBloomFilter.DefaultBfSize, int maxBatchSize = 1 << 18, int hashCount = BucketedBloomFilter.DefaultMigrationHashCount)
             : this(new BucketedBloomFilter(bucketCount, bfSize, hashCount), maxBatchSize)
         {
         }
 
-        Sketch(BucketedBloomFilter bloomFilter, int maxBatchSize)
+        MigrationBatch(BucketedBloomFilter bloomFilter, int maxBatchSize)
         {
             this.bloomFilter = bloomFilter;
             Status = SketchStatus.INITIALIZING;

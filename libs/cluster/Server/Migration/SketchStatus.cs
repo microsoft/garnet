@@ -10,7 +10,7 @@ namespace Garnet.cluster
     public enum SketchStatus : byte
     {
         /// <summary>
-        /// Sketch is being constructed by adding keys to be sent to the target node.
+        /// MigrationBatch is being constructed by adding keys to be sent to the target node.
         /// Reads and writes can be served if the keys exists in the database.
         /// </summary>
         INITIALIZING,

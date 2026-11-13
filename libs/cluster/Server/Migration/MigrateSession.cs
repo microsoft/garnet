@@ -138,7 +138,7 @@ namespace Garnet.cluster
             bool _replaceOption,
             int _timeout,
             HashSet<int> _slots,
-            Sketch sketch,
+            MigrationBatch sketch,
             TransferOption transferOption)
         {
             this.logger = clusterProvider.loggerFactory.CreateLogger($"MigrateSession - {GetHashCode()}"); ;

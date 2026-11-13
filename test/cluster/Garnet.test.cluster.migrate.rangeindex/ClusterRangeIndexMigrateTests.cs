@@ -1360,7 +1360,7 @@ namespace Garnet.test.cluster
 
         /// <summary>
         /// Inject an exception during the transmit phase. Verifies that on failure:
-        /// - Sketch is cleared (operations unblocked)
+        /// - MigrationBatch is cleared (operations unblocked)
         /// - Source data remains intact
         /// </summary>
         [Test]
