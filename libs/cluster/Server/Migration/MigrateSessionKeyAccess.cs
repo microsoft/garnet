@@ -35,7 +35,7 @@ namespace Garnet.cluster
         public bool CanAccessKey(PinnedSpanByte key, int slot, bool readOnly)
         {
             // Skip operation check since this session is not responsible for migrating the associated slot
-            if (!_sslots.Contains(slot))
+            if (!ContainsSlot(slot))
                 return true;
 
             var keyHash = HashUtils.MurmurHash2x64A(key.ToPointer(), key.Length);

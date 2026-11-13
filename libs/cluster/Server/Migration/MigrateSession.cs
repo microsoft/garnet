@@ -6,6 +6,7 @@ using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -47,6 +48,7 @@ namespace Garnet.cluster
         SingleWriterMultiReaderLock _disposed;
 
         readonly HashSet<int> _sslots;
+        readonly ulong[] slotMembership = new ulong[ClusterConfig.MAX_HASH_SLOT_VALUE / 64];
         readonly CancellationTokenSource migrationCancellationSource = new();
         readonly CancellationToken migrationCancellationToken;
 
@@ -71,7 +73,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Return slots for migration
         /// </summary>
-        public HashSet<int> GetSlots => _sslots;
+        public IReadOnlyCollection<int> GetSlots => _sslots;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool ContainsSlot(int slot)
+            => (uint)slot < ClusterConfig.MAX_HASH_SLOT_VALUE &&
+                (slotMembership[slot >> 6] & (1UL << (slot & 63))) != 0;
 
         /// <summary>
         /// Get network buffer specs
@@ -146,7 +153,13 @@ namespace Garnet.cluster
             this._copyOption = _copyOption;
             this._replaceOption = _replaceOption;
             this._timeout = TimeSpan.FromMilliseconds(_timeout);
-            this._sslots = _slots;
+            this._sslots = new HashSet<int>(_slots);
+            foreach (var slot in _sslots)
+            {
+                ArgumentOutOfRangeException.ThrowIfNegative(slot);
+                ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(slot, ClusterConfig.MAX_HASH_SLOT_VALUE);
+                slotMembership[slot >> 6] |= 1UL << (slot & 63);
+            }
             this._slotRanges = GetRanges();
             this.transferOption = transferOption;
             migrationCancellationToken = migrationCancellationSource.Token;

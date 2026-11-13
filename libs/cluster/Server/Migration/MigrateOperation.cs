@@ -52,7 +52,7 @@ namespace Garnet.cluster
 
             public void ThrowIfCancelled() => session.migrationCancellationToken.ThrowIfCancellationRequested();
 
-            public bool Contains(int slot) => session._sslots.Contains(slot);
+            public bool Contains(int slot) => session.ContainsSlot(slot);
 
             public bool ContainsNamespace(ReadOnlySpan<byte> namespaceBytes)
             {

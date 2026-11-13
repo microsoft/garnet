@@ -47,14 +47,14 @@ namespace Garnet.test.cluster
             context.TearDown();
         }
 
-        void CreateOperation(int depth, bool copy = false, int keySendBatchSize = 1024, int deleteBatchSize = 256)
+        void CreateOperation(int depth, bool copy = false, int keySendBatchSize = 1024, int deleteBatchSize = 256, HashSet<int> slots = null)
         {
             provider.serverOptions.MigrationPipelineDepth = depth;
             provider.serverOptions.MigrationDeleteBatchSize = deleteBatchSize;
             provider.serverOptions.MigrateKeySendBatchSize = keySendBatchSize;
             var nodeId = provider.clusterManager.CurrentConfig.LocalNodeId;
             session = new MigrateSession(null, provider, "127.0.0.1", ClusterTestContext.Port,
-                nodeId, null, null, nodeId, copy, false, 10000, [0], null, TransferOption.KEYS);
+                nodeId, null, null, nodeId, copy, false, 10000, slots ?? [0], null, TransferOption.KEYS);
             operation = new MigrateSession.MigrateOperation(session);
         }
 
@@ -116,6 +116,45 @@ namespace Garnet.test.cluster
             var nodeId = provider.clusterManager.CurrentConfig.LocalNodeId;
             return taskStore.TryAddMigrateSession(null, provider, nodeId, "127.0.0.1", ClusterTestContext.Port,
                 targetNodeId ?? nodeId, null, null, false, false, 10000, slots ?? [0], sketch, transferOption, out migration);
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void SlotMembershipMatchesSnapshotAcrossAllSlots(bool dense)
+        {
+            HashSet<int> slots = dense
+                ? new HashSet<int>(Enumerable.Range(0, ClusterConfig.MAX_HASH_SLOT_VALUE))
+                : [0, 63, 64, 127, 128, ClusterConfig.MAX_HASH_SLOT_VALUE - 1];
+            var expected = slots.ToArray();
+            CreateOperation(1, slots: slots);
+            slots.Clear();
+            slots.Add(65);
+
+            Assert.That(session.GetSlots, Is.EquivalentTo(expected));
+            Assert.That(Enumerable.Range(0, ClusterConfig.MAX_HASH_SLOT_VALUE).Where(operation.Contains),
+                Is.EquivalentTo(expected));
+            Assert.That(operation.Contains(-1), Is.False);
+            Assert.That(operation.Contains(ClusterConfig.MAX_HASH_SLOT_VALUE), Is.False);
+        }
+
+        [Test]
+        public void SlotMembershipGatesProtectedKeysWithoutSlotAliasing()
+        {
+            CreateOperation(1, slots: [0, 64, ClusterConfig.MAX_HASH_SLOT_VALUE - 1]);
+            var key = PinnedSpanByte.FromPinnedSpan("slot-membership"u8);
+            GetOperations(session)[0].sketch.HashAndStore(key);
+            GetOperations(session)[0].sketch.SetStatus(SketchStatus.DELETING);
+
+            foreach (var slot in new[] { 0, 64, ClusterConfig.MAX_HASH_SLOT_VALUE - 1 })
+            {
+                Assert.That(session.CanAccessKey(key, slot, readOnly: false), Is.False);
+                Assert.That(session.CanAccessKey(key, slot, readOnly: true), Is.False);
+            }
+            foreach (var slot in new[] { 1, 63, 65, 127, 128, ClusterConfig.MAX_HASH_SLOT_VALUE - 2 })
+            {
+                Assert.That(session.CanAccessKey(key, slot, readOnly: false), Is.True);
+                Assert.That(session.CanAccessKey(key, slot, readOnly: true), Is.True);
+            }
         }
 
         [TestCase(TransferOption.KEYS)]
