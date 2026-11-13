@@ -232,5 +232,9 @@ namespace Garnet.common
         /// Replica failover: pause after the primary acknowledged FAILSTOPWRITES, before waiting for the replica to catch up.
         /// </summary>
         Failover_Pause_Waiting_For_Sync,
+        /// <summary>
+        /// SET over a non-string key: pause while holding the key's lock, before rechecking its type.
+        /// </summary>
+        Set_Pause_Before_NonString_Recheck,
     }
 }

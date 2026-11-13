@@ -77,6 +77,40 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task AofSetConditionalOnNonStringKeysRecoverTestAsync()
+        {
+            DateTime? expireTime;
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                _ = db.ListRightPush("list", ["a", "b"]);
+                _ = db.HashSet("hash", "f", "v");
+                _ = db.SetAdd("set", "m");
+                ClassicAssert.IsTrue(db.KeyExpire("set", TimeSpan.FromSeconds(100)));
+                expireTime = db.KeyExpireTime("set");
+
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "list", "v1", "XX"));
+                ClassicAssert.IsTrue(db.Execute("SET", "hash", "v2", "NX").IsNull);
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "set", "v3", "KEEPTTL", "XX"));
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.AreEqual("v1", (string)db.StringGet("list"));
+                ClassicAssert.AreEqual(RedisType.Hash, db.KeyType("hash"));
+                ClassicAssert.AreEqual("v", (string)db.HashGet("hash", "f"));
+                ClassicAssert.AreEqual("v3", (string)db.StringGet("set"));
+                ClassicAssert.AreEqual(expireTime, db.KeyExpireTime("set"));
+            }
+        }
+
+        [Test]
         public async Task AofUpsertStoreAutoCommitRecoverTestAsync()
         {
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
