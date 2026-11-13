@@ -845,6 +845,46 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SetExpiryAtOptions()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            void AssertAbsoluteTtl(string key, long unixTimeMilliseconds)
+            {
+                var ttl = (long)db.Execute("PTTL", key);
+                var expectedTtl = unixTimeMilliseconds - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                ClassicAssert.Greater(ttl, expectedTtl - 10_000);
+                ClassicAssert.LessOrEqual(ttl, expectedTtl + 1_000);
+            }
+
+            var exat = DateTimeOffset.UtcNow.AddMinutes(2).ToUnixTimeSeconds();
+            var result = db.Execute("SET", "set-exat", "value", "EXAT", exat);
+            ClassicAssert.AreEqual("OK", result.ToString());
+            AssertAbsoluteTtl("set-exat", exat * 1000);
+
+            var pxat = DateTimeOffset.UtcNow.AddMinutes(2).ToUnixTimeMilliseconds();
+            result = db.Execute("SET", "set-pxat", "value", "PXAT", pxat);
+            ClassicAssert.AreEqual("OK", result.ToString());
+            AssertAbsoluteTtl("set-pxat", pxat);
+
+            result = db.Execute("SET", "set-expired-pxat", "value", "PXAT",
+                DateTimeOffset.UtcNow.AddSeconds(-1).ToUnixTimeMilliseconds());
+            ClassicAssert.AreEqual("OK", result.ToString());
+            ClassicAssert.IsFalse(db.KeyExists("set-expired-pxat"));
+
+            var conditionalExpiry = DateTimeOffset.UtcNow.AddMinutes(2);
+            result = db.Execute("SET", "set-exat-nx", "value", "EXAT", conditionalExpiry.ToUnixTimeSeconds(), "NX");
+            ClassicAssert.AreEqual("OK", result.ToString());
+            ClassicAssert.AreEqual("value", db.StringGet("set-exat-nx").ToString());
+
+            ClassicAssert.IsTrue(db.StringSet("set-pxat-xx-get", "old-value"));
+            result = db.Execute("SET", "set-pxat-xx-get", "new-value", "PXAT", conditionalExpiry.ToUnixTimeMilliseconds(), "XX", "GET");
+            ClassicAssert.AreEqual("old-value", result.ToString());
+            AssertAbsoluteTtl("set-pxat-xx-get", conditionalExpiry.ToUnixTimeMilliseconds());
+        }
+
+        [Test]
         public void SetExpiryOutOfRangeIsRejectedWithoutKillingSession()
         {
             const string Key = nameof(SetExpiryOutOfRangeIsRejectedWithoutKillingSession);
@@ -870,6 +910,10 @@ namespace Garnet.test
 
                 AssertInvalidExpiry("SET", Key, "replacement", "EX", overflowSeconds);
                 AssertInvalidExpiry("SET", Key, "replacement", "PX", long.MaxValue);
+                AssertInvalidExpiry("SET", Key, "replacement", "EXAT", 0);
+                AssertInvalidExpiry("SET", Key, "replacement", "PXAT", 0);
+                AssertInvalidExpiry("SET", Key, "replacement", "EXAT", long.MaxValue);
+                AssertInvalidExpiry("SET", Key, "replacement", "PXAT", long.MaxValue);
                 AssertInvalidExpiry("SETEX", Key, overflowSeconds, "replacement");
                 AssertInvalidExpiry("PSETEX", Key, long.MaxValue, "replacement");
 
