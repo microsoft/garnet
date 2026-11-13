@@ -1093,6 +1093,43 @@ namespace Garnet.test
             ClassicAssert.IsNull(db.KeyTimeToLive(key));
         }
 
+        /// <summary>
+        /// SET KEEPTTL XX over a non-string key that expires while the SET holds its lock finds the key missing.
+        /// </summary>
+        [Test]
+        public async Task SetKeepTtlXxOverNonStringKeyExpiringUnderLock()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+            const ExceptionInjectionType pause = ExceptionInjectionType.Set_Pause_Before_NonString_Recheck;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            var expireTime = DateTime.UtcNow.AddSeconds(1);
+            CreateNonStringKey(db, key, RedisType.List);
+            ClassicAssert.IsTrue(db.KeyExpire(key, expireTime));
+
+            try
+            {
+                ExceptionInjectionHelper.EnableException(pause);
+                var set = db.ExecuteAsync("SET", key, "v1", "KEEPTTL", "XX");
+                await ExceptionInjectionHelper.WaitOnClearAsync(pause).WaitAsync(TimeSpan.FromSeconds(10));
+
+                // Let the key expire before the SET rechecks it
+                await Task.Delay(expireTime - DateTime.UtcNow + TimeSpan.FromMilliseconds(100));
+                ExceptionInjectionHelper.EnableException(pause);
+
+                ClassicAssert.IsTrue((await set).IsNull);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(pause);
+            }
+
+            ClassicAssert.IsFalse(db.KeyExists(key));
+        }
+
         [Test]
         public void SetConditionalOnNonStringKeysInTransaction()
         {

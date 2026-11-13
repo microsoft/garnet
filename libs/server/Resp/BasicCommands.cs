@@ -790,13 +790,20 @@ namespace Garnet.server
                 {
                     using (txnManager.PromoteToTransaction(TransactionStoreTypes.Main | TransactionStoreTypes.Object, key, LockType.Exclusive))
                     {
+                        // KEEPTTL keeps the expiration of the value it replaces. Read it before the recheck, so a key
+                        // that expires in between is found missing rather than replaced by a string without one.
+                        var keepTtl = cmd is RespCommand.SETKEEPTTL or RespCommand.SETKEEPTTLXX;
+                        var expiration = keepTtl ? GetExpirationTicks(key) : 0;
+#if DEBUG
+                        ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Set_Pause_Before_NonString_Recheck);
+#endif
+
                         // Recheck under the lock, as the key may have changed
                         status = storageSession.SET_Conditional(key, ref input, ref storageSession.stringTransactionalContext);
                         if (status == GarnetStatus.WRONGTYPE)
                         {
-                            // KEEPTTL keeps the expiration of the value it replaces
-                            if (cmd is RespCommand.SETKEEPTTL or RespCommand.SETKEEPTTLXX)
-                                input.arg1 = GetExpirationTicks(key);
+                            if (keepTtl)
+                                input.arg1 = expiration;
 
                             _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
                             input.header.cmd = RespCommand.SETEXNX;
