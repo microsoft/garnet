@@ -1142,6 +1142,28 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanUseZScanWithInfiniteScores()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "ssInfScores";
+
+            var added = db.Execute("ZADD", key, "-inf", "a", "1.5", "b", "+inf", "c");
+            ClassicAssert.AreEqual(3, (int)added);
+
+            var result = db.Execute("ZSCAN", key, "0");
+            var fields = (RedisValue[])result[1];
+            var scores = new Dictionary<string, string>();
+            for (var i = 0; i < fields.Length; i += 2)
+                scores[fields[i]] = fields[i + 1];
+
+            ClassicAssert.AreEqual(3, scores.Count);
+            ClassicAssert.AreEqual("-inf", scores["a"]);
+            ClassicAssert.AreEqual("1.5", scores["b"]);
+            ClassicAssert.AreEqual("inf", scores["c"]);
+        }
+
+        [Test]
         public void CanDoZScanWithCursor()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
