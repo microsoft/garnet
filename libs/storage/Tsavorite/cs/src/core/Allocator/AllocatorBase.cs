@@ -37,6 +37,11 @@ namespace Tsavorite.core
         internal virtual long CalculatePageObjectSizes(long page, long startAddress, long untilAddress) => 0;
         /// <summary>Load objects for records on an already-loaded page for recovery pass 2; records at or above <paramref name="snapshotFromAddress"/> read theirs
         ///     from <paramref name="snapshotObjectLogDevice"/>, and records below it from the main object log.</summary>
+        /// <param name="page">The page whose records' objects are loaded</param>
+        /// <param name="fromAddress">The lowest address whose record's objects are needed</param>
+        /// <param name="untilAddress">The end of the records whose objects are loaded</param>
+        /// <param name="snapshotObjectLogDevice">The object-log device for records at or above <paramref name="snapshotFromAddress"/></param>
+        /// <param name="snapshotFromAddress">The lowest address whose record is the snapshot file's copy; long.MaxValue when no record is</param>
         internal virtual void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice snapshotObjectLogDevice, long snapshotFromAddress) { }
     }
 
@@ -2191,25 +2196,52 @@ namespace Tsavorite.core
 
         /// <summary>Read pages from specified device(s) for recovery, with no output of the countdown event (but it is still created in the
         ///     <see cref="PageAsyncReadResult{TContext}"/> and thus must be Dispose()d).</summary>
+        /// <typeparam name="TContext">The type of <paramref name="context"/></typeparam>
+        /// <param name="readPageStart">The first page to read</param>
+        /// <param name="numPages">The number of pages to read</param>
+        /// <param name="untilAddress">The end of the data to read; the page holding it is read only up to it, rounded up to a sector</param>
+        /// <param name="context">The context passed to the read completion callback</param>
+        /// <param name="devicePageOffset">For a snapshot <paramref name="logDevice"/>, the page at its offset 0</param>
+        /// <param name="logDevice">The snapshot device to read from; null for the main log device</param>
+        /// <param name="objectLogDevice">The object-log device a <see cref="RecoveryPhase.Pass2"/> read deserializes objects from; null for the main object log</param>
+        /// <param name="recoveryPhase">The recovery phase of the read; objects are deserialized as each page is read except in <see cref="RecoveryPhase.Pass1"/></param>
+        /// <param name="firstPageReadOffset">The sector-aligned offset on <paramref name="readPageStart"/> from which to read that page; the resident page's
+        ///     bytes below it are kept. Nonzero only for a <see cref="RecoveryPhase.Pass1"/> read, which deserializes no objects (that would start at the page start).</param>
         internal void AsyncReadPagesForRecovery<TContext>(long readPageStart, int numPages, long untilAddress, TContext context,
-            long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null, RecoveryPhase recoveryPhase = RecoveryPhase.Pass1)
-            => AsyncReadPagesForRecovery(readPageStart, numPages, untilAddress, context, out _, devicePageOffset, logDevice, objectLogDevice, recoveryPhase);
+            long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null, RecoveryPhase recoveryPhase = RecoveryPhase.Pass1, int firstPageReadOffset = 0)
+            => AsyncReadPagesForRecovery(readPageStart, numPages, untilAddress, context, out _, devicePageOffset, logDevice, objectLogDevice, recoveryPhase, firstPageReadOffset);
 
         /// <summary>Read pages from specified device for recovery, returning the countdown event</summary>
+        /// <typeparam name="TContext">The type of <paramref name="context"/></typeparam>
+        /// <param name="readPageStart">The first page to read</param>
+        /// <param name="numPages">The number of pages to read</param>
+        /// <param name="untilAddress">The end of the data to read; the page holding it is read only up to it, rounded up to a sector</param>
+        /// <param name="context">The context passed to the read completion callback</param>
+        /// <param name="completed">Outputs the countdown event for the page reads; see <see cref="PageAsyncReadResult{TContext}.handle"/></param>
+        /// <param name="devicePageOffset">For a snapshot <paramref name="logDevice"/>, the page at its offset 0</param>
+        /// <param name="logDevice">The snapshot device to read from; null for the main log device</param>
+        /// <param name="objectLogDevice">The object-log device a <see cref="RecoveryPhase.Pass2"/> read deserializes objects from; null for the main object log</param>
+        /// <param name="recoveryPhase">The recovery phase of the read; objects are deserialized as each page is read except in <see cref="RecoveryPhase.Pass1"/></param>
+        /// <param name="firstPageReadOffset">The sector-aligned offset on <paramref name="readPageStart"/> from which to read that page; the resident page's
+        ///     bytes below it are kept. Nonzero only for a <see cref="RecoveryPhase.Pass1"/> read, which deserializes no objects (that would start at the page start).</param>
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void AsyncReadPagesForRecovery<TContext>(long readPageStart, int numPages, long untilAddress, TContext context,
-            out CountdownEvent completed, long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null, RecoveryPhase recoveryPhase = RecoveryPhase.Pass1)
+            out CountdownEvent completed, long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null, RecoveryPhase recoveryPhase = RecoveryPhase.Pass1,
+            int firstPageReadOffset = 0)
         {
+            Debug.Assert(firstPageReadOffset == 0 || (firstPageReadOffset % sectorSize == 0 && firstPageReadOffset < PageSize && recoveryPhase == RecoveryPhase.Pass1
+                && IsAllocated(GetPageIndexForPage(readPageStart))), $"Invalid firstPageReadOffset {firstPageReadOffset}");
             var usedDevice = logDevice ?? this.device;
 
             completed = new CountdownEvent(numPages);
             for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
             {
                 var pageIndex = (int)(readPage % BufferSize);
+                var pageReadOffset = readPage == readPageStart ? firstPageReadOffset : 0;
                 if (!IsAllocated(pageIndex))
                     _wrapper.AllocatePage(pageIndex);
                 else
-                    ClearPage(readPage, offset: 0);
+                    ClearPage(readPage, offset: pageReadOffset);
 
                 var asyncResult = new PageAsyncReadResult<TContext>()
                 {
@@ -2237,6 +2269,11 @@ namespace Tsavorite.core
                 if (logDevice != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
+                // Start the read at pageReadOffset, in both the file and the page; readLength was computed from the page start.
+                Debug.Assert(pageReadOffset == 0 || readLength > pageReadOffset, $"readLength {readLength} must exceed pageReadOffset {pageReadOffset}");
+                offsetInFile += (ulong)pageReadOffset;
+                readLength -= (uint)pageReadOffset;
+
                 if (recoveryPhase == RecoveryPhase.Pass2)
                 {
                     // Create separate readBuffers for each main-log page, as each page launches its own async read and callbacks are on different threads.
@@ -2245,7 +2282,7 @@ namespace Tsavorite.core
                 }
 
                 // Call the overridden ReadAsync for the derived allocator class
-                ReadAsync(offsetInFile, (IntPtr)pagePointers[pageIndex], readLength, AsyncReadPagesForRecoveryCallback, asyncResult, usedDevice);
+                ReadAsync(offsetInFile, (IntPtr)(pagePointers[pageIndex] + pageReadOffset), readLength, AsyncReadPagesForRecoveryCallback, asyncResult, usedDevice);
             }
         }
 

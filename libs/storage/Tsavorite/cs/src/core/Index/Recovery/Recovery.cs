@@ -727,7 +727,7 @@ namespace Tsavorite.core
             return true;
         }
 
-        private void ReadPagesWithMemoryConstraint(long endAddress, RecoveryStatus recoveryStatus, long page, long endPage, int numPagesToRead)
+        private void ReadPagesWithMemoryConstraint(long endAddress, RecoveryStatus recoveryStatus, long page, long endPage, int numPagesToRead, int firstPageReadOffset)
         {
             // Before reading in additional pages, trim memory if needed to make room for the inline page space.
             TrimLogPages(recoveryStatus, tailPage: page, numPagesToRead, untilAddress: endAddress);
@@ -738,7 +738,7 @@ namespace Tsavorite.core
 
             // Issue request to read pages as much as possible
             hlogBase.AsyncReadPagesForRecovery(page, numPagesToRead, endAddress, recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
-                recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice, RecoveryPhase.Pass1);
+                recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice, RecoveryPhase.Pass1, firstPageReadOffset);
         }
 
         /// <summary>
@@ -847,7 +847,8 @@ namespace Tsavorite.core
             }
         }
 
-        private async ValueTask<long> ReadPagesForRecoveryAsync(long untilAddress, RecoveryStatus recoveryStatus, long endPage, int numPagesToReadPerIteration, long page, CancellationToken cancellationToken)
+        private async ValueTask<long> ReadPagesForRecoveryAsync(long untilAddress, RecoveryStatus recoveryStatus, long endPage, int numPagesToReadPerIteration, long page,
+            int firstPageReadOffset, CancellationToken cancellationToken)
         {
             var readEndPage = Math.Min(page + numPagesToReadPerIteration, endPage);
             if (page < readEndPage)
@@ -858,7 +859,7 @@ namespace Tsavorite.core
                 // this must be done in batches of all flushes followed by all reads to ensure proper sequencing of reads when
                 // usableCapacity != capacity (and thus the page-read index is not equal to the page-flush index).
                 await WaitUntilAllPagesHaveBeenFlushedAsync(page, readEndPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
-                ReadPagesWithMemoryConstraint(untilAddress, recoveryStatus, page, readEndPage, numPagesToRead);
+                ReadPagesWithMemoryConstraint(untilAddress, recoveryStatus, page, readEndPage, numPagesToRead, firstPageReadOffset);
             }
 
             return readEndPage;
@@ -895,7 +896,7 @@ namespace Tsavorite.core
 
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
-                var end = await ReadPagesForRecoveryAsync(untilAddress, recoveryStatus, endPage, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
+                var end = await ReadPagesForRecoveryAsync(untilAddress, recoveryStatus, endPage, numPagesToReadPerIteration, page, firstPageReadOffset: 0, cancellationToken).ConfigureAwait(false);
                 for (var p = page; p < end; p++)
                 {
                     // Ensure page has been read into memory
@@ -1054,12 +1055,20 @@ namespace Tsavorite.core
             // were recovered by the hybrid-log phase; records at or above it are read here from the snapshot file, without their objects. When it is mid-page,
             // its page (startPage) holds both, but the snapshot's copy of that page is reliable only from scanFromAddress up: the snapshot flush may start that
             // page at the FlushedUntilAddress when the snapshot began, or at a HeadAddress that passed that during the flush, so below that the copy can hold zeros
-            // or records whose objects are not in the snapshot object log. Reading the page from the snapshot replaces all of it, so if any of its main-log records
-            // are resident (at or above headAddress, so the hybrid-log phase read the page), save the bytes below scanFromAddress and put them back after the read.
+            // or records whose objects are not in the snapshot object log. So if the page's main-log records are resident (at or above headAddress, so the
+            // hybrid-log phase read the page), keep them: read the snapshot's copy of the page only from the sector holding scanFromAddress, and save the part of
+            // that sector below scanFromAddress (less than a sector) to put back after the read. A null main-log device reads back only zeros, so then the
+            // snapshot's copy of the whole page is used.
             var readsSnapshotPages = startPage < Math.Min(endPage, snapshotEndPage);
-            byte[] boundaryPageMainLogBytes = null;
-            if (readsSnapshotPages && headAddress < scanFromAddress && scanFromAddress > hlogBase.GetFirstValidLogicalAddressOnPage(startPage))
-                boundaryPageMainLogBytes = CopyPageBytesBelow(startPage, scanFromAddress);
+            var keepMainLogRecords = readsSnapshotPages && !hlogBase.IsNullDevice && headAddress < scanFromAddress
+                && scanFromAddress > hlogBase.GetFirstValidLogicalAddressOnPage(startPage);
+            var boundaryPageReadOffset = 0;
+            byte[] mainLogSectorBytes = null;
+            if (keepMainLogRecords)
+            {
+                boundaryPageReadOffset = RoundDown((int)hlogBase.GetOffsetOnPage(scanFromAddress), hlogBase.GetDeviceSectorSize());
+                mainLogSectorBytes = SaveMainLogPageSectorBytes(hlogBase.GetLogicalAddressOfStartOfPage(startPage) + boundaryPageReadOffset, scanFromAddress);
+            }
 
             // Mark this as snapshot recovery: eviction (read-time and load-time) must flush a page holding records read from the snapshot file to the main log
             // before freeing it (FlushIfNeededThenEvictPageForRecovery), since those records are not otherwise durable; on the boundary page only the records at
@@ -1067,9 +1076,9 @@ namespace Tsavorite.core
             recoveryStatus.snapshotScanFromAddress = readsSnapshotPages ? scanFromAddress : -1;
 
             // The lowest address whose in-memory record is the snapshot file's copy; records at or above it carry snapshot object-log positions, and records below
-            // it main object-log positions. When the main log's bytes are not kept, the whole boundary page is the snapshot's copy.
+            // it main object-log positions. When the main log's records are not kept, the whole boundary page is the snapshot's copy.
             var snapshotFromAddress = !readsSnapshotPages ? long.MaxValue
-                : boundaryPageMainLogBytes is not null ? scanFromAddress
+                : keepMainLogRecords ? scanFromAddress
                 : hlogBase.GetLogicalAddressOfStartOfPage(startPage);
 
             // Notify application of checkpoint token before processing snapshot records
@@ -1078,7 +1087,9 @@ namespace Tsavorite.core
 
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
-                _ = await ReadPagesForRecoveryAsync(snapshotEndAddress, recoveryStatus, snapshotEndPage, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
+                _ = await ReadPagesForRecoveryAsync(snapshotEndAddress, recoveryStatus, snapshotEndPage, numPagesToReadPerIteration, page, boundaryPageReadOffset,
+                        cancellationToken).ConfigureAwait(false);
+                boundaryPageReadOffset = 0;     // Only startPage, the first page read, is read from past its start
                 var end = Math.Min(page + numPagesToReadPerIteration, endPage);
 
                 for (long p = page; p < end; p++)
@@ -1089,9 +1100,12 @@ namespace Tsavorite.core
                         // Ensure the page is read from file
                         await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
 
-                        // Put the main log's bytes saved above back over the snapshot's copy of the boundary page below scanFromAddress.
-                        if (p == startPage && boundaryPageMainLogBytes is not null)
-                            RestorePageBytes(p, boundaryPageMainLogBytes);
+                        // Put back the main log's bytes below scanFromAddress saved above; if there are any, this is startPage, the first page processed.
+                        if (mainLogSectorBytes is not null)
+                        {
+                            RestoreMainLogPageSectorBytes(mainLogSectorBytes, scanFromAddress);
+                            mainLogSectorBytes = null;
+                        }
 
                         // We make an extra pass to clear locks when reading pages back into memory
                         ClearBitsOnPage(p, untilAddress, in options, recoveryStatus.headAddress, snapshotFromAddress: scanFromAddress);
@@ -1126,19 +1140,26 @@ namespace Tsavorite.core
             return finalHeadAddress;
         }
 
-        /// <summary>Copies the bytes of <paramref name="page"/> below <paramref name="untilAddress"/>, including its page header.</summary>
-        private unsafe byte[] CopyPageBytesBelow(long page, long untilAddress)
+        /// <summary>Saves the resident main-log bytes in the sector holding <paramref name="untilAddress"/> that are below it.</summary>
+        /// <param name="fromAddress">The start of the sector holding <paramref name="untilAddress"/></param>
+        /// <param name="untilAddress">The end of the bytes to save</param>
+        /// <returns>The saved bytes, or null if there are none (untilAddress is sector-aligned)</returns>
+        private unsafe byte[] SaveMainLogPageSectorBytes(long fromAddress, long untilAddress)
         {
-            Debug.Assert(hlogBase.GetPage(untilAddress) == page, $"untilAddress {untilAddress} must be on page {page}");
-            Debug.Assert(hlogBase.IsAllocated(hlogBase.GetPageIndexForPage(page)), $"page {page} must be resident");
-            var bytes = GC.AllocateUninitializedArray<byte>((int)hlogBase.GetOffsetOnPage(untilAddress));
-            new ReadOnlySpan<byte>((byte*)hlogBase.GetPhysicalAddress(hlogBase.GetLogicalAddressOfStartOfPage(page)), bytes.Length).CopyTo(bytes);
+            Debug.Assert(untilAddress >= fromAddress && untilAddress - fromAddress < hlogBase.GetDeviceSectorSize(), $"[{fromAddress}, {untilAddress}) must be within one sector");
+            Debug.Assert(hlogBase.IsAllocated(hlogBase.GetPageIndexForPage(hlogBase.GetPage(untilAddress))), $"the page of {untilAddress} must be resident");
+            if (untilAddress == fromAddress)
+                return null;
+            var bytes = new byte[untilAddress - fromAddress];
+            new ReadOnlySpan<byte>((byte*)hlogBase.GetPhysicalAddress(fromAddress), bytes.Length).CopyTo(bytes);
             return bytes;
         }
 
-        /// <summary>Writes bytes saved by <see cref="CopyPageBytesBelow"/> back to the start of <paramref name="page"/>.</summary>
-        private unsafe void RestorePageBytes(long page, byte[] bytes)
-            => bytes.CopyTo(new Span<byte>((byte*)hlogBase.GetPhysicalAddress(hlogBase.GetLogicalAddressOfStartOfPage(page)), bytes.Length));
+        /// <summary>Puts bytes saved by <see cref="SaveMainLogPageSectorBytes"/> back in place.</summary>
+        /// <param name="bytes">The saved bytes</param>
+        /// <param name="untilAddress">The address at which the saved bytes end</param>
+        private unsafe void RestoreMainLogPageSectorBytes(byte[] bytes, long untilAddress)
+            => bytes.CopyTo(new Span<byte>((byte*)hlogBase.GetPhysicalAddress(untilAddress - bytes.Length), bytes.Length));
 
         /// <summary>
         /// Load (deserialize) objects for the recovered pages in the address range [<paramref name="fromAddress"/>, <paramref name="untilAddress"/>),

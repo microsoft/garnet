@@ -212,8 +212,9 @@ namespace Tsavorite.core
         {
             var index = page % BufferSize;
 
-            // Offset is nonzero only for RecoveryReset, to zero out the page past offset (which is tailAddress).
-            // In this case, we want to keep the objectPage information for the used (so far) part of the page.
+            // Offset is nonzero only to zero out the page past offset while keeping the part of the page below it: for RecoveryReset (offset is tailAddress),
+            // and for a snapshot recovery read that keeps the boundary page's main-log records below offset. In both cases, keep the objectPage information
+            // for the kept part of the page.
             if (offset == 0)
                 objectPages[index].Clear();
             base.ClearPage(index, offset);

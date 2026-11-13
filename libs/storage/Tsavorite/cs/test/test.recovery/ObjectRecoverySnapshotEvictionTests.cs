@@ -183,16 +183,17 @@ namespace Tsavorite.test.recovery.objects
         // makes the next snapshot checkpoint's flushedLogicalAddress mid-page. The records below it on that page are on the main log, with their objects in the
         // main object-log, while the snapshot file's copy of the page holds only the records from that address on. With no records written after the flush the
         // snapshot holds no page; with 20 it holds the rest of that page; with 1000 it also holds enough later pages that a small recovery budget evicts the
-        // flushed page, flushing its snapshot records to the main log first. One record more than NumRecords puts the flush point off a sector boundary, so that
-        // recovery flush must also keep the main log's bytes before it in the same sector.
+        // flushed page, flushing its snapshot records to the main log first. With 512-byte sectors, NumRecords records end the flush on a sector boundary
+        // (offset 2,560 on its page); one more ends it mid-sector (offset 2,592), so the main log's bytes before it in that sector must also be kept, both when
+        // reading the snapshot's copy of the page and when flushing the page.
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async Task SnapshotRecoveryAfterMidPageFlush(
+            [Values(NumRecords, NumRecords + 1)] int recordsBeforeFlush,
             [Values(0, 20, 1000)] int recordsAfterFlush,
             [Values(0, 4)] int recoveryTargetPageCount)
         {
             var logMemorySize = 32L * MinKvLogPageSize;
-            var recordsBeforeFlush = NumRecords + 1;
             var totalRecords = recordsBeforeFlush + recordsAfterFlush;
 
             Prepare(logMemorySize, out var log, out var objlog, out var store);
@@ -244,7 +245,7 @@ namespace Tsavorite.test.recovery.objects
                             (status, output) = GetSinglePendingResult(completedOutputs);
                         }
 
-                        ClassicAssert.IsTrue(status.Found, $"key {i} not found (records after flush {recordsAfterFlush}, target pages {recoveryTargetPageCount})");
+                        ClassicAssert.IsTrue(status.Found, $"key {i} not found (records before flush {recordsBeforeFlush}, after {recordsAfterFlush}, target pages {recoveryTargetPageCount})");
                         ClassicAssert.AreEqual(i, output.value.value, $"key {i} wrong value");
                     }
                 }
