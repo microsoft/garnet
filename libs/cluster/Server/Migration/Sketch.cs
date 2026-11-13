@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
@@ -37,10 +38,7 @@ namespace Garnet.cluster
             if (!argSliceVector.TryAddItem(key))
                 return false;
 
-            var slot = (int)HashUtils.MurmurHash2x64A(key) & (size - 1);
-            var byteOffset = slot >> 3;
-            var bitOffset = slot & 7;
-            bitmap[byteOffset] = (byte)(bitmap[byteOffset] | (1UL << bitOffset));
+            AddHash(HashUtils.MurmurHash2x64A(key));
 
             return true;
         }
@@ -54,10 +52,7 @@ namespace Garnet.cluster
 
             var nsRaw = VectorManager.ExtractContextFromNamespaces(ns);
 
-            var slot = (int)HashUtils.MurmurHash2x64A(key, seed: (uint)nsRaw) & (size - 1);
-            var byteOffset = slot >> 3;
-            var bitOffset = slot & 7;
-            bitmap[byteOffset] = (byte)(bitmap[byteOffset] | (1UL << bitOffset));
+            AddHash(HashUtils.MurmurHash2x64A(key, seed: (uint)nsRaw));
 
             return true;
         }
@@ -68,12 +63,22 @@ namespace Garnet.cluster
         /// <param name="key"></param>
         public void HashAndStore(PinnedSpanByte key)
         {
-            var slot = (int)HashUtils.MurmurHash2x64A(key.ReadOnlySpan) & (size - 1);
-            var byteOffset = slot >> 3;
-            var bitOffset = slot & 7;
-            bitmap[byteOffset] = (byte)(bitmap[byteOffset] | (1UL << bitOffset));
+            AddHash(HashUtils.MurmurHash2x64A(key.ReadOnlySpan));
             Keys.Add((key, false));
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void AddHash(ulong keyHash)
+        {
+            SetBit((int)keyHash & (size - 1));
+            SetBit((int)(keyHash >> 32) & (size - 1));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void SetBit(int slot) => bitmap[slot >> 3] |= (byte)(1 << (slot & 7));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        bool IsSet(int slot) => (bitmap[slot >> 3] & (1 << (slot & 7))) != 0;
 
         /// <summary>
         /// Probe sketch using a precomputed key hash.
@@ -83,11 +88,8 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool Probe(ulong keyHash, out SketchStatus status)
         {
-            var slot = (int)keyHash & (size - 1);
-            var byteOffset = slot >> 3;
-            var bitOffset = slot & 7;
-
-            var exists = (bitmap[byteOffset] & (1UL << bitOffset)) > 0;
+            var exists = IsSet((int)keyHash & (size - 1)) &&
+                IsSet((int)(keyHash >> 32) & (size - 1));
             status = exists ? Status : SketchStatus.INITIALIZING;
             return exists;
         }

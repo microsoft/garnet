@@ -348,10 +348,10 @@ namespace Garnet.test.cluster
             }
         }
 
-        [TestCase(1024, 4096)]
-        [TestCase(1025, 8192)]
-        [TestCase(4096, 16384)]
-        [TestCase(262143, 1048576)]
+        [TestCase(1024, 262144)]
+        [TestCase(1025, 524288)]
+        [TestCase(4096, 1048576)]
+        [TestCase(262143, 67108864)]
         public void ConfiguredBatchSizeControlsBloomFilter(int keySendBatchSize, int bitmapBitCount)
         {
             CreateOperation(1, keySendBatchSize: keySendBatchSize);
@@ -360,9 +360,64 @@ namespace Garnet.test.cluster
             var hash = HashUtils.MurmurHash2x64A(key);
             Assert.That(operation.sketch.Probe(hash, out _), Is.True);
             Assert.That(operation.sketch.Probe(hash ^ (uint)bitmapBitCount, out _), Is.True);
+            Assert.That(operation.sketch.Probe(hash ^ ((ulong)bitmapBitCount << 32), out _), Is.True);
             Assert.That(operation.sketch.Probe(hash ^ (uint)(bitmapBitCount >> 1), out _), Is.False);
+            Assert.That(operation.sketch.Probe(hash ^ ((ulong)(bitmapBitCount >> 1) << 32), out _), Is.False);
             operation.sketch.Clear();
             Assert.That(operation.sketch.Probe(hash, out _), Is.False);
+        }
+
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(4)]
+        public void SketchMembershipRequiresBothPositions(int namespaceLength)
+        {
+            var sketch = new Sketch(keyCount: 64);
+            ReadOnlySpan<byte> key = "migration-filter-key"u8;
+            ulong hash;
+            if (namespaceLength == 0)
+            {
+                Assert.That(sketch.TryHashAndStore(key), Is.True);
+                hash = HashUtils.MurmurHash2x64A(key);
+            }
+            else
+            {
+                var ns = new byte[namespaceLength];
+                ns[0] = 7;
+                Assert.That(sketch.TryHashAndStore(ns, key), Is.True);
+                hash = HashUtils.MurmurHash2x64A(key, seed: (uint)VectorManager.ExtractContextFromNamespaces(ns));
+            }
+            AssertSketchMembership(sketch, hash);
+        }
+
+        [Test]
+        public void ExplicitKeysSketchRequiresBothPositions()
+        {
+            var sketch = new Sketch(keyCount: 64);
+            var key = PinnedSpanByte.FromPinnedSpan("migration-filter-key"u8);
+            sketch.HashAndStore(key);
+            AssertSketchMembership(sketch, HashUtils.MurmurHash2x64A(key.ReadOnlySpan));
+        }
+
+        static void AssertSketchMembership(Sketch sketch, ulong hash)
+        {
+            var first = (uint)hash & 63;
+            var second = (uint)(hash >> 32) & 63;
+            var missing = (first + 1) & 63;
+            if (missing == second)
+                missing = (missing + 1) & 63;
+
+            sketch.SetStatus(SketchStatus.DELETING);
+            Assert.That(sketch.Probe(hash, out var status), Is.True);
+            Assert.That(status, Is.EqualTo(SketchStatus.DELETING));
+            Assert.That(sketch.Probe(((ulong)missing << 32) | first, out status), Is.False);
+            Assert.That(status, Is.EqualTo(SketchStatus.INITIALIZING));
+            Assert.That(sketch.Probe(((ulong)second << 32) | missing, out status), Is.False);
+            Assert.That(status, Is.EqualTo(SketchStatus.INITIALIZING));
+
+            sketch.Clear();
+            Assert.That(sketch.Probe(hash, out status), Is.False);
+            Assert.That(status, Is.EqualTo(SketchStatus.INITIALIZING));
         }
 
         [TestCase(false)]

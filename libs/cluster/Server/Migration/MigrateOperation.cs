@@ -75,7 +75,7 @@ namespace Garnet.cluster
             {
                 this.session = session;
                 var keySendBatchSize = session.clusterProvider.serverOptions.MigrateKeySendBatchSize;
-                sketchBitCount = (int)BitOperations.RoundUpToPowerOf2((uint)(keySendBatchSize << 2));
+                sketchBitCount = (int)BitOperations.RoundUpToPowerOf2((uint)(keySendBatchSize << 8));
                 // ArgSliceVector reserves one slot beyond the usable key limit.
                 collectionBatchCapacity = keySendBatchSize + 1;
                 deleteBatchSize = session.clusterProvider.serverOptions.MigrationDeleteBatchSize;
