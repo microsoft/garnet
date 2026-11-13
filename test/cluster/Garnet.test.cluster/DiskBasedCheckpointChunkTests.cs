@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -130,6 +131,130 @@ namespace Garnet.test.cluster
                 {
                     entry.RemoveReader();
                 }
+            }
+            finally
+            {
+                context.TearDown();
+            }
+        }
+
+        /// <summary>
+        /// The snapshot flush skips any page that eviction passes during the flush, because recovery reads such pages from the main log, so the
+        /// snapshot file can lack whole segments. Disk-based sync must send the snapshot file only from the page holding the checkpoint's
+        /// flushedLogicalAddress, where recovery starts reading it. Deleting the segments below that page stands in for skipped pages.
+        /// </summary>
+        [Test]
+        public void SyncSendsSnapshotOnlyFromPageRecoveryReads([Values] bool disableObjects)
+        {
+            var context = new ClusterTestContext();
+            context.Setup([]);
+            try
+            {
+                // Minimum-size pages, one per snapshot segment. The memory budget keeps the whole log in memory, so the snapshot covers every page,
+                // and the throttle makes the snapshot flush take long enough to advance the main log's flushed address while it runs.
+                context.CreateInstances(2, disableObjects: disableObjects, lowMemory: true, memorySize: "1m", segmentSize: "4k",
+                    enableAOF: true, checkpointThrottleFlushDelayMs: 100);
+                context.CreateConnection();
+                context.SimplePrimaryReplicaSetup();
+
+                context.kvPairs = [];
+                context.kvPairsObj = [];
+                context.SimplePopulateDB(disableObjects, keyLength: 32, kvpairCount: 256, primaryIndex: 0);
+
+                // Flush the main log up to its tail page during the snapshot flush, as a ReadOnlyAddress shift from concurrent writes does. The
+                // checkpoint's flushedLogicalAddress, taken after the snapshot flush, then lies on the snapshot's last page.
+                var store = context.nodes[0].Provider.StoreWrapper.store;
+                var flushDuringSnapshot = Task.Run(() =>
+                {
+                    var waitTime = Stopwatch.StartNew();
+                    while (store.SystemState.Phase != Phase.WAIT_FLUSH)
+                    {
+                        if (waitTime.Elapsed > TimeSpan.FromSeconds(30))
+                            throw new TimeoutException("The checkpoint did not reach WAIT_FLUSH");
+                        _ = Thread.Yield();
+                    }
+                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress & ~(TestUtils.MinKvLogPageSize - 1L), wait: true);
+                });
+                context.clusterTestUtils.Checkpoint(0, context.logger);
+                Assert.That(flushDuringSnapshot.Wait(TimeSpan.FromSeconds(30)), Is.True, "The main log flush did not complete");
+
+                var provider = (ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider;
+                Assert.That(provider.replicationManager.TryGetLatestCheckpointEntryFromMemory(out var entry), Is.True);
+                LogFileInfo logFileInfo;
+                Guid token;
+                try
+                {
+                    Assert.That(provider.replicationManager.TryAcquireSettledMetadataForMainStore(entry, out logFileInfo, out _), Is.True);
+                    token = entry.metadata.storeHlogToken;
+                }
+                finally
+                {
+                    entry.RemoveReader();
+                }
+
+                var segmentSize = TsavoriteSnapshotReader.GetSegmentSize(CheckpointFileType.STORE_SNAPSHOT, context.nodeOptions[0]);
+                var startSegment = logFileInfo.snapshotFileStartAddress / segmentSize;
+                Assert.That(startSegment, Is.GreaterThan(0), "The main log flush must pass the snapshot's first segment during the snapshot flush");
+                Assert.That(logFileInfo.snapshotFileStartAddress, Is.LessThan(logFileInfo.snapshotFileEndAddress));
+
+                var snapshotFile = Path.Combine(context.nodeOptions[0].GetStoreCheckpointDirectory(0), "cpr-checkpoints", token.ToString(), "snapshot.dat");
+                Assert.That(File.Exists($"{snapshotFile}.{startSegment}"), Is.True, "Recovery reads the segment holding snapshotFileStartAddress");
+                for (var segment = 0L; segment < startSegment; segment++)
+                    File.Delete($"{snapshotFile}.{segment}");
+
+                // Disk-based sync sends the checkpoint; the replica recovers from it, then replays the AOF written after it.
+                _ = context.clusterTestUtils.ClusterReplicate(1, 0, logger: context.logger);
+                context.clusterTestUtils.WaitForReplicaRecovery(1, context.logger);
+                context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
+                context.SimpleValidateDB(disableObjects, 1);
+            }
+            finally
+            {
+                context.TearDown();
+            }
+        }
+
+        /// <summary>
+        /// Records flushed to the main log keep their objects in the main object log, which disk-based sync must send even when the snapshot
+        /// holds no objects, as when only strings were written after the objects.
+        /// </summary>
+        [Test]
+        public void SyncSendsMainObjectLogWhenSnapshotHasNoObjects()
+        {
+            var context = new ClusterTestContext();
+            context.Setup([]);
+            try
+            {
+                // The log memory holds only a few pages, so the strings fill the snapshot and the objects are flushed to the main log well before it.
+                context.CreateInstances(2, lowMemory: true, segmentSize: "4k", enableAOF: true);
+                context.CreateConnection();
+                context.SimplePrimaryReplicaSetup();
+
+                context.kvPairs = [];
+                context.kvPairsObj = [];
+                context.PopulatePrimaryWithObjects(ref context.kvPairsObj, keyLength: 32, kvpairCount: 32, primaryIndex: 0);
+                context.PopulatePrimary(ref context.kvPairs, keyLength: 32, kvpairCount: 1024, primaryIndex: 0);
+                context.clusterTestUtils.Checkpoint(0, context.logger);
+
+                var provider = (ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider;
+                Assert.That(provider.replicationManager.TryGetLatestCheckpointEntryFromMemory(out var entry), Is.True);
+                LogFileInfo logFileInfo;
+                try
+                {
+                    Assert.That(provider.replicationManager.TryAcquireSettledMetadataForMainStore(entry, out logFileInfo, out _), Is.True);
+                }
+                finally
+                {
+                    entry.RemoveReader();
+                }
+                Assert.That(logFileInfo.hasSnapshotObjects, Is.False, "The snapshot must hold only strings");
+                Assert.That(logFileInfo.hasHybridLogObjects, Is.True, "The main object log must hold the objects");
+
+                _ = context.clusterTestUtils.ClusterReplicate(1, 0, logger: context.logger);
+                context.clusterTestUtils.WaitForReplicaRecovery(1, context.logger);
+                context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
+                context.ValidateNodeObjects(ref context.kvPairsObj, 1);
+                context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
             }
             finally
             {
