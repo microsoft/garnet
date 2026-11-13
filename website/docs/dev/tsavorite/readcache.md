@@ -93,6 +93,23 @@ sets its `PreviousAddress` to the current chain head, and **CAS's it into the ha
 population is best-effort). Read promotion is *value-preserving*: it caches the
 current committed value.
 
+### Second chance on read-cache hits
+
+A successful read of a cached record below the read cache's `SafeReadOnlyAddress`,
+with `ReadCopyFrom.AllImmutable` selected, copies it to the read-cache tail using
+the same best-effort `TryCopyToReadCache` path. This applies both to direct cache hits and to pending reads that find a
+newer cached copy when their disk IO completes. Hits at or above that boundary
+do not allocate, and unsuccessful reads and update lookups do not promote.
+An explicit session or per-read `ReadCopyTo.None` override disables second-chance
+copying even when `ReadCopyFrom.AllImmutable` is inherited.
+`ReadCacheSecondChanceFraction` controls the read-only region available for this
+second chance.
+
+The fresh copy is head-inserted with a hash-entry CAS, so a concurrent update or
+promotion makes a stale copy fail rather than shadowing a newer value. Older
+copies remain in the chain until normal eviction removes them; neither this
+promotion nor read-cache eviction writes to the main log.
+
 ### Value-changing update (Upsert / RMW / Delete): detach
 
 A value-changing update must atomically (a) publish the new value and (b) ensure no

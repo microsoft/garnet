@@ -41,7 +41,8 @@ namespace Tsavorite.core
         /// record into the hash entry detaches (drops) the entire read-cache prefix, which is re-promoted on a later read.</summary>
         MainLog,
 
-        /// <summary>Copy to the readcache. This requires that <see cref="ReadCacheSettings"/> be supplied to the TsavoriteKV ctor.</summary>
+        /// <summary>Copy to the readcache. This requires that <see cref="ReadCacheSettings"/> be supplied to the TsavoriteKV ctor.
+        /// This is always the destination when doing a second-chance copy from the readcache's read-only region.</summary>
         ReadCache
     }
 
@@ -56,7 +57,7 @@ namespace Tsavorite.core
         /// <summary>The destination for copies records.</summary>
         public ReadCopyTo CopyTo;
 
-        internal bool IsActive => CopyFrom != ReadCopyFrom.None && CopyTo != ReadCopyTo.None;
+        internal readonly bool IsActive => CopyFrom != ReadCopyFrom.None && CopyTo != ReadCopyTo.None;
 
         /// <summary>Constructor.</summary>
         public ReadCopyOptions(ReadCopyFrom from, ReadCopyTo to)
