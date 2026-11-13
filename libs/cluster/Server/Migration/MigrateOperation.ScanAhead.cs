@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 #if DEBUG
@@ -30,37 +31,35 @@ namespace Garnet.cluster
                     ? CancellationTokenSource.CreateLinkedTokenSource(session.migrationCancellationToken)
                     : null;
                 var token = scanCancellation?.Token ?? session.migrationCancellationToken;
-                var pending = new Sketch(keyCount: sketchBitCount, maxBatchSize: collectionBatchCapacity);
+                var pending = useScanAheadMigration ? new ArgSliceVector(collectionBatchCapacity) : sketch.argSliceVector;
                 Task<long> scanTask = null;
 
                 try
                 {
                     var cursor = ScanBatch(pending, beginAddress);
-                    while (!pending.argSliceVector.IsEmpty)
+                    while (!pending.IsEmpty)
                     {
                         token.ThrowIfCancellationRequested();
-                        pending.SetStatus(SketchStatus.TRANSMITTING);
-                        var retired = Interlocked.Exchange(ref activeSketch, pending);
+                        var nextBatch = sketch.ReplaceBatch(pending);
+                        sketch.SetStatus(SketchStatus.TRANSMITTING);
                         if (!await session.WaitForConfigPropagationAsync().ConfigureAwait(false))
                         {
                             session.logger?.LogError("Failed to protect migration batch");
                             return false;
                         }
 
-                        // The publication barrier also retires readers of the previous sketch.
-                        retired.Clear();
                         var scanStart = cursor;
                         scanTask = useScanAheadMigration && cursor < endAddress
 #if DEBUG
                             ? Task.Run(async () =>
                             {
-                                var next = ScanBatch(retired, scanStart);
+                                var next = ScanBatch(nextBatch, scanStart);
                                 await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Migration_Slot_After_Scan_Ahead)
                                     .WaitAsync(token).ConfigureAwait(false);
                                 return next;
                             }, token)
 #else
-                            ? Task.Run(() => ScanBatch(retired, scanStart), token)
+                            ? Task.Run(() => ScanBatch(nextBatch, scanStart), token)
 #endif
                             : null;
 
@@ -78,10 +77,14 @@ namespace Garnet.cluster
 
                         if (scanTask != null)
                             cursor = await scanTask.ConfigureAwait(false);
-                        else if (cursor < endAddress)
-                            cursor = ScanBatch(retired, scanStart);
+                        else
+                        {
+                            nextBatch.Clear();
+                            if (cursor < endAddress)
+                                cursor = ScanBatch(nextBatch, scanStart);
+                        }
                         scanTask = null;
-                        pending = retired;
+                        pending = nextBatch;
                     }
 
                     sketch.Clear();
@@ -104,7 +107,7 @@ namespace Garnet.cluster
                     }
                 }
 
-                long ScanBatch(Sketch destination, long cursor)
+                long ScanBatch(ArgSliceVector destination, long cursor)
                 {
                     token.ThrowIfCancellationRequested();
                     var scanner = new StoreScan(this, destination, token);

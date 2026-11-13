@@ -399,6 +399,42 @@ namespace Garnet.test.cluster
             AssertSketchMembership(sketch, HashUtils.MurmurHash2x64A(key.ReadOnlySpan));
         }
 
+        [Test]
+        public void CollectedBatchRebuildsProtection([Values(0, 1, 4)] int namespaceLength, [Values] bool reuseCollection)
+        {
+            var sketch = new Sketch(keyCount: 64);
+            Assert.That(sketch.TryHashAndStore("previous-filter-key"u8), Is.True);
+            var previousHash = HashUtils.MurmurHash2x64A("previous-filter-key"u8);
+            sketch.SetStatus(SketchStatus.MIGRATED);
+            var previous = sketch.argSliceVector;
+            var batch = reuseCollection ? previous : new ArgSliceVector();
+            if (reuseCollection)
+                batch.Clear();
+
+            ReadOnlySpan<byte> key = "migration-filter-key"u8;
+            ulong hash;
+            if (namespaceLength == 0)
+            {
+                Assert.That(batch.TryAddItem(key), Is.True);
+                hash = HashUtils.MurmurHash2x64A(key);
+            }
+            else
+            {
+                var ns = new byte[namespaceLength];
+                ns[0] = 7;
+                Assert.That(batch.TryAddItem(ns, key), Is.True);
+                hash = HashUtils.MurmurHash2x64A(key, seed: (uint)VectorManager.ExtractContextFromNamespaces(ns));
+            }
+
+            Assert.That(sketch.ReplaceBatch(batch), Is.SameAs(previous));
+            Assert.That(sketch.argSliceVector, Is.SameAs(batch));
+            Assert.That(batch.Count, Is.EqualTo(1));
+            if (!reuseCollection)
+                Assert.That(previous.IsEmpty, Is.True);
+            Assert.That(sketch.Probe(previousHash, out _), Is.False);
+            AssertSketchMembership(sketch, hash);
+        }
+
         static void AssertSketchMembership(Sketch sketch, ulong hash)
         {
             var first = (uint)hash & 63;

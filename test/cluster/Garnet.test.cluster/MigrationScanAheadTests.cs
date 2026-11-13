@@ -324,7 +324,7 @@ namespace Garnet.test.cluster
         [TestCase(4096, false)]
         [TestCase(4096, true)]
         [CancelAfter(30000)]
-        public async Task ConfiguredCollectionLimitAppliesToBothSketches(int collectionBatchSize, bool useScanAheadMigration, CancellationToken cancellationToken)
+        public async Task ConfiguredCollectionLimitAppliesToCollectedBatches(int collectionBatchSize, bool useScanAheadMigration, CancellationToken cancellationToken)
         {
             var keyCount = collectionBatchSize + 7;
             await CreateOperationAsync(3, keyCount: keyCount,
@@ -333,13 +333,19 @@ namespace Garnet.test.cluster
                 Assert.That(operation.sketch.TryHashAndStore(Encoding.ASCII.GetBytes(Key(i))), Is.True);
             Assert.That(operation.sketch.TryHashAndStore(Encoding.ASCII.GetBytes(Key(collectionBatchSize))), Is.False);
             operation.sketch.Clear();
+            var sketch = operation.sketch;
+            var collection = sketch.argSliceVector;
 
             ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Before_Batch_Response);
             _ = StartMigration();
             await WaitForPauseAsync(ExceptionInjectionType.Migration_Before_Batch_Response, cancellationToken);
+            Assert.That(operation.sketch, Is.SameAs(sketch));
+            if (!useScanAheadMigration)
+                Assert.That(operation.sketch.argSliceVector, Is.SameAs(collection));
             Assert.That(operation.sketch.argSliceVector.Count, Is.EqualTo(collectionBatchSize));
             ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Before_Batch_Response);
             Assert.That(await migration.WaitAsync(cancellationToken), Is.True);
+            Assert.That(operation.sketch, Is.SameAs(sketch));
             Assert.That(await source.ExecuteAsync("DBSIZE"), Is.EqualTo("0"));
             Assert.That(await target.ExecuteAsync("DBSIZE"), Is.EqualTo(keyCount.ToString()));
             for (var i = 0; i < keyCount; i++)

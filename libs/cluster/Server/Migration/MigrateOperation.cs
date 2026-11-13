@@ -21,8 +21,7 @@ namespace Garnet.cluster
     {
         internal sealed partial class MigrateOperation
         {
-            Sketch activeSketch;
-            public Sketch sketch => Volatile.Read(ref activeSketch);
+            public readonly Sketch sketch;
             public readonly List<byte[]> keysToDelete;
             public StoreScan storeScan;
 
@@ -32,7 +31,6 @@ namespace Garnet.cluster
             readonly MigrateSession session;
             readonly GarnetClientSession gcs;
             readonly LocalServerSession localServerSession;
-            readonly int sketchBitCount;
             readonly int collectionBatchCapacity;
             readonly int deleteBatchSize;
             readonly Task<string>[] pendingResponses;
@@ -75,14 +73,14 @@ namespace Garnet.cluster
             {
                 this.session = session;
                 var keySendBatchSize = session.clusterProvider.serverOptions.MigrateKeySendBatchSize;
-                sketchBitCount = (int)BitOperations.RoundUpToPowerOf2((uint)(keySendBatchSize << 8));
+                var sketchBitCount = (int)BitOperations.RoundUpToPowerOf2((uint)(keySendBatchSize << 8));
                 // ArgSliceVector reserves one slot beyond the usable key limit.
                 collectionBatchCapacity = keySendBatchSize + 1;
                 deleteBatchSize = session.clusterProvider.serverOptions.MigrationDeleteBatchSize;
                 pendingResponses = new Task<string>[session.clusterProvider.serverOptions.MigrationPipelineDepth];
                 gcs = session.GetGarnetClient();
                 localServerSession = session.GetLocalSession();
-                activeSketch = sketch ?? new(keyCount: sketchBitCount, maxBatchSize: collectionBatchCapacity);
+                this.sketch = sketch ?? new(keyCount: sketchBitCount, maxBatchSize: collectionBatchCapacity);
                 storeScan = new StoreScan(this);
                 keysToDelete = [];
                 vectorSetsIndexKeysToMigrate = new(ByteArrayComparer.Instance);

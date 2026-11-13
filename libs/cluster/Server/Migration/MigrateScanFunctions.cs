@@ -14,11 +14,11 @@ namespace Garnet.cluster
         internal sealed unsafe class StoreScan : IScanIteratorFunctions
         {
             readonly MigrateOperation migrateOperation;
-            readonly Sketch destination;
+            readonly ArgSliceVector destination;
             readonly bool keysOnly;
             readonly CancellationToken cancellationToken;
 
-            internal StoreScan(MigrateOperation migrateOperation, Sketch destination = null, CancellationToken cancellationToken = default)
+            internal StoreScan(MigrateOperation migrateOperation, ArgSliceVector destination = null, CancellationToken cancellationToken = default)
             {
                 this.migrateOperation = migrateOperation;
                 this.destination = destination;
@@ -41,7 +41,7 @@ namespace Garnet.cluster
 
                 migrateOperation.ThrowIfCancelled();
                 cancellationToken.ThrowIfCancellationRequested();
-                var sketch = destination ?? migrateOperation.sketch;
+                var sketch = migrateOperation.sketch;
 
                 // Do not send key if it is expired
                 if (!srcLogRecord.Info.Tombstone && ClusterSession.Expired(in srcLogRecord))
@@ -50,7 +50,9 @@ namespace Garnet.cluster
                 if (srcLogRecord.HasNamespace)
                 {
                     // Migrating a Vector Set element
-                    if (migrateOperation.ContainsNamespace(srcLogRecord.NamespaceBytes) && !sketch.TryHashAndStore(srcLogRecord.NamespaceBytes, srcLogRecord.KeyBytes))
+                    if (migrateOperation.ContainsNamespace(srcLogRecord.NamespaceBytes) &&
+                        !(keysOnly ? destination.TryAddItem(srcLogRecord.NamespaceBytes, srcLogRecord.KeyBytes)
+                            : sketch.TryHashAndStore(srcLogRecord.NamespaceBytes, srcLogRecord.KeyBytes)))
                     {
                         cursorRecordResult = CursorRecordResult.EndBatch | CursorRecordResult.RetryLastRecord;
                         return true;
@@ -78,7 +80,7 @@ namespace Garnet.cluster
                             DateTime? expiration = srcLogRecord.DataHeader.HasExpiration ? new DateTime(srcLogRecord.Expiration, DateTimeKind.Utc) : null;
                             migrateOperation.EncounteredVectorSet(key.ToArray(), srcLogRecord.ValueSpan.ToArray(), expiration);
                         }
-                        else if (!sketch.TryHashAndStore(key))
+                        else if (!(keysOnly ? destination.TryAddItem(key) : sketch.TryHashAndStore(key)))
                         {
                             cursorRecordResult = CursorRecordResult.EndBatch | CursorRecordResult.RetryLastRecord;
                             return true;

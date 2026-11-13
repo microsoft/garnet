@@ -15,7 +15,7 @@ namespace Garnet.cluster
     {
         readonly byte[] bitmap;
         readonly int size;
-        public readonly ArgSliceVector argSliceVector;
+        public ArgSliceVector argSliceVector { get; private set; }
 
         public List<(PinnedSpanByte, bool)> Keys { private set; get; }
         public SketchStatus Status { private set; get; }
@@ -67,6 +67,27 @@ namespace Garnet.cluster
             Keys.Add((key, false));
         }
 
+        /// <summary>
+        /// Rebuild protection for a collected batch and return the reusable previous collection.
+        /// </summary>
+        /// <param name="batch">The next batch, activated only after the previous batch finishes.</param>
+        /// <returns>The previous collection, cleared when it differs from the next batch.</returns>
+        public ArgSliceVector ReplaceBatch(ArgSliceVector batch)
+        {
+            Debug.Assert(Status is SketchStatus.INITIALIZING or SketchStatus.MIGRATED);
+            var previous = argSliceVector;
+            if (previous != batch)
+                previous.Clear();
+            argSliceVector = batch;
+            ClearBitmap();
+            foreach (var (ns, key, hasNamespace) in batch)
+            {
+                var seed = hasNamespace ? (uint)VectorManager.ExtractContextFromNamespaces(ns.ReadOnlySpan) : 0;
+                AddHash(HashUtils.MurmurHash2x64A(key.ReadOnlySpan, seed));
+            }
+            return previous;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void AddHash(ulong keyHash)
         {
@@ -100,6 +121,11 @@ namespace Garnet.cluster
         public void Clear()
         {
             argSliceVector.Clear();
+            ClearBitmap();
+        }
+
+        void ClearBitmap()
+        {
             for (var i = 0; i < (size >> 3); i++)
                 bitmap[i] = 0;
             Status = SketchStatus.INITIALIZING;
