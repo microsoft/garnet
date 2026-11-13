@@ -203,20 +203,44 @@ namespace Tsavorite.core
         void TruncateUntilSegment(int toSegment);
 
         /// <summary>
-        /// Removes a single segment from the device. This function should not normally be called.
-        /// Instead, use <see cref="TruncateUntilAddressAsync(long, AsyncCallback, IAsyncResult)"/>
+        /// Removes a single segment from the device; the segments around it are unchanged. This function should not normally be called.
+        /// To remove every segment below a point, use <see cref="TruncateUntilAddressAsync(long, AsyncCallback, IAsyncResult)"/>
         /// </summary>
-        /// <param name="segment">index of the segment to remov</param>
+        /// <param name="segment">index of the segment to remove</param>
         /// <param name="callback">callback to invoke when removal is complete</param>
         /// <param name="result">result to be passed to the callback</param>
         void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result);
 
         /// <summary>
-        /// Removes a single segment from the device. This function should not normally be called.
-        /// Instead, use <see cref="TruncateUntilAddressAsync(long, AsyncCallback, IAsyncResult)"/>
+        /// Removes a single segment from the device; the segments around it are unchanged. This function should not normally be called.
+        /// To remove every segment below a point, use <see cref="TruncateUntilAddressAsync(long, AsyncCallback, IAsyncResult)"/>
         /// </summary>
-        /// <param name="segment">index of the segment to remov</param>
+        /// <param name="segment">index of the segment to remove</param>
         void RemoveSegment(int segment);
+
+        /// <summary>
+        /// Remove every segment the device holds above a given segment, if the device can
+        /// </summary>
+        /// <param name="segment">The highest segment to keep</param>
+        /// <param name="removed">The number of segments removed, not counting any that the device could tell held nothing</param>
+        /// <returns>Whether the device removed every segment it holds above <paramref name="segment"/>; false if it cannot tell
+        /// which segments it holds</returns>
+        /// <remarks>
+        /// <para>
+        /// This leaves every segment at or below <paramref name="segment"/> unchanged. It reflects the device when called,
+        /// including segments far above <paramref name="segment"/> with gaps between them, which <see cref="RemoveSegment(int)"/>
+        /// would have to be given one at a time. The caller must ensure no IO to the segments above is in flight.
+        /// </para>
+        /// <para>
+        /// Provided as a default interface method that reports the device cannot do this, so that existing external
+        /// <see cref="IDevice"/> implementations continue to compile and behave as before.
+        /// </para>
+        /// </remarks>
+        bool TryRemoveSegmentsAbove(int segment, out int removed)
+        {
+            removed = 0;
+            return false;
+        }
 
         /// <summary>
         /// Get file size for given segment
@@ -226,7 +250,7 @@ namespace Tsavorite.core
         long GetFileSize(int segment);
 
         /// <summary>
-        /// Reset the device (close and forget open handles)
+        /// Reset the device: close and forget open handles, and forget which segments have been truncated
         /// </summary>
         void Reset();
     }

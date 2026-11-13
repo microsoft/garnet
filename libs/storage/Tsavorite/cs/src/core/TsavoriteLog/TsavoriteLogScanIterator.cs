@@ -688,10 +688,11 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Whether a read failed only because it started at or past the end of the file, which Windows reports as an error
-        /// and other platforms as a successful read of zero bytes.
+        /// Whether a read failed only because nothing was written where it started: at or past the end of a file, which Windows
+        /// reports as an error and other platforms as a successful read of zero bytes, or in a segment that does not exist.
         /// </summary>
-        private static bool IsEndOfFile(uint errorCode) => OperatingSystem.IsWindows() && errorCode == Native32.ERROR_HANDLE_EOF;
+        internal static bool IsEndOfFile(uint errorCode)
+            => (OperatingSystem.IsWindows() && errorCode == Native32.ERROR_HANDLE_EOF) || errorCode == Native32.ERROR_FILE_NOT_FOUND;
 
         internal unsafe bool ScanForwardForCommit(ref TsavoriteLogRecoveryInfo info, long commitNum = -1)
         {
@@ -720,15 +721,25 @@ namespace Tsavorite.core
                     if (info.CommitNum == commitNum) break;
                 }
             }
+            catch (TsavoriteIOException)
+            {
+                // A page could not be read, so the scan cannot tell where the log ends. The caller decides whether to fail.
+                throw;
+            }
+            catch (OperationCanceledException ex)
+            {
+                // A failed page read cancels its frame load
+                throw new TsavoriteIOException($"Recovery scan could not read the log after address {currentRecordAddress}", ex);
+            }
             catch (TsavoriteException ex)
             {
-                // We ran into an incomplete/torn commit record. This is expected when the tail of the
-                // log was left half-written by an ungraceful shutdown. Stop scanning here; recovery
+                // We ran into invalid data: an incomplete/torn record, or bytes after end-of-page padding. This is expected
+                // when the tail of the log was left half-written by an ungraceful shutdown. Stop scanning here; recovery
                 // uses the last VALID commit as the upper bound of the redo window. Because
                 // TsavoriteLogRecoveryInfo.Initialize validates before mutating, `info` still holds
                 // that last valid commit's metadata at this point.
                 logger?.LogWarning(ex,
-                    "ScanForwardForCommit stopped at an invalid/torn commit record near address {recordAddress}; " +
+                    "ScanForwardForCommit stopped at invalid data near address {recordAddress}; " +
                     "recovering to last valid commit (until address {untilAddress}, commitNum {commitNum}). " +
                     "This typically indicates a torn tail from an ungraceful shutdown; any operations after " +
                     "the last valid commit were never durably committed and are intentionally dropped.",
@@ -837,6 +848,12 @@ namespace Tsavorite.core
                 // We may encounter zeroed out bits at the end of page in a normal log, therefore, we need to check whether that is the case
                 if (entryLength == 0)
                 {
+                    // Padding runs to the end of the page, since the allocator writes nothing after it. In a scan to the end of
+                    // the log, anything else there was never committed, so the log ends here.
+                    if (stopAtEndOfLog && _currentOffset != 0
+                        && new ReadOnlySpan<byte>((void*)physicalAddress, (int)(allocator.PageSize - _currentOffset)).IndexOfAnyExcept((byte)0) >= 0)
+                        throw new TsavoriteException($"Data found after end-of-page padding at address {currentAddress}");
+
                     // Zero-ed out bytes could be padding at the end of page, first jump to the start of next page. 
                     var nextStart = allocator.GetLogicalAddressOfStartOfPage(1 + allocator.GetPage(currentAddress));
                     if (Utility.MonotonicUpdate(ref nextAddress, nextStart, out _))

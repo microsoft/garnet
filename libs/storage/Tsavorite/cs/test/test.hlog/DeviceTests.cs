@@ -6,9 +6,12 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Specialized;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
+using Tsavorite.devices;
 
 namespace Tsavorite.test
 {
@@ -504,6 +507,45 @@ namespace Tsavorite.test
                 AssertBufferContents(rptr, size, j => (byte)((j * 5 + id) & 0xFF), $"{kind} stress block {id}");
             }
             GC.KeepAlive(roots); GC.KeepAlive(rbuf);
+        }
+
+        // ----- IDevice contract: a read past the end of a file reads nothing ------------
+
+        /// <summary>
+        /// A read that starts at or past the end of a segment's file, including a read of a segment that was never written,
+        /// completes with no error and no bytes. (LocalStorageDevice, not covered here, reports Windows' end-of-file error
+        /// instead; callers accept both.)
+        /// </summary>
+        [Test]
+        [TestCase(DeviceKind.Native)]
+        [TestCase(DeviceKind.RandomAccess)]
+        [TestCase(DeviceKind.ManagedLocal)]
+        [Category("IDevice")]
+        public unsafe void IDevice_ReadPastEndOfFile_CompletesWithNoBytes(DeviceKind kind)
+        {
+            using var device = CreateDeviceForTest(kind, Path.Join(TestUtils.MethodTestDir, "test.log"), 64 * Mib);
+
+            // Write segment 0's first sector, then read where nothing was written: the next sector, a sector further past the end
+            // of the file, and segment 1, which was never written
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i & 0xFF));
+            device.WriteAsync(wptr, 0, 0, HardeningSectorSize, IOCallback, null);
+            semaphore.Wait();
+
+            var (rbuf, rptr) = AllocateAlignedBuffer(HardeningSectorSize, _ => 0);
+            foreach (var (segmentId, address) in new[] { (0, (ulong)HardeningSectorSize), (0, 16UL * HardeningSectorSize), (1, 0UL) })
+            {
+                var (errorCode, numBytes) = (uint.MaxValue, uint.MaxValue);
+                device.ReadAsync(segmentId, address, rptr, HardeningSectorSize, (e, n, _, _) =>
+                {
+                    (errorCode, numBytes) = (e, n);
+                    _ = semaphore.Release();
+                }, null);
+                semaphore.Wait();
+                ClassicAssert.AreEqual(0u, errorCode, $"{kind}: error code reading segment {segmentId} at {address}");
+                ClassicAssert.AreEqual(0u, numBytes, $"{kind}: bytes read from segment {segmentId} at {address}");
+            }
+            GC.KeepAlive(wbuf);
+            GC.KeepAlive(rbuf);
         }
 
         // ----- IDevice contract: Initialize is optional; ctor defaults are valid for IO ------
@@ -1558,6 +1600,30 @@ namespace Tsavorite.test
             GC.KeepAlive(wbuf);
         }
 
+        /// <summary>
+        /// TryComplete and TryCompleteMine return false once every IO has completed. The native functions return a one-byte C++
+        /// bool, and read as a four-byte value, its undefined upper bytes can turn false into true.
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void Native_TryComplete_IsFalseWithNothingToComplete()
+        {
+            using var device = CreateDeviceForTest(DeviceKind.Native, Path.Join(TestUtils.MethodTestDir, "test.log"), 64 * Mib);
+            const int size = 4 * 1024;
+            var (wbuf, wptr) = AllocateAlignedBuffer(size, _ => 0x22);
+            device.WriteAsync(wptr, 0, 0, (uint)size, IOCallback, null);
+            semaphore.Wait();
+
+            // The write's completion has run, so nothing is left to complete. Repeated, since the undefined bytes are only
+            // sometimes non-zero.
+            for (var i = 0; i < 100; i++)
+            {
+                ClassicAssert.IsFalse(device.TryComplete(), nameof(device.TryComplete));
+                ClassicAssert.IsFalse(device.TryCompleteMine(), nameof(device.TryCompleteMine));
+            }
+            GC.KeepAlive(wbuf);
+        }
+
         [Test]
         [Category("IDevice")]
         public unsafe void Native_RemoveSegment_RemovesPersistedData()
@@ -1574,13 +1640,864 @@ namespace Tsavorite.test
             semaphore.Wait();
             ClassicAssert.GreaterOrEqual(device.GetFileSize(1), (long)size, "segment 1 should exist after write.");
 
-            // RemoveSegment truncates the segment (its on-disk delete is deferred to the epoch
-            // drain list). Querying it afterwards must not crash and must report empty — this is the
-            // exact path (size() -> OpenSegment bundle-expand -> BumpCurrentEpoch) that faulted when
-            // GetFileSize ran without epoch protection.
+            // RemoveSegment closes and deletes the segment, the lowest the device holds open. Querying it afterwards must not
+            // crash and must report empty — this is the exact path (size() -> OpenSegment bundle-expand -> BumpCurrentEpoch) that
+            // faulted when GetFileSize ran without epoch protection.
             device.RemoveSegment(1);
             ClassicAssert.AreEqual(0L, device.GetFileSize(1), "segment 1 should report empty after RemoveSegment.");
             GC.KeepAlive(wbuf);
+        }
+
+        /// <summary>Read a segment file that a device may hold open</summary>
+        static byte[] ReadSegmentFile(string file)
+        {
+            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            var bytes = new byte[stream.Length];
+            stream.ReadExactly(bytes);
+            return bytes;
+        }
+
+        /// <summary>Assert that each segment's file begins with the sector that <paramref name="pattern"/> describes</summary>
+        static void AssertSegmentFiles(string path, Func<int, byte> pattern, params int[] segments)
+        {
+            foreach (var segment in segments)
+            {
+                var file = $"{path}.{segment}";
+                ClassicAssert.IsTrue(File.Exists(file), $"segment {segment} should exist");
+                var bytes = ReadSegmentFile(file);
+                ClassicAssert.GreaterOrEqual(bytes.Length, HardeningSectorSize, $"segment {segment} should hold its data");
+                for (var i = 0; i < HardeningSectorSize; i++)
+                {
+                    if (bytes[i] != pattern(i))
+                        Assert.Fail($"segment {segment}: mismatch at byte {i}: expected 0x{pattern(i):X2}, got 0x{bytes[i]:X2}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// The native device's RemoveSegment removes only the segment named, wherever that segment lies: below or above the
+        /// segments the device holds open, open above the lowest, the lowest open, or with none open. The device keeps the
+        /// segments it holds open contiguous, so each case takes a different path. Every other segment keeps its data, and a
+        /// segment written again after its removal keeps the new data.
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void Native_RemoveSegment_RemovesOnlyThatSegment()
+        {
+            // The files are checked directly, since reading through the device would change which segments it holds open
+            const long segmentSize = 1L << 16;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            string SegmentFile(int segment) => $"{path}.{segment}";
+            Func<int, byte> written = i => (byte)(i * 3);
+            Func<int, byte> rewritten = i => (byte)(i * 5 + 1);
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, written);
+            var (rwbuf, rwptr) = AllocateAlignedBuffer(HardeningSectorSize, rewritten);
+            var (rbuf, rptr) = AllocateAlignedBuffer(HardeningSectorSize, _ => 0);
+
+            // Write segments 0 through 7 through one device, then remove them through another, which starts with none open
+            using (var writer = CreateDeviceForTest(DeviceKind.Native, path, segmentSize, deleteOnClose: false))
+            {
+                for (var segment = 0; segment <= 7; segment++)
+                {
+                    writer.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+            }
+
+            using (var device = CreateDeviceForTest(DeviceKind.Native, path, segmentSize, deleteOnClose: false))
+            {
+                // This leaves the device holding segments 2 through 5 open
+                foreach (var segment in new[] { 2, 5 })
+                {
+                    device.ReadAsync(segment, 0, rptr, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+
+                // Not open, below and above the open segments: the file is deleted
+                device.RemoveSegment(0);
+                ClassicAssert.IsFalse(File.Exists(SegmentFile(0)), "segment 0, below the open segments, should be deleted");
+                device.RemoveSegment(7);
+                ClassicAssert.IsFalse(File.Exists(SegmentFile(7)), "segment 7, above the open segments, should be deleted");
+                AssertSegmentFiles(path, written, 1, 2, 3, 4, 5, 6);
+
+                // Open above the lowest open segment: the file is emptied in place
+                device.RemoveSegment(4);
+                ClassicAssert.AreEqual(0L, new FileInfo(SegmentFile(4)).Length, "segment 4, open above the lowest, should be emptied");
+                AssertSegmentFiles(path, written, 1, 2, 3, 5, 6);
+
+                // The lowest open segment: the file is closed and deleted
+                device.RemoveSegment(2);
+                ClassicAssert.IsFalse(File.Exists(SegmentFile(2)), "segment 2, the lowest open, should be deleted");
+                AssertSegmentFiles(path, written, 1, 3, 5, 6);
+
+                // A segment written again after its removal keeps the new data: the removal waits for the deferred delete, which
+                // would otherwise remove the new file or leave the old one
+                device.RemoveSegment(3);
+                ClassicAssert.IsFalse(File.Exists(SegmentFile(3)), "segment 3, then the lowest open, should be deleted");
+                device.WriteAsync(rwptr, 3, 0, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+
+                // With no segment open, as after Reset: the file is deleted
+                device.Reset();
+                device.RemoveSegment(6);
+                ClassicAssert.IsFalse(File.Exists(SegmentFile(6)), "segment 6, with no segment open, should be deleted");
+            }
+
+            // Segments 1 and 5 keep their data, and segment 3 holds what was written after its removal, also when read through a
+            // new device
+            AssertSegmentFiles(path, written, 1, 5);
+            AssertSegmentFiles(path, rewritten, 3);
+            using (var reopened = CreateDeviceForTest(DeviceKind.Native, path, segmentSize, deleteOnClose: false))
+            {
+                reopened.ReadAsync(3, 0, rptr, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+                AssertBufferContents(rptr, HardeningSectorSize, rewritten, "segment 3, written after it was removed");
+            }
+            GC.KeepAlive(wbuf);
+            GC.KeepAlive(rwbuf);
+            GC.KeepAlive(rbuf);
+        }
+
+        /// <summary>
+        /// Reading a segment that truncation removed reopens it, and the native device then holds open every segment from there
+        /// up, creating their files. The next truncation must delete those files too, which removing one segment at a time could
+        /// not: the device keeps the segments it holds open contiguous, so it would only empty them.
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void Native_Truncation_RemovesSegmentsReopenedBelowIt()
+        {
+            const long segmentSize = 1L << 16;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var (rbuf, rptr) = AllocateAlignedBuffer(HardeningSectorSize, _ => 0);
+            var epoch = new LightEpoch();
+            try
+            {
+                // Write segments 0 through 3, and truncate below segment 2
+                using var device = new NativeStorageDevice(path, deleteOnClose: false);
+                device.Initialize(segmentSize, epoch);
+                for (var segment = 0; segment <= 3; segment++)
+                {
+                    device.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+
+                device.TruncateUntilSegment(2);
+                foreach (var segment in new[] { 0, 1 })
+                    ClassicAssert.IsFalse(File.Exists($"{path}.{segment}"), $"segment {segment} should be truncated");
+
+                // The read's outcome does not matter: segment 0's new file is empty, which older native libraries on Windows
+                // report as an IO error
+                device.ReadAsync(0, 0, rptr, HardeningSectorSize, (_, _, _, _) => semaphore.Release(), null);
+                semaphore.Wait();
+                foreach (var segment in new[] { 0, 1 })
+                    ClassicAssert.IsTrue(File.Exists($"{path}.{segment}"), $"reading segment 0 should reopen segment {segment}");
+
+                // Truncating below segment 3 deletes the reopened files too, and segment 3 keeps its data
+                device.TruncateUntilSegment(3);
+                for (var segment = 0; segment < 3; segment++)
+                    ClassicAssert.IsFalse(File.Exists($"{path}.{segment}"), $"segment {segment} should be truncated");
+                AssertSegmentFiles(path, i => (byte)(i * 3), 3);
+            }
+            finally
+            {
+                epoch.Dispose();
+            }
+            GC.KeepAlive(wbuf);
+            GC.KeepAlive(rbuf);
+        }
+
+        // ----- Removing the segments above a segment ---------------------------------
+
+        /// <summary>Device kinds that implement <see cref="IDevice.TryRemoveSegmentsAbove"/></summary>
+        public enum SegmentRemovingDeviceKind { Native, RandomAccess, ManagedLocal, LocalStorage, LocalMemory }
+
+        /// <summary>
+        /// Create and initialize a device of the given kind over <paramref name="path"/>. LocalStorageDevice is Windows-only, so
+        /// elsewhere the test is ignored.
+        /// </summary>
+        static IDevice CreateSegmentRemovingDeviceForTest(SegmentRemovingDeviceKind kind, string path, long segmentSize)
+        {
+            switch (kind)
+            {
+                case SegmentRemovingDeviceKind.Native:
+                    return CreateDeviceForTest(DeviceKind.Native, path, segmentSize);
+                case SegmentRemovingDeviceKind.RandomAccess:
+                    return CreateDeviceForTest(DeviceKind.RandomAccess, path, segmentSize);
+                case SegmentRemovingDeviceKind.ManagedLocal:
+                    return CreateDeviceForTest(DeviceKind.ManagedLocal, path, segmentSize);
+                case SegmentRemovingDeviceKind.LocalStorage when OperatingSystem.IsWindows():
+                    var localStorage = new LocalStorageDevice(path, false, true, true, Devices.CAPACITY_UNSPECIFIED, false, false);
+                    localStorage.Initialize(segmentSize);
+                    return localStorage;
+                case SegmentRemovingDeviceKind.LocalStorage:
+                    Assert.Ignore("LocalStorageDevice is Windows-only.");
+                    return null;
+                case SegmentRemovingDeviceKind.LocalMemory:
+                    var localMemory = new LocalMemoryDevice(capacity: 8 * segmentSize, segmentSize: segmentSize, parallelism: 1);
+                    localMemory.Initialize(segmentSize);
+                    return localMemory;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(kind));
+            }
+        }
+
+        /// <summary>
+        /// TryRemoveSegmentsAbove removes the segments above the one named and counts those that held data, while the segments at
+        /// and below it keep their data and files that are not the device's segments remain. An implementation that removes each
+        /// segment with RemoveSegment relies on it removing only that segment, which the RemoveSegment of older native libraries
+        /// does not do, so this checks every device kind.
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void IDevice_TryRemoveSegmentsAbove_KeepsTheSegmentsAtAndBelow([Values] SegmentRemovingDeviceKind kind)
+        {
+            const long segmentSize = 1L << 16;
+            using var device = CreateSegmentRemovingDeviceForTest(kind, Path.Join(TestUtils.MethodTestDir, "test.log"), segmentSize);
+
+            // Files that are not this device's segments: its bare name, suffixes that are not segment ids as the device writes
+            // them, and another device's segment
+            string[] otherFiles = kind == SegmentRemovingDeviceKind.LocalMemory ? []
+                : ["test.log", "test.log.x", "test.log.007", "test.log.-1", "test.log.+2", "test.log.3.tmp", "test.logx.4", "other.log.6"];
+            foreach (var name in otherFiles)
+                File.WriteAllBytes(Path.Join(TestUtils.MethodTestDir, name), [1]);
+
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var (rbuf, rptr) = AllocateAlignedBuffer(HardeningSectorSize, _ => 0);
+
+            // Segments 5, 0, 1 and 2 hold data, and 3 and 4 do not. Writing 5 first leaves the native device holding 0 through 5
+            // open, with empty files for 3 and 4.
+            foreach (var segment in new[] { 5, 0, 1, 2 })
+            {
+                device.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+            }
+
+            // Removing above segment 1 removes 2 and 5, the two that held data, and then finds nothing more to remove
+            ClassicAssert.IsTrue(device.TryRemoveSegmentsAbove(1, out var removed));
+            ClassicAssert.AreEqual(2, removed, "segments 2 and 5 held data");
+            ClassicAssert.IsTrue(device.TryRemoveSegmentsAbove(1, out removed));
+            ClassicAssert.AreEqual(0, removed, "no segment above 1 should hold data");
+
+            // Segments 0 and 1 keep their data, and the other files remain
+            foreach (var segment in new[] { 0, 1 })
+            {
+                device.ReadAsync(segment, 0, rptr, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+                AssertBufferContents(rptr, HardeningSectorSize, i => (byte)(i * 3), $"{kind} segment {segment}");
+            }
+            foreach (var name in otherFiles)
+                ClassicAssert.IsTrue(File.Exists(Path.Join(TestUtils.MethodTestDir, name)), $"{name} is not a segment of the device");
+            GC.KeepAlive(wbuf);
+            GC.KeepAlive(rbuf);
+        }
+
+        /// <summary>
+        /// RemoveSegment removes only the segment named, on every device kind: here segment 2, between segments that keep their
+        /// data
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void IDevice_RemoveSegment_RemovesOnlyThatSegment([Values] SegmentRemovingDeviceKind kind)
+        {
+            const long segmentSize = 1L << 16;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            using var device = CreateSegmentRemovingDeviceForTest(kind, path, segmentSize);
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var (rbuf, rptr) = AllocateAlignedBuffer(HardeningSectorSize, _ => 0);
+
+            // Write segments 0 through 3
+            for (var segment = 0; segment <= 3; segment++)
+            {
+                device.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+            }
+
+            // Segment 2 lies between others. The native device holds segments 0 through 3 open, so it is open above the lowest.
+            device.RemoveSegment(2);
+
+            if (kind == SegmentRemovingDeviceKind.LocalMemory)
+            {
+                // LocalMemoryDevice has no files: reading the removed segment fails
+                uint readError = 0;
+                device.ReadAsync(2, 0, rptr, HardeningSectorSize, (errorCode, _, _, _) => { readError = errorCode; semaphore.Release(); }, null);
+                semaphore.Wait();
+                ClassicAssert.AreNotEqual(0u, readError, "reading the removed segment should fail");
+            }
+            else
+            {
+                // A file device deletes or empties the removed segment's file
+                var removed = new FileInfo($"{path}.2");
+                ClassicAssert.IsTrue(!removed.Exists || removed.Length == 0, "the removed segment's file should hold no data");
+
+                // Checked before reading through the device: some devices report reading a removed segment as an IO error
+                AssertSegmentFiles(path, i => (byte)(i * 3), 0, 1, 3);
+            }
+
+            // The other segments read back their data through the device
+            foreach (var segment in new[] { 0, 1, 3 })
+            {
+                device.ReadAsync(segment, 0, rptr, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+                AssertBufferContents(rptr, HardeningSectorSize, i => (byte)(i * 3), $"{kind} segment {segment}");
+            }
+            GC.KeepAlive(wbuf);
+            GC.KeepAlive(rbuf);
+        }
+
+        /// <summary>Device kinds whose <see cref="IDevice.Reset"/> must forget the truncated segments, including composite devices</summary>
+        public enum ResettableDeviceKind { Native, RandomAccess, ManagedLocal, LocalStorage, LocalMemory, Tiered, Sharded }
+
+        /// <summary>
+        /// Create a device of the given kind, initialized with <paramref name="epoch"/> as truncation requires, and report the files
+        /// that hold a segment: none for <see cref="LocalMemoryDevice"/>, and one per child of a composite device
+        /// </summary>
+        static IDevice CreateResettableDeviceForTest(ResettableDeviceKind kind, string path, long segmentSize, LightEpoch epoch, out Func<int, string[]> segmentFiles)
+        {
+            segmentFiles = segment => [$"{path}.{segment}"];
+            IDevice device;
+            switch (kind)
+            {
+                case ResettableDeviceKind.Native:
+                    device = new NativeStorageDevice(path, deleteOnClose: true);
+                    break;
+                case ResettableDeviceKind.RandomAccess:
+                    device = new RandomAccessLocalStorageDevice(path, preallocateFile: false, deleteOnClose: true);
+                    break;
+                case ResettableDeviceKind.ManagedLocal:
+                    device = new ManagedLocalStorageDevice(path, preallocateFile: false, deleteOnClose: true);
+                    break;
+                case ResettableDeviceKind.LocalStorage when OperatingSystem.IsWindows():
+                    device = new LocalStorageDevice(path, false, true, true, Devices.CAPACITY_UNSPECIFIED, false, false);
+                    break;
+                case ResettableDeviceKind.LocalStorage:
+                    Assert.Ignore("LocalStorageDevice is Windows-only.");
+                    return null;
+                case ResettableDeviceKind.LocalMemory:
+                    device = new LocalMemoryDevice(capacity: 8 * segmentSize, segmentSize: segmentSize, parallelism: 1);
+                    segmentFiles = _ => [];
+                    break;
+                case ResettableDeviceKind.Tiered:
+                case ResettableDeviceKind.Sharded:
+                    string[] childPaths = [$"{path}.a", $"{path}.b"];
+                    segmentFiles = segment => childPaths.Select(childPath => $"{childPath}.{segment}").ToArray();
+
+                    // Only the last tier of a tiered device may have unspecified capacity
+                    IDevice first = new RandomAccessLocalStorageDevice(childPaths[0], preallocateFile: false, deleteOnClose: true, capacity: 1L << 30);
+                    IDevice second = new RandomAccessLocalStorageDevice(childPaths[1], preallocateFile: false, deleteOnClose: true);
+                    device = kind == ResettableDeviceKind.Tiered
+                        ? new TieredStorageDevice(1, first, second)
+                        : new ShardedStorageDevice(new UniformPartitionScheme(Math.Max(first.SectorSize, second.SectorSize), first, second));
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(kind));
+            }
+            device.Initialize(segmentSize, epoch);
+            return device;
+        }
+
+        /// <summary>
+        /// A log that is reset writes from segment 0 again, below the segments already truncated, and truncation must still be
+        /// able to remove those segments: Reset must return the device's start segment to 0, on every device kind, composite
+        /// devices included
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void IDevice_Reset_ForgetsTheTruncatedSegments([Values] ResettableDeviceKind kind)
+        {
+            const long segmentSize = 1L << 16;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            Func<int, byte> written = i => (byte)(i * 3);
+            Func<int, byte> rewritten = i => (byte)(i * 5 + 1);
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, written);
+            var (rwbuf, rwptr) = AllocateAlignedBuffer(HardeningSectorSize, rewritten);
+            var (rbuf, rptr) = AllocateAlignedBuffer(HardeningSectorSize, _ => 0);
+            var epoch = new LightEpoch();
+            try
+            {
+                using var device = CreateResettableDeviceForTest(kind, path, segmentSize, epoch, out var segmentFiles);
+
+                // Write segments 0 through 2, and truncate below segment 2
+                for (var segment = 0; segment <= 2; segment++)
+                {
+                    device.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+                device.TruncateUntilSegment(2);
+                ClassicAssert.AreEqual(2, device.StartSegment);
+
+                device.Reset();
+                ClassicAssert.AreEqual(0, device.StartSegment, "Reset should forget the truncated segments");
+
+                // Write segments 0 and 1 again, with other data, and truncate below segment 1
+                foreach (var segment in new[] { 0, 1 })
+                {
+                    device.WriteAsync(rwptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+                device.TruncateUntilSegment(1);
+                ClassicAssert.AreEqual(1, device.StartSegment);
+
+                // Segment 0 is gone: LocalMemoryDevice fails to read it, and no device keeps its files
+                if (kind == ResettableDeviceKind.LocalMemory)
+                {
+                    uint readError = 0;
+                    device.ReadAsync(0, 0, rptr, HardeningSectorSize, (errorCode, _, _, _) => { readError = errorCode; semaphore.Release(); }, null);
+                    semaphore.Wait();
+                    ClassicAssert.AreNotEqual(0u, readError, "segment 0 should be truncated");
+                }
+                foreach (var file in segmentFiles(0))
+                    ClassicAssert.IsFalse(File.Exists(file), $"{file} should be truncated");
+
+                // Segment 1 holds the data written after the reset
+                device.ReadAsync(1, 0, rptr, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+                AssertBufferContents(rptr, HardeningSectorSize, rewritten, $"{kind} segment 1");
+            }
+            finally
+            {
+                epoch.Dispose();
+            }
+            GC.KeepAlive(wbuf);
+            GC.KeepAlive(rwbuf);
+            GC.KeepAlive(rbuf);
+        }
+
+        /// <summary>
+        /// A faster tier holds only recent segments, so it can have evicted a segment that the slower tiers still hold. Removing
+        /// that segment calls only the slower tiers, and must still complete, and remove it from them.
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void TieredDevice_RemoveSegmentAsync_CompletesWhenAFasterTierEvictedTheSegment()
+        {
+            const long segmentSize = 1L << 16;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var epoch = new LightEpoch();
+            try
+            {
+                var fast = new RandomAccessLocalStorageDevice($"{path}.fast", preallocateFile: false, deleteOnClose: true, capacity: 1L << 30);
+                var slow = new RandomAccessLocalStorageDevice($"{path}.slow", preallocateFile: false, deleteOnClose: true);
+                using var tiered = new TieredStorageDevice(1, fast, slow);
+                tiered.Initialize(segmentSize, epoch);
+
+                // Write segments 0 and 1 to both tiers, then evict segment 0 from the faster tier only
+                for (var segment = 0; segment <= 1; segment++)
+                {
+                    tiered.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+                fast.TruncateUntilSegment(1);
+
+                // Removing segment 0 through the tiered device completes, and the slower tier deletes its file
+                using var removed = new ManualResetEventSlim(false);
+                tiered.RemoveSegmentAsync(0, _ => removed.Set(), null);
+                ClassicAssert.IsTrue(removed.Wait(TimeSpan.FromSeconds(10)), "removing a segment that a faster tier evicted should complete");
+                ClassicAssert.IsFalse(File.Exists($"{path}.slow.0"), "the slower tier should remove the segment");
+            }
+            finally
+            {
+                epoch.Dispose();
+            }
+            GC.KeepAlive(wbuf);
+        }
+
+        /// <summary>
+        /// After a reset, every tier's start segment is 0, yet a faster tier still holds the old segments it had not evicted. A
+        /// tiered device removes the segments above the one named from every tier, by what each holds rather than by its start
+        /// segment. The slower tier keeps the segment named.
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void TieredDevice_TryRemoveSegmentsAbove_RemovesThemFromEveryTier()
+        {
+            const long segmentSize = 1L << 16;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var epoch = new LightEpoch();
+            try
+            {
+                // The tiers keep their files on Reset, as a log's device does; the test directory is deleted afterwards
+                var fast = new RandomAccessLocalStorageDevice($"{path}.fast", preallocateFile: false, deleteOnClose: false, capacity: 1L << 30);
+                var slow = new RandomAccessLocalStorageDevice($"{path}.slow", preallocateFile: false, deleteOnClose: false);
+                using var tiered = new TieredStorageDevice(1, fast, slow);
+                tiered.Initialize(segmentSize, epoch);
+
+                // Write segments 0 through 3 to both tiers, evict segments 0 and 1 from the faster tier, which keeps 2 and 3, and
+                // reset the device as a log reset does
+                for (var segment = 0; segment <= 3; segment++)
+                {
+                    tiered.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+                fast.TruncateUntilSegment(2);
+                tiered.Reset();
+                ClassicAssert.AreEqual(0, fast.StartSegment, "the reset should return the faster tier's start segment to 0");
+
+                // Removing above segment 0 removes segments 2 and 3 from the faster tier, and 1 to 3 from the slower one
+                ClassicAssert.IsTrue(tiered.TryRemoveSegmentsAbove(0, out var removed));
+                ClassicAssert.AreEqual(3, removed, "the slower tier removed three segments that held data");
+                foreach (var segment in new[] { 2, 3 })
+                    ClassicAssert.IsFalse(File.Exists($"{path}.fast.{segment}"), $"the faster tier should remove segment {segment}");
+                foreach (var segment in new[] { 1, 2, 3 })
+                    ClassicAssert.IsFalse(File.Exists($"{path}.slow.{segment}"), $"the slower tier should remove segment {segment}");
+
+                // The slower tier keeps segment 0's data
+                AssertSegmentFiles($"{path}.slow", i => (byte)(i * 3), 0);
+            }
+            finally
+            {
+                epoch.Dispose();
+            }
+            GC.KeepAlive(wbuf);
+        }
+
+        /// <summary>
+        /// Writing a segment that the fastest tier has evicted fails, rather than reaching only the slower tiers, which the fastest
+        /// tier would hide after a restart, and rather than wait for tiers it skipped. The write here is to segment 0, below the
+        /// fastest tier's remaining segment, with the commit point at the slower tier.
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void TieredDevice_WriteAsync_FailsForASegmentTheFastestTierEvicted()
+        {
+            const long segmentSize = 1L << 16;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var epoch = new LightEpoch();
+            try
+            {
+                var fast = new RandomAccessLocalStorageDevice($"{path}.fast", preallocateFile: false, deleteOnClose: true, capacity: 1L << 30);
+                var slow = new RandomAccessLocalStorageDevice($"{path}.slow", preallocateFile: false, deleteOnClose: true);
+                using var tiered = new TieredStorageDevice(1, fast, slow);
+                tiered.Initialize(segmentSize, epoch);
+
+                // Write segments 0 and 1 to both tiers, then evict segment 0 from the faster tier
+                for (var segment = 0; segment <= 1; segment++)
+                {
+                    tiered.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+                fast.TruncateUntilSegment(1);
+
+                // Writing segment 0 again completes with an error
+                using var completed = new ManualResetEventSlim(false);
+                uint writeError = 0;
+                tiered.WriteAsync(wptr, 0, 0, HardeningSectorSize, (errorCode, _, _, _) => { writeError = errorCode; completed.Set(); }, null);
+                ClassicAssert.IsTrue(completed.Wait(TimeSpan.FromSeconds(10)), "the write should complete rather than hang");
+                ClassicAssert.AreNotEqual(0u, writeError, "the write should fail");
+            }
+            finally
+            {
+                epoch.Dispose();
+            }
+            GC.KeepAlive(wbuf);
+        }
+
+        /// <summary>
+        /// A tiered device refuses to remove the segments above one that its fastest tier has evicted, before removing anything:
+        /// that would empty the fastest tier, which after a restart would then claim every segment and hide the slower tier's data
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void TieredDevice_TryRemoveSegmentsAbove_FailsWhenTheFastestTierEvictedTheSegment()
+        {
+            const long segmentSize = 1L << 16;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var epoch = new LightEpoch();
+            try
+            {
+                var fast = new RandomAccessLocalStorageDevice($"{path}.fast", preallocateFile: false, deleteOnClose: true, capacity: 1L << 30);
+                var slow = new RandomAccessLocalStorageDevice($"{path}.slow", preallocateFile: false, deleteOnClose: true);
+                using var tiered = new TieredStorageDevice(1, fast, slow);
+                tiered.Initialize(segmentSize, epoch);
+
+                // Write segments 0 through 3 to both tiers, then evict segments 0 through 2 from the faster tier, which keeps 3
+                for (var segment = 0; segment <= 3; segment++)
+                {
+                    tiered.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+                fast.TruncateUntilSegment(3);
+
+                // Removing above segment 0 fails, and both tiers keep their segments
+                _ = Assert.Throws<TsavoriteException>(() => tiered.TryRemoveSegmentsAbove(0, out _));
+                AssertSegmentFiles($"{path}.fast", i => (byte)(i * 3), 3);
+                AssertSegmentFiles($"{path}.slow", i => (byte)(i * 3), 0, 1, 2, 3);
+            }
+            finally
+            {
+                epoch.Dispose();
+            }
+            GC.KeepAlive(wbuf);
+        }
+
+        /// <summary>
+        /// Each shard of a sharded device stores its part of a segment as the segment of the same number, so the device removes
+        /// the segments above the one named from every shard, and the segments at and below it keep their data
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void ShardedDevice_TryRemoveSegmentsAbove_RemovesThemFromEveryShard()
+        {
+            const long segmentSize = 1L << 16;
+
+            // The device stripes in chunks of one sector, so each two-sector write puts part of its segment on both shards
+            const int writeSize = 2 * HardeningSectorSize;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            var (wbuf, wptr) = AllocateAlignedBuffer(writeSize, i => (byte)(i * 3));
+            var (rbuf, rptr) = AllocateAlignedBuffer(writeSize, _ => 0);
+            var epoch = new LightEpoch();
+            try
+            {
+                using var sharded = CreateResettableDeviceForTest(ResettableDeviceKind.Sharded, path, segmentSize, epoch, out var segmentFiles);
+
+                // Write segments 0 through 3
+                for (var segment = 0; segment <= 3; segment++)
+                {
+                    sharded.WriteAsync(wptr, segment, 0, writeSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+
+                // Removing above segment 1 removes segments 2 and 3 from both shards
+                ClassicAssert.IsTrue(sharded.TryRemoveSegmentsAbove(1, out var removed));
+                ClassicAssert.AreEqual(2, removed, "segments 2 and 3 held data");
+                foreach (var file in segmentFiles(2).Concat(segmentFiles(3)))
+                    ClassicAssert.IsFalse(File.Exists(file), $"{file} should be removed");
+
+                // Segments 0 and 1 keep their data on both shards
+                foreach (var segment in new[] { 0, 1 })
+                {
+                    sharded.ReadAsync(segment, 0, rptr, writeSize, IOCallback, null);
+                    semaphore.Wait();
+                    AssertBufferContents(rptr, writeSize, i => (byte)(i * 3), $"segment {segment}");
+                }
+            }
+            finally
+            {
+                epoch.Dispose();
+            }
+            GC.KeepAlive(wbuf);
+            GC.KeepAlive(rbuf);
+        }
+
+        /// <summary>
+        /// Deleting a segment file that the native device holds open would lose later writes to it on Linux, and Windows refuses,
+        /// so TryRemoveSegmentsAbove empties such a file instead, and a later write through the device still reaches it
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void Native_TryRemoveSegmentsAbove_EmptiesTheFilesItHoldsOpen()
+        {
+            const long segmentSize = 1L << 16;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var (rbuf, rptr) = AllocateAlignedBuffer(HardeningSectorSize, _ => 0);
+            using (var device = CreateDeviceForTest(DeviceKind.Native, path, segmentSize, deleteOnClose: false))
+            {
+                // This leaves the device holding segments 0 through 5 open
+                foreach (var segment in new[] { 5, 0, 1, 2 })
+                {
+                    device.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                    semaphore.Wait();
+                }
+
+                // Removing above segment 1 empties the files of segments 2 through 5; segments 2 and 5 held data
+                ClassicAssert.IsTrue(device.TryRemoveSegmentsAbove(1, out var removed));
+                ClassicAssert.AreEqual(2, removed, "segments 2 and 5 held data");
+                for (var segment = 2; segment <= 5; segment++)
+                    ClassicAssert.AreEqual(0L, new FileInfo($"{path}.{segment}").Length, $"segment {segment} should be emptied, not deleted");
+
+                // Write segment 3 again through the same device
+                device.WriteAsync(wptr, 3, 0, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+            }
+
+            // A new device reads back that write from the file
+            using (var reopened = CreateDeviceForTest(DeviceKind.Native, path, segmentSize, deleteOnClose: false))
+            {
+                reopened.ReadAsync(3, 0, rptr, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+                AssertBufferContents(rptr, HardeningSectorSize, i => (byte)(i * 3), "segment 3, written after it was emptied");
+            }
+            GC.KeepAlive(wbuf);
+            GC.KeepAlive(rbuf);
+        }
+
+        /// <summary>
+        /// TryRemoveSegmentsAbove deletes the files of the segments above the one named that the native device does not hold open,
+        /// here after Reset closed them all, and the segments at and below the one named keep their data
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void Native_TryRemoveSegmentsAbove_DeletesTheFilesItDoesNotHoldOpen()
+        {
+            const long segmentSize = 1L << 16;
+            var path = Path.Join(TestUtils.MethodTestDir, "test.log");
+            using var device = CreateDeviceForTest(DeviceKind.Native, path, segmentSize, deleteOnClose: false);
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var (rbuf, rptr) = AllocateAlignedBuffer(HardeningSectorSize, _ => 0);
+
+            // Segments 5, 0, 1 and 2 hold data
+            foreach (var segment in new[] { 5, 0, 1, 2 })
+            {
+                device.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+            }
+
+            // Reset closes every segment, as TsavoriteLog.Initialize does; reading segment 1 then opens only that one
+            device.Reset();
+            device.ReadAsync(1, 0, rptr, HardeningSectorSize, IOCallback, null);
+            semaphore.Wait();
+
+            // Removing above segment 1 deletes the files of segments 2 through 5; segments 2 and 5 held data
+            ClassicAssert.IsTrue(device.TryRemoveSegmentsAbove(1, out var removed));
+            ClassicAssert.AreEqual(2, removed, "segments 2 and 5 held data");
+            for (var segment = 2; segment <= 5; segment++)
+                ClassicAssert.IsFalse(File.Exists($"{path}.{segment}"), $"segment {segment} should be deleted");
+
+            // Segments 0 and 1 keep their data
+            foreach (var segment in new[] { 0, 1 })
+            {
+                device.ReadAsync(segment, 0, rptr, HardeningSectorSize, IOCallback, null);
+                semaphore.Wait();
+                AssertBufferContents(rptr, HardeningSectorSize, i => (byte)(i * 3), $"segment {segment}");
+            }
+            GC.KeepAlive(wbuf);
+            GC.KeepAlive(rbuf);
+        }
+
+        /// <summary>
+        /// A device whose file name has no segment id cannot list its segments, so TryRemoveSegmentsAbove returns false and
+        /// removes nothing, and clearing falls back to zeroing the data it finds
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public void IDevice_TryRemoveSegmentsAbove_IsFalseForAFileNamedWithoutASegmentId()
+        {
+            using var device = new RandomAccessLocalStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
+            device.Initialize(segmentSize: -1, omitSegmentIdFromFilename: true);
+            ClassicAssert.IsFalse(device.TryRemoveSegmentsAbove(0, out var removed));
+            ClassicAssert.AreEqual(0, removed);
+        }
+
+        /// <summary>
+        /// An Azure device removes the blobs above the segment named that it found when it started, including those another
+        /// instance wrote, and keeps the blobs at and below it. Runs only when Azure tests are enabled, against the emulator.
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void AzureDevice_TryRemoveSegmentsAbove_RemovesTheBlobsItFound()
+        {
+            TestUtils.IgnoreIfNotRunningAzureTests();
+            const long segmentSize = 1L << 16;
+            var epoch = new LightEpoch();
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var (rbuf, rptr) = AllocateAlignedBuffer(HardeningSectorSize, _ => 0);
+            try
+            {
+                // A device that deletes on close removes every blob it found when it started, including any left by an earlier run
+                using (new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "test.log", deleteOnClose: true))
+                {
+                }
+
+                // Write segments 5, 0, 1 and 2 through one instance
+                using (var writer = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "test.log"))
+                {
+                    writer.Initialize(segmentSize, epoch);
+                    foreach (var segment in new[] { 5, 0, 1, 2 })
+                    {
+                        writer.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                        semaphore.Wait();
+                    }
+                }
+
+                // Another instance finds the blobs when it starts, and removes those above the segment named
+                using (var remover = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "test.log"))
+                {
+                    remover.Initialize(segmentSize, epoch);
+                    ClassicAssert.IsTrue(remover.TryRemoveSegmentsAbove(1, out var removed));
+                    ClassicAssert.AreEqual(2, removed, "segments 2 and 5 held data");
+                }
+
+                // A last instance, which deletes every blob on close, finds no blob above segment 1, while segments 0 and 1 keep
+                // their data
+                using (var remaining = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "test.log", deleteOnClose: true))
+                {
+                    remaining.Initialize(segmentSize, epoch);
+                    ClassicAssert.IsTrue(remaining.TryRemoveSegmentsAbove(1, out var removed));
+                    ClassicAssert.AreEqual(0, removed, "no blob above segment 1 should remain");
+                    foreach (var segment in new[] { 0, 1 })
+                    {
+                        remaining.ReadAsync(segment, 0, rptr, HardeningSectorSize, IOCallback, null);
+                        semaphore.Wait();
+                        AssertBufferContents(rptr, HardeningSectorSize, i => (byte)(i * 3), $"segment {segment}");
+                    }
+                }
+            }
+            finally
+            {
+                epoch.Dispose();
+                GC.KeepAlive(wbuf);
+                GC.KeepAlive(rbuf);
+            }
+        }
+
+        /// <summary>
+        /// An Azure device that fails to delete a blob above the segment named reports the failure, rather than the blob removed,
+        /// and still tracks the blob, so that a later attempt finds it. A lease that another client holds on the blob makes
+        /// deleting it fail. Runs only when Azure tests are enabled, against the emulator.
+        /// </summary>
+        [Test]
+        [Category("IDevice")]
+        public unsafe void AzureDevice_TryRemoveSegmentsAbove_FailsIfABlobRemains()
+        {
+            TestUtils.IgnoreIfNotRunningAzureTests();
+            const long segmentSize = 1L << 16;
+            var epoch = new LightEpoch();
+            var (wbuf, wptr) = AllocateAlignedBuffer(HardeningSectorSize, i => (byte)(i * 3));
+            var leasedBlob = new BlobContainerClient(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer)
+                .GetBlobClient($"{TestUtils.AzureTestDirectory}/test.log.2");
+            BlobLeaseClient lease = null;
+            try
+            {
+                // A device that deletes on close removes every blob it found when it started, including any left by an earlier run
+                using (new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "test.log", deleteOnClose: true))
+                {
+                }
+
+                using (var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "test.log"))
+                {
+                    device.Initialize(segmentSize, epoch);
+
+                    // Write segments 0, 1 and 2, then lease segment 2's blob through another client, so the device cannot delete it
+                    for (var segment = 0; segment <= 2; segment++)
+                    {
+                        device.WriteAsync(wptr, segment, 0, HardeningSectorSize, IOCallback, null);
+                        semaphore.Wait();
+                    }
+                    lease = leasedBlob.GetBlobLeaseClient();
+                    _ = lease.Acquire(TimeSpan.FromSeconds(60));
+
+                    // Removing above segment 0 fails at segment 2, the highest, which remains, and which the device still tracks
+                    _ = Assert.Throws<TsavoriteIOException>(() => device.TryRemoveSegmentsAbove(0, out _));
+                    ClassicAssert.IsTrue(leasedBlob.Exists().Value, "segment 2's blob should remain");
+                    ClassicAssert.AreNotEqual(0L, device.GetFileSize(2), "the device should still track segment 2's blob");
+                }
+            }
+            finally
+            {
+                // Release the lease, then delete the blobs
+                _ = lease?.Release();
+                using (new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "test.log", deleteOnClose: true))
+                {
+                }
+                epoch.Dispose();
+                GC.KeepAlive(wbuf);
+            }
         }
 
         [System.Runtime.InteropServices.DllImport("libc", SetLastError = true, EntryPoint = "chmod")]

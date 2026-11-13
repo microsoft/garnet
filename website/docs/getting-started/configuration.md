@@ -136,6 +136,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **AofTailWitnessFreqMs** | ```--aof-tail-witness-freq``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1). |
 | **CommitFrequencyMs** | ```--aof-commit-freq``` | ```int``` | Integer in range:<br/>[-1, MaxValue] | Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command |
 | **WaitForCommit** | ```--aof-commit-wait``` | ```bool``` |  | Wait for AOF to flush the commit before returning results to client. Warning: will greatly increase operation latency. |
+| **AofReplayClearAboveTail** | ```--aof-replay-clear-above-tail``` | ```bool``` |  | If true (default), when the AOF is recovered or a replica sync moves its tail, clear everything the AOF device holds above the tail before appending: remove or empty segment files above the tail's segment, zero data above the tail in that segment, and remove commit metadata for commits above the tail. This keeps a later recovery from adopting stale commits left there. Cleared data cannot be salvaged; see [Clearing the AOF above its tail](#clearing-the-aof-above-its-tail) for risks. |
 | **AofSizeLimit** | ```--aof-size-limit``` | ```string``` | Memory size | Maximum size of AOF (rounds down to power of 2) after which unsafe truncation will be applied. Left empty AOF will grow without bound unless a checkpoint is taken |
 | **AofSizeLimitEnforceFrequencySecs** | ```--aof-size-limit-enforce-frequency``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Frequency (in secs) of execution of the AutoCheckpointBasedOnAofSizeLimit background task. |
 | **CompactionFrequencySecs** | ```--compaction-freq``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Background hybrid log compaction frequency in seconds. 0 = disabled (compaction performed before checkpointing instead) |
@@ -305,6 +306,53 @@ to recover, and the incomplete recovery is logged as an error.
 In cluster mode a primary refuses under the same conditions. A replica reports the same error but continues,
 because a full sync from its primary will reconcile it. Cluster startup never purges checkpoint artifacts
 when no valid checkpoint could be selected.
+
+---
+
+## Clearing the AOF above its tail
+
+Recovery restores the AOF to its last readable commit, and a replica sync can move the AOF tail to a position
+its primary chooses. Neither changes the AOF files, so whatever was written above the new tail stays on disk:
+the rest of a write that a crash interrupted, commits after a corrupted record at which recovery stopped, or a
+history that a replica sync replaced. Once new records are appended at the tail, a later recovery can read past
+them into that older data and adopt its commits, replaying records that are not part of the current history.
+
+With `--aof-replay-clear-above-tail` (on by default), Garnet clears that data before anything is appended:
+
+* when it recovers the AOF, at startup or at the start of a disk-based replica attach;
+* when a replica sync moves the AOF tail;
+* when a cluster startup moves the AOF tail up to the checkpoint it recovered.
+
+Clearing deletes the AOF segment files above the tail's segment (a file the device still holds open is emptied
+instead), zeroes data above the tail in the tail's segment, removes the commit-metadata files of commits above
+the tail or of a replaced history, and writes commit metadata for the tail. A `--fast-aof-truncate` replica does
+not clear when it moves its tail while streaming from its primary, because that mode discards AOF history by
+design.
+
+Recovery never replays data above the tail, so clearing does not change what is recovered. Its risks are:
+
+* **Cleared data cannot be salvaged.** If recovery stops short of the end of the AOF, for example at a
+  corrupted record, everything after that point is erased at once, instead of staying on disk until new
+  records overwrite it. To keep an AOF for inspection, copy its directory before starting Garnet, or start with
+  clearing turned off.
+* **A device error while clearing fails startup or the replica sync**, as a read error during recovery does,
+  whatever `--fail-on-recovery-error` is set to.
+* **IO.** After a clean shutdown, clearing lists the AOF directory and probes past the end of the data; reads
+  past the end of a file return immediately. A page of zeros inside a file is read in full, and the search for
+  data stops after `--aof-memory` / `--aof-page-size` such pages in a row. When it finds data, it writes zeros
+  from the tail to the end of the last page that holds data: at most one `--aof-segment-size`, when a replica
+  sync moves the tail to the start of a full segment.
+
+With clearing turned off, nothing is removed, and instead:
+
+* **A later recovery can adopt stale commits above the tail.** Recovery stops at stale data later on the page
+  where the log ends, but when the rest of that page is empty, as when the log's last records fill their page, it
+  reads on into stale records on the next page and adopts their commits.
+* **A replica keeps the AOF segment files of a history it replaced**, until new records overwrite them.
+* **In a cluster, recovery soon after the AOF tail moves can miss every commit since.** A replica sync, or a
+  cluster startup that moves the AOF tail up to its recovered checkpoint, restarts commit numbering, so
+  recovery starts from the replaced history's commit metadata until Garnet next writes commit metadata, up to
+  `--fast-commit-throttle` commits later.
 
 ---
 

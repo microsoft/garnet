@@ -261,6 +261,10 @@ namespace Garnet
         [Option("aof-commit-wait", Required = false, HelpText = "Wait for AOF to flush the commit before returning results to client. Warning: will greatly increase operation latency.")]
         public bool? WaitForCommit { get; set; }
 
+        [OptionValidation]
+        [Option("aof-replay-clear-above-tail", Required = false, HelpText = "If true (default), when the AOF is recovered or a replica sync moves its tail, clear everything the AOF device holds above the tail before appending: remove or empty segment files above the tail's segment, zero data above the tail in that segment, and remove commit metadata for commits above the tail. This keeps a later recovery from adopting stale commits left there. Cleared data cannot be salvaged; see the configuration docs for risks.")]
+        public bool? AofReplayClearAboveTail { get; set; }
+
         [MemorySizeValidation(false)]
         [Option("aof-size-limit", Required = false, HelpText = "Maximum size of AOF (rounds down to power of 2) after which unsafe truncation will be applied. Left empty AOF will grow without bound unless a checkpoint is taken")]
         public string AofSizeLimit { get; set; }
@@ -991,6 +995,7 @@ namespace Garnet
                 AofTailWitnessFreqMs = AofTailWitnessFreqMs,
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
+                AofReplayClearAboveTail = AofReplayClearAboveTail.GetValueOrDefault(true),
                 AofSizeLimit = AofSizeLimit,
                 AofSizeLimitEnforceFrequencySecs = AofSizeLimitEnforceFrequencySecs,
                 CompactionFrequencySecs = CompactionFrequencySecs,

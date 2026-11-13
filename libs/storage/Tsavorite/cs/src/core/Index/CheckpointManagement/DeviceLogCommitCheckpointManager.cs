@@ -114,7 +114,8 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum, bool forceWriteMetadata)
         {
-            if (!forceWriteMetadata && fastCommitThrottleFreq > 0 && (commitCount++ % fastCommitThrottleFreq != 0)) return;
+            if (!forceWriteMetadata && fastCommitThrottleFreq > 0 && (commitCount++ % fastCommitThrottleFreq != 0))
+                return;
 
             using var device = deviceFactory.Get(checkpointNamingScheme.TsavoriteLogCommitMetadata(commitNum));
 
@@ -131,7 +132,10 @@ namespace Tsavorite.core
                 var prior = flogCommitHistory[flogCommitHistoryOffset];
                 flogCommitHistory[flogCommitHistoryOffset] = commitNum;
                 flogCommitHistoryOffset = (byte)((flogCommitHistoryOffset + 1) % flogCommitCount);
-                if (prior != default)
+
+                // Rewriting the latest commit's file, as TsavoriteLog does when it clears above the tail of a log recovered to the
+                // commit that OnRecovery recorded, must not delete that same file
+                if (prior != default && prior != commitNum)
                 {
                     // System.Threading.Tasks.Task.Run(() => deviceFactory.Delete(checkpointNamingScheme.TsavoriteLogCommitMetadata(prior)));
                     deleteQueue.EnqueueAndTryWork(prior, true);
@@ -148,7 +152,9 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public IEnumerable<long> ListCommits()
         {
-            return deviceFactory.ListContents(checkpointNamingScheme.TsavoriteLogCommitBasePath).Select(checkpointNamingScheme.CommitNumber).OrderByDescending(e => e);
+            // The naming scheme returns -1 for a file that is not one of this log's, such as another sublog's
+            return deviceFactory.ListContents(checkpointNamingScheme.TsavoriteLogCommitBasePath).Select(checkpointNamingScheme.CommitNumber)
+                .Where(commitNum => commitNum >= 0).OrderByDescending(e => e);
         }
 
         /// <inheritdoc />

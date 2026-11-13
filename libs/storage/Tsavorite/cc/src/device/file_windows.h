@@ -97,6 +97,8 @@ class File {
  public:
   core::Status Close();
   core::Status Delete();
+  /// Truncates the file to zero length through its open handle, which stays valid.
+  core::Status Empty();
 
   /// True iff the file is currently open (CreateFileA succeeded and Close has not run).
   /// Mirror of the Linux File::is_open() accessor; consumed by FileSystemSegmentBundle /
@@ -283,6 +285,11 @@ class ThreadPoolIoHandler {
   static void CALLBACK IoCompletionCallback(PTP_CALLBACK_INSTANCE instance, PVOID context,
       PVOID overlapped, ULONG ioResult, ULONG_PTR bytesTransferred, PTP_IO io);
 
+  /// Completes, as a successful zero-byte read, a read that ThreadPoolFile::ScheduleOperation saw
+  /// fail synchronously with ERROR_HANDLE_EOF. Runs on the thread pool, like IoCompletionCallback;
+  /// `context` is the operation's IoCallbackContext.
+  static void CALLBACK EndOfFileCallback(PTP_CALLBACK_INSTANCE instance, PVOID context);
+
   PTP_CALLBACK_ENVIRON callback_environment() {
     return threadpool_.callback_environment();
   }
@@ -415,24 +422,28 @@ class ThreadPoolFile : public File {
  public:
   ThreadPoolFile()
     : File()
-    , io_object_{ nullptr } {
+    , io_object_{ nullptr }
+    , callback_environment_{ nullptr } {
   }
 
   ThreadPoolFile(const std::string& filename)
     : File(filename)
-    , io_object_{ nullptr } {
+    , io_object_{ nullptr }
+    , callback_environment_{ nullptr } {
   }
 
   /// Move constructor
   ThreadPoolFile(ThreadPoolFile&& other)
     : File(std::move(other))
-    , io_object_{ other.io_object_} {
+    , io_object_{ other.io_object_}
+    , callback_environment_{ other.callback_environment_ } {
   }
 
   /// Move assignment operator.
   ThreadPoolFile& operator=(ThreadPoolFile&& other) {
     File::operator=(std::move(other));
     io_object_ = other.io_object_;
+    callback_environment_ = other.callback_environment_;
     return *this;
   }
 
@@ -449,6 +460,9 @@ class ThreadPoolFile : public File {
                            uint32_t length, core::IAsyncContext& context, core::AsyncIOCallback callback);
 
   PTP_IO io_object_;
+  /// The handler's thread pool environment, which completes a read that fails synchronously at the
+  /// end of the file.
+  PTP_CALLBACK_ENVIRON callback_environment_;
 };
 
 /// The QueueFile class encapsulates asynchronous reads and writes, where the IO completions are

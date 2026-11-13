@@ -210,6 +210,13 @@ namespace Garnet.server
         public bool WaitForCommit = false;
 
         /// <summary>
+        /// Whether to clear everything the AOF device holds above the AOF tail, before anything is appended, when the AOF is
+        /// recovered or a replica sync moves its tail. This keeps a later recovery from adopting stale commits left there.
+        /// Cleared data cannot be salvaged, and a device error while clearing fails the recovery or sync.
+        /// </summary>
+        public bool AofReplayClearAboveTail = true;
+
+        /// <summary>
         /// Aof size limit in bytes
         /// </summary>
         public string AofSizeLimit = "";

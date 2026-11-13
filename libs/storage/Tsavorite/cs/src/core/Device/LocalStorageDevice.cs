@@ -175,6 +175,7 @@ namespace Tsavorite.core
                     handle.Value.Dispose();
                 }
             }
+            base.Reset();
         }
 
         private void RecoverFiles()
@@ -357,6 +358,9 @@ namespace Tsavorite.core
                 logHandle.Dispose();
             Native32.DeleteFileW(GetSegmentName(segment));
         }
+
+        /// <inheritdoc/>
+        public override bool TryRemoveSegmentsAbove(int segment, out int removed) => TryRemoveSegmentFilesAbove(segment, out removed);
 
         /// <summary>
         /// <see cref="IDevice.RemoveSegmentAsync(int, AsyncCallback, IAsyncResult)"/>

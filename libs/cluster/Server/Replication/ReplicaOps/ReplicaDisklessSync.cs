@@ -241,6 +241,11 @@ namespace Garnet.cluster
 
                 storeWrapper.appendOnlyFile.Log.Initialize(aofBeginAddress, aofTailAddress);
 
+                // The primary streams to the new tail. Clear what this replica's AOF holds above it first, so that a later
+                // recovery cannot continue from the streamed records into the history they replace.
+                if (clusterProvider.serverOptions.AofReplayClearAboveTail)
+                    storeWrapper.appendOnlyFile.Log.PrepareToAppend();
+
                 // Set DB version
                 storeWrapper.store.SetVersion(primarySyncMetadata.currentStoreVersion);
 

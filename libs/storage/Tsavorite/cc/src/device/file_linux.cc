@@ -126,6 +126,13 @@ Status File::Delete() {
   return Status::Ok;
 }
 
+Status File::Empty() {
+  if(::ftruncate(fd_, 0) == -1) {
+    return Status::IOError;
+  }
+  return Status::Ok;
+}
+
 Status File::GetDeviceAlignment() {
   // Probe the kernel's required direct-I/O alignment for this file and record it in
   // device_alignment_. Uses statx(STATX_DIOALIGN) on Linux 6.1+ when available; falls back

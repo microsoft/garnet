@@ -177,7 +177,13 @@ public:
     /// Drain only the calling thread's affine context/ring (see QueueIoHandler::TryCompleteMine).
     virtual bool TryCompleteMine() = 0;
     virtual uint64_t GetFileSize(uint64_t segment) = 0;
+    /// Removes only `segment`; see FileSystemSegmentedFile::RemoveSegment. Returns once its file is deleted or emptied.
     virtual void RemoveSegment(uint64_t segment) = 0;
+    /// Removes every segment below `new_begin_segment`, also deleting the files in [lower_segment, new_begin_segment) that the
+    /// device does not hold open; see FileSystemSegmentedFile::TruncateSegments. Returns once the files are deleted.
+    virtual void TruncateSegments(uint64_t lower_segment, uint64_t new_begin_segment) = 0;
+    /// Reports the segments whose files the device holds open, [*begin, *end); both are 0 when it holds none.
+    virtual void GetOpenSegments(uint64_t* begin, uint64_t* end) = 0;
     virtual int QueueRun(int timeout_secs) = 0;
     /// Per-context (shard) drain. ctx_idx in [0, num_io_contexts). Used by completion threads
     /// bound 1:1 to a context. Returns -1 if ctx_idx is out of range.
@@ -298,6 +304,26 @@ private:
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
             ++retries;
+        }
+    }
+
+    /// Waits until `done` is set by a segment removal's deferred close and delete, so that the files are gone when the removal
+    /// returns. Otherwise a write that reopened a removed segment in between would get the old file, which the deferred delete
+    /// then removes: on Linux the write is lost with the unlinked file; on Windows the delete fails and the old data stays.
+    ///
+    /// The deferred action runs from the epoch drain list once every thread that was inside a device call when the open
+    /// segments were replaced has left it, which takes no longer than an IO submission. Each EpochGuard below drains the list
+    /// as soon as that holds. The removal is rare, so this backs off as SubmitWithEpoch does: yields, then 1 ms sleeps. It must
+    /// be called outside any EpochGuard, since a thread can hold only one epoch entry.
+    void WaitForRemoval(const std::atomic<bool>& done) {
+        constexpr int kYieldBudget = 16;
+        for (int retries = 0; !done.load(); ++retries) {
+            if (retries < kYieldBudget) {
+                std::this_thread::yield();
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            EpochGuard guard{ epoch_ };
         }
     }
 
@@ -567,8 +593,25 @@ public:
     }
 
     void RemoveSegment(uint64_t segment) override {
-        EpochGuard guard{ epoch_ };
-        log_.RemoveSegment(segment);
+        std::atomic<bool> done{ false };
+        {
+            EpochGuard guard{ epoch_ };
+            log_.RemoveSegment(segment, &done);
+        }
+        WaitForRemoval(done);
+    }
+
+    void TruncateSegments(uint64_t lower_segment, uint64_t new_begin_segment) override {
+        std::atomic<bool> done{ false };
+        {
+            EpochGuard guard{ epoch_ };
+            log_.TruncateSegments(lower_segment, new_begin_segment, &done);
+        }
+        WaitForRemoval(done);
+    }
+
+    void GetOpenSegments(uint64_t* begin, uint64_t* end) override {
+        log_.open_segments(*begin, *end);
     }
 
     int QueueRun(int timeout_secs) override {

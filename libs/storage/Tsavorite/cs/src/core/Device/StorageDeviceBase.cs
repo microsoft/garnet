@@ -4,6 +4,9 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
+using System.IO;
+using System.Linq;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -32,6 +35,30 @@ namespace Tsavorite.core
             foreach (var device in devices)
                 sectorSize = Math.Max(sectorSize, device.SectorSize);
             return sectorSize;
+        }
+
+        /// <summary>
+        /// Have each of <paramref name="devices"/> remove the segments it holds above <paramref name="segment"/>, for a device that
+        /// stores segment n of its own as segment n of each of them
+        /// </summary>
+        /// <param name="devices">The devices to remove the segments from</param>
+        /// <param name="segment">The highest segment to keep</param>
+        /// <param name="removed">The most segments that any of <paramref name="devices"/> removed: they share segment numbers, so
+        /// each counts the same segments, apart from those it held nothing in</param>
+        /// <returns>Whether every device could remove its segments. One that cannot does not stop the others from removing theirs,
+        /// since the caller is discarding everything above <paramref name="segment"/>.</returns>
+        internal static bool TryRemoveSegmentsAboveOnEach(IEnumerable<IDevice> devices, int segment, out int removed)
+        {
+            removed = 0;
+            var removedAll = true;
+            foreach (var device in devices)
+            {
+                if (device.TryRemoveSegmentsAbove(segment, out var removedFromDevice))
+                    removed = Math.Max(removed, removedFromDevice);
+                else
+                    removedAll = false;
+            }
+            return removedAll;
         }
 
         /// <summary>
@@ -250,6 +277,79 @@ namespace Tsavorite.core
             }
         }
 
+        /// <inheritdoc/>
+        public virtual bool TryRemoveSegmentsAbove(int segment, out int removed)
+        {
+            removed = 0;
+            return false;
+        }
+
+        /// <summary>
+        /// Remove every segment file above <paramref name="segment"/>, for a device that stores segment n in the file named
+        /// <see cref="FileName"/>.n and whose <see cref="RemoveSegment(int)"/> deletes exactly that segment's file
+        /// </summary>
+        /// <param name="segment">The highest segment to keep</param>
+        /// <param name="removed">The number of removed files that held data</param>
+        /// <returns>Whether the device names its files with segment ids, and so can list them</returns>
+        /// <remarks>
+        /// Files are removed from the highest segment down. RemoveSegment ignores a failure to delete a file, so a file that is
+        /// still there afterwards fails this, rather than leaving data that the caller believes is gone.
+        /// </remarks>
+        protected bool TryRemoveSegmentFilesAbove(int segment, out int removed)
+        {
+            removed = 0;
+            if (!TryListSegmentFiles(out var segments))
+                return false;
+
+            foreach (var above in segments.Where(listed => listed > segment).OrderDescending())
+            {
+                var file = new FileInfo(GetSegmentFilename(FileName, above));
+                var heldData = file.Exists && file.Length > 0;
+                RemoveSegment(above);
+                file.Refresh();
+                if (file.Exists)
+                    throw new TsavoriteIOException($"Unable to remove segment file {file.FullName}", null);
+                if (heldData)
+                    removed++;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// List the segment files of a device that stores segment n in the file named <see cref="FileName"/>.n
+        /// </summary>
+        /// <param name="segments">The ids of the segment files in <see cref="FileName"/>'s directory, or null if the device names its
+        /// only file without a segment id</param>
+        /// <returns>Whether the device names its files with segment ids, and so can list them</returns>
+        /// <remarks>
+        /// Only names that <see cref="GetSegmentFilename(string, int)"/> produces are listed: the file name, a dot and a segment id
+        /// written without a sign or leading zeros. A name such as "c.log.007" is not segment 7's file, which RemoveSegment(7)
+        /// would not delete. The directory is read when this is called; a missing directory holds no segments.
+        /// </remarks>
+        protected bool TryListSegmentFiles(out List<int> segments)
+        {
+            segments = null;
+            if (OmitSegmentIdFromFileName)
+                return false;
+
+            var file = new FileInfo(FileName);
+            var prefix = file.Name + ".";
+            List<int> found = [];
+            if (file.Directory.Exists)
+            {
+                // Simple matching avoids the Windows wildcard rules under which "c.log.*" also matches "c.log"
+                var options = new EnumerationOptions { MatchType = MatchType.Simple, AttributesToSkip = 0 };
+                foreach (var path in Directory.EnumerateFiles(file.DirectoryName, prefix + "*", options))
+                {
+                    var id = Path.GetFileName(path.AsSpan())[prefix.Length..];
+                    if (int.TryParse(id, NumberStyles.None, CultureInfo.InvariantCulture, out var segment) && (id.Length == 1 || id[0] != '0'))
+                        found.Add(segment);
+                }
+            }
+            segments = found;
+            return true;
+        }
+
         /// <summary>
         /// <see cref="IDevice.TruncateUntilSegmentAsync(int, AsyncCallback, IAsyncResult)"/>
         /// </summary>
@@ -266,34 +366,47 @@ namespace Tsavorite.core
                 return;
             }
 
-            // We will delete segments in parallel; create a countdown event that will signal when all are completed.
-            CountdownEvent countdown = new(toSegment - oldStart);
-
             // This action needs to be epoch-protected because readers may be issuing reads to the deleted segment, unaware of the delete.
             // Because of earlier compare-and-swap, the caller has exclusive access to the range [oldStartSegment, newStartSegment), and there will
             // be no double deletes.
             var suspendEpochWhenDone = epoch.ResumeIfNotProtected();
             try
             {
-                epoch.BumpCurrentEpoch(() =>
-                {
-                    for (int i = oldStart; i < toSegment; i++)
-                    {
-                        RemoveSegmentAsync(i, r =>
-                        {
-                            if (countdown.Signal())
-                            {
-                                callback(r);
-                                countdown.Dispose();
-                            }
-                        }, result);
-                    }
-                });
+                epoch.BumpCurrentEpoch(() => RemoveSegmentsThroughAsync(oldStart, toSegment - 1, callback, result));
             }
             finally
             {
                 if (suspendEpochWhenDone)
                     epoch.Suspend();
+            }
+        }
+
+        /// <summary>
+        /// Remove the segments from <paramref name="fromSegment"/> through <paramref name="throughSegment"/> for truncation, once no
+        /// reader can still be using them
+        /// </summary>
+        /// <param name="fromSegment">The lowest segment to remove</param>
+        /// <param name="throughSegment">The highest segment to remove</param>
+        /// <param name="callback">Called once every segment is removed</param>
+        /// <param name="result">Passed to <paramref name="callback"/></param>
+        /// <remarks>
+        /// The default calls <see cref="RemoveSegmentAsync(int, AsyncCallback, IAsyncResult)"/> for each segment, lowest first,
+        /// without waiting for one to finish before starting the next. A device can override this to remove the range in one operation.
+        /// </remarks>
+        protected virtual void RemoveSegmentsThroughAsync(int fromSegment, int throughSegment, AsyncCallback callback, IAsyncResult result)
+        {
+            // We will delete segments in parallel; create a countdown event that will signal when all are completed.
+            CountdownEvent countdown = new(throughSegment - fromSegment + 1);
+            for (int i = fromSegment; i <= throughSegment; i++)
+            {
+                RemoveSegmentAsync(i, r =>
+                {
+                    if (countdown.Signal())
+                    {
+                        callback(r);
+                        countdown.Dispose();
+                    }
+                }, result);
             }
         }
 
@@ -425,8 +538,14 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        /// <remarks>
+        /// This forgets which segments have been truncated, since a log that is reset writes from segment 0 again and must be able
+        /// to truncate those segments. Overrides must call it.
+        /// </remarks>
         public virtual void Reset()
         {
+            startSegment = 0;
+            endSegment = -1;
         }
     }
 }

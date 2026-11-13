@@ -370,6 +370,21 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
+        /// <remarks>A segment exists once it has been written, until it is removed.</remarks>
+        public override bool TryRemoveSegmentsAbove(int segment, out int removed)
+        {
+            removed = 0;
+            for (var above = maxSegments - 1; above > segment; above--)
+            {
+                if (Volatile.Read(ref segmentArrays[above]) == null)
+                    continue;
+                RemoveSegment(above);
+                removed++;
+            }
+            return true;
+        }
+
+        /// <inheritdoc />
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
             RemoveSegment(segment);
