@@ -28,6 +28,9 @@
     - restart: restart only failed/unhealthy instances in the VMSS (az vmss restart, fire-and-forget)
     - discover: force cluster peer rescan on each instance (runs cluster-deploy.ps1 -Action discover)
 
+.PARAMETER VmNames
+    Limit SSH software actions to these short DNS labels in one VMSS.
+
 .PARAMETER System
     System to rebuild (required when Action=rebuild).
     Valid: garnet, valkey, resp-bench, memtier
@@ -70,6 +73,8 @@ param(
     [string]$rg,
 
     [string]$VmssName,
+
+    [string[]]$VmNames,
 
     [ValidateSet('refresh', 'rebuild', 'deploy', 'install', 'ping', 'start', 'stop', 'restart', 'list', 'discover', 'create', 'push-keys', 'publish-tools')]
     [string]$Action = 'refresh',
@@ -118,6 +123,7 @@ if ($Help -or -not $rg) {
     Write-Host "Optional Parameters:"
     Write-Host "  -VmssName <name>    VMSS name(s) to target (comma-separated or 'all')"
     Write-Host "                      If omitted, script prompts for selection"
+    Write-Host "  -VmNames <names>    Limit refresh/rebuild/deploy/install to short VM DNS labels in one VMSS"
     Write-Host "  -Action <action>    Action to perform (default: refresh)"
     Write-Host "                      refresh        - git pull all repos"
     Write-Host "                      rebuild        - git pull + rebuild system (requires -System)"
@@ -131,7 +137,7 @@ if ($Help -or -not $rg) {
     Write-Host "                      discover       - force cluster peer rescan (runs cluster-deploy.ps1 -Action discover)"
     Write-Host "                      create         - deploy the VMSS from $TemplateFile (auto-discovers KV + SSH keys; storage RBAC via -GrantStorageAccess)"
     Write-Host "                      push-keys      - push authorized_keys (security/*.pub) to running instances via run-command"
-    Write-Host "                      publish-tools  - package tools/ into a tarball and upload it to the shared storage account (blob for SAS delivery)"
+    Write-Host "                      publish-tools  - package tools/ into a tarball and upload it to the shared storage account with Entra auth (needs Storage Blob Data Contributor)"
     Write-Host "  -System <name>      System to rebuild: garnet, valkey, resp-bench, memtier"
     Write-Host "                      Required when -Action rebuild"
     Write-Host "  -MaxScan <n>        Cap subnet-scan probes for -Action discover (0 = unlimited)"
@@ -146,7 +152,7 @@ if ($Help -or -not $rg) {
     Write-Host "  -ContainerName <c>  Blob container for -Action publish-tools (default: tools)"
     Write-Host "  -ToolsBlobName <n>  Blob name for -Action publish-tools (default: tools.tar.gz)"
     Write-Host "  -GrantStorageAccess Grant the VMSS identity Storage Blob Data Reader during -Action create"
-    Write-Host "                      (requires Owner/User Access Administrator; skipped by default)"
+    Write-Host "                      (requires active Owner on the resource group; activate manually in Azure Portal PIM)"
     Write-Host "  -Verbose            Show per-instance command output"
     Write-Host "  -Force              Force pull (git reset --hard) instead of fast-forward"
     Write-Host "  -NoPull             Skip git pull on rebuild (build local changes only)"
@@ -171,9 +177,14 @@ if ($Help -or -not $rg) {
 }
 
 $ErrorActionPreference = 'Stop'
+if ($VmNames.Count -and $Action -notin @('refresh', 'rebuild', 'deploy', 'install')) {
+    throw '-VmNames is supported only with refresh, rebuild, deploy, or install.'
+}
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. "$scriptDir\vmss-utils.ps1"
 $securityDir = Join-Path $scriptDir '..\01-resources\security'
 . (Join-Path $securityDir 'ssh-key-utils.ps1')
+. (Join-Path $scriptDir '..\01-resources\storage-permission-utils.ps1')
 
 function Write-CreateError {
     param([string]$Message)
@@ -323,56 +334,24 @@ function Test-ToolsDelivery {
     param(
         [string]$ResourceGroup,
         [string]$StorageAccount,
-        [string]$VaultName,
         [string]$Container,
-        [string]$BlobName,
-        [string]$SasSecretName = 'tools-sas-url'
+        [string]$BlobName
     )
 
-    $accountKey = az storage account keys list --account-name $StorageAccount `
-        --resource-group $ResourceGroup --query '[0].value' -o tsv 2>$null
-    if ($LASTEXITCODE -ne 0 -or -not $accountKey) {
+    # Shared Key is disabled on the storage account, so check with Entra auth
+    # (requires a Storage Blob Data role for the active identity).
+    $blobExists = az storage blob exists --account-name $StorageAccount --auth-mode login `
+        --container-name $Container --name $BlobName --query exists -o tsv 2>$null
+    if ($LASTEXITCODE -ne 0) {
         return [pscustomobject]@{
             IsValid = $false
-            Error   = "Unable to verify '$Container/$BlobName' because a key for storage account '$StorageAccount' could not be retrieved."
+            Error   = "Unable to verify '$Container/$BlobName' in storage account '$StorageAccount' with Entra auth. The active identity needs Storage Blob Data Reader or Contributor on the account or container."
         }
     }
-
-    $blobExists = az storage blob exists --account-name $StorageAccount --account-key $accountKey `
-        --container-name $Container --name $BlobName --query exists -o tsv 2>$null
-    if ($LASTEXITCODE -ne 0 -or $blobExists -ne 'true') {
+    if ($blobExists -ne 'true') {
         return [pscustomobject]@{
             IsValid = $false
             Error   = "Tools blob '$Container/$BlobName' does not exist in storage account '$StorageAccount'. Run manage-vmss.ps1 -rg $ResourceGroup -Action publish-tools before creating a VMSS."
-        }
-    }
-
-    $secretJson = az keyvault secret show --vault-name $VaultName --name $SasSecretName `
-        --query '{enabled:attributes.enabled,value:value}' -o json 2>$null
-    if ($LASTEXITCODE -ne 0 -or -not $secretJson) {
-        return [pscustomobject]@{
-            IsValid = $false
-            Error   = "Key Vault secret '$SasSecretName' is missing. Run 01-resources/deploy-common-resources.ps1 -rg $ResourceGroup -Action refresh-sas."
-        }
-    }
-
-    try {
-        $secret = $secretJson | ConvertFrom-Json
-        if ($secret.enabled -eq $false -or [string]::IsNullOrWhiteSpace([string]$secret.value)) {
-            throw "Secret is disabled or empty."
-        }
-        $response = Invoke-WebRequest -Uri $secret.value -Method Head -SkipHttpErrorCheck -TimeoutSec 30
-    } catch {
-        return [pscustomobject]@{
-            IsValid = $false
-            Error   = "Tools SAS URL validation failed. Run 01-resources/deploy-common-resources.ps1 -rg $ResourceGroup -Action refresh-sas. $($_.Exception.Message)"
-        }
-    }
-
-    if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 300) {
-        return [pscustomobject]@{
-            IsValid = $false
-            Error   = "Tools SAS URL returned HTTP $($response.StatusCode). Run 01-resources/deploy-common-resources.ps1 -rg $ResourceGroup -Action refresh-sas."
         }
     }
 
@@ -526,8 +505,17 @@ if ($Action -eq 'create') {
         exit 1
     }
 
+    if ($GrantStorageAccess) {
+        $ownerContext = Get-ResourceGroupOwnerContext -ResourceGroup $rg
+        if (-not $ownerContext) { exit 1 }
+        if ($ownerContext.Account.id -ne $azureContext.SubscriptionId) {
+            Write-CreateError 'The active subscription changed after context confirmation. Rerun create with the intended subscription.'
+            exit 1
+        }
+    }
+
     $toolsDelivery = Test-ToolsDelivery -ResourceGroup $rg -StorageAccount $st `
-        -VaultName $kv -Container $ContainerName -BlobName $ToolsBlobName
+        -Container $ContainerName -BlobName $ToolsBlobName
     if (-not $toolsDelivery.IsValid) {
         Write-CreateError $toolsDelivery.Error
         exit 1
@@ -574,11 +562,11 @@ if ($Action -eq 'create') {
     $sshPayload | ConvertTo-Json -Depth 5 | Set-Content -Path $sshParamsFile -Encoding utf8
 
     Write-Host "  Key Vault       : $kv"
-    Write-Host "  Tools bundle    : $st/$ContainerName/$ToolsBlobName (SAS validated)"
+    Write-Host "  Tools bundle    : $st/$ContainerName/$ToolsBlobName (managed identity download)"
     if ($GrantStorageAccess) {
         Write-Host "  Storage RBAC    : Blob Data Reader grant enabled"
     } else {
-        Write-Host "  Storage RBAC    : skipped (use -GrantStorageAccess; needs Owner/User Access Administrator)" -ForegroundColor Yellow
+        Write-Host "  Storage RBAC    : skipped; instances cannot fetch tools until the VMSS identity is granted Storage Blob Data Reader (use -GrantStorageAccess)" -ForegroundColor Yellow
     }
     Write-Host "  SSH keys        : $sshKeyCount ($($keySync.ResolvedNames -join ', '))"
     Write-Host "  SSH key source  : $($sshManifest.BasePath) (synced to security cache)"
@@ -594,9 +582,10 @@ if ($Action -eq 'create') {
         '--name', $DeploymentName,
         '--template-file', $templatePath,
         '--parameters', "@$paramsPath",
-        '--parameters', "keyVaultName=$kv", "deploymentRole=$DeploymentRole"
+        '--parameters', "keyVaultName=$kv", "deploymentRole=$DeploymentRole",
+        "storageAccountName=$st", "toolsContainerName=$ContainerName", "toolsBlobName=$ToolsBlobName",
+        "grantStorageAccess=$(if ($GrantStorageAccess) { 'true' } else { 'false' })"
     )
-    if ($GrantStorageAccess) { $deployArgs += "storageAccountName=$st" }
     if ($sshParamsFile) { $deployArgs += @('--parameters', "@$sshParamsFile") }
 
     try {
@@ -617,10 +606,10 @@ if ($Action -eq 'create') {
 
 # --- Action: publish-tools ---
 # Package the tools/ bootstrap bundle into tools.tar.gz and upload it to the shared
-# storage account's blob container. VMSS instances pull this tarball at boot via the
-# policy-bound SAS URL stored in Key Vault (secret 'tools-sas-url'), so the blob must
-# exist before any instance provisions. Uploads with the storage account key (the
-# deployer role lacks data-plane RBAC), matching the SAS delivery model.
+# storage account's blob container. VMSS instances pull this tarball at boot with
+# their managed identity, so the blob must exist before any instance provisions.
+# Shared Key is disabled, so the upload uses Entra auth and the publisher needs
+# Storage Blob Data Contributor on the account or container.
 if ($Action -eq 'publish-tools') {
     Write-Host "`n=== Publishing tools bundle to storage in '$rg' ===" -ForegroundColor Cyan
 
@@ -646,11 +635,6 @@ if ($Action -eq 'publish-tools') {
         exit 1
     }
 
-    $accountKey = az storage account keys list --account-name $st --resource-group $rg --query "[0].value" -o tsv 2>$null
-    if (-not $accountKey) {
-        Write-Error "Could not retrieve a key for storage account '$st'."
-        exit 1
-    }
 
     Write-Host "  Storage account : $st"
     Write-Host "  Container       : $ContainerName"
@@ -670,12 +654,12 @@ if ($Action -eq 'publish-tools') {
     try {
         Write-Host "  Uploading to blob '$ContainerName/$ToolsBlobName' ..."
         az storage blob upload `
-            --account-name $st --account-key $accountKey `
+            --account-name $st --auth-mode login `
             --container-name $ContainerName --name $ToolsBlobName `
             --file $tarball --content-type 'application/gzip' `
             --overwrite --output none
         if ($LASTEXITCODE -ne 0) {
-            Write-Error "Blob upload failed."
+            Write-Error "Blob upload failed. The publisher needs Storage Blob Data Contributor on '$st' or its '$ContainerName' container."
             exit 1
         }
     } finally {
@@ -683,7 +667,7 @@ if ($Action -eq 'publish-tools') {
     }
 
     Write-Host "  Published tools bundle to '$st/$ContainerName/$ToolsBlobName'." -ForegroundColor Green
-    Write-Host "  VMSS instances fetch it at boot via the 'tools-sas-url' Key Vault secret." -ForegroundColor DarkGray
+    Write-Host "  VMSS instances fetch it with their managed identity (Storage Blob Data Reader)." -ForegroundColor DarkGray
     exit 0
 }
 
@@ -699,106 +683,10 @@ if ($Ref -and $Action -ne 'rebuild') {
 }
 
 # --- VMSS Discovery & Selection ---
-Write-Host "`n=== Discovering VMSS in resource group '$rg' ===" -ForegroundColor Cyan
-
-$allVmssJson = az vmss list --resource-group $rg --query '[].{name:name, state:provisioningState}' -o json 2>$null
-if ($LASTEXITCODE -ne 0 -or -not $allVmssJson) {
-    Write-Error "Failed to list VMSS in resource group '$rg'. Ensure the resource group exists and you're logged in."
-    exit 1
-}
-
-$allVmssInfo = @($allVmssJson | ConvertFrom-Json)
-if ($allVmssInfo.Count -eq 0) {
-    Write-Error "No VMSS found in resource group '$rg'."
-    exit 1
-}
-
-$allVmss = @($allVmssInfo | ForEach-Object { $_.name })
-
-$targetVmss = @()
-
-if (-not $VmssName) {
-    # Prompt user to select
-    Write-Host "`nAvailable VMSS:"
-    Write-Host "  (querying power state...)" -ForegroundColor DarkGray
-    $powerMap = Get-VmssPowerStates -ResourceGroup $rg -VmssNames $allVmss
-
-    # Build rows and compute column widths for aligned table output
-    $rows = for ($i = 0; $i -lt $allVmssInfo.Count; $i++) {
-        [PSCustomObject]@{
-            Idx   = "[$i]"
-            Name  = $allVmssInfo[$i].name
-            Prov  = $allVmssInfo[$i].state
-            Power = $powerMap[$allVmssInfo[$i].name]
-        }
-    }
-
-    $wIdx   = [Math]::Max('#'.Length, (($rows | ForEach-Object { $_.Idx.Length }   | Measure-Object -Maximum).Maximum))
-    $wName  = [Math]::Max('NAME'.Length, (($rows | ForEach-Object { $_.Name.Length }  | Measure-Object -Maximum).Maximum))
-    $wProv  = [Math]::Max('PROVISIONING'.Length, (($rows | ForEach-Object { $_.Prov.Length }  | Measure-Object -Maximum).Maximum))
-    $wPower = [Math]::Max('POWER'.Length, (($rows | ForEach-Object { "$($_.Power)".Length } | Measure-Object -Maximum).Maximum))
-
-    $header = "  {0}  {1}  {2}  {3}" -f `
-        '#'.PadRight($wIdx), 'NAME'.PadRight($wName), 'PROVISIONING'.PadRight($wProv), 'POWER'.PadRight($wPower)
-    Write-Host $header -ForegroundColor Cyan
-    Write-Host ("  {0}  {1}  {2}  {3}" -f `
-        ('-' * $wIdx), ('-' * $wName), ('-' * $wProv), ('-' * $wPower)) -ForegroundColor DarkGray
-
-    foreach ($row in $rows) {
-        $provColor  = if ($row.Prov -eq 'Succeeded') { 'Green' } elseif ($row.Prov -eq 'Failed') { 'Red' } else { 'Yellow' }
-        $powerColor = if ($row.Power -match 'running') { 'Green' } elseif ($row.Power -match 'deallocated|stopped') { 'DarkGray' } else { 'Yellow' }
-        Write-Host ("  {0}  {1}  " -f $row.Idx.PadRight($wIdx), $row.Name.PadRight($wName)) -NoNewline
-        Write-Host $row.Prov.PadRight($wProv) -NoNewline -ForegroundColor $provColor
-        Write-Host '  ' -NoNewline
-        Write-Host $row.Power.PadRight($wPower) -ForegroundColor $powerColor
-    }
-    Write-Host ""
-    $selection = Read-Host "Select VMSS (comma-separated indices/names, or 'all')"
-
-    if ($selection -eq 'all') {
-        $targetVmss = $allVmss
-    } else {
-        $parts = $selection -split ',' | ForEach-Object { $_.Trim() }
-        foreach ($part in $parts) {
-            if ($part -match '^\d+$') {
-                $idx = [int]$part
-                if ($idx -ge 0 -and $idx -lt $allVmss.Count) {
-                    $targetVmss += $allVmss[$idx]
-                } else {
-                    Write-Error "Invalid index: $idx"
-                    exit 1
-                }
-            } else {
-                if ($part -in $allVmss) {
-                    $targetVmss += $part
-                } else {
-                    Write-Error "VMSS '$part' not found in resource group '$rg'"
-                    exit 1
-                }
-            }
-        }
-    }
-} else {
-    # Validate provided VMSS names
-    if ($VmssName -eq 'all') {
-        $targetVmss = $allVmss
-    } else {
-        $targetVmss = $VmssName -split ',' | ForEach-Object { $_.Trim() }
-        foreach ($vmss in $targetVmss) {
-            if ($vmss -notin $allVmss) {
-                Write-Error "VMSS '$vmss' not found in resource group '$rg'. Available: $($allVmss -join ', ')"
-                exit 1
-            }
-        }
-    }
-}
-
-if ($targetVmss.Count -eq 0) {
-    Write-Error "No VMSS selected."
-    exit 1
-}
-
-Write-Host "Target VMSS: $($targetVmss -join ', ')" -ForegroundColor Green
+$targetVmss = @(Select-Vmss -ResourceGroup $rg -VmssName $VmssName -Single:([bool]$VmNames.Count) -PowerStateProvider {
+    param($names)
+    Get-VmssPowerStates -ResourceGroup $rg -VmssNames $names
+})
 
 # --- List Action: show per-instance status ---
 if ($Action -eq 'list') {
@@ -1248,45 +1136,55 @@ function Get-GitPull([string]$branch = '', [string]$ref = '') {
     }
 }
 
+function Get-ToolsBlobUrl {
+    $st = az storage account list --resource-group $rg --query "[?tags.app=='azurebench'].name" -o tsv 2>$null |
+        Where-Object { $_ } | Select-Object -First 1
+    if (-not $st) {
+        throw "No storage account found in '$rg'. Run 01-resources/deploy-common-resources.ps1 first."
+    }
+    $endpoint = az storage account show --name $st --resource-group $rg --query 'primaryEndpoints.blob' -o tsv 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $endpoint) {
+        throw "Could not resolve the blob endpoint of storage account '$st'."
+    }
+    return "$($endpoint.TrimEnd('/'))/$ContainerName/$ToolsBlobName"
+}
+
 function Get-ToolsUpdateCommand {
     param(
         [string]$User,
         [ValidateSet('Copy', 'Run')][string]$Mode
     )
 
+    # Download with the VM managed identity (Shared Key/SAS is disabled), then run the
+    # freshly extracted updater. This does not depend on the updater already installed
+    # on the VM, so instances provisioned with an older bundle also pick up the change.
     $bootstrap = @'
 $ErrorActionPreference = 'Stop'
 $homeDir = '/home/__USER__'
-$toolsDir = "$homeDir/tools"
-$updateScript = "$toolsDir/update.ps1"
-
-if (Test-Path $updateScript) {
-    if ('__MODE__' -eq 'Run') { & $updateScript -Fetch -Run }
-    else { & $updateScript -Fetch -Copy }
-    exit $LASTEXITCODE
-}
-
-Write-Host 'Updater missing; bootstrapping tools bundle from Key Vault...'
-$envFile = '/opt/deploy-actions/keyvault.env'
-if (-not (Test-Path $envFile)) { throw "Missing $envFile" }
-$vaultLine = Select-String -Path $envFile -Pattern '^VAULT_NAME=' | Select-Object -First 1
-if (-not $vaultLine) { throw "VAULT_NAME is missing from $envFile" }
-$vaultName = ($vaultLine.Line -split '=', 2)[1].Trim()
-
-$token = Invoke-RestMethod `
-    -Uri 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://vault.azure.net' `
-    -Headers @{ Metadata = 'true' } -TimeoutSec 15
-$secret = Invoke-RestMethod `
-    -Uri "https://$vaultName.vault.azure.net/secrets/tools-sas-url?api-version=7.4" `
-    -Headers @{ Authorization = "Bearer $($token.access_token)" } -TimeoutSec 15
-if (-not $secret.value) { throw "Key Vault secret 'tools-sas-url' is empty" }
-
+$updateScript = "$homeDir/tools/update.ps1"
+$imds = 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://storage.azure.com/'
 $tarball = "/tmp/tools-$([Environment]::UserName).tar.gz"
-Invoke-WebRequest -Uri $secret.value -OutFile $tarball -TimeoutSec 120
+if (Test-Path $tarball) { Remove-Item $tarball -Force }
+
+$token = Invoke-RestMethod -Uri $imds -Headers @{ Metadata = 'true' } -NoProxy -TimeoutSec 15
+if (-not $token.access_token) { throw 'IMDS did not return a managed-identity token' }
+Invoke-WebRequest -Uri '__TOOLS_BLOB_URL__' -OutFile $tarball -TimeoutSec 120 -Headers @{
+    Authorization  = 'Bearer ' + $token.access_token
+    'x-ms-version' = '2023-11-03'
+}
 New-Item -ItemType Directory -Path $homeDir -Force | Out-Null
 tar -xzf $tarball -C $homeDir
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $updateScript)) {
     throw 'Tools bundle extraction did not restore update.ps1'
+}
+
+$envFile = [IO.Path]::GetTempFileName()
+try {
+    Set-Content -LiteralPath $envFile -Value 'TOOLS_BLOB_URL=__TOOLS_BLOB_URL__' -Encoding utf8NoBOM
+    sudo install -D -m 0644 $envFile /opt/deploy-actions/storage.env
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to persist tools blob URL in /opt/deploy-actions/storage.env' }
+} finally {
+    Remove-Item -LiteralPath $envFile -Force
 }
 
 if ('__MODE__' -eq 'Run') { & $updateScript -Run }
@@ -1294,10 +1192,12 @@ else { & $updateScript -Copy }
 exit $LASTEXITCODE
 '@
 
-    $bootstrap = $bootstrap.Replace('__USER__', $User).Replace('__MODE__', $Mode)
+    $toolsBlobUrl = Get-ToolsBlobUrl
+    $bootstrap = $bootstrap.Replace('__USER__', $User).Replace('__MODE__', $Mode).Replace('__TOOLS_BLOB_URL__', $toolsBlobUrl)
     $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($bootstrap))
     return "pwsh -NoProfile -OutputFormat Text -EncodedCommand $encoded"
 }
+
 
 function Get-SshCommand {
     param([string]$Action, [string]$System)
@@ -1439,6 +1339,21 @@ foreach ($vmss in $targetVmss) {
     }
 
     $instances = $ipsJson | ConvertFrom-Json
+
+    if ($VmNames.Count) {
+        $selectedInstances = @()
+        foreach ($vmName in $VmNames) {
+            $matchingInstances = @($instances | Where-Object {
+                $_.fqdn -and ($_.fqdn -split '\.')[0] -eq $vmName
+            })
+            if ($matchingInstances.Count -ne 1) {
+                throw "Expected exactly one instance for VM '$vmName' in '$vmss'; found $($matchingInstances.Count)."
+            }
+            if ($matchingInstances[0].fqdn -in $selectedInstances.fqdn) { throw "Duplicate VM selection: $vmName" }
+            $selectedInstances += $matchingInstances[0]
+        }
+        $instances = $selectedInstances
+    }
 
     if ($instances.Count -eq 0) {
         Write-Warning "No instances with public IPs found in VMSS '$vmss'. Skipping."

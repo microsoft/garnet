@@ -166,11 +166,17 @@ param adminPassword string = ''
 @description('Key Vault name for storing the VMSS SSH private key. Leave empty to skip.')
 param keyVaultName string = 'garnet-kv'
 
-@description('Storage account name for tools tarball delivery. Leave empty to skip the RBAC grant.')
-param storageAccountName string = ''
+@description('Storage account holding the tools tarball. VMSS instances download it with their managed identity.')
+param storageAccountName string
 
-@description('Key Vault secret name holding the tools tarball SAS URL that VMSS instances fetch at boot.')
-param toolsSasSecretName string = 'tools-sas-url'
+@description('Blob container holding the tools tarball.')
+param toolsContainerName string = 'tools'
+
+@description('Blob name of the tools tarball.')
+param toolsBlobName string = 'tools.tar.gz'
+
+@description('Grant the VMSS managed identity Storage Blob Data Reader on the storage account. Requires Microsoft.Authorization/roleAssignments/write.')
+param grantStorageAccess bool = false
 
 ///////////////////////////////////////////////////////
 /////////////////// OS Options ////////////////////////
@@ -272,8 +278,9 @@ var isAzureLinux = linuxImage.publisher == 'microsoftcblmariner'
 // Load cloud-config templates and inject non-secret deployment metadata.
 var cloudInitAzureLinuxRaw = loadTextContent('cloud-config-azurelinux.yml')
 var cloudInitUbuntuRaw = loadTextContent('cloud-config.yml')
-var cloudInitAzureLinuxFinal = replace(replace(replace(cloudInitAzureLinuxRaw, '__KEYVAULT_NAME__', keyVaultName), '__TOOLS_SAS_SECRET__', toolsSasSecretName), '__DEPLOYMENT_ROLE__', deploymentRole)
-var cloudInitUbuntuFinal = replace(replace(replace(cloudInitUbuntuRaw, '__KEYVAULT_NAME__', keyVaultName), '__TOOLS_SAS_SECRET__', toolsSasSecretName), '__DEPLOYMENT_ROLE__', deploymentRole)
+var toolsBlobUrl = 'https://${storageAccountName}.blob.${environment().suffixes.storage}/${toolsContainerName}/${toolsBlobName}'
+var cloudInitAzureLinuxFinal = replace(replace(replace(cloudInitAzureLinuxRaw, '__KEYVAULT_NAME__', keyVaultName), '__TOOLS_BLOB_URL__', toolsBlobUrl), '__DEPLOYMENT_ROLE__', deploymentRole)
+var cloudInitUbuntuFinal = replace(replace(replace(cloudInitUbuntuRaw, '__KEYVAULT_NAME__', keyVaultName), '__TOOLS_BLOB_URL__', toolsBlobUrl), '__DEPLOYMENT_ROLE__', deploymentRole)
 
 var cloudInitUbuntu = base64(cloudInitUbuntuFinal)
 var cloudInitAzureLinux = base64(cloudInitAzureLinuxFinal)
@@ -587,11 +594,11 @@ output deploymentRole string = deploymentRole
 // deterministic GUID built from compile-time values so it is stable across runs.
 var storageBlobDataReaderRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')
 
-resource existingStorage 'Microsoft.Storage/storageAccounts@2023-01-01' existing = if (!empty(storageAccountName)) {
+resource existingStorage 'Microsoft.Storage/storageAccounts@2023-01-01' existing = if (grantStorageAccess) {
   name: storageAccountName
 }
 
-resource storageBlobRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(storageAccountName)) {
+resource storageBlobRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (grantStorageAccess) {
   name: guid(storageAccountName, vmssName, 'StorageBlobDataReader')
   scope: existingStorage
   properties: {

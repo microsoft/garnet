@@ -8,6 +8,12 @@ namespace Resp.benchmark
 {
     public partial class Options
     {
+        [Option("config", Required = false, HelpText = "Load benchmark options from a JSON .conf file. Explicit CLI options override the file.")]
+        public string ConfigFile { get; set; }
+
+        [Option("validate-config", Required = false, Default = false, HelpText = "Validate options without connecting to a server or running a workload.")]
+        public bool ValidateConfig { get; set; }
+
         [Option('p', "port", Required = false, Default = 6379, HelpText = "Port to connect to")]
         public int Port { get; set; }
 
@@ -45,6 +51,7 @@ namespace Resp.benchmark
         public IEnumerable<int> BatchSize { get; set; }
 
         [Option("pipeline", Separator = ',', Required = false, Hidden = true, HelpText = "Alias for --batchsize")]
+        [ConfigurationAlias(nameof(BatchSize))]
         public IEnumerable<int> Pipeline { set { if (value != null && value.Any()) BatchSize = value; } get => BatchSize; }
 
         [Option("runtime", Required = false, Default = 15, HelpText = "Run time (seconds)")]
@@ -55,6 +62,9 @@ namespace Resp.benchmark
 
         [Option("load-threads", Required = false, Default = 8, HelpText = "Number of threads used for the initial data load phase")]
         public int LoadThreads { get; set; }
+
+        [Option("fast-load", Required = false, Default = false, HelpText = "Stream the offline RESP preload with GarnetClientSession, reusing one random payload per load thread. Values require at least 8 bytes for the hexadecimal worker ID. Uses --load-threads and --lset.")]
+        public bool FastLoad { get; set; }
 
         [Option('a', "auth", Required = false, Default = null, HelpText = "Authentication password")]
         public string Auth { get; set; }
@@ -71,11 +81,11 @@ namespace Resp.benchmark
         [Option("client", Required = false, Default = ClientType.LightClient, HelpText = "Choose ClientType to run benchmark (LightClient, SERedis, GarnetClientSession)")]
         public ClientType Client { get; set; }
 
-        [Option("pool", Required = false, Default = false, HelpText = "Pool client instances. For cluster-bench: enables worker pool architecture (scalable for large clusters). For online bench: pools SERedis, GarnetClient and GarnetClientSession instances.")]
-        public bool Pool { get; set; }
+        [Option("use-fixed-worker-pool", Required = false, Default = false, HelpText = "For cluster-bench, use a fixed number of workers across all shards (--threads is global instead of per shard). For other online benchmarks, pool SERedis, GarnetClient and GarnetClientSession instances.")]
+        public bool UseFixedWorkerPool { get; set; }
 
-        [Option("broadcast", Required = false, Default = false, HelpText = "Enable broadcast mode in worker pool (--pool). Sends a request to every shard in parallel, then completes all pending responses.")]
-        public bool Broadcast { get; set; }
+        [Option("use-parallel-fan-out", Required = false, Default = false, HelpText = "With --use-fixed-worker-pool, each worker sends shard-specific work to every shard before draining all responses and starting the next round. Requests overlap across shards; no additional worker threads are created.")]
+        public bool UseParallelFanOut { get; set; }
 
         [Option("tls", Required = false, Default = false, HelpText = "Enable TLS.")]
         public bool EnableTLS { get; set; }
@@ -136,6 +146,18 @@ namespace Resp.benchmark
 
         [Option("cluster-bench", Required = false, Default = false, HelpText = "Enable cluster benchmark mode. Distributes workload across discovered cluster shards.")]
         public bool ClusterBench { get; set; }
+
+        [Option("migration-workload-directory", HelpText = "Controlled cluster migration workload: existing numeric keys, atomic phase requests, traces and validation.")]
+        public string MigrationWorkloadDirectory { get; set; }
+
+        [Option("migration-target", HelpText = "Second primary address for the controlled SERedis migration workload.")]
+        public string MigrationTarget { get; set; }
+
+        [Option("migration-request-timeout-ms", Default = 10000, HelpText = "SERedis request timeout for controlled migration traffic.")]
+        public int MigrationRequestTimeoutMs { get; set; }
+
+        [Option("migration-profile-every", Default = 1000, HelpText = "Profile one logical operation in this many for sampled redirect accounting.")]
+        public int MigrationProfileEvery { get; set; }
 
         [Option("replica-ops-percent", Required = false, Default = 0, HelpText = "Percentage of operations routed to replicas (0-100). For write ops (SET, MSET), generates corresponding reads (GET, MGET) for the same keys and routes them to replicas. Actual: X% writes to primary, (100-X)% reads split between replica/primary based on this percentage.")]
         public int ReplicaOpsPercent { get; set; }

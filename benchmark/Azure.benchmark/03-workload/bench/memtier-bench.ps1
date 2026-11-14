@@ -14,13 +14,20 @@
 
 .EXAMPLE
     .\memtier-bench.ps1
-    .\memtier-bench.ps1 -ConfigFile .\memtier.conf
-    .\memtier-bench.ps1 -ConfigFile .\memtier.conf -SkipLoad
-    .\memtier-bench.ps1 -ConfigFile .\memtier.conf -Verbose
+    .\memtier-bench.ps1 -ConfigFile .\memtier-cluster.conf
+    .\memtier-bench.ps1 -ConfigFile .\memtier-cluster.conf -SkipLoad
+    .\memtier-bench.ps1 -ConfigFile .\memtier-cluster.conf -Verbose
 #>
 param(
-    [string]$ConfigFile = "$PSScriptRoot\memtier.conf",
+    [string]$ConfigFile = "$PSScriptRoot\memtier-cluster.conf",
+    [string[]]$ClientHosts,
+    [string]$SshUser,
+    [string]$SshKey,
+    [string]$Server,
+    [ValidateRange(1, 65535)][int]$Port,
+    [switch]$Tls,
     [switch]$SkipLoad,
+    [switch]$PrintOutput,
     [switch]$Help
 )
 
@@ -53,6 +60,10 @@ if ($Help) {
     Write-Host "  -SkipLoad        Skip the key loading phase"
     Write-Host "  -Verbose         Spawn Windows Terminal panes for visual inspection"
     Write-Host "  -Help            Show this help message"
+    Write-Host "  -ClientHosts     Exact clients, one workload per VM; ignores count and multiplier"
+    Write-Host "  -SshUser/-SshKey/-Server/-Port Override connection settings"
+    Write-Host "  -Tls             Enable TLS"
+    Write-Host "  -PrintOutput     Print captured client output inline; failed output is always printed"
     Write-Host ""
     return
 }
@@ -82,7 +93,9 @@ Get-Content $ConfigFile | ForEach-Object {
 # --- Resolve SSH key from security/manifest.json ---
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $manifestPath = Join-Path $scriptDir "..\..\01-resources\security\manifest.json"
-if (Test-Path $manifestPath) {
+if ($SshKey) {
+    if (-not (Test-Path -LiteralPath $SshKey -PathType Leaf)) { throw "SSH key not found: $SshKey" }
+} elseif (Test-Path $manifestPath) {
     . (Join-Path $scriptDir "..\..\01-resources\security\ssh-key-utils.ps1")
     try {
         $manifest = Get-SshKeyManifest -ManifestPath $manifestPath
@@ -108,12 +121,12 @@ if (Test-Path $manifestPath) {
 }
 
 # --- Resolve parameters ---
-$sshUser         = $config["SshUser"]         ?? "guser"
+$sshUser         = if ($SshUser) { $SshUser } else { $config["SshUser"] ?? "guser" }
 $sshHostBase     = $config["ClientMachineHostnames"] ?? "vm0.example.com"
-$hostCount       = [int]($config["ClientMachineCount"] ?? "1")
-$multiplier      = [int]($config["Multiplier"] ?? "1")
-$benchHost       = $config["Server"]       ?? "10.5.1.4"
-$benchPort       = $config["Port"]            ?? "6379"
+$hostCount       = $config["ClientMachineCount"] ?? "1"
+$multiplier      = if ($ClientHosts) { 1 } else { [int]($config["Multiplier"] ?? "1") }
+$benchHost       = if ($Server) { $Server } else { $config["Server"] ?? "10.5.1.4" }
+$benchPort       = if ($Port) { [string]$Port } else { $config["Port"] ?? "6379" }
 $threads         = $config["Threads"]         ?? "128"
 $clients         = $config["Clients"]         ?? "64"
 $pipeline        = $config["Pipeline"]        ?? "1024"
@@ -123,7 +136,7 @@ $testTime        = $config["TestTime"]        ?? "15"
 $ratio           = $config["Ratio"]           ?? "1:9"
 $keyPattern      = $config["KeyPattern"]      ?? "R:R"
 $clusterMode     = $config["Cluster"]         ?? "false"
-$tlsValue        = $config["Tls"]             ?? "false"
+$tlsValue        = if ($Tls) { 'true' } else { $config["Tls"] ?? "false" }
 $tlsHost         = $config["TlsHost"]         ?? "azurebench-server"
 
 if ($config["SkipLoad"] -eq "true") { $SkipLoad = $true }
@@ -158,40 +171,7 @@ $tlsFlags = if ($tlsEnabled) {
 }
 
 # --- Derive host list from base + count ---
-$sshHosts = @()
-
-if ($sshHostBase -match '^\[(.+)\]$') {
-    $baseHosts = $Matches[1] -split ',\s*'
-    foreach ($base in $baseHosts) {
-        if ($base -match '^([a-zA-Z]+)(\d+)\.(.+)$') {
-            $prefix = $Matches[1]
-            $startIndex = [int]$Matches[2]
-            $domain = $Matches[3]
-            for ($i = $startIndex; $i -lt ($startIndex + $hostCount); $i++) {
-                for ($m = 0; $m -lt $multiplier; $m++) {
-                    $sshHosts += "$prefix$i.$domain"
-                }
-            }
-        } else {
-            Write-Error "Invalid host in array: $base (expected <prefix><index>.<domain>)"
-            exit 1
-        }
-    }
-} else {
-    if ($sshHostBase -match '^([a-zA-Z]+)(\d+)\.(.+)$') {
-        $prefix = $Matches[1]
-        $startIndex = [int]$Matches[2]
-        $domain = $Matches[3]
-    } else {
-        Write-Error "ClientMachineHostnames must follow pattern: <prefix><index>.<domain> (e.g., vm0.example.com)"
-        exit 1
-    }
-    for ($i = $startIndex; $i -lt ($startIndex + $hostCount); $i++) {
-        for ($m = 0; $m -lt $multiplier; $m++) {
-            $sshHosts += "$prefix$i.$domain"
-        }
-    }
-}
+$sshHosts = @(Get-BenchmarkClientHosts -ClientHosts $ClientHosts -HostBase $sshHostBase -HostCount $hostCount -Multiplier ([string]$multiplier))
 
 # --- Build memtier commands ---
 $loadCmd = "memtier_benchmark -s $benchHost --port=$benchPort --ratio=1:0 --pipeline=$pipeline --data-size=$dataSize --clients=$clients --threads=$threads --key-minimum=1 --key-maximum=$dbSize --key-pattern=P:P --run-count=1 --hide-histogram --requests=allkeys"
@@ -319,6 +299,7 @@ if (-not $SkipLoad) {
     $loadResults = $loadJob | Receive-Job -Wait
     Remove-Job $loadJob
 
+    Show-BenchmarkClientOutput -Results $loadResults -All:$PrintOutput
     $stopwatch.Stop()
     $loadSuccess = ($loadResults | Where-Object { $_.Success }).Count
     $loadFailed = $loadResults.Count - $loadSuccess
@@ -452,6 +433,7 @@ if ($isVerbose) {
     $benchResults = $benchJob | Receive-Job -Wait
     Remove-Job $benchJob
 
+    Show-BenchmarkClientOutput -Results $benchResults -All:$PrintOutput
     $stopwatch.Stop()
     $benchSuccess = ($benchResults | Where-Object { $_.Success }).Count
     $benchFailed = $benchResults.Count - $benchSuccess
@@ -462,6 +444,7 @@ if ($isVerbose) {
         $benchResults | Where-Object { -not $_.Success } | ForEach-Object {
             Write-Host "    $($_.Host) [$($_.Duration)]" -ForegroundColor Red
         }
+        if ($ClientHosts) { throw "$benchFailed declarative benchmark instance(s) failed. Logs: $runDir" }
     }
     Write-Host ""
 

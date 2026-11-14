@@ -53,7 +53,7 @@ namespace Resp.benchmark
         ///   - Creates (threads-per-shard × shard-count) providers
         ///   - Each provider serves one shard with primary + replica connections
         ///
-        /// Worker pool architecture (--worker-pool):
+        /// Fixed worker pool architecture (--use-fixed-worker-pool):
         ///   - Creates (thread-count) workers
         ///   - Each worker maintains providers for ALL shards
         ///   - Workers randomly distribute operations across shards
@@ -74,7 +74,7 @@ namespace Resp.benchmark
             var clusterManager = new ClusterManager(opts);
             shards = clusterManager.DiscoverPrimaryShards();
 
-            if (opts.Pool)
+            if (opts.UseFixedWorkerPool)
             {
                 CreateWorkerPool();
             }
@@ -163,7 +163,7 @@ namespace Resp.benchmark
         private void PrintConfiguration(int threadsPerShard, int totalProviders)
         {
             var mode = opts.Online ? "Online" : "Offline";
-            var pool = opts.Pool ? "Yes" : "No";
+            var useFixedWorkerPool = opts.UseFixedWorkerPool ? "Yes" : "No";
             var tls = opts.EnableTLS ? "Yes" : "No";
             var skipLoad = opts.SkipLoad ? "Yes" : "No";
             var itp = opts.IntraThreadParallelism;
@@ -178,7 +178,7 @@ namespace Resp.benchmark
             Console.WriteLine();
             Console.WriteLine("=========== Cluster Benchmark Configuration ===========");
             Console.WriteLine($"{"Mode: " + mode,-28}{"Client: " + opts.Client,-28}");
-            Console.WriteLine($"{"Pool: " + pool,-28}{"Op: " + opts.Op,-28}");
+            Console.WriteLine($"{"Fixed worker pool: " + useFixedWorkerPool,-28}{"Op: " + opts.Op,-28}");
             Console.WriteLine($"{"Threads: " + threadsPerShard + " (per shard)",-28}{"ITP: " + itp,-28}");
             Console.WriteLine($"{"DB Size: " + opts.DbSize,-28}{"Batch: " + batch,-28}");
             Console.WriteLine($"{"Key Length: " + opts.KeyLength,-28}{"Value Length: " + opts.ValueLength,-28}");
@@ -186,7 +186,7 @@ namespace Resp.benchmark
             Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Connections: " + totalConnections + " (threads x shards" + (workersWithReplicas > 0 ? " + replicas)" : ")"),-28}");
             Console.WriteLine($"{"Skip Load: " + skipLoad,-28}{"Auth: " + (string.IsNullOrEmpty(opts.Auth) ? "No" : "Yes"),-28}");
             Console.WriteLine($"{"Replicas: " + totalReplicas,-28}{"Replica Reads: " + replicaReads,-28}");
-            Console.WriteLine($"{"Workers: " + totalProviders,-28}{"Broadcast: " + (opts.Broadcast ? "Yes" : "No"),-28}");
+            Console.WriteLine($"{"Workers: " + totalProviders,-28}{"Parallel fan-out: " + (opts.UseParallelFanOut ? "Yes" : "No"),-28}");
             Console.WriteLine($"{"Workload Seed: " + opts.WorkloadSeed,-28}{"Offline Buffers: " + opts.OfflineBufferPermutations,-28}");
             Console.WriteLine($"{"Distribution: " + FormatDistribution(),-28}");
             if (opts.Online)
@@ -238,7 +238,7 @@ namespace Resp.benchmark
         private void PrintWorkerPoolConfiguration(int workerCount, int totalProviders, int totalConnections, int workersWithReplicas)
         {
             var mode = opts.Online ? "Online" : "Offline";
-            var pool = "Yes";
+            var useFixedWorkerPool = "Yes";
             var tls = opts.EnableTLS ? "Yes" : "No";
             var skipLoad = opts.SkipLoad ? "Yes" : "No";
             var itp = opts.IntraThreadParallelism;
@@ -251,7 +251,7 @@ namespace Resp.benchmark
             Console.WriteLine();
             Console.WriteLine("=========== Cluster Benchmark Configuration ===========");
             Console.WriteLine($"{"Mode: " + mode,-28}{"Client: " + opts.Client,-28}");
-            Console.WriteLine($"{"Pool: " + pool,-28}{"Op: " + opts.Op,-28}");
+            Console.WriteLine($"{"Fixed worker pool: " + useFixedWorkerPool,-28}{"Op: " + opts.Op,-28}");
             Console.WriteLine($"{"Threads: " + workerCount,-28}{"ITP: " + itp,-28}");
             Console.WriteLine($"{"DB Size: " + opts.DbSize,-28}{"Batch: " + batch,-28}");
             Console.WriteLine($"{"Key Length: " + opts.KeyLength,-28}{"Value Length: " + opts.ValueLength,-28}");
@@ -259,7 +259,7 @@ namespace Resp.benchmark
             Console.WriteLine($"{"Shards: " + shards.Length,-28}{"Connections: " + totalConnections + " (threads x shards" + (workersWithReplicas > 0 ? " + replicas)" : ")"),-28}");
             Console.WriteLine($"{"Skip Load: " + skipLoad,-28}{"Auth: " + (string.IsNullOrEmpty(opts.Auth) ? "No" : "Yes"),-28}");
             Console.WriteLine($"{"Replicas: " + totalReplicas,-28}{"Replica Reads: " + replicaReads,-28}");
-            Console.WriteLine($"{"Workers: " + workerCount,-28}{"Broadcast: " + (opts.Broadcast ? "Yes" : "No"),-28}");
+            Console.WriteLine($"{"Workers: " + workerCount,-28}{"Parallel fan-out: " + (opts.UseParallelFanOut ? "Yes" : "No"),-28}");
             Console.WriteLine($"{"Workload Seed: " + opts.WorkloadSeed,-28}{"Offline Buffers: " + opts.OfflineBufferPermutations,-28}");
             Console.WriteLine($"{"Distribution: " + FormatDistribution(),-28}");
             if (opts.Online)
@@ -336,7 +336,7 @@ namespace Resp.benchmark
             Console.WriteLine(" Loading keys...");
             var sw = Stopwatch.StartNew();
 
-            if (opts.Pool)
+            if (opts.UseFixedWorkerPool)
             {
                 // Worker pool mode: Use first worker's providers to load data (one per shard)
                 var firstWorker = workers[0];
@@ -409,7 +409,7 @@ namespace Resp.benchmark
         /// </summary>
         public void Run()
         {
-            if (opts.Pool)
+            if (opts.UseFixedWorkerPool)
             {
                 // Worker pool architecture
                 if (opts.Online)
@@ -450,7 +450,7 @@ namespace Resp.benchmark
             {
                 long expectedKeys = 0;
 
-                if (opts.Pool)
+                if (opts.UseFixedWorkerPool)
                 {
                     // Worker pool mode: Only worker[0] loaded data
                     expectedKeys = workers[0].GetProvider(s).KeysLoaded;
