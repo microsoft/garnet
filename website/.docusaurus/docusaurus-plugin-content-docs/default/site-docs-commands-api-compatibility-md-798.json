@@ -1,0 +1,29 @@
+{
+  "id": "commands/api-compatibility",
+  "title": "API compatibility",
+  "description": "Below is the full list of API commands and their implementation status in Garnet.",
+  "source": "@site/docs/commands/api-compatibility.md",
+  "sourceDirName": "commands",
+  "slug": "/commands/api-compatibility",
+  "permalink": "/garnet/docs/commands/api-compatibility",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/commands/api-compatibility.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "api-compatibility",
+    "sidebar_label": "API Compatibility",
+    "title": "API compatibility",
+    "slug": "api-compatibility"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Overview",
+    "permalink": "/garnet/docs/commands/overview"
+  },
+  "next": {
+    "title": "Raw String",
+    "permalink": "/garnet/docs/commands/raw-string"
+  }
+}

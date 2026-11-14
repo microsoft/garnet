@@ -1,0 +1,52 @@
+{
+  "permalink": "/garnet/blog/brief-history",
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/blog/2024-03-17-a-brief-history-of-garnet.md",
+  "source": "@site/blog/2024-03-17-a-brief-history-of-garnet.md",
+  "title": "A Brief History of Garnet",
+  "description": "Hi everyone! I just wanted to start off this blog with a short history of Garnet and how it",
+  "date": "2024-03-17T00:00:00.000Z",
+  "tags": [
+    {
+      "inline": true,
+      "label": "garnet",
+      "permalink": "/garnet/blog/tags/garnet"
+    },
+    {
+      "inline": true,
+      "label": "history",
+      "permalink": "/garnet/blog/tags/history"
+    },
+    {
+      "inline": true,
+      "label": "introduction",
+      "permalink": "/garnet/blog/tags/introduction"
+    }
+  ],
+  "readingTime": 2.99,
+  "hasTruncateMarker": false,
+  "authors": [
+    {
+      "name": "Badrish Chandramouli",
+      "title": "Partner Research Manager, Microsoft Research",
+      "url": "https://badrish.net",
+      "imageURL": "https://badrish.net/assets/icons/badrish4.jpg",
+      "key": "badrishc",
+      "page": null
+    }
+  ],
+  "frontMatter": {
+    "slug": "brief-history",
+    "title": "A Brief History of Garnet",
+    "authors": "badrishc",
+    "tags": [
+      "garnet",
+      "history",
+      "introduction"
+    ]
+  },
+  "unlisted": false,
+  "prevItem": {
+    "title": "OSS Announcement",
+    "permalink": "/garnet/blog/msr-blog-announcement"
+  }
+}
