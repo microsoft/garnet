@@ -1103,6 +1103,7 @@ namespace Tsavorite.core
                         // Put back the main log's bytes below scanFromAddress saved above; if there are any, this is startPage, the first page processed.
                         if (mainLogSectorBytes is not null)
                         {
+                            Debug.Assert(p == startPage, $"Saved main-log sector bytes must be restored on startPage {startPage}, not page {p}");
                             RestoreMainLogPageSectorBytes(mainLogSectorBytes, scanFromAddress);
                             mainLogSectorBytes = null;
                         }

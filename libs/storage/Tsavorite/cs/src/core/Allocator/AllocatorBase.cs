@@ -2234,10 +2234,12 @@ namespace Tsavorite.core
             var usedDevice = logDevice ?? this.device;
 
             completed = new CountdownEvent(numPages);
-            for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
+
+            // firstPageReadOffset applies only to the first page; the loop update clears pageReadOffset for the rest.
+            var pageReadOffset = firstPageReadOffset;
+            for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++, pageReadOffset = 0)
             {
                 var pageIndex = (int)(readPage % BufferSize);
-                var pageReadOffset = readPage == readPageStart ? firstPageReadOffset : 0;
                 if (!IsAllocated(pageIndex))
                     _wrapper.AllocatePage(pageIndex);
                 else
