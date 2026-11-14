@@ -1287,6 +1287,65 @@ namespace Garnet.test.cluster
             StringAssert.Contains("ASK", exception.Message);
         }
 
+        [Test, Order(104)]
+        [Category("CLUSTER")]
+        public void ClusterMigrateSlotsDoesNotCopyReadsToTail()
+        {
+            const int sourceNodeIndex = 0;
+            const int targetNodeIndex = 1;
+            const int keyCount = 4000;
+            const int valueLength = 1024;
+            const long totalValueBytes = (long)keyCount * valueLength;
+
+            // The source copies reads of immutable records to the tail, and its log holds far less than the data, so most
+            // migrated records are read from disk or the read-only region.
+            context.CreateInstances(2, useTLS: UseTLS, pageSize: "16k", memorySize: "1m", lowMemory: true);
+            context.nodeOptions[sourceNodeIndex].CopyReadsToTail = true;
+            context.RestartNode(sourceNodeIndex);
+            context.CreateConnection(useTLS: UseTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var keys = new List<byte[]>(keyCount);
+            var value = new byte[valueLength];
+            for (var i = 0; i < keyCount; i++)
+            {
+                var key = Encoding.ASCII.GetBytes($"{{abc}}{i}");
+                for (var j = 0; j < value.Length; j++)
+                    value[j] = (byte)('a' + ((i + j) % 26));
+                ClassicAssert.AreEqual(ResponseState.OK, context.clusterTestUtils.SetKey(sourceNodeIndex, key, value, out _, out _, logger: context.logger));
+                keys.Add(key);
+            }
+            var slot = ClusterTestUtils.HashSlot(keys[0]);
+
+            var sourceLog = context.nodes[sourceNodeIndex].Provider.StoreWrapper.store.Log;
+            ClassicAssert.Greater(sourceLog.ReadOnlyAddress - sourceLog.BeginAddress, totalValueBytes / 2, "Most records must be immutable before migration");
+            var tailBefore = sourceLog.TailAddress;
+
+            context.clusterTestUtils.MigrateSlotsIndex(sourceNodeIndex, targetNodeIndex, [slot], logger: context.logger);
+
+            // Migration runs asynchronously: wait until the target serves every key and the source has finished cleanup
+            for (var i = 0; i < keyCount; i++)
+            {
+                for (var j = 0; j < value.Length; j++)
+                    value[j] = (byte)('a' + ((i + j) % 26));
+                var resp = context.clusterTestUtils.GetKey(targetNodeIndex, keys[i], out _, out _, out var responseState, logger: context.logger);
+                while (responseState != ResponseState.OK)
+                {
+                    ClusterTestUtils.BackOff(cancellationToken: context.cts.Token, msg: $"Target did not serve migrated key {i} ({responseState})");
+                    resp = context.clusterTestUtils.GetKey(targetNodeIndex, keys[i], out _, out _, out responseState, logger: context.logger);
+                }
+                ClassicAssert.AreEqual(Encoding.ASCII.GetString(value), resp);
+            }
+            context.clusterTestUtils.WaitForSlotOwnership(sourceNodeIndex, context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger), [slot, slot], context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(sourceNodeIndex, logger: context.logger);
+            ClassicAssert.AreEqual(keyCount, context.clusterTestUtils.CountKeysInSlot(targetNodeIndex, slot, context.logger));
+
+            // Migration itself appends little to the source log; copying the migrated records to the tail would append about
+            // the size of the immutable data.
+            var tailGrowth = sourceLog.TailAddress - tailBefore;
+            ClassicAssert.Less(tailGrowth, totalValueBytes / 8, $"Migration grew the source log by {tailGrowth} bytes");
+        }
+
         [Test, Order(10)]
         [Category("CLUSTER")]
         public void ClusterSimpleMigrateKeysWithObjects()
