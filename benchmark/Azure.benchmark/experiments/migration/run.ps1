@@ -10,18 +10,20 @@ param(
     [ValidateRange(1, 16384)][int]$ParallelMigrateTaskCount = 1,
     [bool]$FastMigrate = $false,
     [ValidateRange(1, 262143)][int]$MigrateBatchSize = 262143,
+    [ValidateSet(131072, 262144, 524288)][int]$MigrationSendBufferSize = 262144,
     [ValidateRange(1, 128)][int]$LoadThreads = 16,
     [ValidateSet(8, 256, 1024)][int[]]$ValueLengths = @(8, 256, 1024),
+    [ValidatePattern('^/[a-zA-Z0-9_./-]+/MigrateBench$')][string]$MigrateBenchPath,
     [string]$SshKey
 )
 
 $ErrorActionPreference = 'Stop'
-function New-MigrationInstanceConfig([string]$Text, [int]$TaskCount, [bool]$Fast, [int]$BatchSize = 262143) {
-    if ($Text -match '"(?:ParallelMigrateTaskCount|FastMigrate|MigrateBatchSize)"\s*:') {
+function New-MigrationInstanceConfig([string]$Text, [int]$TaskCount, [bool]$Fast, [int]$BatchSize = 262143, [int]$SendBufferSize = 262144) {
+    if ($Text -match '"(?:ParallelMigrateTaskCount|FastMigrate|MigrateBatchSize|MigrationSendBufferSize|LogLevel)"\s*:') {
         throw 'Base migration configuration already declares migration overrides.'
     }
     if ($Text -notmatch '^\s*\{') { throw 'Expected a JSON object for the migration configuration.' }
-    $settings = "`n  `"ParallelMigrateTaskCount`": $TaskCount,`n  `"FastMigrate`": $($Fast.ToString().ToLowerInvariant()),`n  `"MigrateBatchSize`": $BatchSize,"
+    $settings = "`n  `"ParallelMigrateTaskCount`": $TaskCount,`n  `"FastMigrate`": $($Fast.ToString().ToLowerInvariant()),`n  `"MigrateBatchSize`": $BatchSize,`n  `"MigrationSendBufferSize`": `"$SendBufferSize`",`n  `"LogLevel`": `"Information`","
     return [regex]::Replace($Text, '^(\s*\{)', "`$1$settings")
 }
 function Get-MigrationLoadMetrics([string]$Text, [long]$ExpectedKeys) {
@@ -65,11 +67,11 @@ $instancePath = Join-Path $results 'garnet.conf'
 $cluster = Get-Content "$PSScriptRoot\cluster.json" -Raw | ConvertFrom-Json
 $baseInstancePath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $cluster.InstanceConfig))
 $instanceText = Get-Content -LiteralPath $baseInstancePath -Raw
-New-MigrationInstanceConfig $instanceText $ParallelMigrateTaskCount $FastMigrate $MigrateBatchSize |
+New-MigrationInstanceConfig $instanceText $ParallelMigrateTaskCount $FastMigrate $MigrateBatchSize $MigrationSendBufferSize |
     Set-Content -LiteralPath $instancePath
 $cluster.InstanceConfig = $instancePath
 $cluster | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $clusterPath
-Write-Host "Migration settings: ParallelMigrateTaskCount=$ParallelMigrateTaskCount; FastMigrate=$FastMigrate; MigrateBatchSize=$MigrateBatchSize; LoadThreads=$LoadThreads"
+Write-Host "Migration settings: ParallelMigrateTaskCount=$ParallelMigrateTaskCount; FastMigrate=$FastMigrate; MigrateBatchSize=$MigrateBatchSize; MigrationSendBufferSize=$MigrationSendBufferSize; LoadThreads=$LoadThreads"
 $remoteRoot = "/tmp/$runId"
 $rows = [Collections.Generic.List[object]]::new()
 $prepared = [Collections.Generic.List[object]]::new()
@@ -82,11 +84,13 @@ try {
         if ([MigrationWakeGuard]::SetThreadExecutionState([uint32]2147483649) -eq 0) { throw 'Could not prevent Windows sleep.' }
         $awake = $true
     }
-    $repo = [IO.Path]::GetFullPath("$benchmarkDir\..\..")
-    $publish = Join-Path $results 'migratebench'
-    & dotnet publish "$repo\playground\MigrateBench\MigrateBench.csproj" -c Release -f net10.0 `
-        -r linux-x64 --self-contained false -o $publish --nologo
-    if ($LASTEXITCODE -ne 0) { throw 'MigrateBench publish failed.' }
+    if (-not $MigrateBenchPath) {
+        $repo = [IO.Path]::GetFullPath("$benchmarkDir\..\..")
+        $publish = Join-Path $results 'migratebench'
+        & dotnet publish "$repo\playground\MigrateBench\MigrateBench.csproj" -c Release -f net10.0 `
+            -r linux-x64 --self-contained false -o $publish --nologo
+        if ($LASTEXITCODE -ne 0) { throw 'MigrateBench publish failed.' }
+    }
     $addresses = @{}
     foreach ($node in $context.Nodes) {
         Invoke-WorkloadRemoteScript -HostName $node.HostName -SshUser $context.SshUser -SshKey $SshKey `
@@ -110,9 +114,12 @@ Write-Output "MIGRATION_ADDRESS=`$(Get-ClusterDataPlaneIp)"
         $addresses[$node.Vm] = $markers[0].Substring('MIGRATION_ADDRESS='.Length)
     }
     $client = $context.Nodes | Where-Object Vm -eq 'vm2'
-    & scp -r -i $SshKey -o BatchMode=yes -o ConnectTimeout=10 $publish `
-        "$($context.SshUser)@$($client.HostName):$remoteRoot/migratebench"
-    if ($LASTEXITCODE -ne 0) { throw 'MigrateBench upload failed.' }
+    if (-not $MigrateBenchPath) {
+        & scp -r -i $SshKey -o BatchMode=yes -o ConnectTimeout=10 $publish `
+            "$($context.SshUser)@$($client.HostName):$remoteRoot/migratebench"
+        if ($LASTEXITCODE -ne 0) { throw 'MigrateBench upload failed.' }
+        $MigrateBenchPath = "$remoteRoot/migratebench/MigrateBench"
+    }
 
     foreach ($valueLength in $ValueLengths) {
         Write-Host "=== Fresh diskless cluster and $valueLength-byte preload ==="
@@ -126,9 +133,11 @@ Write-Output "MIGRATION_ADDRESS=`$(Get-ClusterDataPlaneIp)"
         $benchmarkPath = Join-Path $results "$valueLength-benchmark.json"
         $benchmark | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $benchmarkPath
         $preloadPath = Join-Path $results "$valueLength-preload.log"
+        $loadPhaseStartUtc = [datetime]::UtcNow.ToString('o')
         & "$benchmarkDir\03-workload\benchmark.ps1" -Definition $benchmarkPath `
             -ResourceGroup $ResourceGroup -VmssName $VmssName -SshKey $SshKey -NonInteractive -Verbose 6>&1 |
             Tee-Object -FilePath $preloadPath
+        $loadPhaseEndUtc = [datetime]::UtcNow.ToString('o')
         $load = Get-MigrationLoadMetrics (Get-Content -LiteralPath $preloadPath -Raw) $profile.DbSize
         if ($load.Threads -ne $LoadThreads) { throw 'Initial load did not use the declared worker count.' }
         $measure = @'
@@ -138,7 +147,7 @@ $expectedTotal = __TOTAL__
 $startSlot = __START__
 $endSlot = __END__
 $valueLength = __VALUE__
-$binary = '__ROOT__/migratebench/MigrateBench'
+$binary = '__BINARY__'
 & chmod +x $binary
 if ($LASTEXITCODE -ne 0) { throw 'Cannot make MigrateBench executable.' }
 function Redis([string]$Address, [string[]]$Command) {
@@ -198,7 +207,9 @@ $remaining = [int[]]@(0..16383 | Where-Object { $_ -lt $startSlot -or $_ -gt $en
 for ($iteration = 1; $iteration -le __REPETITIONS__; $iteration++) {
     $beforeSource = Count $source
     $beforeTarget = Count $target
+    $migrationStartUtc = [datetime]::UtcNow.ToString('o')
     $output = @(Migrate $source $target)
+    $migrationEndUtc = [datetime]::UtcNow.ToString('o')
     $output | Write-Output
     $line = $output | Where-Object { $_ -match 'SLOTS Elapsed Time: ([0-9.]+) seconds' }
     $null = "$line" -match 'SLOTS Elapsed Time: ([0-9.]+) seconds'
@@ -223,10 +234,12 @@ for ($iteration = 1; $iteration -le __REPETITIONS__; $iteration++) {
     $result = [pscustomobject]@{
         ParallelMigrateTaskCount = __TASKS__; FastMigrate = [bool]__FAST__
         MigrateBatchSize = __BATCH__
+        MigrationSendBufferBytes = __BUFFER__
         ValueBytes = $valueLength; KeyBytes = 8; Iteration = $iteration
         StartSlot = $startSlot; EndSlot = $endSlot
         LoadedKeys = $expectedTotal; LoadedLogBytes = $loadedLogBytes
         MovedKeys = $moved; Seconds = $seconds
+        MigrationStartUtc = $migrationStartUtc; MigrationEndUtc = $migrationEndUtc
         ValueGBps = ($moved * [double]$valueLength) / $seconds / 1e9
         KeyValueGBps = ($moved * [double]($valueLength + 8)) / $seconds / 1e9
     }
@@ -242,9 +255,10 @@ for ($iteration = 1; $iteration -le __REPETITIONS__; $iteration++) {
         $replacements = @{
             '__SOURCE__' = $addresses.vm0; '__TARGET__' = $addresses.vm1; '__TOTAL__' = $profile.DbSize
             '__START__' = $StartSlot; '__END__' = $EndSlot; '__VALUE__' = $valueLength
-            '__ROOT__' = $remoteRoot; '__TIMEOUT__' = $TimeoutSec; '__REPETITIONS__' = $Repetitions
+            '__BINARY__' = $MigrateBenchPath; '__TIMEOUT__' = $TimeoutSec; '__REPETITIONS__' = $Repetitions
             '__TASKS__' = $ParallelMigrateTaskCount; '__FAST__' = [int]$FastMigrate
             '__BATCH__' = $MigrateBatchSize
+            '__BUFFER__' = $MigrationSendBufferSize
         }
         foreach ($entry in $replacements.GetEnumerator()) { $measure = $measure.Replace($entry.Key, [string]$entry.Value) }
         $output = @(Invoke-WorkloadRemoteScript -HostName $client.HostName -SshUser $context.SshUser -SshKey $SshKey -Script $measure)
@@ -253,7 +267,12 @@ for ($iteration = 1; $iteration -le __REPETITIONS__; $iteration++) {
         $sourceNode = $context.Nodes | Where-Object Vm -eq 'vm0'
         $inspect = @'
 $config = Get-Content /home/guser/garnet-cluster/7000/garnet.conf -Raw | ConvertFrom-Json
-$counts = @(Get-Content /dev/shm/garnet-cluster/7000/garnet.log | ForEach-Object {
+$serverLog = Get-Content /dev/shm/garnet-cluster/7000/garnet.log
+$sendSizes = @($serverLog | ForEach-Object {
+    if ($_ -match 'NetworkBufferSettings.sendBufferSize:\s*(\d+)') { [int]$Matches[1] }
+})
+if ($sendSizes.Count -ne 1) { throw 'Expected exactly one effective migration send-buffer size in the server log.' }
+$counts = @($serverLog | ForEach-Object {
     if ($_ -match 'discovered (\d+) keys') { [int]$Matches[1] }
     if ($_ -match '(?:fail:|crit:)') { throw "Server migration failure: $_" }
 })
@@ -262,6 +281,9 @@ Write-Output ('MIGRATION_BATCH=' + ([pscustomobject]@{
     ParallelMigrateTaskCount = $config.ParallelMigrateTaskCount
     MigrateBatchSize = $config.MigrateBatchSize
     PageSize = $config.PageSize
+    MigrationSendBufferSize = $config.MigrationSendBufferSize
+    EffectiveSendBufferBytes = $sendSizes[0]
+    FastMigrate = $config.FastMigrate
     Batches = $counts.Count
     MaxKeys = ($counts | Measure-Object -Maximum).Maximum
     MinKeys = ($counts | Measure-Object -Minimum).Minimum
@@ -273,17 +295,22 @@ Write-Output ('MIGRATION_BATCH=' + ([pscustomobject]@{
         if ($batchLine.Count -ne 1) { throw 'Missing migration batch evidence.' }
         $batch = $batchLine[0].Substring('MIGRATION_BATCH='.Length) | ConvertFrom-Json
         if ($batch.ParallelMigrateTaskCount -ne $ParallelMigrateTaskCount -or
-            $batch.MigrateBatchSize -ne $MigrateBatchSize -or $batch.MaxKeys -gt $MigrateBatchSize) {
+            $batch.MigrateBatchSize -ne $MigrateBatchSize -or $batch.MaxKeys -gt $MigrateBatchSize -or
+            [int]$batch.MigrationSendBufferSize -ne $MigrationSendBufferSize -or
+            $batch.EffectiveSendBufferBytes -ne $MigrationSendBufferSize -or $batch.FastMigrate -ne $FastMigrate) {
             throw 'Actual migration worker or batch settings do not match the experiment.'
         }
         foreach ($line in $output | Where-Object { $_ -match '^MIGRATION_RESULT=' }) {
             $row = $line.Substring('MIGRATION_RESULT='.Length) | ConvertFrom-Json
             $migrationOps = $row.MovedKeys / $row.Seconds
             $row | Add-Member -NotePropertyName LoadSeconds -NotePropertyValue $load.Seconds
+            $row | Add-Member -NotePropertyName LoadPhaseStartUtc -NotePropertyValue $loadPhaseStartUtc
+            $row | Add-Member -NotePropertyName LoadPhaseEndUtc -NotePropertyValue $loadPhaseEndUtc
             $row | Add-Member -NotePropertyName LoadThreads -NotePropertyValue $load.Threads
             $row | Add-Member -NotePropertyName LoadBatchSize -NotePropertyValue $profile.BatchSize[0]
             $row | Add-Member -NotePropertyName ObservedMaxMigrationBatchKeys -NotePropertyValue $batch.MaxKeys
-            $row | Add-Member -NotePropertyName MigrationSendBufferSize -NotePropertyValue $batch.PageSize
+            $row | Add-Member -NotePropertyName MigrationSendBufferSize -NotePropertyValue $batch.EffectiveSendBufferBytes
+            $row | Add-Member -NotePropertyName LogPageSize -NotePropertyValue $batch.PageSize
             $row | Add-Member -NotePropertyName LoadOpsPerSecond -NotePropertyValue $load.OpsPerSecond
             $row | Add-Member -NotePropertyName LoadValueGBps -NotePropertyValue ($load.OpsPerSecond * $valueLength / 1e9)
             $row | Add-Member -NotePropertyName MigrationOpsPerSecond -NotePropertyValue $migrationOps

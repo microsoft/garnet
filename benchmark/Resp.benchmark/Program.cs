@@ -255,7 +255,7 @@ namespace Resp.benchmark
             BenchUtils.ConfigureTlsValidation(opts.IssuerCertificatePath);
             loggerFactory = CreateLoggerFactory(opts);
 
-            if (!(opts.Client == ClientType.InProc || opts.AofBench))
+            if (!(opts.Client == ClientType.InProc || opts.AofBench || opts.MigrationWorkloadDirectory != null))
                 WaitForServer(opts);
 
             if (opts.SaveFreqSecs > 0)
@@ -264,7 +264,7 @@ namespace Resp.benchmark
                 new Thread(() => pc.Start(opts.Address, opts.Port)).Start();
             }
 
-            if (opts.Client == ClientType.SERedis)
+            if (opts.Client == ClientType.SERedis && opts.MigrationWorkloadDirectory == null)
                 redis = ConnectionMultiplexer.Connect(BenchUtils.GetConfig(opts.Address, opts.Port, useTLS: opts.EnableTLS, tlsHost: opts.TlsHost));
 
             if (!opts.ClusterBench)
@@ -323,6 +323,11 @@ namespace Resp.benchmark
 
             if (opts.ClusterBench)
             {
+                if (opts.MigrationWorkloadDirectory != null)
+                {
+                    ClusterMigrationWorkload.RunAsync(opts).GetAwaiter().GetResult();
+                    return;
+                }
                 using var clusterBench = new ClusterBench(opts, loggerFactory);
                 clusterBench.DiscoverTopology();
                 if (!opts.SkipLoad)

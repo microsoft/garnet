@@ -94,6 +94,8 @@ Describe 'Migration configuration overrides' {
         $parsed.ParallelMigrateTaskCount | Should Be $Tasks
         $parsed.FastMigrate | Should Be $Fast
         $parsed.MigrateBatchSize | Should Be 262143
+        $parsed.MigrationSendBufferSize | Should Be '262144'
+        $parsed.LogLevel | Should Be 'Information'
     }
 
     It 'applies a 4096-key migration collection batch' {
@@ -101,8 +103,53 @@ Describe 'Migration configuration overrides' {
         $parsed.MigrateBatchSize | Should Be 4096
     }
 
+    It 'sets a <Bytes>-byte send buffer independently of the page and collection size' -TestCases @(
+        @{ Bytes = 131072 }, @{ Bytes = 262144 }, @{ Bytes = 524288 }
+    ) {
+        param($Bytes)
+        $parsed = New-MigrationInstanceConfig '{"PageSize":"16m"}' 8 $false 4096 $Bytes | ConvertFrom-Json
+        $parsed.MigrationSendBufferSize | Should Be "$Bytes"
+        $parsed.PageSize | Should Be '16m'
+        $parsed.MigrateBatchSize | Should Be 4096
+    }
+
+    It 'rejects duplicate send-buffer overrides' {
+        { New-MigrationInstanceConfig '{"MigrationSendBufferSize":"128k"}' 8 $false } | Should Throw 'already declares'
+    }
+
     It 'rejects duplicate settings instead of creating ambiguous JSON' {
         { New-MigrationInstanceConfig '{"FastMigrate":false}' 8 $true } | Should Throw 'already declares'
+    }
+}
+$inspectionText = $workflowAst.Find({
+    param($node)
+    $node -is [Management.Automation.Language.StringConstantExpressionAst] -and $node.Value.Contains('MIGRATION_BATCH=')
+}, $true).Value
+Describe 'Effective migration send-buffer evidence' {
+    It 'reads the migration manager startup buffer size' {
+        Mock Get-Content {
+            param($Path)
+            if ($Path -like '*garnet.conf') {
+                return '{"ParallelMigrateTaskCount":8,"MigrateBatchSize":4096,"MigrationSendBufferSize":"131072","PageSize":"16m","FastMigrate":false}'
+            }
+            return @(
+                '06::50::46 info: MigrationManager[0] NetworkBufferSettings.sendBufferSize:131072'
+                '06::50::47 warn: MigrateSession[0] Scan from 64 to 131136 and discovered 4096 keys'
+            )
+        }
+        $output = & ([scriptblock]::Create($inspectionText))
+        $parsed = $output.Substring('MIGRATION_BATCH='.Length) | ConvertFrom-Json
+        $parsed.EffectiveSendBufferBytes | Should Be 131072
+        $parsed.MaxKeys | Should Be 4096
+    }
+
+    It 'rejects missing startup evidence' {
+        Mock Get-Content {
+            param($Path)
+            if ($Path -like '*garnet.conf') { return '{}' }
+            return '06::50::47 warn: MigrateSession[0] discovered 4096 keys'
+        }
+        { & ([scriptblock]::Create($inspectionText)) } | Should Throw 'effective migration send-buffer size'
     }
 }
 $measureText = $workflowAst.Find({

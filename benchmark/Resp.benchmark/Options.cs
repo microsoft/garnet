@@ -147,6 +147,18 @@ namespace Resp.benchmark
         [Option("cluster-bench", Required = false, Default = false, HelpText = "Enable cluster benchmark mode. Distributes workload across discovered cluster shards.")]
         public bool ClusterBench { get; set; }
 
+        [Option("migration-workload-directory", HelpText = "Controlled cluster migration workload: existing numeric keys, atomic phase requests, traces and validation.")]
+        public string MigrationWorkloadDirectory { get; set; }
+
+        [Option("migration-target", HelpText = "Second primary address for the controlled SERedis migration workload.")]
+        public string MigrationTarget { get; set; }
+
+        [Option("migration-request-timeout-ms", Default = 10000, HelpText = "SERedis request timeout for controlled migration traffic.")]
+        public int MigrationRequestTimeoutMs { get; set; }
+
+        [Option("migration-profile-every", Default = 1000, HelpText = "Profile one logical operation in this many for sampled redirect accounting.")]
+        public int MigrationProfileEvery { get; set; }
+
         [Option("replica-ops-percent", Required = false, Default = 0, HelpText = "Percentage of operations routed to replicas (0-100). For write ops (SET, MSET), generates corresponding reads (GET, MGET) for the same keys and routes them to replicas. Actual: X% writes to primary, (100-X)% reads split between replica/primary based on this percentage.")]
         public int ReplicaOpsPercent { get; set; }
 
