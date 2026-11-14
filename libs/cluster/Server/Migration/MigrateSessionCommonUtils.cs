@@ -23,7 +23,9 @@ namespace Garnet.cluster
                 gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: false);
 
             // Read the value for the key. This will populate output with the entire serialized record.
-            var storeStatus = localServerSession.VectorBasicContext.Read(new VectorElementKey(namespaceBytes.ReadOnlySpan, key.ReadOnlySpan), ref input, ref output);
+            // Migrated elements are deleted from this node afterwards, so do not copy them to the log tail.
+            var readOptions = new ReadOptions { CopyOptions = ReadCopyOptions.None };
+            var storeStatus = localServerSession.VectorBasicContext.Read(new VectorElementKey(namespaceBytes.ReadOnlySpan, key.ReadOnlySpan), ref input, ref output, ref readOptions);
 
             if (storeStatus.IsPending)
             {
@@ -88,7 +90,11 @@ namespace Garnet.cluster
             // Read the key. HandleMigrate captures the record's pieces in-epoch: the inline portion into output.SpanByteAndMemory,
             // and any overflow key / overflow value / object value into output.Accumulator. We assemble and send them out of epoch
             // (migration sends asynchronously and the store epoch must not be held across an await).
-            status = localServerSession.BasicGarnetApi.Read_UnifiedStore(key, ref input, ref output);
+            // Migrated keys are deleted from this node afterwards, so the read must not copy them to the log tail even
+            // when the store copies reads to tail: that would rewrite every migrated record into this node's log and
+            // evict its working set.
+            var readOptions = new ReadOptions { CopyOptions = ReadCopyOptions.None };
+            status = localServerSession.BasicGarnetApi.Read_UnifiedStore(key, ref input, ref output, ref readOptions);
 
             // Skip (but do not fail) if key NOTFOUND, WRONGTYPE, BADSTATE, etc.
             if (status != GarnetStatus.OK)
