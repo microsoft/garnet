@@ -1331,7 +1331,7 @@ namespace Garnet.test.cluster
                 var resp = context.clusterTestUtils.GetKey(targetNodeIndex, keys[i], out _, out _, out var responseState, logger: context.logger);
                 while (responseState != ResponseState.OK)
                 {
-                    _ = Thread.Yield();
+                    ClusterTestUtils.BackOff(cancellationToken: context.cts.Token, msg: $"Target did not serve migrated key {i} ({responseState})");
                     resp = context.clusterTestUtils.GetKey(targetNodeIndex, keys[i], out _, out _, out responseState, logger: context.logger);
                 }
                 ClassicAssert.AreEqual(Encoding.ASCII.GetString(value), resp);
