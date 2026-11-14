@@ -7,6 +7,7 @@ using System.IO;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
+using ReadOnlySequenceStream = Garnet.common.ReadOnlySequenceStream;
 
 namespace Garnet.server
 {
