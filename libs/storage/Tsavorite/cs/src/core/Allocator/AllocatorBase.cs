@@ -2428,9 +2428,9 @@ namespace Tsavorite.core
                     count = 1,
                     // A recovery flush starts at scanFromAddress, which may be mid-page. In that case it is a front-partial flush: the write length is derived
                     // from untilAddress (the page end) rather than a full page. At the first record past the PageHeader the PageHeader is re-included when the
-                    // page is written; further in, which happens only on the snapshot recovery boundary page, only the records from there on need writing, as
-                    // those below it are already on the main log. The snapshot/hybrid-log boundary that selects which records copy their objects is carried
-                    // separately via formerFlushedUntilAddress.
+                    // page is written; further in, only the records from there on need writing, as those below it are already on the main log. That happens
+                    // at a mid-page hybrid-log scan start and at the snapshot recovery boundary. The snapshot/hybrid-log boundary that selects which records
+                    // copy their objects is carried separately via formerFlushedUntilAddress.
                     partial = flushFromAddress > pageStartAddress,
                     fromAddress = flushFromAddress,
                     untilAddress = GetLogicalAddressOfStartOfPage(flushPage + 1),
