@@ -1465,9 +1465,11 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        /// <remarks>Objects are loaded for every record on the page below <paramref name="untilAddress"/>, not only from <paramref name="fromAddress"/>: a page's
-        ///     objects are either all loaded or none (an empty ObjectIdMap is how recovery eviction recognizes a page whose load was deferred). A page can hold both
-        ///     main-log records and records read from the snapshot file when <paramref name="snapshotFromAddress"/> falls on it, so each range is read from its own device.</remarks>
+        /// <remarks>Objects are loaded only for records from <paramref name="fromAddress"/>, which the caller sets to the final HeadAddress on the page holding it:
+        ///     records below it are disk-resident, and closing the page after recovery subtracts heap sizes only from HeadAddress up, so loading theirs would leave
+        ///     it counted. Recovery eviction never evicts a page with loaded objects, so a page loaded from mid-page is not walked from its start. A page can hold
+        ///     both main-log records and records read from the snapshot file when <paramref name="snapshotFromAddress"/> falls on it, so each range is read from
+        ///     its own device.</remarks>
         internal override void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice snapshotObjectLogDevice, long snapshotFromAddress)
         {
             var pageStartAddress = GetFirstValidLogicalAddressOnPage(page);
@@ -1478,15 +1480,16 @@ namespace Tsavorite.core
 
             var pageLogicalAddress = GetLogicalAddressOfStartOfPage(page);
             var pagePhysicalAddress = GetPhysicalAddress(pageLogicalAddress);
+            var minOffset = address - pageLogicalAddress;
             var maxOffset = endAddress - pageLogicalAddress;
             var objectIdMapToUse = objectPages[page % BufferSize].objectIdMap;
 
             // Records below snapshotOffset reference the main object log, and the rest the snapshot object log.
-            var snapshotOffset = Math.Clamp(snapshotFromAddress - pageLogicalAddress, PageHeader.Size, maxOffset);
-            if (snapshotOffset > PageHeader.Size)
+            var snapshotOffset = Math.Clamp(snapshotFromAddress - pageLogicalAddress, minOffset, maxOffset);
+            if (snapshotOffset > minOffset)
             {
                 using var mainReadBuffers = CreateCircularReadBuffers(objectLogDevice: null, logger);
-                DeserializeObjectsOnPage(pagePhysicalAddress, PageHeader.Size, snapshotOffset, objectIdMapToUse, mainReadBuffers, trackHeapSize: true);
+                DeserializeObjectsOnPage(pagePhysicalAddress, minOffset, snapshotOffset, objectIdMapToUse, mainReadBuffers, trackHeapSize: true);
             }
             if (snapshotOffset < maxOffset)
             {

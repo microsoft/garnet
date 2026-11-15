@@ -1222,7 +1222,7 @@ namespace Tsavorite.core
                 var totalPageObjectSize = hlogBase.CalculatePageObjectSizes(page, pageFromAddress, pageUntilAddress);
                 if (totalPageObjectSize == 0)
                 {
-                    hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, pageUntilAddress, snapshotObjectLogDevice, snapshotFromAddress);
+                    hlogBase.LoadObjectsForRecoveryPass2(page, Math.Max(pageFromAddress, recoveryStatus.headAddress), pageUntilAddress, snapshotObjectLogDevice, snapshotFromAddress);
                     continue;
                 }
 
@@ -1250,9 +1250,9 @@ namespace Tsavorite.core
                         && pageCutoff > Math.Max(recoveryStatus.snapshotScanFromAddress, hlogBase.GetFirstValidLogicalAddressOnPage(page)))
                     FlushSnapshotPageForRecovery(recoveryStatus, page);
 
-                // Load objects, using per-record budget checking via DeserializeObjectsOnPage.
-                // The method handles all records from pageCutoff to pageUntilAddress.
-                hlogBase.LoadObjectsForRecoveryPass2(page, pageCutoff, pageUntilAddress, snapshotObjectLogDevice, snapshotFromAddress);
+                // Load the objects of the records from the cutoff, or from headAddress if that is higher on this page, to pageUntilAddress. Records below
+                // that are below the final headAddress, so they are read from disk on demand.
+                hlogBase.LoadObjectsForRecoveryPass2(page, Math.Max(pageCutoff, recoveryStatus.headAddress), pageUntilAddress, snapshotObjectLogDevice, snapshotFromAddress);
 
                 // After loading, recheck budget. If over budget, evict from headAddress up to and including loaded records.
                 if (hlogBase.logSizeTracker.IsOverBudget && recoveryStatus.headAddress < maxHeadAddress)
