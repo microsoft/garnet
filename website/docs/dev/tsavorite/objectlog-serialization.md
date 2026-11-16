@@ -48,6 +48,8 @@ For the filesystem layout, checkpoint discovery, token selection, and overall re
 >   reading a record's components; see section 12.10.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogReadAhead.cs` - reading ahead through a page's
 >   records' extents; see sections 6.5 and 12.10.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogReadAheadRange.cs` - choosing the range of a
+>   page's records that the read-ahead reads; see section 12.10.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogExtent.cs` - extent framing and read hints.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogDirectory.cs` - directory entry, record
 >   header, and layout arithmetic; see section 12.9.
@@ -472,9 +474,10 @@ ascending object-log addresses ->
                                        ^ position word (HasDirectory set)
 ```
 
-Records follow one another in hybrid-log address order (section 12.8), each at or above the end of the previous
-record's top extent. They are not necessarily contiguous: a page tail shorter than `MinPartialBytes` (64 KB) is left
-unused when a chunk does not fit it, and an extent that the writer does not cut moves whole to the next page.
+A flush writes records one after another in hybrid-log address order, each at or above the end of the previous record's
+top extent. They are not necessarily contiguous: a page tail shorter than `MinPartialBytes` (64 KB) is left unused when
+a chunk does not fit it, and an extent that the writer does not cut moves whole to the next page. Captures, and
+recovery's copies of them, are written at other times and lie elsewhere (section 12.8).
 
 ---
 
@@ -796,18 +799,22 @@ exact length has been delivered (section 3.2), and the deserializer never sees a
 
 ### 6.5 Page-walk read-ahead
 
-A page walk attaches an `ObjectLogReadAhead` to its reader (`ObjectLogReader.ReadAhead`). `StartPageReadAhead` creates
-it when at least two of the walk's records have objects and a readable position; its range runs from the first such
-record's position to the highest `position + TopExtentInitialRead` among them, clamped to the log's tail. Section 12.10
-describes the mechanism:
+A page walk attaches an `ObjectLogReadAhead` to its reader (`ObjectLogReader.ReadAhead`). `StartPageReadAhead` passes
+the positions of the walk's records that have objects and a readable position, and no marker (section 12.8), to
+`ObjectLogReadAheadRange`, which chooses the range in page order (section 12.10). The range runs from the position of
+its first record to the highest `position + TopExtentInitialRead` among its records, each clamped to its object-log
+page, and the whole clamped to the log's tail; it may have a hole. The walk gets a read-ahead when at least two records
+are in the range. Section 12.10 describes the mechanism:
 
 - windows of up to `IStreamBuffer.BufferSize` (4 MB) that never span an object-log page, read by
   `ObjectLog.TryBeginRangeRead`, with up to `NumberOfDeserializationBuffers` (4) in flight or resident;
 - a window at or above `HeadAddress` is copied from memory, and one below it is read from the device and stops at
   `HeadAddress`;
 - the reader releases the bytes below each data entry it reads and, at `EndRecord`, the bytes below the end of the
-  record's top extent, so the read-ahead drops the windows the walk has passed and starts new ones; and
-- a read the windows cannot serve goes to `ObjectLog.Read`, so the read-ahead changes only the number of IOs.
+  record's top extent, so the read-ahead drops the windows the walk has passed and starts new ones, skipping the hole;
+  it ignores a release beyond the range or within the hole, which comes from a record outside the range; and
+- a read the windows cannot serve, including one into the hole, goes to `ObjectLog.Read`, so the read-ahead changes
+  only the number of IOs.
 
 The walk disposes the read-ahead in its `finally`, which waits for every window's read before returning its buffer.
 
@@ -920,7 +927,7 @@ some of its records below the head, `FlushSnapshotPageForRecovery` flushes it to
 2. A page that starts in the snapshot region has its floor overwritten with the main object log's tail (section 5.4).
 3. For each record with objects, a reader over the checkpoint's object log, with a read-ahead over the page's extents,
    runs `BeginRecord`, then `CopyRecordTo(logWriter)`, which appends each component's bytes to the main object log's
-   writer, then `EndRecord`.
+   writer, then `EndRecord`. A capture lies below the page's other records there, and is read directly.
 4. `SetObjectLogPositionAndHints` restamps the record with the destination's position word and hints. The writer
    re-chunks the components for the destination, so the hints and flags change along with the address.
 5. The flush stops at the recovered tail. Past it, the Snapshot's image of the tail page holds next-version records,
@@ -1194,7 +1201,8 @@ Indentation is call depth. Component branches and lifetime changes are included 
   and the tail.
 - No allocation, extent, entry, or read spans an object-log page: `ObjectLog.Allocate` never returns one, the reader
   rejects a length-prefixed extent or a directory entry that would, and `ObjectLog.Read` refuses one. An exact top
-  extent is checked only by that read; a page read-ahead serves a read from adjacent windows without that check.
+  extent is checked only by that read; a page read-ahead serves a read from adjacent windows without that check, and
+  never one that reaches into its hole.
 - A length prefix must exceed 511 and fit the bytes left on its page and below the log's tail.
 - A directory is validated in full, spine included, before any data entry is read (section 6.2).
 - A record with both an overflow key and an out-of-line value always has a directory.
@@ -1212,7 +1220,7 @@ The object-size boundary suites (`ObjectSizeBoundaryDiskIOTests`, `ObjectSizeBou
 the exact cutoff, sector and 4 KB boundaries, the value hint's saturation, and multi-chunk records, over pending reads,
 Snapshot and FoldOver recovery, low-memory eviction, overflow keys with inline and overflow values, and object-log
 segment crossings. `ObjectLogChunkFormatTests` cover framing, page cuts, directories, spines, corrupt structure, and
-read-ahead; `ObjectLogDirectoryTests` cover the directory encoding.
+read-ahead, including the range a page walk reads ahead through; `ObjectLogDirectoryTests` cover the directory encoding.
 
 ---
 
@@ -1380,11 +1388,16 @@ checkpoint, which starts a fresh object log.
 
 ### 12.8 Write order
 
-Each object log is written in hybrid-log page order: the main object log by the single ReadOnly flush worker (and by
-recovery, before the store opens), and the checkpoint (snapshot) object log by the Snapshot worker.
+The flushes write each object log in hybrid-log page order: the main object log by the single ReadOnly flush worker
+(and by recovery, before the store opens), and the checkpoint (snapshot) object log by the Snapshot worker. Two writers
+interleave with them. A CopyUpdate thread writes a capture to the checkpoint's object log before the Snapshot flush
+reaches the capture's page (section 13.3), so the capture lies below that page's other records; and recovery copies the
+captures that the main log's marked images reference into the main object log at its tail (section 13.9), above every
+other record of their pages. A page walk reads ahead through a page's records in order, and reads these directly
+(section 12.10).
 
-Addressing must not rely on that order, for the reason given in section 12.5, so a writer that interleaves with these
-needs no format change. Truncation does rely on it: main-log truncation reads only the boundary page's
+Addressing must not rely on that order, for the reason given in section 12.5, so a writer that interleaves with the
+flushes needs no format change. Truncation does rely on it: main-log truncation reads only the boundary page's
 `PageHeader.objectLogLowestPositionWord` (its floor) and truncates the main object log below it, and that floor bounds
 the object-log references of that page and every later page only while the main object log is written in page order. A
 writer that breaks that order must keep that floor a lower bound. Recovery's copies of a Snapshot's captures (section 13)
@@ -1516,18 +1529,38 @@ top record is one read.
 
 **Reading a page's records.** A walk over the records of a main-log page read from disk - recovery's object load, a
 scan, and the copy of a Snapshot's objects into the main object log during recovery - reads ahead instead of reading
-each extent on its own. A flush writes a page's records to the object log in address order, so their extents lie
-between the first record's position and the last one's, plus the last one's top extent, and the walk reads them in
-ascending order. Within a record, the top extent comes first, then any spine records below it, then the data entries in
-ascending order, all at or above the end of the previous record's top extent. `ObjectLogReadAhead` reads that range in
-windows of up to 4 MB, never spanning an object-log page, with up to `NumberOfDeserializationBuffers` (4) of them in
-flight or resident. It lets go of a window once the walk has passed it, at each data entry and at the end of each
-record, and starts the next. A window at or above `HeadAddress` is copied from memory; one below it is read from the
-device and stops at `HeadAddress`. The read-ahead only saves IOs: a read it cannot serve - outside the range, below what
-was released, beyond the windows read so far, or in a window whose read failed - goes to `ObjectLog.Read`, so bytes out
-of that order cost reads, never correctness. The first record's data chunks lie below the range and are read directly.
-Disposing the read-ahead waits for its windows' reads before returning their buffers. A page with fewer than two records
-to read gets no read-ahead, and a single-record pending read never does.
+each extent on its own. A flush writes a page's records to the object log in address order, so most of their extents
+ascend in one range, and the walk reads them in that order. Within a record, the top extent comes first, then any spine
+records below it, then the data entries in ascending order, all at or above the end of the previous record's top
+extent. Some records lie elsewhere (section 12.8). Marked records are left out of the range: on a main-log page their
+positions are in a checkpoint's object log, which the walk does not read, and on a page read from that log they are
+captures, which lie below the page's other records. Recovery's copies of captures lie above their page's other records,
+and so do the records of a page whose upper part recovery copied from a Snapshot.
+
+`ObjectLogReadAheadRange` takes the other records' positions in page order and keeps, in constant space, an ascending
+run. A record above the run's last member joins it, and is a jump if it lies beyond the end of every member's first
+read. A record that comes back below the latest jump, but above the member before it, shows that the jump and the
+members since are outliers, such as recovery's copies, and the run gives them up; a record below the run's first member
+gives up the whole run and starts it again; any other record lies among the run's members and is left out. The outliers
+ascend too, so they form a second run, and the read-ahead reads through whichever run has more records. The run's
+widest gap below a jump that is not a directory record, whose chunks would fill it, is a hole that no window reads, so
+copies that end a page are read ahead without reading the bytes between them and the page's other records. The rules
+see only the latest jump, so a block of copies with a jump of its own, at an object-log page boundary or a directory
+copy, hides the come-back below it, and the rest of the page is read directly; that takes many or large copies of one
+page. And when the jump to copies that end a page is a directory record, there is no hole below it, so an earlier copy
+lies within the range, and its release drops the windows the page's later records need.
+
+`ObjectLogReadAhead` reads the range in windows of up to 4 MB, never spanning an object-log page, with up to
+`NumberOfDeserializationBuffers` (4) of them in flight or resident. It lets go of a window once the walk has passed it,
+at each data entry and at the end of each record, and starts the next, skipping the hole. It ignores a release beyond
+the range or within the hole, which comes from a record outside the range, so the windows stay where the range's
+records need them. A window at or above `HeadAddress` is copied from memory; one below it is read from the device and
+stops at `HeadAddress`. The read-ahead only saves IOs: a read it cannot serve - outside the range or reaching into its
+hole, below what was released, beyond the windows read so far, or in a window whose read failed - goes to
+`ObjectLog.Read`, so bytes out of that order cost reads, never correctness. The data chunks of the range's first record
+lie below the range and are read directly. Disposing the read-ahead waits for its windows' reads before returning their
+buffers. A page with fewer than two records in the range gets no read-ahead, and a single-record pending read never
+does.
 
 ### 12.11 Page flushes, checkpoints, and recovery
 

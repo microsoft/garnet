@@ -617,6 +617,185 @@ namespace Tsavorite.test.Objects
             }
         }
 
+        /// <summary>The end of <paramref name="record"/>'s first read, clamped to its page as a page walk's read-ahead range is.</summary>
+        long EndOfFirstRead(TestRecord record)
+        {
+            var reference = record.Ref;
+            return reference.Address + Math.Min(reference.TopExtentInitialRead, objectLog.RemainingOnPage(reference.Address));
+        }
+
+        /// <summary>The highest end of a first read of <paramref name="records"/>, as a page walk's read-ahead range ends: a length-prefixed
+        /// extent's first read can run past the records after it.</summary>
+        long EndOfFirstReads(List<TestRecord> records)
+        {
+            long end = 0;
+            foreach (var record in records)
+                end = Math.Max(end, EndOfFirstRead(record));
+            return end;
+        }
+
+        /// <summary>The number of log pages that <paramref name="records"/>, written in order, span.</summary>
+        long PagesSpanned(List<TestRecord> records) => objectLog.GetPage(records[^1].Result.Address) - objectLog.GetPage(records[0].Result.Address) + 1;
+
+        /// <summary>The records a walk reads in the order it reads them: <paramref name="first"/>, then <paramref name="rest"/>.</summary>
+        static List<TestRecord> WalkOrder(List<TestRecord> first, params List<TestRecord>[] rest)
+        {
+            var walk = new List<TestRecord>(first);
+            foreach (var records in rest)
+                walk.AddRange(records);
+            return walk;
+        }
+
+        /// <summary>A range's hole, such as the bytes between a page's records and recovery's copies that end the page, is not read: the
+        /// records on either side are read through windows, and a record within the hole is read directly.</summary>
+        [Test, Category(ObjectLogCategory)]
+        public void ReadAheadSkipsItsHole([Values(ValueKind.Overflow, ValueKind.Object)] ValueKind valueKind)
+        {
+            AlignTailToPageStart();
+            var below = WriteSmallRecords(valueKind, 20);
+            AlignTailToPageStart();
+            var inHole = WriteSmallRecords(valueKind, 30);
+            AlignTailToPageStart();
+            var above = WriteSmallRecords(valueKind, 10);
+            AlignTailToPageStart();
+            ReopenFromDevice();
+            Assert.That(PagesSpanned(inHole), Is.GreaterThan(2), "the hole must span more pages than the windows");
+
+            countingDevice.ResetReadCount();
+            using var readAhead = new ObjectLogReadAhead(objectLog, below[0].Result.Address, EndOfFirstReads(above), PageSize, maxWindows: 2,
+                EndOfFirstReads(below), above[0].Result.Address);
+            var reads = VerifyThrough(readAhead, WalkOrder(below, [inHole[inHole.Count / 2]], above), "a range with a hole");
+            Assert.That(reads, Is.EqualTo(PagesSpanned(below) + 1 + PagesSpanned(above)),
+                "the windows read the pages on either side of the hole, and the record within it is one direct read");
+        }
+
+        /// <summary>A read that the windows hold only in part, because it crosses into the hole, is made directly rather than served with
+        /// the hole's bytes missing; so is a read within the hole.</summary>
+        [Test, Category(ObjectLogCategory)]
+        public void ReadAheadReadsAcrossItsHoleDirectly()
+        {
+            AlignTailToPageStart();
+            var records = WriteSmallRecords(ValueKind.Overflow, 6);
+            AlignTailToPageStart();
+            ReopenFromDevice();
+            Assert.That(PagesSpanned(records), Is.EqualTo(1), "the records must share a page");
+
+            // The hole starts inside records[1] and ends at records[3], so records[2] lies within it.
+            countingDevice.ResetReadCount();
+            using var readAhead = new ObjectLogReadAhead(objectLog, records[0].Result.Address, EndOfFirstReads(records), PageSize, maxWindows: 2,
+                records[1].Result.Address + 50, records[3].Result.Address);
+            var reads = VerifyThrough(readAhead, records, "reads crossing the hole");
+            Assert.That(reads, Is.EqualTo(4), "two windows, and a direct read each for the record crossing into the hole and the one within it");
+        }
+
+        /// <summary>A record beyond the range, such as one of recovery's copies, is read directly, and its release leaves the windows for the
+        /// range's records still to be read.</summary>
+        [Test, Category(ObjectLogCategory)]
+        public void ReadAheadIgnoresReleasesBeyondItsRange()
+        {
+            AlignTailToPageStart();
+            var records = WriteSmallRecords(ValueKind.Object, 20);
+            AlignTailToPageStart();
+            var beyond = WriteSmallRecords(ValueKind.Object, 1);
+            AlignTailToPageStart();
+            ReopenFromDevice();
+
+            countingDevice.ResetReadCount();
+            using var readAhead = new ObjectLogReadAhead(objectLog, records[0].Result.Address, EndOfFirstReads(records), PageSize, maxWindows: 2);
+            var reads = VerifyThrough(readAhead, WalkOrder([records[0]], beyond, records.GetRange(1, records.Count - 1)), "a release beyond the range");
+            Assert.That(reads, Is.EqualTo(PagesSpanned(records) + 1), "the record beyond the range is one direct read, and the windows serve the rest");
+        }
+
+        /// <summary>A record within the range's hole, such as one of recovery's copies below copies that end a page, is read directly, and its
+        /// release leaves the windows below the hole for the range's records still to be read.</summary>
+        [Test, Category(ObjectLogCategory)]
+        public void ReadAheadIgnoresReleasesWithinItsHole()
+        {
+            AlignTailToPageStart();
+            var below = WriteSmallRecords(ValueKind.Object, 20);
+            AlignTailToPageStart();
+            var inHole = WriteSmallRecords(ValueKind.Object, 1);
+            AlignTailToPageStart();
+            var above = WriteSmallRecords(ValueKind.Object, 5);
+            AlignTailToPageStart();
+            ReopenFromDevice();
+
+            countingDevice.ResetReadCount();
+            using var readAhead = new ObjectLogReadAhead(objectLog, below[0].Result.Address, EndOfFirstReads(above), PageSize, maxWindows: 2,
+                EndOfFirstReads(below), above[0].Result.Address);
+            var reads = VerifyThrough(readAhead, WalkOrder([below[0]], inHole, below.GetRange(1, below.Count - 1), above), "a release within the hole");
+            Assert.That(reads, Is.EqualTo(PagesSpanned(below) + 1 + PagesSpanned(above)),
+                "the record within the hole is one direct read, and the windows serve the rest");
+        }
+
+        /// <summary>The first read of each record in <see cref="ReadAheadRangeCases"/> that does not give its own.</summary>
+        const long RangeFirstRead = 100;
+
+        /// <summary>
+        /// A page's records in page order, as object-log positions each with a first read of <see cref="RangeFirstRead"/> bytes unless given;
+        /// the positions among them that are directory records; and the range chosen, as {start, end, holeStart, holeEnd} with an empty hole
+        /// at the end, or null for none. Positions from 9000 up are recovery's copies at the object log's tail.
+        /// </summary>
+        static IEnumerable<TestCaseData> ReadAheadRangeCases()
+        {
+            static TestCaseData Case(string name, long[] positions, long[] expected, long[] directories = null, long[] firstReads = null)
+                => new TestCaseData(positions, directories ?? [], firstReads, expected).SetName($"ReadAheadRange_{name}");
+
+            yield return Case("InOrder", [100, 200, 300], [100, 400, 400, 400]);
+            yield return Case("OneRecordGetsNone", [100], null);
+            yield return Case("AnEmptyExtentIsLeftOut", [100, 200, 200, 300], [100, 400, 400, 400], firstReads: [100, 0, 100, 100]);
+            yield return Case("RecordsOutOfOrderAreLeftOut", [100, 150, 200, 125, 250], [100, 350, 350, 350]);
+            yield return Case("CopiesBetweenRecordsAreLeftOut", [100, 200, 9000, 9100, 300, 400], [100, 500, 500, 500]);
+            yield return Case("ADirectoryCopyBetweenRecordsIsLeftOut", [100, 200, 9000, 300], [100, 400, 400, 400], directories: [9000]);
+            yield return Case("CopiesStartingThePageAreLeftOut", [9000, 9100, 100, 200, 300], [100, 400, 400, 400]);
+            yield return Case("CopiesEndingThePageAreReadPastAHole", [100, 200, 300, 9000, 9100], [100, 9200, 400, 9000]);
+            yield return Case("ADirectoryCopyEndingThePageHasNoHole", [100, 200, 300, 9000, 9100], [100, 9200, 9200, 9200], directories: [9000]);
+            yield return Case("TheWidestGapIsTheHole", [100, 200, 9000, 9100, 9500, 9600], [100, 9700, 300, 9000]);
+            yield return Case("ALeftOutCopyTakesItsHoleWithIt", [100, 200, 9000, 300, 5000, 5100], [100, 5200, 400, 5000]);
+            yield return Case("ARestartDropsTheHole", [9000, 9500, 100, 200], [100, 300, 300, 300]);
+            yield return Case("CopiesThatOutnumberTheRestAreReadAhead", [100, 9000, 9100, 9200, 200, 9300, 9400, 9500, 300], [9000, 9600, 9600, 9600]);
+        }
+
+        /// <summary>The range a page walk reads ahead through holds the page's records that ascend, and leaves out recovery's copies, which
+        /// lie above them, unless the copies outnumber them; copies that end the page are read past a hole below them.</summary>
+        [TestCaseSource(nameof(ReadAheadRangeCases)), Category(ObjectLogCategory)]
+        public void ReadAheadRangeFollowsThePagesRecords(long[] positions, long[] directories, long[] firstReads, long[] expected)
+        {
+            ObjectLogReadAheadRange range = default;
+            for (var ii = 0; ii < positions.Length; ++ii)
+                range.Add(positions[ii], firstReads?[ii] ?? RangeFirstRead, Array.IndexOf(directories, positions[ii]) >= 0);
+            var found = range.TryGetRange(out var start, out var end, out var holeStart, out var holeEnd);
+            if (expected is null)
+            {
+                Assert.That(found, Is.False, "too few records for a range");
+                return;
+            }
+            Assert.That(found, Is.True, "a range");
+            Assert.That(new[] { start, end, holeStart, holeEnd }, Is.EqualTo(expected), "{start, end, holeStart, holeEnd}");
+        }
+
+        /// <summary>A record's first read never runs past its page, as its top extent never spans one, so the range a page walk reads ahead
+        /// through ends on the page of its last record rather than in the next one.</summary>
+        [Test, Category(ObjectLogCategory)]
+        public void ReadAheadRangeEndsOnItsLastRecordsPage()
+        {
+            AlignTailToPageStart();
+            var first = new TestRecord(0, ValueKind.Overflow, 100);
+            Write(first);
+            FillPageUntilRemaining(800);
+            var last = new TestRecord(0, ValueKind.Overflow, 700);
+            Write(last);
+            var pageEnd = first.Result.Address + objectLog.RemainingOnPage(first.Result.Address);
+            Assert.That(objectLog.GetPage(last.Result.Address), Is.EqualTo(objectLog.GetPage(first.Result.Address)), "the records must share a page");
+            Assert.That(last.Ref.Address + last.Ref.TopExtentInitialRead, Is.GreaterThan(pageEnd), "the last record's first read must run past its page");
+
+            ObjectLogReadAheadRange range = default;
+            range.Add(first.Ref, objectLog);
+            range.Add(last.Ref, objectLog);
+            Assert.That(range.TryGetRange(out _, out var end, out _, out _), Is.True, "a range");
+            Assert.That(end, Is.EqualTo(pageEnd), "the range ends at the end of the last record's page");
+        }
+
         /// <summary>Corrupt structure is rejected before any data is read or deserialized.</summary>
         [Test, Category(ObjectLogCategory)]
         public void CorruptStructureIsRejected()

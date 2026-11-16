@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -22,6 +23,9 @@ namespace Tsavorite.test.recovery
     internal class ObjectLogReadAheadTests : TestBase
     {
         const int NumRecords = 10_000;
+
+        /// <summary>What a capturing CopyUpdate adds to a value, so the (v+1) value differs from the (v) value recovery must return.</summary>
+        const int CaptureIncrement = 1_000_000;
 
         [SetUp]
         public void Setup() => RecreateDirectory(MethodTestDir);
@@ -176,6 +180,229 @@ namespace Tsavorite.test.recovery
             finally
             {
                 recoverStore.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A Snapshot's recovery reads each capture, and each of its own copies of a capture, directly, and the rest of their pages through
+        /// the read-ahead. While the checkpoint is held before its flush, CopyUpdates capture the first and a middle record of every page above
+        /// ReadOnlyAddress, and the last record of every other one, so some pages end with a copy and others do not. A ReadOnly flush then
+        /// writes
+        /// the first half of those pages to the main log, with images that point at the captures, so recovery copies those captures to the
+        /// main object log's tail; the Snapshot flush writes the rest, whose captures lie below their pages' other records in the checkpoint's
+        /// object log.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoveryReadsCapturesAndCopiesOfThemDirectly()
+        {
+            Guid token;
+            int pagesSpanned, mainLogPages, capturedOnMainLog = 0, capturedInSnapshot = 0;
+            using (var log = CreateLogDevice())
+            using (var objlog = CreateObjectLogDevice())
+            using (var checkpointManager = CreateCheckpointManager())
+            {
+                var store = CreateStore(log, objlog, checkpointManager);
+                try
+                {
+                    Populate(store);
+                    pagesSpanned = PagesSpanned(store);
+
+                    // Pages below ReadOnlyAddress hold no captures, since a ReadOnly flush writes their (v) values; the rest are split between the
+                    // logs.
+                    var firstCapturedPage = store.hlogBase.GetPage(store.Log.ReadOnlyAddress) + 1;
+                    var firstCapturedAddress = store.hlogBase.GetLogicalAddressOfStartOfPage(firstCapturedPage);
+                    var mainLogEnd = store.hlogBase.GetLogicalAddressOfStartOfPage((firstCapturedPage + store.hlogBase.GetPage(store.Log.TailAddress)) / 2);
+                    mainLogPages = (int)(store.hlogBase.GetPage(mainLogEnd) - store.hlogBase.GetPage(store.Log.BeginAddress));
+                    Assert.That(mainLogEnd, Is.GreaterThan(firstCapturedAddress), "some captured pages must be written to the main log");
+
+                    var pages = RecordsByPage(store, firstCapturedAddress, store.Log.TailAddress);
+                    var sources = new List<(int key, long address)>();
+                    for (var ii = 0; ii < pages.Count; ii++)
+                    {
+                        var page = pages[ii];
+                        sources.Add(page[0]);
+                        sources.Add(page[page.Count / 2]);
+                        if (ii % 2 == 0)
+                            sources.Add(page[^1]);
+                    }
+                    foreach (var (_, address) in sources)
+                    {
+                        if (address < mainLogEnd)
+                            capturedOnMainLog++;
+                        else
+                            capturedInSnapshot++;
+                    }
+                    token = await CaptureDuringCheckpointAsync(store, sources, mainLogEnd).ConfigureAwait(false);
+                }
+                finally
+                {
+                    store.Dispose();
+                }
+            }
+
+            using var recoveryLog = CreateLogDevice();
+            using var objectLogFile = CreateObjectLogDevice();
+            var countingObjectLog = new ControlledReadFailureDevice(objectLogFile);
+            var countingFactory = new CountingSnapshotObjectLogFactoryCreator();
+            using var recoveryCheckpointManager = CreateCheckpointManager(countingFactory);
+            var recoverStore = CreateStore(recoveryLog, countingObjectLog, recoveryCheckpointManager);
+            try
+            {
+                _ = await recoverStore.RecoverAsync(default, token).ConfigureAwait(false);
+                var mainReads = countingObjectLog.ReadCount;
+                var snapshotReads = countingFactory.ReadCount;
+                TestContext.Progress.WriteLine($"{pagesSpanned} pages, {mainLogPages} in the main log; {capturedOnMainLog} captures copied to the main object log, "
+                    + $"{capturedInSnapshot} in the Snapshot; {mainReads} main object-log reads, {snapshotReads} Snapshot object-log reads");
+
+                // Every page's objects are loaded from the main object log, a read or two each, and each copy of a capture there is one more.
+                Assert.That(mainReads, Is.LessThanOrEqualTo((2 * pagesSpanned) + capturedOnMainLog),
+                    $"recovery loaded the objects of {pagesSpanned} pages, with {capturedOnMainLog} copies of captures, in {mainReads} reads");
+
+                // Recovery reads each capture it copies to the main object log, and copies the Snapshot's pages from its object log, a read or two
+                // each, and each capture on them one more.
+                var snapshotPages = pagesSpanned - mainLogPages;
+                Assert.That(snapshotReads, Is.LessThanOrEqualTo(capturedOnMainLog + (2 * snapshotPages) + capturedInSnapshot),
+                    $"recovery copied {snapshotPages} Snapshot pages, with {capturedInSnapshot} captures, in {snapshotReads} reads");
+
+                VerifyAll(recoverStore);
+            }
+            finally
+            {
+                recoverStore.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A scan reads a main-log page whose records are mostly images of captured records with a read for the page's other records. Those
+        /// images hold positions in the checkpoint's object log, numbers unrelated to the main object log's, and the walk invalidates them
+        /// without reading, so they must not shape its read-ahead.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task ScanReadsPagesOfCapturedImagesInAReadOrTwo()
+        {
+            const int Pages = 10;
+            using var log = CreateLogDevice();
+            using var objectLogFile = CreateObjectLogDevice();
+            var countingObjectLog = new ControlledReadFailureDevice(objectLogFile);
+            using var checkpointManager = CreateCheckpointManager();
+            var store = CreateStore(log, countingObjectLog, checkpointManager);
+            try
+            {
+                Populate(store);
+
+                // Capture all but the first, a middle and the last record of pages above ReadOnlyAddress, then flush them to the main log.
+                var scanStart = store.hlogBase.GetLogicalAddressOfStartOfPage(store.hlogBase.GetPage(store.Log.ReadOnlyAddress) + 1);
+                var scanEnd = store.hlogBase.GetLogicalAddressOfStartOfPage(store.hlogBase.GetPage(scanStart) + Pages);
+                var pages = RecordsByPage(store, scanStart, scanEnd);
+                Assert.That(pages, Has.Count.EqualTo(Pages), "the pages to capture");
+                var sources = new List<(int key, long address)>();
+                var keptCount = 0;
+                foreach (var page in pages)
+                {
+                    for (var ii = 0; ii < page.Count; ii++)
+                    {
+                        if (ii == 0 || ii == page.Count / 2 || ii == page.Count - 1)
+                            keptCount++;
+                        else
+                            sources.Add(page[ii]);
+                    }
+                }
+                _ = await CaptureDuringCheckpointAsync(store, sources, scanEnd).ConfigureAwait(false);
+                store.Log.FlushAndEvict(wait: true);
+
+                var readsBefore = countingObjectLog.ReadCount;
+                var scanned = 0;
+                using (var iter = store.Log.Scan(scanStart, scanEnd))
+                {
+                    while (iter.GetNext())
+                    {
+                        Assert.That(((TestObjectValue)iter.ValueObject).value, Is.EqualTo(iter.Key.AsRef<TestObjectKey>().key), "scanned value");
+                        scanned++;
+                    }
+                }
+                var reads = countingObjectLog.ReadCount - readsBefore;
+                TestContext.Progress.WriteLine($"{Pages} pages of {sources.Count} captured images and {keptCount} other records; {reads} object-log reads");
+
+                Assert.That(scanned, Is.EqualTo(keptCount), "the scan reports the records that were not captured");
+                Assert.That(reads, Is.LessThanOrEqualTo(2 * Pages),
+                    $"a scan of {Pages} pages of {sources.Count} captured images and {keptCount} other records took {reads} object-log reads");
+            }
+            finally
+            {
+                store.Dispose();
+            }
+        }
+
+        /// <summary>The key and address of each record of <paramref name="store"/>'s log in [<paramref name="fromAddress"/>,
+        /// <paramref name="toAddress"/>), by page.</summary>
+        static List<List<(int key, long address)>> RecordsByPage(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, long fromAddress, long toAddress)
+        {
+            var pages = new List<List<(int key, long address)>>();
+            using var iter = store.Log.Scan(fromAddress, toAddress);
+            while (iter.GetNext())
+            {
+                var address = iter.CurrentAddress;
+                if (pages.Count == 0 || store.hlogBase.GetPage(address) != store.hlogBase.GetPage(pages[^1][0].address))
+                    pages.Add([]);
+                pages[^1].Add((iter.Key.AsRef<TestObjectKey>().key, address));
+            }
+            return pages;
+        }
+
+        /// <summary>
+        /// Take a Snapshot checkpoint, holding it before its flush while CopyUpdates of <paramref name="sources"/> capture them and a ReadOnly
+        /// flush writes the log below <paramref name="flushUntilAddress"/> to the main log.
+        /// </summary>
+        /// <returns>The checkpoint's token.</returns>
+        static async Task<Guid> CaptureDuringCheckpointAsync(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, List<(int key, long address)> sources,
+            long flushUntilAddress)
+        {
+            Guid token;
+            var pause = new PauseAtPhase(Phase.WAIT_FLUSH);
+            store.stateMachineDriver.UnsafeRegisterCallback(pause);
+            try
+            {
+                Assert.That(store.TryInitiateHybridLogCheckpoint(out token, CheckpointType.Snapshot), Is.True);
+                Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True, "The checkpoint did not reach IN_PROGRESS");
+                using (var session = NewSession(store))
+                {
+                    foreach (var (key, _) in sources)
+                    {
+                        TestObjectInput input = new() { value = CaptureIncrement };
+                        TestObjectOutput output = new();
+                        if (session.BasicContext.RMW(new TestObjectKey { key = key }, ref input, ref output).IsPending)
+                            _ = session.BasicContext.CompletePending(wait: true);
+                    }
+                }
+                foreach (var (_, address) in sources)
+                {
+                    Assert.That(store.hlogBase._wrapper.CreateLogRecord(address).Info.HasSnapshotObjectLogReference, Is.True,
+                        $"The CopyUpdate of the record at {address} did not capture it");
+                }
+                store.Log.ShiftReadOnlyAddress(flushUntilAddress, wait: true);
+            }
+            finally
+            {
+                pause.Release.Set();
+            }
+            await store.CompleteCheckpointAsync().ConfigureAwait(false);
+            return token;
+        }
+
+        /// <summary>Pauses the checkpoint state machine on entry to a chosen phase so the test can act in that window.</summary>
+        sealed class PauseAtPhase(Phase pauseAt) : IStateMachineCallback
+        {
+            internal readonly ManualResetEventSlim Reached = new(false);
+            internal readonly ManualResetEventSlim Release = new(false);
+
+            public void BeforeEnteringState(SystemState next)
+            {
+                if (next.Phase != pauseAt)
+                    return;
+                Reached.Set();
+                _ = Release.Wait(TimeSpan.FromSeconds(30));
             }
         }
 

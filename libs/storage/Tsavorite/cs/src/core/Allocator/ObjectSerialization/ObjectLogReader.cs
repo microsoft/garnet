@@ -490,7 +490,9 @@ namespace Tsavorite.core
         /// <summary>Finish the record begun by <see cref="BeginRecord"/>.</summary>
         internal void EndRecord()
         {
-            // A page's later records lie at or above the end of this record's top extent, so the read-ahead can let go of the bytes below it.
+            // If this record is in the read-ahead's range, the range's later records lie at or above the end of its top extent, so the
+            // read-ahead can let go of the bytes below it. It ignores a release beyond its range or within its hole, which comes from a
+            // record outside the range.
             if (inRecord)
                 ReadAhead?.Release(topAddress + topPayloadOffset + topPayloadLength);
             inRecord = false;

@@ -2590,18 +2590,19 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Start reading ahead through the object-log extents of the records in a page buffer, from <paramref name="recordPhysicalAddress"/>
-        /// to <paramref name="endPhysicalAddress"/>, that have objects and a readable position; or return null if fewer than two do, since a
-        /// single record's reads gain nothing from it.
+        /// to <paramref name="endPhysicalAddress"/>, that the walk will read; or return null if fewer than two of them are in the range
+        /// <see cref="ObjectLogReadAheadRange"/> chooses, since a single record's reads gain nothing from it.
         /// </summary>
         /// <remarks>
-        /// A flush writes a page's records to the object log in address order, so their extents lie between the first record's position and
-        /// the last record's, plus the last one's top extent. A record's earlier data chunks precede its top extent, so the first record's are
-        /// below the range and read directly; every other record's lie within it.
+        /// A flush writes a page's records to the object log in page order, so most of their extents lie in one ascending range. A record's
+        /// earlier data chunks precede its top extent, so those of the range's first record lie below the range and are read directly, and
+        /// those of its other records lie within it. Marked records are left out: on a main-log page the walk invalidates them, since their
+        /// positions are in a checkpoint's object log, and on a page read from a checkpoint's object log they are captures, which lie below
+        /// the page's other records.
         /// </remarks>
         private ObjectLogReadAhead StartPageReadAhead(ObjectLog log, long recordPhysicalAddress, long endPhysicalAddress)
         {
-            long startAddress = -1, endAddress = 0;
-            var recordCount = 0;
+            ObjectLogReadAheadRange range = default;
             while (recordPhysicalAddress < endPhysicalAddress)
             {
                 var logRecord = new LogRecord(recordPhysicalAddress);
@@ -2612,19 +2613,17 @@ namespace Tsavorite.core
                     break;
                 recordPhysicalAddress += allocatedSize;
 
-                if (!logRecord.DataHeader.RecordHasObjects || !logRecord.Info.Valid || RecordHasNoReadablePosition(in logRecord))
+                if (!logRecord.DataHeader.RecordHasObjects || !logRecord.Info.Valid || logRecord.Info.HasSnapshotObjectLogReference
+                        || RecordHasNoReadablePosition(in logRecord))
                     continue;
 
                 var recordRef = logRecord.GetObjectLogRecordRef();
-                if (startAddress < 0)
-                    startAddress = recordRef.Address;
-                endAddress = Math.Max(endAddress, recordRef.Address + recordRef.TopExtentInitialRead);
-                recordCount++;
+                range.Add(in recordRef, log);
             }
 
-            return recordCount < 2 || endAddress <= startAddress
-                ? null
-                : new ObjectLogReadAhead(log, startAddress, endAddress, IStreamBuffer.BufferSize, numberOfDeserializationBuffers);
+            return range.TryGetRange(out var startAddress, out var endAddress, out var holeStart, out var holeEnd)
+                ? new ObjectLogReadAhead(log, startAddress, endAddress, IStreamBuffer.BufferSize, numberOfDeserializationBuffers, holeStart, holeEnd)
+                : null;
         }
 
         /// <summary>
