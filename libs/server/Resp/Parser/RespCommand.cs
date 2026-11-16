@@ -220,6 +220,7 @@ namespace Garnet.server
         STRLEN,
         SUBSTR,
         SUNION,
+        TOUCH,
         TTL,
         TYPE,
         VCARD,

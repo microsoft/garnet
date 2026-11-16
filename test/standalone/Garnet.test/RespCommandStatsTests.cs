@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using NUnit.Framework;
@@ -85,6 +86,168 @@ namespace Garnet.test
             ClassicAssert.IsNotNull(getLine, "Expected cmdstat_get entry");
             ulong getCalls = ParseCommandStatField(getLine, "calls");
             ClassicAssert.GreaterOrEqual(getCalls, (ulong)getCount, $"Expected at least {getCount} GET calls");
+        }
+
+        /// <summary>
+        /// Commands a script runs execute on the script processor's session, whose statistics reach
+        /// <c>INFO COMMANDSTATS</c> when the connection that ran the script ends. GET, SET, HGET, HSET and
+        /// EXPIRE are served without RESP dispatch, so each must be counted like the commands that are dispatched.
+        /// </summary>
+        [Test]
+        public void CommandStatsCountCommandsRunByScriptsTest([Values(0, 1)] int metricsSamplingFreq)
+        {
+            server = TestUtils.CreateGarnetServer(
+                TestUtils.MethodTestDir,
+                enableLua: true,
+                metricsSamplingFreq: metricsSamplingFreq,
+                commandStatsMonitor: true);
+            server.Start();
+
+            // The client's connection tie-breaker is a GET, which would be counted along with the script's
+            var config = TestUtils.GetConfig(allowAdmin: true);
+            config.TieBreaker = "";
+
+            const int Calls = 10;
+            const string Script = @"
+                redis.call('SET', KEYS[1], 'v')
+                redis.call('GET', KEYS[1])
+                redis.call('EXPIRE', KEYS[1], 100)
+                redis.call('HSET', KEYS[2], 'f', 'v')
+                redis.call('HGET', KEYS[2], 'f')
+                redis.call('INCR', KEYS[3])
+                return 1";
+
+            using var redis = ConnectionMultiplexer.Connect(config);
+            var db = redis.GetDatabase(0);
+            var baseline = InfoStats(db);
+
+            using (var scriptRedis = ConnectionMultiplexer.Connect(config))
+            {
+                var scriptDb = scriptRedis.GetDatabase(0);
+                for (var i = 0; i < Calls; i++)
+                    _ = scriptDb.ScriptEvaluate(Script, [(RedisKey)"stats-string", (RedisKey)"stats-hash", (RedisKey)"stats-counter"]);
+            }
+
+            foreach (var cmd in new[] { "set", "get", "expire", "hset", "hget", "incr" })
+            {
+                var calls = WaitForCommandStat(db, cmd, "calls", Calls);
+                ClassicAssert.AreEqual((ulong)Calls, calls, $"{cmd} called from scripts was not counted");
+            }
+
+            if (metricsSamplingFreq > 0)
+            {
+                // SET, EXPIRE, HSET and INCR write; GET and HGET read
+                var delta = WaitForInfoStats(db, baseline, 4 * Calls);
+                ClassicAssert.AreEqual((ulong)(4 * Calls), delta.Write, "Writes run by scripts were not counted in the session counters");
+                ClassicAssert.AreEqual((ulong)(2 * Calls), delta.Read, "Reads run by scripts were not counted in the session counters");
+                ClassicAssert.GreaterOrEqual(delta.Total, (ulong)(6 * Calls), "Commands run by scripts were not counted in the session counters");
+            }
+        }
+
+        /// <summary>
+        /// A command the ACL refuses is counted as rejected, also when the script runs it through a path that
+        /// does not go through RESP dispatch.
+        /// </summary>
+        [Test]
+        public void CommandStatsCountScriptCommandsRejectedByAclTest()
+        {
+            var aclFile = Path.GetTempFileName();
+            try
+            {
+                File.WriteAllLines(aclFile,
+                [
+                    "user default on nopass +@all",
+                    "user limited on nopass +@all -get -set -hget -hset -expire",
+                ]);
+
+                server = TestUtils.CreateGarnetServer(
+                    TestUtils.MethodTestDir,
+                    enableLua: true,
+                    metricsSamplingFreq: 1,
+                    commandStatsMonitor: true,
+                    useAcl: true,
+                    aclFile: aclFile);
+                server.Start();
+
+                var config = TestUtils.GetConfig(allowAdmin: true);
+                config.TieBreaker = "";
+
+                const int Calls = 10;
+                const string Script = @"
+                    redis.pcall('SET', KEYS[1], 'v')
+                    redis.pcall('GET', KEYS[1])
+                    redis.pcall('EXPIRE', KEYS[1], 100)
+                    redis.pcall('HSET', KEYS[2], 'f', 'v')
+                    redis.pcall('HGET', KEYS[2], 'f')
+                    return 1";
+
+                using var redis = ConnectionMultiplexer.Connect(config);
+                var db = redis.GetDatabase(0);
+                var baseline = InfoStats(db);
+
+                var limitedConfig = TestUtils.GetConfig(authUsername: "limited");
+                limitedConfig.TieBreaker = "";
+                using (var limitedRedis = ConnectionMultiplexer.Connect(limitedConfig))
+                {
+                    var limitedDb = limitedRedis.GetDatabase(0);
+                    for (var i = 0; i < Calls; i++)
+                        _ = limitedDb.ScriptEvaluate(Script, [(RedisKey)"stats-string", (RedisKey)"stats-hash"]);
+                }
+
+                foreach (var cmd in new[] { "set", "get", "expire", "hset", "hget" })
+                {
+                    var rejected = WaitForCommandStat(db, cmd, "rejected_calls", Calls);
+                    ClassicAssert.AreEqual((ulong)Calls, rejected, $"{cmd} refused to a script was not counted as rejected");
+                }
+
+                // SET, EXPIRE and HSET write; GET and HGET read
+                var delta = WaitForInfoStats(db, baseline, 3 * Calls);
+                ClassicAssert.AreEqual((ulong)(3 * Calls), delta.Write, "Writes refused to scripts were not counted in the session counters");
+                ClassicAssert.AreEqual((ulong)(2 * Calls), delta.Read, "Reads refused to scripts were not counted in the session counters");
+                ClassicAssert.GreaterOrEqual(delta.Total, (ulong)(5 * Calls), "Commands refused to scripts were not counted in the session counters");
+            }
+            finally
+            {
+                File.Delete(aclFile);
+            }
+        }
+
+        private static (ulong Total, ulong Write, ulong Read) InfoStats(IDatabase db)
+        {
+            var lines = db.Execute("INFO", "STATS").ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+            ulong Field(string name) => ulong.Parse(lines.Single(l => l.StartsWith($"{name}:"))[(name.Length + 1)..]);
+            return (Field("total_commands_processed"), Field("total_write_commands_processed"), Field("total_read_commands_processed"));
+        }
+
+        /// <summary>
+        /// Waits for the session counters, which a script's commands reach when the connection that ran the
+        /// script ends, to account for at least the expected writes.
+        /// </summary>
+        private static (ulong Total, ulong Write, ulong Read) WaitForInfoStats(IDatabase db, (ulong Total, ulong Write, ulong Read) baseline, ulong expectedWrites)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            (ulong Total, ulong Write, ulong Read) stats;
+            while ((stats = InfoStats(db)).Write - baseline.Write < expectedWrites && DateTime.UtcNow < deadline)
+                Thread.Sleep(100);
+
+            return (stats.Total - baseline.Total, stats.Write - baseline.Write, stats.Read - baseline.Read);
+        }
+
+        private static ulong WaitForCommandStat(IDatabase db, string cmd, string field, int expected)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            ulong value;
+            while ((value = CommandStat(db, cmd, field)) < (ulong)expected && DateTime.UtcNow < deadline)
+                Thread.Sleep(100);
+
+            return value;
+        }
+
+        private static ulong CommandStat(IDatabase db, string cmd, string field)
+        {
+            var lines = db.Execute("INFO", "COMMANDSTATS").ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+            var line = lines.FirstOrDefault(l => l.StartsWith($"cmdstat_{cmd}:"));
+            return line == null ? 0 : ParseCommandStatField(line, field);
         }
 
         [Test]

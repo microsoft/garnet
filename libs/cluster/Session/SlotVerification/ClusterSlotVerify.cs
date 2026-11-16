@@ -152,16 +152,16 @@ namespace Garnet.cluster
             bool CanOperateOnKey(ref PinnedSpanByte key, int slot, bool readOnly, out bool retry)
             {
                 retry = false;
-                var epoch = LocalCurrentEpoch;
+                var epoch = EpochForWait;
                 // For both read and read/write ops we need to ensure that key will not be removed
                 // while we try to operate on it so we will delay the corresponding operation
                 // as long as the key is being actively migrated
                 while (!clusterProvider.migrationManager.CanAccessKey(key, slot, readOnly))
                 {
-                    ReleaseCurrentEpoch();
+                    ReleaseEpochForWait();
                     Thread.Yield();
-                    AcquireCurrentEpoch();
-                    if (epoch != LocalCurrentEpoch)
+                    AcquireEpochAfterWait();
+                    if (epoch != EpochForWait)
                     {
                         retry = true;
                         return false;
@@ -179,9 +179,9 @@ namespace Garnet.cluster
 
                 do
                 {
-                    ReleaseCurrentEpoch();
+                    ReleaseEpochForWait();
                     _ = Thread.Yield();
-                    AcquireCurrentEpoch();
+                    AcquireEpochAfterWait();
 
                     config = clusterProvider.clusterManager.CurrentConfig;
                 }

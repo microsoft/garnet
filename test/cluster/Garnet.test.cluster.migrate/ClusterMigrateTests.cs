@@ -1245,6 +1245,107 @@ namespace Garnet.test.cluster
             context.logger.LogDebug("Done ClusterMigrateLargeObjectMultiLogAofReplay");
         }
 
+        [Test, Order(103)]
+        [Category("CLUSTER")]
+        public void ClusterScriptWritingAKeyBeingMigratedDoesNotStallTheMigration([Values("SET", "APPEND")] string command)
+        {
+            context.CreateInstances(defaultShards, useTLS: UseTLS, enableLua: true);
+            context.CreateConnection(useTLS: UseTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var sourceNodeIndex = 1;
+            var targetNodeIndex = 2;
+            var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
+            var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
+
+            const string key = "{abc}a";
+            var keyBytes = Encoding.ASCII.GetBytes(key);
+            var slot = ClusterTestUtils.HashSlot(keyBytes);
+            ClassicAssert.AreEqual(7638, slot);
+            ClassicAssert.AreEqual(ResponseState.OK, context.clusterTestUtils.SetKey(sourceNodeIndex, keyBytes, "v"u8.ToArray(), out _, out _, logger: context.logger));
+
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "IMPORTING", sourceNodeId, logger: context.logger));
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(sourceNodeIndex, slot, "MIGRATING", targetNodeId, logger: context.logger));
+
+            // The script is still running when the migration starts, and writes the key only afterwards. The migration
+            // waits for every session, this one included, to move past the configuration it changes, while the script's
+            // write waits for the migration to release the key; each must be able to proceed. SET is served by the script
+            // fast path, APPEND by RESP dispatch.
+            var script = $"local start = os.clock() while os.clock() - start < 2 do end return redis.call('{command}', KEYS[1], 'script')";
+            using var scriptClient = context.clusterTestUtils.CreateGarnetClientSession(sourceNodeIndex, useTLS: UseTLS);
+            scriptClient.Connect();
+            var eval = scriptClient.ExecuteAsync("EVAL", script, "1", key);
+
+            Thread.Sleep(500);
+            var migrate = Task.Run(() => context.clusterTestUtils.MigrateKeys(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), context.clusterTestUtils.GetEndPoint(targetNodeIndex), [keyBytes], context.logger));
+
+            var evalFinished = eval.ContinueWith(static _ => { }, TaskScheduler.Default);
+            ClassicAssert.IsTrue(Task.WaitAll([evalFinished, migrate], TimeSpan.FromSeconds(30)), "The script and the migration of the key it writes deadlocked");
+
+            // The key moved while the script waited, so the write is redirected to the node that now holds it
+            var exception = Assert.Throws<Exception>(() => eval.GetAwaiter().GetResult());
+            StringAssert.Contains("ASK", exception.Message);
+        }
+
+        [Test, Order(104)]
+        [Category("CLUSTER")]
+        public void ClusterMigrateSlotsDoesNotCopyReadsToTail()
+        {
+            const int sourceNodeIndex = 0;
+            const int targetNodeIndex = 1;
+            const int keyCount = 4000;
+            const int valueLength = 1024;
+            const long totalValueBytes = (long)keyCount * valueLength;
+
+            // The source copies reads of immutable records to the tail, and its log holds far less than the data, so most
+            // migrated records are read from disk or the read-only region.
+            context.CreateInstances(2, useTLS: UseTLS, pageSize: "16k", memorySize: "1m", lowMemory: true);
+            context.nodeOptions[sourceNodeIndex].CopyReadsToTail = true;
+            context.RestartNode(sourceNodeIndex);
+            context.CreateConnection(useTLS: UseTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var keys = new List<byte[]>(keyCount);
+            var value = new byte[valueLength];
+            for (var i = 0; i < keyCount; i++)
+            {
+                var key = Encoding.ASCII.GetBytes($"{{abc}}{i}");
+                for (var j = 0; j < value.Length; j++)
+                    value[j] = (byte)('a' + ((i + j) % 26));
+                ClassicAssert.AreEqual(ResponseState.OK, context.clusterTestUtils.SetKey(sourceNodeIndex, key, value, out _, out _, logger: context.logger));
+                keys.Add(key);
+            }
+            var slot = ClusterTestUtils.HashSlot(keys[0]);
+
+            var sourceLog = context.nodes[sourceNodeIndex].Provider.StoreWrapper.store.Log;
+            ClassicAssert.Greater(sourceLog.ReadOnlyAddress - sourceLog.BeginAddress, totalValueBytes / 2, "Most records must be immutable before migration");
+            var tailBefore = sourceLog.TailAddress;
+
+            context.clusterTestUtils.MigrateSlotsIndex(sourceNodeIndex, targetNodeIndex, [slot], logger: context.logger);
+
+            // Migration runs asynchronously: wait until the target serves every key and the source has finished cleanup
+            for (var i = 0; i < keyCount; i++)
+            {
+                for (var j = 0; j < value.Length; j++)
+                    value[j] = (byte)('a' + ((i + j) % 26));
+                var resp = context.clusterTestUtils.GetKey(targetNodeIndex, keys[i], out _, out _, out var responseState, logger: context.logger);
+                while (responseState != ResponseState.OK)
+                {
+                    ClusterTestUtils.BackOff(cancellationToken: context.cts.Token, msg: $"Target did not serve migrated key {i} ({responseState})");
+                    resp = context.clusterTestUtils.GetKey(targetNodeIndex, keys[i], out _, out _, out responseState, logger: context.logger);
+                }
+                ClassicAssert.AreEqual(Encoding.ASCII.GetString(value), resp);
+            }
+            context.clusterTestUtils.WaitForSlotOwnership(sourceNodeIndex, context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger), [slot, slot], context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(sourceNodeIndex, logger: context.logger);
+            ClassicAssert.AreEqual(keyCount, context.clusterTestUtils.CountKeysInSlot(targetNodeIndex, slot, context.logger));
+
+            // Migration itself appends little to the source log; copying the migrated records to the tail would append about
+            // the size of the immutable data.
+            var tailGrowth = sourceLog.TailAddress - tailBefore;
+            ClassicAssert.Less(tailGrowth, totalValueBytes / 8, $"Migration grew the source log by {tailGrowth} bytes");
+        }
+
         [Test, Order(10)]
         [Category("CLUSTER")]
         public void ClusterSimpleMigrateKeysWithObjects()
