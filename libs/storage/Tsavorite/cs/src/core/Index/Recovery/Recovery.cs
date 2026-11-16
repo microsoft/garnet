@@ -35,6 +35,11 @@ namespace Tsavorite.core
         /// pages are already durable, and when snapshot recovery reads no snapshot page.</summary>
         public long snapshotScanFromAddress = -1;
 
+        /// <summary>Where the objects of the records the hybrid-log phase keeps below its end address, on the page holding that address, end in the main object
+        /// log, aligned up to the object log's sector size. Not set if none of them has objects, as when that address is at the start of a page. Taken before any
+        /// objects are loaded, while the records still hold their object-log positions. See <c>GetRecoveredObjectLogTail</c>.</summary>
+        public ObjectLogFilePositionInfo keptObjectsEnd = new();
+
         /// <summary>Circular status buffer of 'capacity' size; the indexing wraps per hlog.GetPageIndexForPage().</summary>
         public ReadStatus[] readStatus;
         /// <summary>Circular status buffer of 'capacity' size; the indexing wraps per hlog.GetPageIndexForPage().</summary>
@@ -571,7 +576,7 @@ namespace Tsavorite.core
                         recoveredHLCInfo.info.nextVersion, CheckpointType.FoldOver, headAddress, options, cancellationToken).ConfigureAwait(false);
 
                 // FoldOver objects are already durable in the main object-log; set the tail to its end so subsequent writes append after it.
-                hlogBase.SetObjectLogTail(recoveredHLCInfo.info.hlogEndObjectLogTail);
+                hlogBase.SetObjectLogTail(GetRecoveredObjectLogTail(recoveryStatus, recoveredHLCInfo.info.hlogEndObjectLogTail));
                 finalHeadAddress = recoveryStatus.headAddress;
                 readOnlyAddress = tailAddress;
             }
@@ -588,7 +593,7 @@ namespace Tsavorite.core
                 // Initialize the main object-log tail to the end of the hybrid-log objects BEFORE recovering the snapshot pages: the snapshot-region flushes copy
                 // each record's objects from the snapshot object-log into the main object-log starting here, advancing the tail (via OnPartialFlushComplete) as they go.
                 // This must happen after the hybrid-log phase (which runs with the tail unset, like before) and before the snapshot phase.
-                hlogBase.SetObjectLogTail(recoveredHLCInfo.info.hlogEndObjectLogTail);
+                hlogBase.SetObjectLogTail(GetRecoveredObjectLogTail(recoveryStatus, recoveredHLCInfo.info.hlogEndObjectLogTail));
 
                 // Then recover snapshot into mutable region. The snapshot-region pages are read (without their objects), flushed to the main log with their objects
                 // copied into the main object-log (so they are durable and can be evicted into a smaller memory budget), and then objects are loaded once over the full
@@ -604,6 +609,25 @@ namespace Tsavorite.core
 
             DoPostRecovery(recoveredICInfo, recoveredHLCInfo, tailAddress, finalHeadAddress, readOnlyAddress);
             return recoveredHLCInfo.info.version;
+        }
+
+        /// <summary>
+        /// The main object-log position to resume writing at after recovery: the checkpoint's object-log tail, unless the objects of the records the hybrid-log
+        /// phase kept on the page holding its end address end before it, in which case right after those. The objects in between belong only to records recovery
+        /// discarded, the v+1 records it undid, so nothing kept refers to them: a page's objects are written when the page is flushed, and pages are flushed in
+        /// address order, so the kept records on earlier pages have their objects before these. New objects reuse that space, and when new records follow the
+        /// kept ones on that page, its objects stay contiguous. When the hybrid-log phase ends at the start of a page, new records start a new page, so the
+        /// checkpoint's tail is kept.
+        /// </summary>
+        /// <param name="recoveryStatus">The hybrid-log phase's status, holding where the kept records' objects end</param>
+        /// <param name="checkpointObjectLogTail">The main object log's tail when the checkpoint finished writing the main log</param>
+        private static ObjectLogFilePositionInfo GetRecoveredObjectLogTail(RecoveryStatus recoveryStatus, ObjectLogFilePositionInfo checkpointObjectLogTail)
+        {
+            var keptObjectsEnd = recoveryStatus.keptObjectsEnd;
+            Debug.Assert(!keptObjectsEnd.IsSet || !checkpointObjectLogTail.IsSet || keptObjectsEnd.CurrentAddress <= checkpointObjectLogTail.CurrentAddress,
+                $"The kept records' objects end ({keptObjectsEnd}) past the checkpoint's object-log tail ({checkpointObjectLogTail})");
+            return keptObjectsEnd.IsSet && checkpointObjectLogTail.IsSet && keptObjectsEnd.CurrentAddress < checkpointObjectLogTail.CurrentAddress
+                ? keptObjectsEnd : checkpointObjectLogTail;
         }
 
         private void DoPostRecovery(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, long tailAddress, long headAddress, long readOnlyAddress)
@@ -910,6 +934,9 @@ namespace Tsavorite.core
             }
 
             await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
+
+            // The undo of v+1 records is done, and no objects are loaded yet, so the records still hold their object-log positions.
+            recoveryStatus.keptObjectsEnd = hlogBase.GetObjectLogEndOfKeptRecordsOnPage(untilAddress);
 
             // Defer object loading when this is the hybrid-log phase of a snapshot recovery; RecoverHybridLogFromSnapshotFileAsync
             // loads the objects once after the snapshot pages have also been read (without their objects), so the final headAddress

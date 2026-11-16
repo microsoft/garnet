@@ -1408,6 +1408,40 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        internal override ObjectLogFilePositionInfo GetObjectLogEndOfKeptRecordsOnPage(long untilAddress)
+        {
+            var page = GetPage(untilAddress);
+            var recordAddress = GetFirstValidLogicalAddressOnPage(page);
+            if (objectLogDevice is null || untilAddress <= recordAddress || !IsAllocated(GetPageIndexForPage(page)))
+                return new();
+
+            // Take the furthest end of any valid record's objects rather than the last record's, so the result does not rely on the page's objects being in
+            // record order. Invalid records (v+1 records that recovery undid) are skipped: their objects are not read again. A position word without flag
+            // bits is the address in the object log as if its segments were one contiguous file, and a record's objects are written contiguously across a
+            // segment boundary, so the end is simply that address plus the objects' lengths.
+            ulong endAddress = 0;
+            var found = false;
+            while (recordAddress < untilAddress)
+            {
+                var logRecord = new LogRecord(GetPhysicalAddress(recordAddress));
+                var allocatedSize = logRecord.AllocatedSize;
+                if (allocatedSize <= 0)
+                    ThrowTsavoriteException($"LogRecord size should be > 0; encountered {allocatedSize}");
+                recordAddress += allocatedSize;
+
+                if (logRecord.Info.Valid && logRecord.DataHeader.RecordHasObjects)
+                {
+                    var recordStartAddress = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
+                    endAddress = Math.Max(endAddress, recordStartAddress + (ulong)keyLength + valueLength);
+                    found = true;
+                }
+            }
+
+            // Writing to the object log resumes at a sector boundary, as each flush leaves it.
+            return found ? new(RoundUp(endAddress, objectLogDevice.SectorSize), objectLogTail.SegmentSizeBits) : new();
+        }
+
+        /// <inheritdoc/>
         internal override long CalculatePageObjectSizes(long page, long startAddress, long untilAddress)
         {
             var recordAddress = Math.Max(startAddress, GetFirstValidLogicalAddressOnPage(page));

@@ -33,6 +33,11 @@ namespace Tsavorite.core
         internal virtual ObjectLogFilePositionInfo GetObjectLogTail() => new();  // This marks it as "unset"
         /// <summary>Set the ObjectLog tail position, if this is ObjectAllocator.</summary>
         internal virtual void SetObjectLogTail(ObjectLogFilePositionInfo tail) { }
+        /// <summary>For recovery: where the objects of the valid records below <paramref name="untilAddress"/> on its page end in the object log, aligned up to
+        ///     the object log's sector size; not set if none of them has objects, or there is no object log. Call only while that page is resident and its
+        ///     objects are not loaded, so its records still hold their object-log positions. Only implemented by ObjectAllocator.</summary>
+        /// <param name="untilAddress">The end of the records to consider; the page holding it is the one examined</param>
+        internal virtual ObjectLogFilePositionInfo GetObjectLogEndOfKeptRecordsOnPage(long untilAddress) => new();
         /// <summary>Calculate the total serialized object size on a loaded page. Only implemented by ObjectAllocator.</summary>
         internal virtual long CalculatePageObjectSizes(long page, long startAddress, long untilAddress) => 0;
         /// <summary>Load objects for records on an already-loaded page for recovery pass 2; records at or above <paramref name="snapshotFromAddress"/> read theirs
