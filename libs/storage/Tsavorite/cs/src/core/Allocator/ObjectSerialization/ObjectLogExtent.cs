@@ -146,6 +146,17 @@ namespace Tsavorite.core
         /// <summary>Whether the position is unstamped, so the record has no object-log bytes to read.</summary>
         internal readonly bool IsUnstamped => ObjectLogPositionInfo.WordIsUnstamped(PositionWord);
 
+        /// <summary>The address of the extent the position addresses.</summary>
+        internal readonly long Address => (long)(PositionWord & ObjectLogPositionInfo.AddressMask);
+
+        /// <summary>The first read of the extent the position addresses, sized by the key slot when the key is overflow and by the value
+        /// slot otherwise. It covers the whole extent unless the value slot sizes it and the extent is longer than
+        /// <see cref="ObjectLogExtent.LargeInitialRead"/>; a key's page count is exact.</summary>
+        internal readonly long TopExtentInitialRead => KeyIsOverflow
+            ? ObjectLogExtent.KeyInitialRead(KeyRdhLengthBits, KeySizeHint, (PositionWord & ObjectLogPositionInfo.kKeyIsExactSizeMask) != 0)
+            : ObjectLogExtent.ValueInitialRead(ValueSizeHint, (PositionWord & ObjectLogPositionInfo.kValueIsExactSizeMask) != 0);
+
+
         /// <summary>Whether the addressed extent is headerless and occupies no bytes.</summary>
         internal readonly bool ExtentIsEmpty
             => (PositionWord & (KeyIsOverflow ? ObjectLogPositionInfo.kKeyIsExactSizeMask : ObjectLogPositionInfo.kValueIsExactSizeMask)) != 0

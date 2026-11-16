@@ -19,6 +19,9 @@ namespace Tsavorite.core
         {
             freePagePool = new OverflowPool<PageUnit<Empty>>(4, static p => { });
             pageHeaderSize = PageHeader.Size;
+
+            // Superseding a record elides it, or clears its optional fields, in the live page, so a flush must not write a durable record from there.
+            KeepPartialSectorImages();
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -234,8 +237,14 @@ namespace Tsavorite.core
         }
 
         protected override void WriteAsync<TContext>(int flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
-            => WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)GetFileOffsetOfPage(flushPage),
-                    (uint)AlignedPageSizeBytes, callback, asyncResult, device);
+        {
+            // A ReadOnly flush of part of a page may start mid-sector, after records that are already durable.
+            if (asyncResult.partial && asyncResult.flushRequestState == FlushRequestState.ReadOnly)
+                WriteInlinePartialPageForReadOnlyAsync(flushPage, (ulong)GetFileOffsetOfPage(flushPage), callback, asyncResult, device);
+            else
+                WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)GetFileOffsetOfPage(flushPage),
+                        (uint)AlignedPageSizeBytes, callback, asyncResult, device);
+        }
 
         protected override void WriteAsyncToDeviceForSnapshot<TContext>(int startPage, int flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, long fuzzyStartLogicalAddress)

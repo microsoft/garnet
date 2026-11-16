@@ -251,10 +251,9 @@ namespace Tsavorite.core
         /// <remarks>The setter restores the raw <see cref="RecordDataHeader.KeyLength"/> field to
         /// <see cref="ObjectIdMap.ObjectIdSize"/> if a flushed record used those bits for the overflow key's page-count hint. The effective
         /// KeyLength is ObjectIdSize in either state. The restoration uses a local + <see cref="SetDataHeader"/> for atomicity.
-        /// <para>Deliberately leaves ObjectLogPosition alone, unlike the ValueObject setter, which clears it to
-        /// <see cref="ObjectLogPositionInfo.NotSet"/>. The read path assigns this property while materializing an overflow key and then
-        /// reads that word's flag bits to size the value read, so clearing it here would be an intermediate state the rest of the record
-        /// read still depends on. The flush restamps the word for the whole record.</para></remarks>
+        /// <para>Unstamps ObjectLogPosition, since the key has no object-log bytes yet. Unstamping keeps the exact-size flags, which the read
+        /// path, having assigned this property while materializing an overflow key, still uses to size the value read. The flush restamps
+        /// the word for the whole record.</para></remarks>
         public readonly OverflowByteArray KeyOverflow
         {
             get
@@ -1713,9 +1712,8 @@ namespace Tsavorite.core
         /// This record's raw ObjectLogPosition word, including flag bits.
         /// </summary>
         /// <remarks>
-        /// Raw because <see cref="GetObjectLogRecordStartPositionAndLengths"/> masks the flag bits off, and the unstamped
-        /// markers are distinguished by the full word: <see cref="ObjectLogPositionInfo.NotSet"/> is all-ones, flag bits
-        /// included, and zero is the record-initialization value.
+        /// <see cref="ObjectLogPositionInfo.WordIsUnstamped"/> tests it for the unstamped marker, which has every address bit set and leaves
+        /// the flag bits as they were.
         /// </remarks>
         internal readonly ulong RawObjectLogPositionWord
         {

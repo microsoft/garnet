@@ -530,7 +530,7 @@ captured?"
 ### The window
 
 ```
-PREPARE ──► IN_PROGRESS ──► WAIT_INDEX_CHECKPOINT ──► WAIT_FLUSH ──► REST
+PREPARE ──► IN_PROGRESS ──► WAIT_INDEX_CHECKPOINT ──► WAIT_FLUSH ──► PERSISTENCE_CALLBACK ──► REST
             │                                                   │
             │  fuzzy region opens;                              │  snapshot /
             │  (v+1) operations run at full speed               │  fold-over I/O
@@ -542,9 +542,11 @@ Throughout that span, ordinary `(v+1)` traffic — `Delete`, and RMW that finds 
 expired source — supersedes `(v)` records and would, in the absence of a guard,
 immediately dispose them. Disposal is destructive: it runs
 `LogField.ClearObjectIdAndConvertToInline`, which calls `objectIdMap.Free` and
-flips the field to inline **in the live record**. The Snapshot flush resolves the
-record's object id against the **live** map, so once another record reuses that
-slot, the checkpoint serializes an unrelated object.
+flips the field to inline **in the live record**. The Snapshot flush reads the
+live record too: after the disposal it finds an inline field in place of the
+`(v)` value, and a flush that read the object id just before resolves it against
+the **live** map, where another record may already have reused the slot. Either
+way the checkpoint loses the `(v)` value or serializes an unrelated object.
 
 `IsFrozen` exists for exactly this window. `ReleaseSupersededSource`, which every operation that supersedes an in-memory
 record calls after its last callback, defers the release while the record is frozen:
@@ -638,7 +640,7 @@ The two freezes are released by different signals, and that difference matters:
 | Freeze | Released by | Deferred disposal of a deleted source |
 |---|---|---|
 | Flush | `FlushedUntilAddress` passing the record; on a NullDevice main log, `LastIssuedFlushedUntilAddress` | **Marked** (`RecordInfo.DeferredDispose`), and run by the drain on flush completion, or at eviction |
-| Checkpoint | the checkpoint no longer reading the record | **Marked**. On a real main-log device the drain runs it when `FlushedUntilAddress` passes the record; on a NullDevice main log, when the checkpoint ends |
+| Checkpoint | the session's phase leaving `WAIT_FLUSH` (`IsInV1` turns false), after `PERSISTENCE_CALLBACK`'s before-hook has sampled the recovery end | **Marked**. On a real main-log device the drain runs it when `FlushedUntilAddress` passes the record; on a NullDevice main log, when the checkpoint ends |
 
 On a real main-log device, `FlushedUntilAddress` passing a record also ends the
 checkpoint's hold on it. A ReadOnly flush of a page at or above the Snapshot
@@ -703,7 +705,8 @@ the record's value.
 
 Regression coverage for both arms:
 `CheckpointSharedObjectMutationTests.DeleteDuringCheckpointDisposesTheFrozenSourceOnlyOnceItsFlushCompletes`
-pauses at `WAIT_FLUSH` and deletes, asserting the slot survives and is marked, and
+pauses on entry to `WAIT_FLUSH`, while the published phase is still `IN_PROGRESS` or
+`WAIT_INDEX_CHECKPOINT`, and deletes, asserting the slot survives and is marked, and
 that the drain disposes the record once its flush completes;
 `RecordLifecycleTests.CheckpointFrozenDeleteRunsTheDeleteTriggerOnceNoFlushReadsIt`
 asserts the delete trigger runs once, after the flush on a real device and at
@@ -715,14 +718,16 @@ asserts that a CopyUpdate releases such a source's value at once while its
 bytes stay as the flush found them; and
 `FlushBoundarySectorRecoveryTests.SupersedingABoundarySectorRecordKeepsTheFoldOverImage`
 recovers a FoldOver after an RMW, Upsert, or Delete of a record in its last
-sector, with and without the next flush in flight, and
+sector, with and without the next flush in flight, followed by a second flush
+that writes that sector from the image the first one kept, and
 `RecoveredFlushBoundaryTests.FoldOverRecoveryThenPartialFlushKeepsBoundarySectorReadable`
 does the same for the first flush after recovery.
 
-`SpanByteAllocator` still writes that sector again from the live page and reports
-nothing as frozen for flush, so eliding a record there, or a Delete's
-`ClearOptionals`, can still change a completed FoldOver's image. It is not used by
-Garnet; keeping the same partial-sector image there would close it.
+`SpanByteAllocator` reports nothing as frozen for flush, but its ReadOnly flushes
+take the same partial-sector image, so eliding a record in that sector, or a
+Delete's `ClearOptionals` there, does not change a completed FoldOver's image
+either. `InlineFlushBoundarySectorRecoveryTests` covers both, including the first
+flush after recovery.
 
 ## Rules for state-machine task code
 

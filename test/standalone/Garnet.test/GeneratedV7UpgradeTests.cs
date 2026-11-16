@@ -78,12 +78,14 @@ namespace Garnet.test
     ///   dotnet build Garnet.slnx -c Debug
     ///
     ///   # 3. Run it against a scratch directory with the EXACT geometry the tests recover with (TestUtils.lowMemory,
-    ///   #    i.e. 16 KB of log memory over 4 KB pages, plus a 4 MB object-log segment), the storage tier ON, and a
-    ///   #    256-byte inline cutoff so every 510-byte-or-larger component is stored out-of-line:
+    ///   #    i.e. 16 KB of log memory over 4 KB pages, plus a 4 MB object-log segment), the storage tier ON with the log and
+    ///   #    checkpoints in that one directory (as the recovering test server has them), and a 256-byte inline cutoff so every
+    ///   #    510-byte-or-larger component is stored out-of-line:
     ///   cd C:\cv7\main\GarnetServer
-    ///   dotnet run -c Debug -f net10.0 -- --port 7777 -c C:\cv7out -m 16k -p 4096 -s 1g --object-log-segment 4m -i 1m --max-inline-key-size 256 --max-inline-value-size 256
+    ///   dotnet run -c Debug -f net10.0 -- --port 7777 --storage-tier -l C:\cv7out -m 16k -p 4096 -s 1g --object-log-segment 4m -i 1m --max-inline-key-size 256 --max-inline-value-size 256
     ///
-    ///   # 4. Populate it with the shared corpus and SAVE, by running the [Explicit] generator against the running server:
+    ///   # 4. Populate it with the shared corpus, push the corpus's pages to the device, and SAVE, by running the [Explicit]
+    ///   #    generator against the running server:
     ///   $env:GARNET_CV7_GEN_ENDPOINT = "127.0.0.1:7777"
     ///   dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter FullyQualifiedName~GenerateV7Corpus
     ///
@@ -294,7 +296,17 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(config);
             var db = redis.GetDatabase(0);
             V7Corpus.Populate(db, V7Corpus.Build(V7Corpus.Profile.Full));
+
+            // The corpus's records take well under one main-log page, so on their own they stay in memory and the Snapshot writes every
+            // object to its own object log. Small records written after them push the corpus's pages to the device, so the checkpoint's
+            // main-log range holds the corpus and its objects are in the main object log, which is the case an upgrade device is for.
+            for (var i = 0; i < FillerRecordCount; i++)
+                _ = db.StringSet($"filler:{i}", "f");
             _ = db.Execute("SAVE");
         }
+
+        /// <summary>Small records <see cref="GenerateV7Corpus"/> writes after the corpus: about 20 main-log pages at the generator's 4 KB
+        /// page size, well past its 16 KB of log memory.</summary>
+        const int FillerRecordCount = 2000;
     }
 }

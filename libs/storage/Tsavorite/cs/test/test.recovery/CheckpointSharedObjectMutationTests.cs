@@ -746,7 +746,7 @@ namespace Tsavorite.test.recovery
         /// Disposing here would run
         /// <c>LogField.ClearObjectIdAndConvertToInline</c> on the live record: it calls <c>objectIdMap.Free</c> and flips
         /// the field to inline, while the snapshot flush, which writes the live page, resolves the record's object id against
-        /// the live map — so a later record reusing that slot gets serialized in its place.
+        /// the live map, so it loses the (v) value, or serializes a later record that reused the slot in its place.
         /// </para>
         /// <para>
         /// The Delete marks the source instead, and the drain disposes it once FlushedUntilAddress passes it. On this real

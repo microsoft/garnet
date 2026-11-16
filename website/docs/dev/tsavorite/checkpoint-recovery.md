@@ -302,8 +302,8 @@ trivially appendable, which is the basis for the versioning rule below.
 | 7 | `fuzzyRegionStartAddress`, `recoveredTailAddress` | Bounds of the fuzzy region and the snapshot |
 | 8 | fifth address slot | `pageSize` from v8; a duplicate of `recoveredTailAddress` in v7 |
 | 9 | `headAddress`, `beginAddress` | |
-| 10 | `objectLogBeginAddress` | v7 records the lowest object-log segment in use instead |
-| 11 | `hlogEndObjectLogTail`, `snapshotEndObjectLogTail`, `snapshotObjectLogStartAddress` | Object-log tails and the hybrid-log lower bound `L` of snapshot-owned main-log images. v7 records three segment-split position words, `hlogEndObjectLogTail`, `snapshotStartObjectLogTail` and `snapshotEndObjectLogTail`; its ownership range is empty |
+| 10 | `objectLogBeginAddress` | The main object log's `BeginAddress` at `PREPARE`; 0 if the store has no object log or had not yet created it. In v7, the lowest object-log segment then in use |
+| 11 | `hlogEndObjectLogTail`, `snapshotEndObjectLogTail`, `snapshotObjectLogStartAddress` | The main object log's durable end, its `FlushedUntilAddress` at `PERSISTENCE_CALLBACK`, sampled after a Snapshot's `mainLogRecoveryEndAddress` (FoldOver writes 0 there and recovers to `recoveredTailAddress`, so it needs no ordering); the end of a Snapshot checkpoint's own object log, 0 when there is none; and the hybrid-log lower bound `L` of snapshot-owned main-log images. In v7, three object-log positions (with the main object log's tail at the start of `WAIT_FLUSH` between these two), each written as its segment size bits and a segment-split word; its ownership range is empty |
 | 12 | `segmentSize`, `objectLogSegmentSize`, `objectLogPageSize` | v8 only; written by the store, not the host. Recovery fails if any differs from the store's configuration; the object log's memory size is not recorded and may change between runs |
 | 13 | `cookie` | Host-supplied; length, then one line per byte |
 | 14 | `databaseMapping` | Host-supplied; length, then one line per entry |
@@ -340,9 +340,12 @@ checkpoints.
 
 ### Checksum
 
-`Checksum(int cversion)` always covers `guid`, the log addresses, and the object log tail positions,
-xored together. What it does with the host-supplied fields (`cookie`, `databaseMapping`, `swapEpoch`)
-depends on the version being checksummed:
+`ChecksumCore` always covers `guid`, `version`, the log addresses, and the object-log fields, xored
+together. In v8 the three object-log addresses are first folded with FNV-1a, since the main and snapshot
+object-log ends can be equal and would cancel under xor, and the log geometry (`pageSize`, `segmentSize`,
+`objectLogSegmentSize`, `objectLogPageSize`) is folded and xored in as well. v7 xors in its object-log
+segment, its position words, and its fifth address slot as they were written. What it does with the
+host-supplied fields (`cookie`, `databaseMapping`, `swapEpoch`) depends on the version being checksummed:
 
 | Version | Host-supplied fields |
 | --- | --- |

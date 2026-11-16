@@ -137,9 +137,10 @@ namespace Tsavorite.core
         public int MaxInlineValueSize = DefaultMaxInlineValueSize;
 
         /// <summary>
-        /// Number of read buffers for deserializing a downlevel (version 7) checkpoint's object log during recovery. Must be a power of 2.
+        /// Number of 4 MB read buffers a walk over a main-log page's records reads ahead through when it reads their object-log bytes: during
+        /// recovery and scans, and when a downlevel (version 7) checkpoint's object log is deserialized. Must be a power of 2.
         /// </summary>
-        /// <remarks>Only used by <see cref="ObjectAllocator{TStoreFunctions}"/>; a current object log is read through its own pages.</remarks>
+        /// <remarks>Only used by <see cref="ObjectAllocator{TStoreFunctions}"/>.</remarks>
         public int NumberOfDeserializationBuffers = 4;
 
         /// <summary>

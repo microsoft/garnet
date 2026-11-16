@@ -129,7 +129,10 @@ namespace Tsavorite.test.recovery
                     }
                 }
 
-                // The next flush starts in the boundary sector and writes it again.
+                // The next flush starts in the boundary sector and writes it again, and so does the one after it, from the image the first
+                // one kept of it.
+                writeStore.Log.ShiftReadOnlyAddress(writeStore.Log.TailAddress, wait: true);
+                Upsert(writeStore, 3, 8);
                 writeStore.Log.ShiftReadOnlyAddress(writeStore.Log.TailAddress, wait: true);
             }
             finally

@@ -32,7 +32,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Begin deserialization from given stream
         /// </summary>
-        /// <param name="stream">The stream to read from. It may be empty; see <see cref="Deserialize(out T)"/>.</param>
+        /// <param name="stream">The stream to read from.</param>
         void BeginDeserialize(Stream stream);
 
         /// <summary>
@@ -40,15 +40,11 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="obj">The deserialized object</param>
         /// <remarks>
-        /// A serializer is handed back exactly the bytes it wrote for the record. This is enforced: the store bounds each component,
-        /// by an exact byte count where the length is known and by the chunk-framing chain otherwise, so an implementation that reads
-        /// more than it writes sees end-of-stream at its own boundary rather than the next record's bytes.
-        /// <para>The stream may already be at end-of-stream on the first read. That never means "this object serialized to nothing" —
-        /// it means the record itself has no bytes in the object log, either because a flush skipped it or because its only out-of-line
-        /// component is zero length. The store still calls this method for such a record so the serializer can observe that it existed.</para>
-        /// <para>An implementation that reads unconditionally will therefore throw <see cref="System.IO.EndOfStreamException"/> in that
-        /// case, which is a reasonable way to surface it. One that wants to audit these records, or to support a deliberately empty object,
-        /// should test for end-of-stream first and yield an empty object.</para>
+        /// A serializer is handed back exactly the bytes it wrote for the object. The store knows the object's serialized length before
+        /// it reads the object, and the stream reports end-of-stream after that many bytes, so an implementation that reads more than it
+        /// wrote sees end-of-stream at its own boundary rather than another record's bytes.
+        /// <para>The store does not call this method for an object that serialized to no bytes, or for a record with no bytes in the
+        /// object log; it records the value as absent (null) instead, because zero bytes carry no type information.</para>
         /// </remarks>
         void Deserialize(out T obj);
 
