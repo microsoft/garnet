@@ -1362,7 +1362,7 @@ namespace Garnet.server
             // Single probe returns both the command and whether it has subcommands.
             fixed (byte* namePtr = command)
             {
-                var cmd = RespCommandHashLookup.Lookup(namePtr, command.Length, out var hasSubcommands);
+                var cmd = RespCommandHashLookup.Lookup(namePtr, command.Length, out var hasSubcommands, out var exactArgCount);
 
                 if (cmd == RespCommand.NONE)
                 {
@@ -1373,6 +1373,12 @@ namespace Garnet.server
                     }
 
                     // Not a built-in or custom command
+                    return RespCommand.INVALID;
+                }
+
+                // If the command has a known, constant, arity validate it here
+                if (exactArgCount != 255 && count != exactArgCount)
+                {
                     return RespCommand.INVALID;
                 }
 
