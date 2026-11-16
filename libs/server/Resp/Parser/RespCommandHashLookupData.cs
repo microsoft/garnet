@@ -297,7 +297,7 @@ namespace Garnet.server
             Add("TIME", RespCommand.TIME, exactArgCount: 0);
             Add("ROLE", RespCommand.ROLE, exactArgCount: 0);
             Add("SAVE", RespCommand.SAVE, exactArgCount: 0);
-            Add("LASTSAVE", RespCommand.LASTSAVE, exactArgCount: 0);
+            Add("LASTSAVE", RespCommand.LASTSAVE);
             Add("BGSAVE", RespCommand.BGSAVE);
             Add("COMMITAOF", RespCommand.COMMITAOF);
             Add("FLUSHALL", RespCommand.FLUSHALL);

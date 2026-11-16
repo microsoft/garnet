@@ -1380,6 +1380,7 @@ namespace Garnet.server
                 // If the command has a known, constant, arity validate it here
                 if (exactArgCount != 255 && count != exactArgCount)
                 {
+                    specificErrorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs, cmd.ToString()));
                     return RespCommand.INVALID;
                 }
 
