@@ -162,6 +162,9 @@ namespace Garnet.server
             Debug.Assert((context % ContextStep) == 0, $"Context ({context}) not as expected (% 4 == {context % 4}), vector set index is probably corrupted");
         }
 
+        /// <summary>
+        /// Extract the internal id of the start point from the given index.
+        /// </summary>
         public static uint ReadStartPointId(ReadOnlySpan<byte> indexValue)
         {
             Debug.Assert(indexValue.Length == Index.Size, "Index size is incorrect");

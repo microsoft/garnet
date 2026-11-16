@@ -39,6 +39,10 @@ namespace Garnet.server
 
         #region GET
         /// <inheritdoc />
+        public GarnetStatus DIGEST(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
+            => storageSession.DIGEST(key, ref input, ref output, ref stringContext);
+
+        /// <inheritdoc />
         public GarnetStatus GET(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.GET(key, ref input, ref output, ref stringContext);
 
@@ -108,6 +112,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus DEL_ETagConditional(PinnedSpanByte key, ref StringInput input)
             => storageSession.DEL_Conditional(key, ref input, ref stringContext);
+
+        /// <inheritdoc />
+        public GarnetStatus DELETE_Conditional(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
+            => storageSession.DELETE_Conditional(key, ref input, ref output, ref stringContext);
 
         /// <inheritdoc />
         public GarnetStatus SET(PinnedSpanByte key, Memory<byte> value)
@@ -273,6 +281,10 @@ namespace Garnet.server
             => storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
 
         /// <inheritdoc />
+        public GarnetStatus Read_UnifiedStore(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, ref ReadOptions readOptions)
+            => storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref readOptions, ref unifiedContext);
+
+        /// <inheritdoc />
         public void ReadWithPrefetch<TBatch>(ref TBatch batch, long userContext = default)
             where TBatch : IReadArgBatch<FixedSpanByteKey, StringInput, StringOutput>, allows ref struct
             => storageSession.ReadWithPrefetch(ref batch, ref stringContext, userContext);
@@ -417,6 +429,10 @@ namespace Garnet.server
         => storageSession.VectorSetImport(key, termType, id, value, out result, out errorMsg);
 
         /// <inheritdoc />
+        public GarnetStatus VectorSetVerifyImport(PinnedSpanByte key, int taskIndex, int taskCount, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        => storageSession.VectorSetVerifyImport(key, taskIndex, taskCount, out result, out errorMsg);
+
+        /// <inheritdoc />
         public GarnetStatus VectorSetFinishImport(PinnedSpanByte key, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         => storageSession.VectorSetFinishImport(key, out result, out errorMsg);
 
@@ -453,7 +469,7 @@ namespace Garnet.server
         => storageSession.VectorSetDimensions(key, out dimensions, out importPending);
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size, out bool importPending)
+        public GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size, out VectorSetImportState importPending)
         => storageSession.VectorSetInfo(key, out quantType, out distanceMetricType, out vectorDimensions, out reducedDimensions, out buildExplorationFactor, out numberOfLinks, out size, out importPending);
 
         /// <inheritdoc/>

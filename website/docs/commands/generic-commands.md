@@ -149,6 +149,27 @@ Integer reply: the number of keys that exist from those specified as arguments.
 
 ---
 
+### TOUCH
+
+#### Syntax
+
+```bash
+    TOUCH key [key ...]
+```
+
+Accesses the specified keys without returning their values. Missing and expired keys are ignored.
+Each occurrence of an existing key is counted, including duplicates. Works with strings and collection values
+without changing their values or expiration times.
+
+Garnet does not track per-key last-access times or implement access-based LRU/LFU eviction. TOUCH uses the
+normal read path, but does not update an idle-time or access-frequency counter.
+
+#### Resp Reply
+
+Integer reply: the number of specified keys that exist.
+
+---
+
 ### EXPIRE
 
 #### Syntax

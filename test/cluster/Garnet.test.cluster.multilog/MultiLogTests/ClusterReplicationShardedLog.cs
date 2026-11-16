@@ -168,7 +168,7 @@ namespace Garnet.test.cluster.MultiLogTests
             }
 
             var primaryPInfo = context.clusterTestUtils.GetPersistenceInfo(primaryNodeIndex, context.logger);
-            var replicaPInfo = context.clusterTestUtils.GetPersistenceInfo(primaryNodeIndex, context.logger);
+            var replicaPInfo = context.clusterTestUtils.GetPersistenceInfo(replicaNodeIndex, context.logger);
             ClassicAssert.AreEqual(primaryPInfo.TailAddress, replicaPInfo.TailAddress);
             var primaryReplOffset = context.clusterTestUtils.GetReplicationOffset(0);
             var replicaReplOffset = context.clusterTestUtils.GetReplicationOffset(1);

@@ -405,14 +405,13 @@ namespace Garnet.cluster
             }
 
             var data = parseState.GetArgSliceByRef(3).ReadOnlySpan;
-
-            var fileToken = new Guid(fileTokenBytes);
             var ckptFileType = (CheckpointFileType)ckptFileTypeInt;
 
-            clusterProvider.replicationManager.recvCheckpointHandler.ProcessSnapshotData(fileToken, ckptFileType, startAddress, data);
+            clusterProvider.replicationManager.recvCheckpointHandler.ProcessSnapshotData(new Guid(fileTokenBytes), ckptFileType, startAddress, data);
+
+            // Chunks acknowledge acceptance; the empty end marker waits for all writes and closes the sink.
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
-
             return true;
         }
 

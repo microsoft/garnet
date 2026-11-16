@@ -206,9 +206,17 @@ namespace Garnet.client
         /// <summary>
         /// Connect to server
         /// </summary>
-        public async Task ConnectAsync(CancellationToken token = default)
+        public Task ConnectAsync(CancellationToken token = default)
+            => ConnectAsync(timeoutMilliseconds, token);
+
+        /// <summary>
+        /// Connect to server
+        /// </summary>
+        /// <param name="connectTimeoutMilliseconds">Timeout for establishing the socket connection, or 0 for no timeout</param>
+        /// <param name="token">Token used to cancel the connection</param>
+        public async Task ConnectAsync(int connectTimeoutMilliseconds, CancellationToken token = default)
         {
-            socket = await ConnectSendSocketAsync(timeoutMilliseconds, token).ConfigureAwait(false);
+            socket = await ConnectSendSocketAsync(connectTimeoutMilliseconds, token).ConfigureAwait(false);
 #if DEBUG
             ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.GarnetClient_Connect_Pause_Before_Publish);
 #endif
@@ -288,7 +296,15 @@ namespace Garnet.client
         /// <summary>
         /// Reconnect to server
         /// </summary>
-        public async Task ReconnectAsync(CancellationToken token = default)
+        public Task ReconnectAsync(CancellationToken token = default)
+            => ReconnectAsync(timeoutMilliseconds, token);
+
+        /// <summary>
+        /// Reconnect to server
+        /// </summary>
+        /// <param name="connectTimeoutMilliseconds">Timeout for establishing the socket connection, or 0 for no timeout</param>
+        /// <param name="token">Token used to cancel the connection</param>
+        public async Task ReconnectAsync(int connectTimeoutMilliseconds, CancellationToken token = default)
         {
             if (Disposed) throw disposeException;
             try
@@ -298,7 +314,7 @@ namespace Garnet.client
                 tcsOffset = 0;
             }
             catch { }
-            await ConnectAsync(token).ConfigureAwait(false);
+            await ConnectAsync(connectTimeoutMilliseconds, token).ConfigureAwait(false);
         }
 
         /// <summary>

@@ -279,6 +279,10 @@ namespace Garnet.cluster
                         replicationInfo.Add(new($"slave{i}", replicaInfo[i].ToString()));
                 }
             }
+
+            // Format last-successful phase samples only for startup-enabled managers, on INFO rather than chunks.
+            if (replicationManager.BenchmarkTiming != null)
+                replicationInfo.AddRange(replicationManager.BenchmarkTiming.GetMetrics());
             return [.. replicationInfo];
         }
 
