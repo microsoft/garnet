@@ -211,13 +211,18 @@ namespace Tsavorite.core
         internal override void ClearPage(long page, int offset = 0)
         {
             var index = page % BufferSize;
+            base.ClearPage(index, offset);
 
             // Offset is nonzero only to zero out the page past offset while keeping the part of the page below it: for RecoveryReset (offset is tailAddress),
             // and for a snapshot recovery read that keeps the boundary page's main-log records below offset. In both cases, keep the objectPage information
-            // for the kept part of the page.
+            // and the header for the kept part of the page. Otherwise the page may be reused without being allocated again (FreePage without a size tracker),
+            // so give it a fresh header, as allocating it does: a zeroed header holds a lowest object-log position of 0 rather than NotSet, which the page's
+            // first flush would not replace.
             if (offset == 0)
+            {
                 objectPages[index].Clear();
-            base.ClearPage(index, offset);
+                PageHeader.Initialize(pagePointers[index]);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -740,7 +745,9 @@ namespace Tsavorite.core
             // Write the object log position into the header if this is the first record on the page. If there are no records on the page, we will
             // call through to WriteInlinePageAsync so we want the header updated regardless of whether we have objects (this may be a page with no
             // objects after some pages with objects, and so we want Truncate() to know it has to preserve those object log segments).
-            if (isFirstRecordOnPage)
+            // A snapshot flush leaves the header alone: it writes the page's objects to the snapshot object log, so the main object log's tail says
+            // nothing about where they will be in the main object log. The page's first main-log flush, or recovery's flush of the page, sets it.
+            if (isFirstRecordOnPage && asyncResult.flushRequestState != FlushRequestState.Snapshot)
                 ((PageHeader*)logPagePointer)->SetLowestObjectLogPosition(objectLogTail);
 
             // A ReadOnly flush of a page whose records are entirely inline (no Overflow keys/values and no Object values, i.e. the page's
