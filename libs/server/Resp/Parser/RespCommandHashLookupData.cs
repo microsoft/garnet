@@ -81,6 +81,7 @@ namespace Garnet.server
 
             // Key commands
             Add("EXISTS", RespCommand.EXISTS);
+            Add("TOUCH", RespCommand.TOUCH);
             Add("TTL", RespCommand.TTL, exactArgCount: 1);
             Add("PTTL", RespCommand.PTTL, exactArgCount: 1);
             Add("EXPIRE", RespCommand.EXPIRE);

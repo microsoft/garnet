@@ -322,6 +322,7 @@ namespace CommandInfoUpdater
             new("SINTERSTORE", RespCommand.SINTERSTORE, StoreType.Object),
             new("SWAPDB", RespCommand.SWAPDB),
             new("TIME", RespCommand.TIME),
+            new("TOUCH", RespCommand.TOUCH, StoreType.All),
             new("TTL", RespCommand.TTL, StoreType.All),
             new("TYPE", RespCommand.TYPE, StoreType.All),
             new("UNLINK", RespCommand.UNLINK, StoreType.All),
