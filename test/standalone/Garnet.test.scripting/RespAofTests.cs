@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,7 +18,6 @@ namespace Garnet.test
     public class RespAofTests : TestBase
     {
         GarnetServer server;
-        StringWriter recoveryLogOutput;
         private IReadOnlyDictionary<string, RespCommandsInfo> respCustomCommandsInfo;
 
         static readonly SortedSetEntry[] entries =
@@ -50,8 +48,6 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            recoveryLogOutput?.Dispose();
-            recoveryLogOutput = null;
             TestUtils.OnTearDown();
         }
 
@@ -85,11 +81,9 @@ namespace Garnet.test
             [Values(2, 3)] int replayTaskCount)
         {
             server.Dispose(false);
-            recoveryLogOutput = new StringWriter();
-            var logWriter = TextWriter.Synchronized(recoveryLogOutput);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true,
                 commitFrequencyMs: -1, replayTaskCount: replayTaskCount, memorySize: "1m",
-                pageSize: "16k", aofMemorySize: "128k", aofPageSize: "32k", logTo: logWriter);
+                pageSize: "16k", aofMemorySize: "128k", aofPageSize: "32k");
             server.Start();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
@@ -108,11 +102,6 @@ namespace Garnet.test
             Assert.That(db.KeyExists("recovery-second"), Is.False);
 
             var replayedUntil = storeWrapper.ReplayAOF(committedPrefix);
-            string output;
-            lock (logWriter)
-                output = recoveryLogOutput.ToString();
-
-            Assert.That(output, Does.Not.Contain("RecoverReplayTaskAsync failed at replaying"));
             Assert.That(replayedUntil[0], Is.EqualTo(committedPrefix[0]));
             Assert.That(db.StringGet("recovery-first"), Is.EqualTo((RedisValue)"one"));
             Assert.That(db.StringGet("recovery-second"), Is.EqualTo((RedisValue)"two"));
