@@ -106,6 +106,84 @@ namespace Tsavorite.test.LogRecordTests
         DiskLogRecord DeserializeRecord(PinnedSpanByte record) =>
             DiskLogRecord.Deserialize(record, null, objectIdMap, default(StoreFunctions<SpanByteComparer, SpanByteRecordTriggers>));
 
+        [TestCase(false, 0, 0, false)]
+        [TestCase(true, 0, 7, true)]
+        [TestCase(false, 1, 1, true)]
+        [TestCase(true, 1, 7, true)]
+        [TestCase(false, 2, 7, true)]
+        [TestCase(true, 2, 0, true)]
+        [Category(LogRecordCategory)]
+        public void KeyScanSnapshotOwnsKeysAndMetadataWithoutValues(bool overflowKey, int valueStyle, int namespaceLength, bool tombstone)
+        {
+            _ = CreateSerializedRecord(256, keyLength: 8, valueLength: 128);
+            var source = new LogRecord(nativePointer, objectIdMap);
+            var header = source.DataHeader;
+            header.SetHasETag();
+            header.SetHasExpiration();
+            header.FillerWords = 2;
+            if (namespaceLength != 0)
+                header.SetNamespaceByteRaw(namespaceLength == 1 ? (byte)5 : (byte)(0x80 | namespaceLength));
+            if (overflowKey)
+            {
+                header.SetKeyIsOverflow();
+                header.KeyLength = ObjectIdMap.ObjectIdSize;
+            }
+            if (valueStyle != 0)
+            {
+                if (valueStyle == 1)
+                    header.SetValueIsOverflow();
+                else
+                    header.SetValueIsObject();
+                header.ValueLength = ObjectIdMap.ObjectIdSize;
+            }
+            source.SetDataHeader(header);
+            if (tombstone)
+                source.InfoRef.SetTombstone();
+            if (overflowKey)
+                source.KeyOverflow = new OverflowByteArray(2048, 0, 0, zeroInit: true);
+            if (valueStyle == 1)
+                source.ValueOverflow = new OverflowByteArray(4096, 0, 0, zeroInit: true);
+            else if (valueStyle == 2)
+            {
+                var (_, address) = header.GetValueFieldInfo(nativePointer);
+                *(int*)address = ObjectIdMap.InvalidObjectId;
+                Assert.That(source.TrySetValueObject(new TestObjectValue { value = 42 }), Is.True);
+            }
+            Assert.That(source.TrySetETag(initialETag), Is.True);
+            Assert.That(source.TrySetExpiration(initialExpiration), Is.True);
+            var expectedKey = source.Key.ToArray();
+            var expectedNamespace = source.HasNamespace ? source.NamespaceBytes.ToArray() : [];
+            var before = source.RecordSpan.ToArray();
+            var pool = new SectorAlignedBufferPool(1, 512);
+            var transientMap = new ObjectIdMap();
+            SectorAlignedMemory scanBuffer = null;
+            try
+            {
+                using var snapshot = DiskLogRecord.CopyKeyForScan(in source, pool, ref scanBuffer, transientMap);
+                Assert.That(source.RecordSpan.ToArray(), Is.EqualTo(before));
+                Assert.That(snapshot.ActualSize, Is.LessThan(source.ActualSize));
+                Assert.That(snapshot.ValueSpan.Length, Is.Zero);
+                Assert.That(snapshot.DataHeader.RecordHasObjects, Is.EqualTo(overflowKey));
+                source.Dispose();
+                new Span<byte>((void*)nativePointer, 256).Fill(0xCC);
+
+                Assert.That(snapshot.Key.ToArray(), Is.EqualTo(expectedKey));
+                Assert.That(snapshot.HasNamespace, Is.EqualTo(namespaceLength != 0));
+                if (snapshot.HasNamespace)
+                    Assert.That(snapshot.NamespaceBytes.ToArray(), Is.EqualTo(expectedNamespace));
+                Assert.That(snapshot.RecordType, Is.EqualTo(1));
+                Assert.That(snapshot.Info.Tombstone, Is.EqualTo(tombstone));
+                Assert.That(snapshot.ETag, Is.EqualTo(initialETag));
+                Assert.That(snapshot.Expiration, Is.EqualTo(initialExpiration));
+            }
+            finally
+            {
+                scanBuffer?.Return();
+                transientMap.Clear();
+                pool.Free();
+            }
+        }
+
         [Test]
         [Category(LogRecordCategory)]
         public void DeserializeRejectsTruncatedFixedHeaders()
