@@ -26,7 +26,9 @@ namespace Garnet.cluster
                 SetMigrateHeader(gcs);
 
             // Read the value for the key. This will populate output with the entire serialized record.
-            var storeStatus = localServerSession.VectorBasicContext.Read(new VectorElementKey(namespaceBytes.ReadOnlySpan, key.ReadOnlySpan), ref input, ref output);
+            // Migrated elements are deleted from this node afterwards, so do not copy them to the log tail.
+            var readOptions = new ReadOptions { CopyOptions = ReadCopyOptions.None };
+            var storeStatus = localServerSession.VectorBasicContext.Read(new VectorElementKey(namespaceBytes.ReadOnlySpan, key.ReadOnlySpan), ref input, ref output, ref readOptions);
 
             if (storeStatus.IsPending)
             {
@@ -97,7 +99,9 @@ namespace Garnet.cluster
             try
             {
                 // Pending reads complete synchronously before this borrowed buffer can be sent or recycled.
-                status = localServerSession.BasicGarnetApi.Read_UnifiedStore(key, ref input, ref output);
+                // Migration deletes the source records, so reads must not copy them to the log tail or read cache.
+                var readOptions = new ReadOptions { CopyOptions = ReadCopyOptions.None };
+                status = localServerSession.BasicGarnetApi.Read_UnifiedStore(key, ref input, ref output, ref readOptions);
                 if (status != GarnetStatus.OK)
                     return new(true);
 
