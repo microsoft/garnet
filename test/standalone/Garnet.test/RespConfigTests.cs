@@ -57,6 +57,84 @@ namespace Garnet.test
             TestUtils.OnTearDown();
         }
 
+        [TestCase(false)]
+        [TestCase(true)]
+        public void BenchmarkTimingIsReadOnlyConfiguration(bool enabled)
+        {
+            server.Dispose();
+            server = new GarnetServer(new GarnetServerOptions
+            {
+                EndPoints = [TestUtils.EndPoint],
+                LogMemorySize = "16m",
+                PageSize = "1m",
+                IndexMemorySize = "1m",
+                CheckpointDir = TestUtils.MethodTestDir,
+                ReplicaEnableBenchmarkTiming = enabled
+            });
+            server.Start();
+            const string name = "repl-enable-benchmark-timing";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var before = (string[])db.Execute("CONFIG", "GET", name);
+            Assert.That(before, Is.EqualTo([name, enabled ? "yes" : "no"]));
+            Assert.That((string[])db.Execute("CONFIG", "GET", "*"), Does.Contain(name));
+            Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", name, enabled ? "no" : "yes"));
+            Assert.That((string[])db.Execute("CONFIG", "GET", name), Is.EqualTo(before));
+            Assert.That(server.Provider.StoreWrapper.serverOptions.ReplicaEnableBenchmarkTiming, Is.EqualTo(enabled));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void ConcurrentCheckpointWritesAreReadOnlyConfiguration(bool concurrently)
+        {
+            if (concurrently)
+            {
+                server.Dispose();
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                    replicaDiskBasedSyncWriteBuffersConcurrently: true);
+                server.Start();
+            }
+            const string name = "repl-disk-based-sync-write-buffers-concurrently";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var before = (string[])db.Execute("CONFIG", "GET", name);
+            Assert.That(before, Is.EqualTo([name, concurrently ? "yes" : "no"]));
+            var all = (string[])db.Execute("CONFIG", "GET", "*");
+            Assert.That(all, Does.Contain(name));
+            Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", name, concurrently ? "no" : "yes"));
+            Assert.That((string[])db.Execute("CONFIG", "GET", name), Is.EqualTo(before));
+        }
+
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(8)]
+        public void CheckpointWriteBufferCountIsReadOnlyConfiguration(int writeBuffers)
+        {
+            server.Dispose();
+            server = new GarnetServer(new GarnetServerOptions
+            {
+                EndPoints = [TestUtils.EndPoint],
+                LogMemorySize = "16m",
+                PageSize = "1m",
+                IndexMemorySize = "1m",
+                CheckpointDir = TestUtils.MethodTestDir,
+                ReplicaDiskBasedSyncWriteBuffers = writeBuffers
+            });
+            server.Start();
+            const string name = "repl-disk-based-sync-write-buffers";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var before = (string[])db.Execute("CONFIG", "GET", name);
+            Assert.That(before, Is.EqualTo([name, writeBuffers.ToString()]));
+            var all = (string[])db.Execute("CONFIG", "GET", "*");
+            var index = Array.IndexOf(all, name);
+            Assert.That(index, Is.GreaterThanOrEqualTo(0));
+            Assert.That(all[index + 1], Is.EqualTo(writeBuffers.ToString()));
+            Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", name, writeBuffers == 0 ? "1" : "0"));
+            Assert.That((string[])db.Execute("CONFIG", "GET", name), Is.EqualTo(before));
+            Assert.That(server.Provider.StoreWrapper.serverOptions.ReplicaDiskBasedSyncWriteBuffers, Is.EqualTo(writeBuffers));
+        }
+
         /// <summary>
         /// This test verifies that dynamically changing the memory size configuration using CONFIG SET memory
         /// incurs the expected changes in Garnet server metrics, as well as verifies error handling for incorrect inputs.
@@ -1025,6 +1103,66 @@ namespace Garnet.test
             ClassicAssert.IsFalse(runtimeConfig.TrySet(ServerConfigType.COMPACTION_TYPE, "999", out error));
             ClassicAssert.AreEqual("ERR Invalid value for 'compaction-type': '999'.", error);
             ClassicAssert.AreEqual(LogCompactionType.Shift, runtimeConfig.GetEnum<LogCompactionType>(ServerConfigType.COMPACTION_TYPE));
+        }
+
+        [Test]
+        public void ConfigGetSetCheckpointTransferSettings()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            Assert.That(db.Execute("CONFIG", "SET", "repl-disk-based-sync-chunk-size", "17m").ToString(), Is.EqualTo("OK"));
+            Assert.That(db.Execute("CONFIG", "SET", "repl-disk-based-sync-pipeline-depth", "3").ToString(), Is.EqualTo("OK"));
+            var chunk = (RedisResult[])db.Execute("CONFIG", "GET", "repl-disk-based-sync-chunk-size");
+            var depth = (RedisResult[])db.Execute("CONFIG", "GET", "repl-disk-based-sync-pipeline-depth");
+            Assert.That(chunk[1].ToString(), Is.EqualTo((16 << 20).ToString()));
+            Assert.That(depth[1].ToString(), Is.EqualTo("3"));
+            var all = (RedisResult[])db.Execute("CONFIG", "GET", "*");
+            Assert.That(all.Select(value => value.ToString()), Does.Contain("repl-disk-based-sync-chunk-size"));
+            Assert.That(all.Select(value => value.ToString()), Does.Contain("repl-disk-based-sync-pipeline-depth"));
+            var exception = Assert.Throws<RedisServerException>(() =>
+                db.Execute("CONFIG", "SET", "repl-disk-based-sync-pipeline-depth", "64"));
+            Assert.That(exception.Message, Does.Contain("512"));
+            depth = (RedisResult[])db.Execute("CONFIG", "GET", "repl-disk-based-sync-pipeline-depth");
+            Assert.That(depth[1].ToString(), Is.EqualTo("3"), "Rejected settings must remain unchanged");
+        }
+
+        [TestCase("repl-disk-based-sync-chunk-size", "511")]
+        [TestCase("repl-disk-based-sync-chunk-size", "513m")]
+        [TestCase("repl-disk-based-sync-chunk-size", "4mbjunk")]
+        [TestCase("repl-disk-based-sync-pipeline-depth", "0")]
+        [TestCase("repl-disk-based-sync-pipeline-depth", "65")]
+        public void InvalidRuntimeCheckpointSettingsAreRejected(string name, string value)
+        {
+            Assert.That(RuntimeServerConfig.TryGetType(System.Text.Encoding.ASCII.GetBytes(name), out var type), Is.True);
+            var runtimeConfig = new RuntimeServerConfig(new GarnetServerOptions());
+            var original = runtimeConfig.GetReplicaDiskBasedSyncSettings();
+            Assert.That(runtimeConfig.TrySet(type, value, out var error), Is.False);
+            Assert.That(error, Does.StartWith("ERR "));
+            Assert.That(runtimeConfig.GetReplicaDiskBasedSyncSettings(), Is.EqualTo(original));
+        }
+
+        [Test]
+        public void RuntimeCheckpointSettingsAreCapturedAsAValidPair()
+        {
+            var runtimeConfig = new RuntimeServerConfig(new GarnetServerOptions());
+            Parallel.For(0, 2000, i =>
+            {
+                _ = runtimeConfig.TrySet(ServerConfigType.REPL_DISK_BASED_SYNC_CHUNK_SIZE, (i % 2 == 0 ? "8m" : "16m"), out _);
+                _ = runtimeConfig.TrySet(ServerConfigType.REPL_DISK_BASED_SYNC_PIPELINE_DEPTH, (i % 2 == 0 ? "32" : "64"), out _);
+                var settings = runtimeConfig.GetReplicaDiskBasedSyncSettings();
+                Assert.That((long)settings.ChunkSize * settings.PipelineDepth,
+                    Is.LessThanOrEqualTo(GarnetServerOptions.ReplicaDiskBasedSyncOutstandingPayloadBytesMax));
+            });
+        }
+
+        [Test]
+        public void RuntimeCheckpointChunkRespectsTheConfiguredDeviceSector()
+        {
+            var runtimeConfig = new RuntimeServerConfig(new GarnetServerOptions { ReplicaDiskBasedSyncSectorSize = 4096 });
+            var original = runtimeConfig.GetReplicaDiskBasedSyncSettings().ChunkSize;
+            Assert.That(runtimeConfig.TrySet(ServerConfigType.REPL_DISK_BASED_SYNC_CHUNK_SIZE, "512", out var error), Is.False);
+            Assert.That(error, Does.Contain("4096"));
+            Assert.That(runtimeConfig.GetReplicaDiskBasedSyncSettings().ChunkSize, Is.EqualTo(original), "A rejected chunk size must leave the setting unchanged");
         }
 
         /// <summary>

@@ -131,6 +131,35 @@ namespace Garnet.test
         }
 
         [Test]
+        public void RejectedSwapDbLeavesTheDatabasesUntouched()
+        {
+            using var first = TestUtils.CreateRequest();
+            using var second = TestUtils.CreateRequest();
+
+            TestUtils.AssertEqualUpToExpectedLength("+OK\r\n", first.SendCommand("SET k in-db0"));
+            TestUtils.AssertEqualUpToExpectedLength("+OK\r\n", first.SendCommand("SELECT 1"));
+            TestUtils.AssertEqualUpToExpectedLength("+OK\r\n", first.SendCommand("SET k in-db1"));
+            TestUtils.AssertEqualUpToExpectedLength("+OK\r\n", first.SendCommand("SELECT 0"));
+            TestUtils.AssertEqualUpToExpectedLength("+PONG\r\n", second.SendCommand("PING"));
+
+            // Running a script gives the session a script processor that a swap would otherwise rebind
+            const string luaGet = "return redis.call('GET', KEYS[1])";
+            var script = Encoding.ASCII.GetBytes($"*4\r\n$4\r\nEVAL\r\n${luaGet.Length}\r\n{luaGet}\r\n$1\r\n1\r\n$1\r\nk\r\n");
+            const string inDb0 = "$6\r\nin-db0\r\n";
+            const string inDb1 = "$6\r\nin-db1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(inDb0, first.SendCommand(script));
+
+            var rejected = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_SWAPDB_UNSUPPORTED)}\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(rejected, first.SendCommand("SWAPDB 0 1"));
+
+            TestUtils.AssertEqualUpToExpectedLength(inDb0, first.SendCommand("GET k"));
+            TestUtils.AssertEqualUpToExpectedLength(inDb0, first.SendCommand(script));
+            TestUtils.AssertEqualUpToExpectedLength(inDb0, second.SendCommand("GET k"));
+            TestUtils.AssertEqualUpToExpectedLength("+OK\r\n", second.SendCommand("SELECT 1"));
+            TestUtils.AssertEqualUpToExpectedLength(inDb1, second.SendCommand("GET k"));
+        }
+
+        [Test]
         public void MultiDatabaseDbSizeTestSE()
         {
             var dbIds = new[] { 0, 1, 13 };

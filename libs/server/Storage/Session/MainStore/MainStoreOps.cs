@@ -302,8 +302,9 @@ namespace Garnet.server
                 StopPendingMetrics();
             }
 
-            // Deletions in RMW are done by expiring the record, hence we use expiration as the indicator of success.
-            if (status.IsExpired)
+            // Deletions in RMW are done by expiring the record, so expiration of a record that was found indicates success;
+            // a record that had already expired was not found.
+            if (status.Found && status.IsExpired)
             {
                 incr_session_found();
                 return GarnetStatus.OK;
@@ -315,6 +316,20 @@ namespace Garnet.server
 
                 return GarnetStatus.NOTFOUND;
             }
+        }
+
+        public GarnetStatus DIGEST<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            Debug.Assert(input.header.cmd == RespCommand.DIGEST);
+            return GET(key, ref input, ref output, ref context);
+        }
+
+        public GarnetStatus DELETE_Conditional<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            Debug.Assert(input.header.cmd is RespCommand.DELIFEQ or RespCommand.DELEX);
+            return SET_Conditional(key, ref input, ref output, ref context);
         }
 
         public unsafe GarnetStatus SET_Conditional<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)

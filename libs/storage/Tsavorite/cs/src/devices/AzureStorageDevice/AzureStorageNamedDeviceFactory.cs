@@ -1,7 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Azure.Storage.Blobs.Models;
 using Microsoft.Extensions.Logging;
@@ -61,6 +63,17 @@ namespace Tsavorite.devices
         {
             return new AzureStorageDevice(fileInfo.fileName, pageBlobDirectory.GetSubDirectory(fileInfo.directoryName), null, false, false, logger);
         }
+
+        /// <inheritdoc />
+        public Stream OpenRead(FileDescriptor fileInfo)
+            => pageBlobDirectory.GetSubDirectory(fileInfo.directoryName)
+                .GetPageBlobClient(fileInfo.fileName + ".0").Default
+                .OpenRead(new BlobOpenReadOptions(allowModifications: false) { BufferSize = 4096 });
+
+        /// <inheritdoc />
+        public bool IsFileNotFound(Exception exception)
+            => exception is Azure.RequestFailedException { Status: 404 } error &&
+                (error.ErrorCode == BlobErrorCode.BlobNotFound || error.ErrorCode == BlobErrorCode.ContainerNotFound);
 
         /// <inheritdoc />
         public IEnumerable<FileDescriptor> ListContents(string path)

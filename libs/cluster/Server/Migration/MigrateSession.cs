@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Frozen;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Text;
@@ -48,6 +49,14 @@ namespace Garnet.cluster
 
         readonly HashSet<int> _sslots;
         readonly CancellationTokenSource _cts = new();
+
+        /// <summary>
+        /// References to <see cref="migrateOperation"/> and <see cref="_cts"/>: one for the session's place in the
+        /// task store, released by <see cref="Dispose"/>, one for the migration task started on it, and one for each
+        /// scan task that one starts. The last release disposes them, so a client is never disposed while a task is
+        /// writing through it.
+        /// </summary>
+        int references = 1;
 
         HashSet<ulong> _namespaces;
         FrozenDictionary<ulong, ulong> _namespaceMap;
@@ -178,16 +187,43 @@ namespace Garnet.cluster
             => new(clusterProvider.storeWrapper);
 
         /// <summary>
-        /// Dispose
+        /// Ends the migration: cancels it and closes its connections, so a task waiting on a send or a reply fails
+        /// fast. The clients expect a single user, so they are disposed by the last task to release them rather than
+        /// here, where a task may still be writing through one.
         /// </summary>
         public void Dispose()
         {
             if (!_disposed.TryWriteLock()) return;
-            _cts?.Cancel();
-            _cts?.Dispose();
+            _cts.Cancel();
+
+            for (var i = 0; i < migrateOperation.Length; i++)
+                migrateOperation[i].Client.CloseConnection();
+
+            ReleaseReference();
+        }
+
+        /// <summary>
+        /// Takes another reference while one is held, so the session is live.
+        /// </summary>
+        internal void AddReference()
+        {
+            var taken = Interlocked.Increment(ref references);
+            Debug.Assert(taken > 1, "MigrateSession reference taken without one held");
+        }
+
+        /// <summary>
+        /// Releases a reference, and disposes the migration operations if it is the last.
+        /// </summary>
+        void ReleaseReference()
+        {
+            var remaining = Interlocked.Decrement(ref references);
+            Debug.Assert(remaining >= 0, "MigrateSession reference released more often than taken");
+            if (remaining > 0)
+                return;
 
             for (var i = 0; i < migrateOperation.Length; i++)
                 migrateOperation[i].Dispose();
+            _cts.Dispose();
         }
 
         private async ValueTask<bool> CheckConnectionAsync(GarnetClientSession client)

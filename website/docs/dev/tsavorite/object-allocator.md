@@ -34,4 +34,12 @@ When we serialize a LogRecord to disk, as we write the object log file we also m
 - We reuse the ObjectId space for the length of that field. For Value objects, we also use the top byte of the `ObjectLogPosition` field, giving a total of 40 bits or 1 TB of address for a single object, and 72 PB for the entire object log.
 
 ### ObjectIdMap Remapping
-The ObjectAllocator carries a second ObjectIdMap, a transient one intended for IO and iterator and pending operations. (These are the same scenarios that embed a LogRecord into a DiskLogRecord.) In these cases we remap the ObjectIds in the temporary image to use the TransientObjectIdMap, so pages can be evicted and their ObjectIdMaps reused.
+The ObjectAllocator carries a transient `ObjectIdMap` for pending IO and buffered copies of resident records. These temporary images embed a `LogRecord` in a `DiskLogRecord` and remap its object IDs, so resident pages can be evicted without invalidating the temporary slots. A buffered resident record borrows its heap objects: cleanup releases the remapped slots but does not dispose the live objects.
+
+Disk scans instead use one iterator-owned object map, shared by their `ObjectScanFrame` instances. Reading a page deserializes objects before and after the current cursor batch, including records the iterator never visits. Each frame tracks its successfully initialized extent and releases only its own objects and overflow slots before reuse and after outstanding reads drain on iterator disposal. Frame cleanup does not clear the shared map: another frame can still be reading or holding objects, and released slots are reusable by either frame. The iterator clears the map after all reads and frame cleanup finish.
+
+Visited records release their slots when iteration advances; unvisited records receive disk-read initialization and the same disk-record disposal trigger during frame cleanup. Read-ahead frames are cleaned even if the scan stops before reaching them.
+
+When a scan record is transferred to a pending operation, its inline bytes are copied and its heap references are remapped into the allocator's transient map. The original frame slots are released without disposing the transferred objects, so frame reuse cannot invalidate the pending operation.
+
+Only deserialization into resident recovery pages increases the log's heap-size tracker. Temporary scan frames do not affect resident heap accounting or `Log.CurrentHeapSizeBytes` in Garnet's `INFO STORE`.
