@@ -123,6 +123,24 @@ namespace Garnet.server
         private readonly string[] respFormatFlags;
         private readonly string[] respFormatAclCategories;
 
+        internal RespCommandsInfo WithName(string name) => new()
+        {
+            Command = Command,
+            Name = name,
+            IsInternal = IsInternal,
+            Arity = Arity,
+            Flags = Flags,
+            FirstKey = FirstKey,
+            LastKey = LastKey,
+            Step = Step,
+            AclCategories = AclCategories,
+            Tips = Tips,
+            KeySpecifications = KeySpecifications,
+            StoreType = StoreType,
+            SubCommands = SubCommands,
+            Parent = Parent,
+        };
+
         private static bool TryInitialize(ILogger logger)
         {
             lock (IsInitializedLock)
