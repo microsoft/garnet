@@ -48,6 +48,9 @@ namespace Garnet.server
             Add("GET", RespCommand.GET, exactArgCount: 1);
             Add("SET", RespCommand.SET);
             Add("DEL", RespCommand.DEL);
+            Add("DELIFEQ", RespCommand.DELIFEQ);
+            Add("DELEX", RespCommand.DELEX);
+            Add("DIGEST", RespCommand.DIGEST, exactArgCount: 1);
             Add("INCR", RespCommand.INCR, exactArgCount: 1);
             Add("DECR", RespCommand.DECR, exactArgCount: 1);
             Add("INCRBY", RespCommand.INCRBY, exactArgCount: 2);
@@ -56,6 +59,14 @@ namespace Garnet.server
             Add("APPEND", RespCommand.APPEND, exactArgCount: 2);
             Add("GETSET", RespCommand.GETSET, exactArgCount: 2);
             Add("GETDEL", RespCommand.GETDEL, exactArgCount: 1);
+            Add("INCR", RespCommand.INCR);
+            Add("DECR", RespCommand.DECR);
+            Add("INCRBY", RespCommand.INCRBY);
+            Add("DECRBY", RespCommand.DECRBY);
+            Add("INCRBYFLOAT", RespCommand.INCRBYFLOAT);
+            Add("APPEND", RespCommand.APPEND);
+            Add("GETSET", RespCommand.GETSET);
+            Add("GETDEL", RespCommand.GETDEL);
             Add("GETEX", RespCommand.GETEX);
             Add("GETRANGE", RespCommand.GETRANGE, exactArgCount: 3);
             Add("SETRANGE", RespCommand.SETRANGE, exactArgCount: 3);
