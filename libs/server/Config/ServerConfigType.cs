@@ -80,6 +80,14 @@ namespace Garnet.server
         AOF_SIZE_LIMIT,
         FAST_AOF_TRUNCATE,
         AOF_NULL_DEVICE,
+
+        // Runtime-adjustable checkpoint transfer settings.
+        REPL_DISK_BASED_SYNC_CHUNK_SIZE,
+        REPL_DISK_BASED_SYNC_PIPELINE_DEPTH,
+        // Startup-only replica write settings, exposed read-only.
+        REPL_DISK_BASED_SYNC_WRITE_BUFFERS_CONCURRENTLY,
+        REPL_ENABLE_BENCHMARK_TIMING,
+        REPL_DISK_BASED_SYNC_WRITE_BUFFERS,
     }
 
     public enum ServerConfigGroupType : int

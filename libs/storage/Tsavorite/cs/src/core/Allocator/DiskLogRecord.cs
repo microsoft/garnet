@@ -122,16 +122,17 @@ namespace Tsavorite.core
             return diskLogRecord;
         }
 
-        internal static DiskLogRecord TransferFrom(ref DiskLogRecord srcDiskLogRecord, SectorAlignedBufferPool bufferPool)
+        internal static DiskLogRecord TransferFrom(ref DiskLogRecord srcDiskLogRecord, SectorAlignedBufferPool bufferPool, ObjectIdMap transientObjectIdMap)
         {
             DiskLogRecord diskLogRecord;
             if (srcDiskLogRecord.recordBuffer is not null)
                 diskLogRecord = new DiskLogRecord(in srcDiskLogRecord.logRecord) { recordBuffer = srcDiskLogRecord.recordBuffer };
             else
             {
-                // Deep copy. This is necessary when srcDiskLogRecord does not own its recordBuffer, because the underlying memory
-                // may be freed or reused--e.g. if it is from an iterator frame.
-                diskLogRecord = CopyFrom(in srcDiskLogRecord.logRecord, bufferPool, srcDiskLogRecord.logRecord.objectIdMap);
+                // Move frame-owned slots into the pending operation's map as well as copying the inline bytes.
+                // A frame can be reused before pending IO completes; it must no longer own these heap objects.
+                diskLogRecord = CopyFrom(in srcDiskLogRecord.logRecord, bufferPool, transientObjectIdMap);
+                srcDiskLogRecord.logRecord.Dispose();
             }
 
             srcDiskLogRecord = default;              // Transfer ownership to us, and make sure we don't try to clear the logRecord

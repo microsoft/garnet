@@ -33,6 +33,9 @@ namespace Garnet.cluster
         unsafe byte* dcurr, dend;
         long localCurrentEpoch = 0;
 
+        // Session whose epoch is released while waiting for a key; null when this session's own epoch is
+        ClusterSession epochOwner;
+
         public long LocalCurrentEpoch => Volatile.Read(ref localCurrentEpoch);
 
         bool readOnlySession;
@@ -53,7 +56,7 @@ namespace Garnet.cluster
                 return;
 
             // Failover drains session epochs before releasing the pause.
-            ReleaseCurrentEpoch();
+            ReleaseEpochForWait();
             try
             {
                 // Keep short pauses allocation-free; task blocking lets the pool compensate for longer waits.
@@ -66,7 +69,7 @@ namespace Garnet.cluster
             }
             finally
             {
-                AcquireCurrentEpoch();
+                AcquireEpochAfterWait();
             }
         }
 
@@ -187,7 +190,8 @@ namespace Garnet.cluster
             byte* d = networkSender.GetResponseObjectHead();
             if ((int)(dcurr - d) > 0)
             {
-                Send(d);
+                // Send up to this caller's position. The dcurr field belongs to ProcessClusterCommands and is stale here.
+                Send(d, dcurr);
                 networkSender.GetResponseObject();
                 dcurr = networkSender.GetResponseObjectHead();
                 dend = networkSender.GetResponseObjectTail();
@@ -200,21 +204,27 @@ namespace Garnet.cluster
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        unsafe void Send(byte* d)
+        unsafe void Send(byte* d) => Send(d, dcurr);
+
+        /// <summary>
+        /// Sends the response bytes from <paramref name="d"/> up to <paramref name="end"/>.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        unsafe void Send(byte* d, byte* end)
         {
             // #if DEBUG
-            // logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", ""));
+            // logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(end - d))).Replace("\n", "|").Replace("\r", ""));
             // #endif
 
-            if ((int)(dcurr - d) > 0)
+            if ((int)(end - d) > 0)
             {
-                // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
+                // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(end - d))).Replace("\n", "|").Replace("\r", "!") + "]");
                 if (clusterProvider.storeWrapper.appendOnlyFile != null && clusterProvider.storeWrapper.serverOptions.WaitForCommit)
                 {
                     var task = clusterProvider.storeWrapper.appendOnlyFile.Log.WaitForCommitAsync();
                     if (!task.IsCompletedSuccessfully) AsyncUtils.BlockingWait(task);
                 }
-                int sendBytes = (int)(dcurr - d);
+                int sendBytes = (int)(end - d);
                 networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), sendBytes);
                 sessionMetrics?.incr_total_net_output_bytes((ulong)sendBytes);
             }
@@ -246,6 +256,25 @@ namespace Garnet.cluster
         /// Announces this session as idle after all epoch-protected work is complete.
         /// </summary>
         public void ReleaseCurrentEpoch() => Volatile.Write(ref localCurrentEpoch, 0);
+
+        /// <inheritdoc/>
+        public void SetEpochOwner(IClusterSession owner) => epochOwner = (ClusterSession)owner;
+
+        /// <summary>
+        /// Releases the epoch that this session's progress is gated on, before a wait that depends on other sessions
+        /// moving past a configuration change.
+        /// </summary>
+        void ReleaseEpochForWait() => (epochOwner ?? this).ReleaseCurrentEpoch();
+
+        /// <summary>
+        /// Re-acquires the epoch released by <see cref="ReleaseEpochForWait"/>.
+        /// </summary>
+        void AcquireEpochAfterWait() => (epochOwner ?? this).AcquireCurrentEpoch();
+
+        /// <summary>
+        /// The epoch announced by the session that <see cref="ReleaseEpochForWait"/> and <see cref="AcquireEpochAfterWait"/> act on.
+        /// </summary>
+        long EpochForWait => (epochOwner ?? this).LocalCurrentEpoch;
 
         /// <summary>
         /// Release epoch, wait for config transition and re-acquire the epoch

@@ -2,10 +2,13 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -13,55 +16,163 @@ namespace Garnet.cluster
 {
     /// <summary>
     /// Transmits checkpoint file segments over the network using chunked reads from its owned <see cref="FileDataSource"/>.
-    /// Sends each chunk via <see cref="GarnetClientSession.ExecuteClusterSnapshotData"/>
+    /// Sends each chunk via <see cref="GarnetClientSession.ExecuteClusterSnapshotData(Memory{byte}, int, long, Span{byte}, bool)"/>
     /// followed by an empty end-of-transmission packet.
     /// </summary>
     internal sealed class FileTransmitSource : ISnapshotTransmitSource
     {
         readonly ILogger logger;
+        readonly int pipelineDepth;
 
         public ISnapshotDataSource DataSource { get; }
 
-        public FileTransmitSource(ISnapshotDataSource dataSource, ILogger logger = null)
+        public FileTransmitSource(ISnapshotDataSource dataSource, int pipelineDepth, ILogger logger = null)
         {
+            if (pipelineDepth is < 1 or > GarnetServerOptions.ReplicaDiskBasedSyncPipelineDepthMax)
+                throw new ArgumentOutOfRangeException(nameof(pipelineDepth));
             DataSource = dataSource;
             this.logger = logger;
+            this.pipelineDepth = pipelineDepth;
         }
 
         /// <inheritdoc/>
         public async Task TransmitAsync(GarnetClientSession gcs, TimeSpan timeout, CancellationToken cancellationToken = default)
         {
             var fileTokenBytes = DataSource.Token.ToByteArray();
+            // Link caller cancellation with internal failures/timeouts so either stops outstanding
+            // acknowledgements, overlapping reads and blocked sends without cancelling the caller's source.
+            using var abort = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-            while (DataSource.HasNextChunk)
+            // Capture the first reported failure atomically across the sender, response tasks and timeout callbacks.
+            // Aborting can surface cancellation/disposal exceptions elsewhere; rethrow the captured cause after cleanup.
+            var firstFailure = new TaskCompletionSource<Exception>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            // Record caller cancellation before closing can turn a blocked TLS write into an I/O error.
+            // Close immediately; GCS retains plaintext across receive cleanup until its owner unwinds and disposes.
+            using var closeOnAbort = abort.Token.Register(() =>
             {
-                var result = await DataSource.ReadNextChunkAsync(cancellationToken).ConfigureAwait(false);
+                if (cancellationToken.IsCancellationRequested)
+                    _ = firstFailure.TrySetResult(new OperationCanceledException(cancellationToken));
+                gcs.CloseConnection();
+            });
+
+            // Send chunks serially, allowing a bounded FIFO of outstanding acceptance acknowledgements.
+            // Only this async flow mutates pending; response continuations cannot change its head across an await.
+            // Peek retains the head in the abort-cleanup set until its acknowledgement succeeds.
+            var pending = new Queue<Task>(pipelineDepth);
+            Task<DataSourceReadResult> inFlightRead = null;
+
+            try
+            {
+                // Read and send chunks while keeping at most pipelineDepth acknowledgements outstanding.
+                while (DataSource.HasNextChunk)
+                {
+                    if (pending.Count == pipelineDepth)
+                    {
+                        gcs.CompletePending(wait: false);
+                        // Wait for the oldest chunk to be accepted before dequeueing it and sending another chunk.
+                        await pending.Peek().ConfigureAwait(false);
+                        _ = pending.Dequeue();
+                    }
+
+                    abort.Token.ThrowIfCancellationRequested();
+                    inFlightRead = DataSource.ReadNextChunkAsync(abort.Token);
+                    // Batch ready chunks, but do not hold framed requests behind an asynchronous disk read.
+                    if (!inFlightRead.IsCompletedSuccessfully && pending.Count > 0)
+                        gcs.CompletePending(wait: false);
+                    var result = await inFlightRead.ConfigureAwait(false);
+                    inFlightRead = null;
+                    pending.Enqueue(SendChunkAsync(result.ChunkStartAddress, result.BytesRead, result.Buffer));
+                }
+
+                // Chunk OKs confirm acceptance, not completed writes. Only the end marker confirms the file was written
+                // and closed; await its response before returning or advancing to the next file.
+                if (pending.Count > 0)
+                    gcs.CompletePending(wait: false);
+                while (pending.Count > 0)
+                {
+                    await pending.Peek().ConfigureAwait(false);
+                    _ = pending.Dequeue();
+                }
+
+                abort.Token.ThrowIfCancellationRequested();
+                await SendChunkAsync(DataSource.CurrentOffset, 0).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _ = firstFailure.TrySetResult(ex);
+                await abort.CancelAsync().ConfigureAwait(false);
+                gcs.Dispose();
+                if (inFlightRead != null)
+                {
+                    try
+                    {
+                        var result = await inFlightRead.ConfigureAwait(false);
+                        result.Buffer?.Return();
+                    }
+                    catch (Exception cleanupException)
+                    {
+                        logger?.LogDebug(cleanupException, "Aborting an outstanding checkpoint read for {type}", DataSource.Type);
+                    }
+                }
                 try
                 {
-                    var resp = await gcs.ExecuteClusterSnapshotData(
-                        fileTokenBytes,
-                        (int)DataSource.Type,
-                        startAddress: result.ChunkStartAddress,
-                        result.Buffer.GetSlice(result.BytesRead)).WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
-
-                    if (!resp.Equals("OK"))
-                        ExceptionUtils.ThrowException(new GarnetException(
-                            $"Primary error at TransmitAsync {DataSource.Type} {resp} [{DataSource.StartOffset},{DataSource.CurrentOffset},{DataSource.EndOffset}]"));
+                    await Task.WhenAll(pending).ConfigureAwait(false);
                 }
-                finally
+                catch (Exception cleanupException)
                 {
-                    result.Buffer.Return();
+                    logger?.LogDebug(cleanupException, "Aborting outstanding checkpoint acknowledgements for {type}", DataSource.Type);
                 }
+                var failure = await firstFailure.Task.ConfigureAwait(false);
+                ExceptionDispatchInfo.Capture(failure).Throw();
+                throw;
             }
 
-            // Send empty package to indicate end of transmission
-            var endResp = await gcs.ExecuteClusterSnapshotData(
-                fileTokenBytes, (int)DataSource.Type, DataSource.CurrentOffset, [])
-                .WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+            async Task SendChunkAsync(long address, int length, SectorAlignedMemory buffer = null)
+            {
+                try
+                {
+                    // Start before submission so socket backpressure also counts against the deadline.
+                    using var deadline = new CancellationTokenSource();
+                    Task<string> response = null;
+                    using var onTimeout = deadline.Token.Register(() =>
+                    {
+                        if (Volatile.Read(ref response)?.IsCompleted == true)
+                            return;
+                        _ = firstFailure.TrySetResult(new TimeoutException(
+                            $"Checkpoint acknowledgement timed out for {DataSource.Type} [address:{address},length:{length}]"));
+                        abort.Cancel();
+                    });
+                    try
+                    {
+                        deadline.CancelAfter(timeout);
+                        abort.Token.ThrowIfCancellationRequested();
+                        Volatile.Write(ref response, gcs.ExecuteClusterSnapshotData(
+                            fileTokenBytes, (int)DataSource.Type, address, buffer == null ? [] : buffer.GetSlice(length),
+                            flush: length == 0));
+                    }
+                    finally
+                    {
+                        // Submission copies the span into network-owned buffers before returning.
+                        buffer?.Return();
+                    }
 
-            if (!endResp.Equals("OK"))
-                ExceptionUtils.ThrowException(new GarnetException(
-                    $"Primary error at TransmitAsync Completion {DataSource.Type} {endResp}"));
+                    // Cancellation can stop the wait below before the response task faults when the connection closes.
+                    // Observe that fault even if no caller is still awaiting the underlying task.
+                    _ = response.ContinueWith(task => _ = task.Exception, CancellationToken.None,
+                        TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                    var resp = await response.WaitAsync(abort.Token).ConfigureAwait(false);
+                    if (!resp.Equals("OK"))
+                        ExceptionUtils.ThrowException(new GarnetException(
+                            $"Primary error at TransmitAsync {DataSource.Type} {resp} [address:{address},length:{length}]"));
+                }
+                catch (Exception ex)
+                {
+                    _ = firstFailure.TrySetResult(ex);
+                    await abort.CancelAsync().ConfigureAwait(false);
+                    throw;
+                }
+            }
         }
 
         public void Dispose()

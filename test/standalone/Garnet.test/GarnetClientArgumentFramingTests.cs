@@ -1,9 +1,11 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
@@ -18,6 +20,40 @@ namespace Garnet.test
     [TestFixture]
     public class GarnetClientArgumentFramingTests : TestBase
     {
+        [TestCase(1018)]
+        [TestCase(1024)]
+        [TestCase(1025)]
+        public void SnapshotChunkThatCannotFitBulkFramingIsRejected(int payloadSize)
+        {
+            using var client = new GarnetClientSession(
+                new IPEndPoint(IPAddress.Loopback, TestUtils.TestPort), new NetworkBufferSettings(1024, 1024));
+            var data = new byte[payloadSize];
+            var error = Assert.Throws<InvalidOperationException>(() =>
+                client.ExecuteClusterSnapshotData(Guid.NewGuid().ToByteArray(), 0, 0, data));
+            Assert.That(error.Message, Does.Contain("bulk framing"));
+        }
+
+        [Test]
+        public async Task SnapshotChunkWithExactBulkFitIsTransmitted()
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            using var client = new GarnetClientSession(listener.LocalEndpoint, new NetworkBufferSettings(1024, 1024));
+            var accept = listener.AcceptTcpClientAsync(timeout.Token);
+            client.Connect();
+            using var peer = await accept;
+            using var stream = peer.GetStream();
+            var payload = new string('v', 1015);
+            var response = client.ExecuteClusterSnapshotData(Guid.Empty.ToByteArray(), 0, 0, Encoding.ASCII.GetBytes(payload));
+            var expected = $"*6\r\n$7\r\nCLUSTER\r\n$13\r\nSNAPSHOT_DATA\r\n$16\r\n{new string('\0', 16)}\r\n$1\r\n0\r\n$1\r\n0\r\n$1015\r\n{payload}\r\n";
+            var received = new byte[expected.Length];
+            await stream.ReadExactlyAsync(received, timeout.Token);
+            Assert.That(Encoding.ASCII.GetString(received), Is.EqualTo(expected));
+            await stream.WriteAsync("+OK\r\n"u8.ToArray(), timeout.Token);
+            Assert.That(await response.WaitAsync(timeout.Token), Is.EqualTo("OK"));
+        }
+
         [SetUp]
         public void Setup()
         {

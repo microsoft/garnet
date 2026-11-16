@@ -677,6 +677,11 @@ namespace Garnet.server
         {
             HashSet<ulong> ret = null;
 
+            if (!IsEnabled)
+            {
+                return ret;
+            }
+
             lock (this)
             {
                 for (var i = 0; i < contextMetadatas.Length; i++)

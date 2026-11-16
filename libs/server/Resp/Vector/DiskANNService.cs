@@ -52,11 +52,6 @@ namespace Garnet.server
         /// For testing purposes, in DEBUG builds the count of calls to <see cref="DropIndex"/> on this instance.
         /// </summary>
         internal int DropIndexCalls;
-
-        /// <summary>
-        /// For testing purposes, in DEBUG builds the count of native import-finalization calls on this instance.
-        /// </summary>
-        internal int FinishImportCalls;
 #endif
 
         public nint CreateIndex(
@@ -153,13 +148,21 @@ namespace Garnet.server
         /// <param name="index">Native index handle.</param>
         /// <param name="taskIndex">Zero-based partition index.</param>
         /// <param name="taskCount">Total number of partitions.</param>
-        /// <returns>Task completion or retryable/terminal failure.</returns>
-        public NativeDiskANNMethods.DiskANNImportResult FinishImport(ulong context, nint index, int taskIndex, int taskCount)
+        /// <returns>Success or failure</returns>
+        public bool VerifyImport(ulong context, nint index, int taskIndex, int taskCount)
         {
-#if DEBUG
-            System.Threading.Interlocked.Increment(ref FinishImportCalls);
-#endif
-            return NativeDiskANNMethods.finish_import(context, index, (nuint)taskIndex, (nuint)taskCount);
+            return NativeDiskANNMethods.verify_import(context, index, (nuint)taskIndex, (nuint)taskCount) == 1;
+        }
+
+        /// <summary>
+        /// Completes importing an index, allowing it to be used for normal operations.
+        /// </summary>
+        /// <param name="context">Vector set context.</param>
+        /// <param name="index">Native index handle.</param>
+        /// <returns>Success or failure</returns>
+        public bool FinishImport(ulong context, nint index)
+        {
+            return NativeDiskANNMethods.finish_import(context, index) == 1;
         }
 
         public InsertResult Insert(ulong context, nint index, ReadOnlySpan<byte> id, ReadOnlySpan<byte> vector, int vectorElementCount, ReadOnlySpan<byte> attributes, out bool needsQuantization)
@@ -534,19 +537,6 @@ namespace Garnet.server
             SuccessUpdate = 3,
         }
 
-        /// <summary>
-        /// Native import finalization result.
-        /// </summary>
-        public enum DiskANNImportResult : byte
-        {
-            /// <summary>Task succeeded.</summary>
-            Success = 0,
-            /// <summary>Task failed before completion and can be retried.</summary>
-            TaskFailed = 1,
-            /// <summary>Task completed but finalization failed; do not retry it.</summary>
-            FinishFailed = 2,
-        }
-
         const string DISKANN_GARNET = "diskann_garnet";
 
         [LibraryImport(DISKANN_GARNET)]
@@ -600,11 +590,17 @@ namespace Garnet.server
         );
 
         [LibraryImport(DISKANN_GARNET)]
-        public static partial DiskANNImportResult finish_import(
+        public static partial byte verify_import(
             ulong context,
             nint index,
             nuint task_index,
             nuint task_count
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial byte finish_import(
+            ulong context,
+            nint index
         );
 
         [LibraryImport(DISKANN_GARNET)]

@@ -159,26 +159,42 @@ namespace Tsavorite.core
                     ClearPage(index, 0);
                     FreeNativeLogPage(index);
                 }
+                else if (freePagePool.IsFull)
+                {
+                    // The page will not be reused, so only its objects need releasing.
+                    objectPages[index].Clear();
+                }
                 else
                 {
-                    var enqueued = freePagePool.TryAdd(new()
+                    // Clear before pooling: a page turn can take the page from the pool as soon as it is added.
+                    ClearPage(index, 0);
+                    _ = freePagePool.TryAdd(new()
                     {
                         array = pageArrays[index],
                         pointer = pagePointers[index],
                         value = objectPages[index]
                     });
-
-                    // We only need to clear the page if it's enqueued; otherwise we don't reuse the page, so can save the time
-                    if (enqueued)
-                        ClearPage(index, 0);
-                    else
-                        objectPages[index].Clear();
+                    OnPageAddedToPoolTestHook();    // Test only; compiled out of Release builds.
                 }
                 pageArrays[index] = default;
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
             }
         }
+
+        /// <summary>Test only, compiled out of Release builds: invokes <c>testOnPageAddedToPool</c>.</summary>
+        [Conditional("DEBUG")]
+        private void OnPageAddedToPoolTestHook()
+        {
+#if DEBUG
+            testOnPageAddedToPool?.Invoke();
+#endif
+        }
+
+#if DEBUG
+        /// <summary>Test only, DEBUG builds only: if set, <see cref="ReturnPage"/> invokes it right after adding a page to the free-page pool.</summary>
+        internal Action testOnPageAddedToPool;
+#endif
 
         internal void FreePage(long page)
         {
@@ -1308,8 +1324,10 @@ namespace Tsavorite.core
             // If this is Recovery Pass 1 we skip object deserialization (frame reads are in RecoveryPhase.None).
             if (result.recoveryPhase != RecoveryPhase.Pass1)
             {
-                var objectIdMapToUse = result.recoveryPhase != RecoveryPhase.None ? objectPages[result.page % BufferSize].objectIdMap : transientObjectIdMap;
-                DeserializeObjectsOnPage((long)result.destinationPtr, result.maxAddressOffsetOnPage, objectIdMapToUse, result.readBuffers);
+                var recovering = result.recoveryPhase != RecoveryPhase.None;
+                var objectIdMapToUse = recovering ? objectPages[result.page % BufferSize].objectIdMap : result.objectFrame?.objectIdMap ?? transientObjectIdMap;
+                DeserializeObjectsOnPage((long)result.destinationPtr, result.maxAddressOffsetOnPage, objectIdMapToUse, result.readBuffers,
+                    trackHeapSize: recovering, result.objectFrame);
             }
 
             // Call the "real" page read callback
@@ -1325,8 +1343,12 @@ namespace Tsavorite.core
         /// <param name="maxAddressOffsetOnPage">Maximum offset on the page (PageSize or less for partial pages)</param>
         /// <param name="objectIdMap">The ObjectIdMap to use for deserialized objects</param>
         /// <param name="readBuffers">The circular read buffers for object log reading</param>
-        private void DeserializeObjectsOnPage(long pageStartPhysicalAddress, long maxAddressOffsetOnPage, ObjectIdMap objectIdMap, CircularDiskReadBuffer readBuffers)
+        /// <param name="trackHeapSize">Whether the destination is a resident recovery page rather than a temporary scan frame</param>
+        /// <param name="objectFrame">Ownership and initialized extent for a scan frame</param>
+        private void DeserializeObjectsOnPage(long pageStartPhysicalAddress, long maxAddressOffsetOnPage, ObjectIdMap objectIdMap, CircularDiskReadBuffer readBuffers,
+            bool trackHeapSize, ObjectScanFrame objectFrame = null)
         {
+            objectFrame?.Initialize(pageStartPhysicalAddress);
             ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
             var endKeyLength = 0;
             ulong endValueLength = 0;
@@ -1370,8 +1392,11 @@ namespace Tsavorite.core
                     if (logRecord.DataHeader.RecordHasObjects && logRecord.Info.Valid)
                     {
                         _ = logReader.ReadRecordObjects(ref logRecord, default(EmptyKey), startPosition.SegmentSizeBits);
-                        TrackRecoveredObjectRecord(in logRecord);
+                        if (trackHeapSize)
+                            TrackRecoveredObjectRecord(in logRecord);
                     }
+                    if (objectFrame is not null)
+                        objectFrame.initializedUntilAddress = recordAddress;
                 }
             }
             finally
@@ -1466,7 +1491,7 @@ namespace Tsavorite.core
             var maxOffset = endAddress - GetLogicalAddressOfStartOfPage(page);
             var objectIdMapToUse = objectPages[page % BufferSize].objectIdMap;
             using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
-            DeserializeObjectsOnPage(pagePhysicalAddress, maxOffset, objectIdMapToUse, readBuffers);
+            DeserializeObjectsOnPage(pagePhysicalAddress, maxOffset, objectIdMapToUse, readBuffers, trackHeapSize: true);
         }
 
         /// <inheritdoc/>

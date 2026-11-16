@@ -27,6 +27,9 @@ namespace Garnet.server
             Add("GET", RespCommand.GET);
             Add("SET", RespCommand.SET);
             Add("DEL", RespCommand.DEL);
+            Add("DELIFEQ", RespCommand.DELIFEQ);
+            Add("DELEX", RespCommand.DELEX);
+            Add("DIGEST", RespCommand.DIGEST);
             Add("INCR", RespCommand.INCR);
             Add("DECR", RespCommand.DECR);
             Add("INCRBY", RespCommand.INCRBY);
@@ -60,6 +63,7 @@ namespace Garnet.server
 
             // Key commands
             Add("EXISTS", RespCommand.EXISTS);
+            Add("TOUCH", RespCommand.TOUCH);
             Add("TTL", RespCommand.TTL);
             Add("PTTL", RespCommand.PTTL);
             Add("EXPIRE", RespCommand.EXPIRE);

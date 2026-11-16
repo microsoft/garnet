@@ -1,8 +1,9 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,6 +17,16 @@ namespace Garnet.cluster
     internal sealed partial class FailoverSession : IDisposable
     {
         /// <summary>
+        /// How long the replication offset may stay unchanged before checking that the replication stream is still active
+        /// </summary>
+        static readonly TimeSpan ReplicationLivenessCheckInterval = TimeSpan.FromSeconds(1);
+
+        /// <summary>
+        /// Upper bound for querying the primary's replication state when diagnosing a failed sync
+        /// </summary>
+        static readonly TimeSpan PrimaryStateQueryTimeout = TimeSpan.FromSeconds(5);
+
+        /// <summary>
         /// Connection to primary if reachable
         /// </summary>
         GarnetClient primaryClient = null;
@@ -25,7 +36,17 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="nodeId">Id of node to create connection for</param>
         /// <returns></returns>
-        private async Task<GarnetClient> CreateConnectionAsync(string nodeId)
+        private Task<GarnetClient> CreateConnectionAsync(string nodeId)
+            => CreateConnectionAsync(nodeId, failoverTimeout, cts.Token);
+
+        /// <summary>
+        /// Helper method to establish connection towards remote node
+        /// </summary>
+        /// <param name="nodeId">Id of node to create connection for</param>
+        /// <param name="timeout">Upper bound for establishing the connection</param>
+        /// <param name="token">Token used to cancel connection establishment</param>
+        /// <returns></returns>
+        private async Task<GarnetClient> CreateConnectionAsync(string nodeId, TimeSpan timeout, CancellationToken token)
         {
             var endpoint = oldConfig.GetEndpointFromNodeId(nodeId);
             var client = new GarnetClient(
@@ -37,7 +58,7 @@ namespace Garnet.cluster
             try
             {
                 if (!client.IsConnected)
-                    await client.ReconnectAsync().WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
+                    await client.ReconnectAsync((int)Math.Min(timeout.TotalMilliseconds, int.MaxValue), token).ConfigureAwait(false);
 
                 return client;
             }
@@ -85,24 +106,153 @@ namespace Garnet.cluster
 
                 // Wait for replica to catch up
                 status = FailoverStatus.WAITING_FOR_SYNC;
-                while (primaryReplicationOffset.AnyGreater(clusterProvider.replicationManager.ReplicationOffset))
-                {
-                    cts.Token.ThrowIfCancellationRequested();
-                    // Fail if upper bound time for failover has been reached
-                    if (FailoverTimeout)
-                    {
-                        logger?.LogError("AwaitReplicationSync timed out failoverStart");
-                        return false;
-                    }
-                    await Task.Yield();
-                }
-
-                return true;
+#if DEBUG
+                await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Failover_Pause_Waiting_For_Sync).ConfigureAwait(false);
+#endif
+                return await WaitForReplicationSyncAsync(primaryReplicationOffset).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "PauseWritesAndWaitForSync Error");
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Wait until the local replication offset reaches the offset the primary returned on FAILSTOPWRITES.
+        /// The primary has stopped writes and demoted itself at this point, so a lost replication stream cannot be
+        /// re-established; the wait fails early when the stream is gone or the offset stops advancing.
+        /// </summary>
+        /// <param name="targetOffset">Primary AOF tail address returned by FAILSTOPWRITES</param>
+        /// <returns>True if the replica caught up, false otherwise</returns>
+        private async Task<bool> WaitForReplicationSyncAsync(AofAddress targetOffset)
+        {
+            var lastOffset = clusterProvider.replicationManager.ReplicationOffset;
+            var lastProgressTimestamp = Stopwatch.GetTimestamp();
+            var lastLivenessCheckTimestamp = lastProgressTimestamp;
+
+            while (true)
+            {
+                var currentOffset = clusterProvider.replicationManager.ReplicationOffset;
+                if (!targetOffset.AnyGreater(currentOffset))
+                    return true;
+
+                string reason = null;
+                if (cts.Token.IsCancellationRequested)
+                {
+                    reason = "failover was cancelled";
+                }
+                else if (FailoverTimeout)
+                {
+                    reason = $"failover timeout of {failoverTimeout} was reached";
+                }
+                else if (!currentOffset.EqualsAll(lastOffset))
+                {
+                    lastOffset = currentOffset;
+                    lastProgressTimestamp = Stopwatch.GetTimestamp();
+                }
+                else if (Stopwatch.GetElapsedTime(lastProgressTimestamp) >= ReplicationLivenessCheckInterval &&
+                         Stopwatch.GetElapsedTime(lastLivenessCheckTimestamp) >= ReplicationLivenessCheckInterval)
+                {
+                    lastLivenessCheckTimestamp = Stopwatch.GetTimestamp();
+                    if (!IsReplicationStreamActive())
+                        reason = "replication stream from the primary is not active";
+                    else if (clusterTimeout > TimeSpan.Zero && Stopwatch.GetElapsedTime(lastProgressTimestamp) >= clusterTimeout)
+                        reason = $"replication offset made no progress for {clusterTimeout}";
+                }
+
+                if (reason != null)
+                {
+                    await LogReplicationSyncStateAsync(reason, targetOffset, currentOffset, lastProgressTimestamp).ConfigureAwait(false);
+                    return false;
+                }
+
+                await Task.Yield();
+            }
+        }
+
+        /// <summary>
+        /// Whether any session is currently receiving the AOF stream from the primary.
+        /// </summary>
+        private bool IsReplicationStreamActive()
+        {
+            foreach (var server in clusterProvider.storeWrapper.Servers)
+            {
+                if (server is not GarnetServerBase garnetServer)
+                    continue;
+
+                foreach (var session in garnetServer.ActiveClusterSessions())
+                {
+                    if (session.IsReplicating)
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Log the state of replication when the wait for sync stops before the replica caught up.
+        /// </summary>
+        private async Task LogReplicationSyncStateAsync(string reason, AofAddress targetOffset, AofAddress replicaOffset, long lastProgressTimestamp)
+        {
+            var replicationManager = clusterProvider.replicationManager;
+            var linkStatus = clusterProvider.clusterManager.GetPrimaryLinkStatus(clusterProvider.clusterManager.CurrentConfig);
+            var primaryState = await GetPrimaryReplicationStateAsync().ConfigureAwait(false);
+
+            logger?.LogError(
+                "Stopped waiting for replication sync: {reason}. " +
+                "TargetOffset (primary tail at FAILSTOPWRITES): {targetOffset}, ReplicaOffset: {replicaOffset}, LastProgress: {sinceProgress} ago, " +
+                "ReplicationStreamActive: {streamActive}, Recovering: {recovering} ({recoveryStatus}), PrimaryGossipLink: {linkStatus} (last io {lastIo}s ago), " +
+                "Primary: {primaryState}",
+                reason,
+                targetOffset,
+                replicaOffset,
+                Stopwatch.GetElapsedTime(lastProgressTimestamp),
+                IsReplicationStreamActive(),
+                replicationManager.IsRecovering,
+                replicationManager.currentRecoveryStatus,
+                linkStatus[0].Value,
+                linkStatus[1].Value,
+                primaryState);
+        }
+
+        /// <summary>
+        /// Query the primary for its replication state, or describe why it cannot be reached.
+        /// </summary>
+        private async Task<string> GetPrimaryReplicationStateAsync()
+        {
+            if (primaryClient == null || !primaryClient.IsConnected)
+                return "unreachable (connection to primary is closed)";
+
+            try
+            {
+                var info = await primaryClient.ExecuteForStringResultAsync("INFO", ["REPLICATION"]).WaitAsync(PrimaryStateQueryTimeout).ConfigureAwait(false);
+                var lines = info.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                // A demoted primary reports its replica-side offset; its AOF tail is the target offset since writes are stopped
+                var isPrimary = Array.IndexOf(lines, "role:master") >= 0;
+                var state = new StringBuilder();
+                foreach (var line in lines)
+                {
+                    if (line.StartsWith("role:", StringComparison.Ordinal) ||
+                        line.StartsWith("connected_slaves:", StringComparison.Ordinal) ||
+                        line.StartsWith("sync_driver_count:", StringComparison.Ordinal) ||
+                        (isPrimary && line.StartsWith("master_repl_offset:", StringComparison.Ordinal)) ||
+                        (line.StartsWith("slave", StringComparison.Ordinal) && line.Length > 5 && char.IsAsciiDigit(line[5])))
+                    {
+                        if (state.Length > 0)
+                            _ = state.Append(", ");
+                        _ = state.Append(line);
+                    }
+                }
+                return state.ToString();
+            }
+            catch (Exception ex)
+            {
+                // Drop the connection so a later reset of the primary starts from a fresh one
+                primaryClient.Dispose();
+                primaryClient = null;
+                return $"unreachable ({ex.GetType().Name}: {ex.Message})";
             }
         }
 
@@ -292,10 +442,77 @@ namespace Garnet.cluster
             => status is FailoverStatus.WAITING_FOR_SYNC or FailoverStatus.TAKING_OVER_AS_PRIMARY;
 
         /// <summary>
+        /// Restore the old primary after a failed failover that it had already accepted.
+        /// The failover token is not used because it is already cancelled when the failover was aborted.
+        /// Attempts are retried with capped exponential backoff until the primary acknowledges the reset,
+        /// the reset budget (<see cref="GarnetServerOptions.FailoverResetPrimaryTimeout"/>) expires, or the server shuts down.
+        /// A lost connection to the primary is re-established on each attempt.
+        /// </summary>
+        /// <param name="shutdownToken">Token signalled on server shutdown</param>
+        /// <returns>True if the primary acknowledged the reset, false otherwise</returns>
+        private async Task<bool> ResetPrimaryAsync(CancellationToken shutdownToken)
+        {
+            var primaryId = oldConfig.LocalNodePrimaryId;
+            var budget = TimeSpan.FromSeconds(Math.Max(1, clusterProvider.serverOptions.FailoverResetPrimaryTimeout));
+            var attemptTimeout = clusterTimeout > TimeSpan.Zero ? clusterTimeout : failoverTimeout;
+            if (attemptTimeout > budget)
+                attemptTimeout = budget;
+            var backoff = new ExponentialBackoff(TimeSpan.FromMilliseconds(100), TimeSpan.FromSeconds(5));
+
+            using var budgetCts = CancellationTokenSource.CreateLinkedTokenSource(shutdownToken);
+            budgetCts.CancelAfter(budget);
+
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    if (primaryClient == null || !primaryClient.IsConnected)
+                    {
+                        primaryClient?.Dispose();
+                        primaryClient = await CreateConnectionAsync(primaryId, attemptTimeout, budgetCts.Token).ConfigureAwait(false);
+                    }
+
+                    if (primaryClient != null)
+                    {
+                        using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(budgetCts.Token);
+                        attemptCts.CancelAfter(attemptTimeout);
+                        _ = await primaryClient.ExecuteClusterFailStopWritesAsync(Array.Empty<byte>(), attemptCts.Token).ConfigureAwait(false);
+                        logger?.LogWarning("Reset primary {primaryId} after failed failover (attempt {attempt})", primaryId, attempt);
+                        return true;
+                    }
+                }
+                catch (OperationCanceledException) when (budgetCts.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Attempt {attempt} to reset primary {primaryId} failed", attempt, primaryId);
+                    primaryClient?.Dispose();
+                    primaryClient = null;
+                }
+
+                try
+                {
+                    await Task.Delay(backoff.RecordFailure(), budgetCts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
+
+            logger?.LogError("Failed to reset primary {primaryId} after failed failover within {budget} ({reason}) — cluster may be in an incoherent state",
+                primaryId, budget, shutdownToken.IsCancellationRequested ? "server shutdown" : "reset budget expired");
+            return false;
+        }
+
+        /// <summary>
         /// REPLICA main failover task
         /// </summary>
+        /// <param name="shutdownToken">Token signalled on server shutdown; used to bound the primary reset on failure</param>
         /// <returns></returns>
-        public async Task<bool> BeginAsyncReplicaFailoverAsync()
+        public async Task<bool> BeginAsyncReplicaFailoverAsync(CancellationToken shutdownToken = default)
         {
             // FORCE and TAKEOVER skip primary coordination and replication catch-up.
             // An external coordinator authorizes and serializes promotions; Garnet does not perform voting.
@@ -337,18 +554,8 @@ namespace Garnet.cluster
                 // in an incoherent state where no node owns the slots.
                 if (PrimaryNeedsReset() && !failoverSucceeded)
                 {
-                    try
-                    {
-                        logger?.LogWarning("Attempting to reset primary after failed failover");
-                        if (primaryClient != null)
-                        {
-                            _ = await primaryClient.ExecuteClusterFailStopWritesAsync(Array.Empty<byte>()).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        logger?.LogError(ex, "Failed to reset primary after failed failover — cluster may be in an incoherent state");
-                    }
+                    logger?.LogWarning("Attempting to reset primary after failed failover");
+                    _ = await ResetPrimaryAsync(shutdownToken).ConfigureAwait(false);
                 }
 
                 primaryClient?.Dispose();
