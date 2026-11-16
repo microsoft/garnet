@@ -1854,7 +1854,7 @@ return retArray";
 
             var fullCommands = allCommands.Where(static kv => kv.Value.Flags.HasFlag(RespCommandFlags.NoScript));
 
-            foreach (var (cmd, _) in fullCommands)
+            foreach (var (cmd, info) in fullCommands)
             {
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"redis.call('{cmd}')"));
                 ClassicAssert.True(exc.Message.StartsWith("ERR This Redis command is not allowed from script"), $"Allowed NoScript command: {cmd}");

@@ -4412,31 +4412,39 @@ namespace Garnet.test
         public void CanDoIncrByLC(int bytesSent)
         {
             //ZINCRBY key increment member
-            using var lightClientRequest = TestUtils.CreateRequest();
-            var response = lightClientRequest.SendCommand("ZADD board 340 Dave");
-            lightClientRequest.SendCommand("ZADD board 400 Kendra");
-            lightClientRequest.SendCommand("ZADD board 560 Tom");
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommand("ZADD board 340 Dave");
+                _ = lightClientRequest.SendCommand("ZADD board 400 Kendra");
+                _ = lightClientRequest.SendCommand("ZADD board 560 Tom");
 
-            response = lightClientRequest.SendCommandChunks("ZINCRBY board 10 Tom", bytesSent);
-            var expectedResponse = "$3\r\n570\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+                response = lightClientRequest.SendCommandChunks("ZINCRBY board 10 Tom", bytesSent);
+                var expectedResponse = "$3\r\n570\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = lightClientRequest.SendCommand("ZINCRBY board -590 Tom");
-            expectedResponse = "$3\r\n-20\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+                response = lightClientRequest.SendCommand("ZINCRBY board -590 Tom");
+                expectedResponse = "$3\r\n-20\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
 
-            response = lightClientRequest.SendCommandChunks("ZINCRBY board -590", bytesSent);
-            expectedResponse = FormatWrongNumOfArgsError("ZINCRBY");
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommandChunks("ZINCRBY board -590", bytesSent);
+                var expectedResponse = FormatWrongNumOfArgsError("ZINCRBY");
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
 
             //using key exists but non existing member
-            response = lightClientRequest.SendCommandChunks("ZINCRBY board 10 Julia", bytesSent);
-            expectedResponse = "$2\r\n10\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommandChunks("ZINCRBY board 10 Julia", bytesSent);
+                var expectedResponse = "$2\r\n10\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = lightClientRequest.SendCommandChunks("ZCARD board", bytesSent);
-            expectedResponse = ":4\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+                response = lightClientRequest.SendCommandChunks("ZCARD board", bytesSent);
+                expectedResponse = ":4\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
         }
 
         [Test]

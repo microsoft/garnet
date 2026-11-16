@@ -296,7 +296,7 @@ namespace Garnet.server
             Add("INFO", RespCommand.INFO);
             Add("TIME", RespCommand.TIME, exactArgCount: 0);
             Add("ROLE", RespCommand.ROLE, exactArgCount: 0);
-            Add("SAVE", RespCommand.SAVE, exactArgCount: 0);
+            Add("SAVE", RespCommand.SAVE);
             Add("LASTSAVE", RespCommand.LASTSAVE);
             Add("BGSAVE", RespCommand.BGSAVE);
             Add("COMMITAOF", RespCommand.COMMITAOF);

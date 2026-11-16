@@ -6598,13 +6598,13 @@ namespace Garnet.test
 
             // Reject malformed GET
             var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("GET"));
-            ClassicAssert.AreEqual("ERR unknown command", exc0.Message);
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'GET' command", exc0.Message);
 
             // Command stream still aligned
             ClassicAssert.AreEqual("bar", (string)await db.ExecuteAsync("GET", "foo").ConfigureAwait(false));
 
             var exc1 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("GET", "fizz", "buzz"));
-            ClassicAssert.AreEqual("ERR unknown command", exc1.Message);
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'GET' command", exc1.Message);
 
             // Command stream still aligned
             ClassicAssert.AreEqual("bar", (string)await db.ExecuteAsync("GET", "foo").ConfigureAwait(false));
