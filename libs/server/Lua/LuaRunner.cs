@@ -645,7 +645,8 @@ namespace Garnet.server
                     respPtr++;
                     if (RespReadUtils.TryReadAsSpan(out var errSpan, ref respPtr, respEnd))
                     {
-                        if (errSpan.SequenceEqual(CmdStrings.RESP_ERR_GENERIC_UNK_CMD))
+                        if (errSpan.SequenceEqual(CmdStrings.RESP_ERR_GENERIC_UNK_CMD)
+                            || errSpan.StartsWith("ERR unknown command '"u8))
                         {
                             // Gets a special response
                             return LuaWrappedError(1, constStrs.ErrUnknown);

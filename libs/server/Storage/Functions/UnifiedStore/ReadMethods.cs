@@ -28,7 +28,7 @@ namespace Garnet.server
             var cmd = input.header.cmd;
             return cmd switch
             {
-                RespCommand.EXISTS => true,
+                RespCommand.EXISTS or RespCommand.TOUCH => true,
                 RespCommand.MIGRATE => HandleMigrate(in srcLogRecord, ref output),
                 RespCommand.MEMORY_USAGE => HandleMemoryUsage(in srcLogRecord, ref output),
                 RespCommand.TYPE => HandleType(in srcLogRecord, ref output),

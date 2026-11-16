@@ -67,6 +67,14 @@ namespace Garnet.server
 
         #endregion
 
+        #region TOUCH
+
+        /// <inheritdoc />
+        public GarnetStatus TOUCH(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output)
+            => storageSession.Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+
+        #endregion
+
         #region DELETE
 
         /// <inheritdoc />
