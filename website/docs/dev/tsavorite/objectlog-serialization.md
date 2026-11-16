@@ -36,35 +36,24 @@ For the filesystem layout, checkpoint discovery, token selection, and overall re
 >
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/RecordDataHeader.cs` - hybrid-log field kinds and physical field lengths.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectIdMap.cs` - objectId index/hint bit allocation.
-> - `libs/storage/Tsavorite/cs/src/core/Allocator/LogRecord.cs` / `LogRecord_cv7.cs` - metadata stamping/decoding,
->   objectId-map assignment, and legacy decoding.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/LogRecord.cs` / `LogRecord_cv7.cs` - metadata stamping/decoding, objectId-map assignment, and legacy decoding.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectAllocatorImpl.cs` - page flush, disk read, scan, and recovery orchestration.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/PageHeader.cs` - the page header's object-log floor.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/AllocatorBase.cs` - partial-sector images and recovery flush requests.
-> - `libs/storage/Tsavorite/cs/src/core/Utilities/PageAsyncResultTypes.cs` - `PageFlushJoin`, which completes a page flush
->   once its device writes and its object-log flush have completed.
+> - `libs/storage/Tsavorite/cs/src/core/Utilities/PageAsyncResultTypes.cs` - `PageFlushJoin`, which completes a page flush once its device writes and its object-log flush have completed.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLog.cs` - the log-structured substrate; see section 12.
-> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogWriter.cs` / `ObjectLogReader.cs` - writing and
->   reading a record's components; see section 12.10.
-> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogReadAhead.cs` - reading ahead through a page's
->   records' extents; see sections 6.5 and 12.10.
-> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogReadAheadRange.cs` - choosing the range of a
->   page's records that the read-ahead reads; see section 12.10.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogWriter.cs` / `ObjectLogReader.cs` - writing and reading a record's components; see section 12.10.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogReadAhead.cs` - reading ahead through a page's records' extents; see sections 6.5 and 12.10.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogReadAheadRange.cs` - choosing the range of a page's records that the read-ahead reads; see section 12.10.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogExtent.cs` - extent framing and read hints.
-> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogDirectory.cs` - directory entry, record
->   header, and layout arithmetic; see section 12.9.
-> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogPositionInfo.cs` - position word layout and
->   format flags.
-> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/LegacyObjectLogReader.cs` / `LegacyObjectLogPosition.cs` /
->   `CircularDiskReadBuffer.cs` / `DiskReadBuffer.cs` - reading a version 7 object log.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogDirectory.cs` - directory entry, record header, and layout arithmetic; see section 12.9.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogPositionInfo.cs` - position word layout and format flags.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/LegacyObjectLogReader.cs` / `LegacyObjectLogPosition.cs` / `CircularDiskReadBuffer.cs` / `DiskReadBuffer.cs` - reading a version 7 object log.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/OverflowByteArray.cs` - owned overflow storage.
-> - `libs/storage/Tsavorite/cs/src/core/Index/Recovery/Recovery.cs` - recovery passes, snapshot-region flushes, and
->   up-conversion.
+> - `libs/storage/Tsavorite/cs/src/core/Index/Recovery/Recovery.cs` - recovery passes, snapshot-region flushes, and up-conversion.
 > - `libs/storage/Tsavorite/cs/src/core/Index/CheckpointManagement/RecoveryInfo.cs` - checkpoint format versions.
-> - `libs/storage/Tsavorite/cs/src/core/Index/CheckpointManagement/SnapshotFlushCoordination.cs` - Snapshot/ReadOnly page
->   ordering; see section 5.7.
-> - `libs/storage/Tsavorite/cs/src/core/Index/Checkpointing/HybridLogCheckpointSMTask.cs` / `SnapshotCheckpointSMTask.cs` -
->   creating, sampling, and closing the object logs at checkpoint phases; see section 12.11.
+> - `libs/storage/Tsavorite/cs/src/core/Index/CheckpointManagement/SnapshotFlushCoordination.cs` - Snapshot/ReadOnly page ordering; see section 5.7.
+> - `libs/storage/Tsavorite/cs/src/core/Index/Checkpointing/HybridLogCheckpointSMTask.cs` / `SnapshotCheckpointSMTask.cs` - creating, sampling, and closing the object logs at checkpoint phases; see section 12.11.
 
 ---
 
@@ -530,7 +519,7 @@ cache and the in-memory stores of iterators and compaction. Recovery never takes
 disk hold positions rather than map indices, so a recovered page's map is empty whatever its records hold, and every
 recovery flush must examine its records.
 
-### 5.2 Per-record capture and stamping
+### 5.2 Per-record publication and stamping
 
 `WriteAsync` resolves each record's objectId slots against the page's live `ObjectIdMap`. ReadOnly enters from an epoch
 callback and suspends that hold for the flush, restoring it before it returns; Snapshot and recovery enter without
@@ -546,12 +535,28 @@ For each record:
 - In a Snapshot flush, a next-version record at or above `fuzzyRegionStartAddress` is left unchanged, and recovery
   rejects it (section 5.7).
 - A fully inline record has nothing to write.
-- In a ReadOnly or Snapshot flush, `LogRecord.TryGetOutOfLineComponents` first captures the overflow key and the
+- In a ReadOnly or Snapshot flush, `LogRecord.TryGetOutOfLineComponents` first takes the overflow key and the
   overflow value or object, rooting them, and reports a slot that a concurrent operation has already freed rather than
   throwing. The flush then re-reads the live `RecordInfo`. Elision invalidates a record before it frees the record's
-  heap, so a capture that lost its heap finds an Invalid record, which the flush skips as if it had been Invalid from
-  the start. Otherwise `WriteRecordObjects(keyOverflow, valueOverflow, valueIsObject, valueObject)` writes the
-  components and `SetObjectLogPositionAndHints` stamps the record.
+  heap, so a flush that lost the record's heap finds an Invalid record, which it skips as if it had been Invalid from
+  the start. Otherwise the flush publishes the record according to what its value slot holds (sections 9.1 and 13.4):
+  - An object: the flush claims it, which waits out a Snapshot capture or a serializer that holds the claim, writes the
+    components with `WriteRecordObjects(keyOverflow, valueOverflow, valueIsObject, valueObject)`, stamps the record, and
+    leaves the object's phase naming the flush that published it: `READONLY_STAMPED`, or `SNAPSHOT_STAMPED` with the
+    checkpoint's tag.
+  - A superseded object, which is never claimed because the CopyUpdate's new record shares its collections and may
+    have changed them, or the placeholder a CopyUpdate's release left in the slot: if the record is marked and the
+    active Snapshot checkpoint captured it, the flush keeps the record's stamp, which locates the capture in that
+    checkpoint's object log, and writes nothing. Otherwise it writes a null value, or the `(v)` bytes
+    `CacheSerializedObjectData` cached.
+  - An overflow value: the flush claims the array, writes it, stamps the record, and records the publication in the
+    array's phase unless a newer record that shares the array owns it. A capture's sentinel in the slot is treated as
+    the placeholder is, and is otherwise written as an empty value.
+  - An overflow key alone is written, and the record stamped.
+
+  Stamping (`StampFlushedRecord`) sets the position and hints with `SetObjectLogPositionAndHints` and clears the
+  record's marker. A ReadOnly flush that keeps a capture's stamp records the record's address, which lowers `L`
+  (section 13.6).
 - A recovery flush copies, re-serializes, or keeps each record's components, as section 7 describes.
 
 ### 5.3 Writing a record
@@ -724,15 +729,19 @@ recovery reads; section 13 describes how.
 
 `ObjectLogReader` reads a record's components from one `ObjectLog`: the main object log, or during Snapshot recovery the
 checkpoint's object log. Reads select it by device with `GetReadObjectLog`; the Snapshot-region copy receives it from
-the recovery flush, which takes it from `GetRecoverySnapshotObjectLog`. No epoch is held while deserializing;
-`ObjectLog.Read` takes its own scope for each read. The reader's callers are:
+the recovery flush, which takes it from `GetRecoverySnapshotObjectLog`. A marked record's stamp addresses a capture in a
+checkpoint's object log (section 13.1), which only recovery reads: Pass 1 to hash a marked record's overflow key, and
+the reference repair to copy its components into the main object log (section 9.10). A pending read skips a marked
+image read from the main log (section 9.2), and a page walk over the main object log invalidates one (section 9.4). No
+epoch is held while deserializing; `ObjectLog.Read` takes its own scope for each read. The reader's callers are:
 
 | Caller | Read-ahead | Sequence |
 |---|---|---|
 | Single-record pending read (`VerifyRecordFromDiskCallback`) | None | Section 9.2 |
-| Page walk (`DeserializeObjectsOnPage`): page reads outside recovery Pass 1, such as scans, and recovery Pass 2 | When at least two records are read | Sections 7.2 and 9.4 |
+| Page walk (`DeserializeObjectsOnPage`): page reads outside recovery Pass 1, such as scans, and recovery Pass 2 | When at least two of the page's records are in its range | Sections 7.2 and 9.4 |
 | Recovery Pass 1 overflow-key hash (`ComputeRecoveryOverflowKeyHash`) | None | Sections 7.1 and 9.3 |
-| Snapshot-region copy (`CopyRecordTo`, within `WriteAsync`) | When at least two records are read | Sections 7.4 and 9.5 |
+| Snapshot-region copy (`CopyRecordTo`, within `WriteAsync`) | When at least two of the page's records are in its range | Sections 7.4 and 9.5 |
+| Reference repair (`CopyRecordTo`, within `CompleteMainObjectLogRecovery`) | None | Sections 9.10 and 13.7 |
 
 The pending read and the page walk share `ObjectAllocatorImpl.ReadRecordObjects(reader, ref logRecord, requestedKey)`:
 
@@ -839,18 +848,26 @@ transient map. The flushed hint bits are never used as an index without `GetInde
 
 Recovery positions the object logs before it reads any record (section 12.11):
 
-- For a version 8 checkpoint, `RestoreObjectLog` replaces the main object log with a fresh `ObjectLog`, restored with
-  `ObjectLog.RestoreTail` to `objectLogBeginAddress` and `hlogEndObjectLogTail`; a checkpoint that recorded no end
-  leaves it empty. A Snapshot whose main-log recovery range is empty references nothing in the main object log, so its
-  begin address is set to that end.
+- For a version 8 checkpoint, `BeginMainObjectLogRecovery` calls `RestoreObjectLog`, which replaces the main object log
+  with a fresh `ObjectLog`, restored with `ObjectLog.RestoreTail` to `objectLogBeginAddress` and `hlogEndObjectLogTail`;
+  a checkpoint that recorded no end leaves it empty. A Snapshot whose main-log recovery range is empty references
+  nothing in the main object log, so its begin address is set to that end. The log is then read-only for recovery
+  (`RecoveryReadOnly`) until `CompleteMainObjectLogRecovery` restores its tail (section 9.10).
 - For a version 8 Snapshot, recovery opens the checkpoint's object log at `snapshotEndObjectLogTail`
-  (`OpenRecoverySnapshotObjectLog`) and closes it when the snapshot phase ends, on failure as well.
+  (`OpenRecoverySnapshotObjectLog`) for each phase that reads it. The hybrid-log phase opens it when `[L, M)` is not
+  empty, because main-log records there may reference captures in it (section 13.7), and closes it after the reference
+  repair. The snapshot phase opens it again, and closes it when that phase ends, on failure as well.
 
-Every current-format read validates against its log's `[BeginAddress, TailAddress)`. The recorded ends bound recovery's
-reads until recovery itself appends: a Snapshot recovery's snapshot-region copies (section 7.4) extend the main object
-log, and later reads are checked against that live tail. A recovery call selects the object log by device: none for the
-main object log, or the checkpoint's object-log device. Version 7 reads go through the legacy reader (section 7.5),
-which bounds a read of the checkpoint's object log by its recorded end and a read of the main object log not at all.
+Every current-format read validates against its log's `[BeginAddress, ReadEndAddress)`, and no read crosses an
+object-log page. `ReadEndAddress` is the log's tail, except while the main object log is read-only for recovery: an
+earlier recovery from the same checkpoint may have appended copies above the recorded end, which main-log records now
+reference (section 13.7), so until Pass 1 has seen every reference a read is bounded by the extent it reads rather than
+by the tail. `CompleteMainObjectLogRecovery` then sets the tail to the end of the highest reference if that is higher,
+and recovery's own appends follow it: the reference repair's copies and a Snapshot recovery's snapshot-region copies
+(section 7.4) extend the main object log, and later reads are checked against that live tail. A recovery call selects
+the object log by device: none for the main object log, or the checkpoint's object-log device. Version 7 reads go
+through the legacy reader (section 7.5), which bounds a read of the checkpoint's object log by its recorded end and a
+read of the main object log not at all.
 
 A failed or cancelled recovery releases the checkpoint's object log and devices only after its IO completes, because
 cancelling a wait does not cancel the reads and flushes it was waiting for. `RecoveryStatus` counts each page read and
@@ -861,10 +878,21 @@ rethrows, so a caller that disposes the store once recovery throws cannot free a
 ### 7.1 Pass 1: index construction and overflow-key hashing
 
 Pass 1 builds the index before any object is loaded, so an overflow key cannot be resolved through the page's
-`ObjectIdMap`. `RecoverFromPage` hashes an inline key from the record and calls `ComputeRecoveryOverflowKeyHash` for an
-overflow key, which:
+`ObjectIdMap`. On a page read from the main log it starts at `recoverFromAddress`, or at `L` when `[L, M)` is not empty
+and `L` is lower, so that it inspects every record an earlier recovery's reference repair may have pointed past the
+recorded end of the main object log (section 13.7). Before hashing, it:
 
-1. creates an `ObjectLogReader` over the record's object log;
+- invalidates a marked image outside `[L, M)`, whose stamp addresses a checkpoint object log that this recovery does
+  not read (section 13.7); the page is then written back (section 7.3); and
+- for a version 8 record that it keeps, passes the record to `InspectRecoveryObjectLogReference`, which keeps the
+  highest main-object-log reference of an unmarked record, from which `CompleteMainObjectLogRecovery` sets the main
+  object log's tail (section 9.10).
+
+It does not hash a record below `recoverFromAddress`. `RecoverFromPage` hashes an inline key from the record and calls
+`ComputeRecoveryOverflowKeyHash` for an overflow key, which:
+
+1. creates an `ObjectLogReader` over the record's object log: for a marked record, the checkpoint's object log that
+   recovery opened (section 7), and otherwise the one `GetReadObjectLog` selects by device;
 2. calls `BeginRecord`, whose first read covers the whole top extent, the key alone or a directory, because the key's
    page count is exact;
 3. calls `ReadKey`, which reads only the key into one exact `OverflowByteArray`; and
@@ -904,11 +932,12 @@ readable position is materialized without reading (section 3.2) and adds nothing
 
 ### 7.3 Recovery flush of hybrid-log-region records
 
-When Pass 1 invalidates next-version records on a page read from the main log, `ProcessReadPageAndFlush` writes the page
-back. That flush has no object log to write:
+When Pass 1 invalidates a record on a page read from the main log, a next-version record or a marked image outside
+`[L, M)`, `ProcessReadPageAndFlush` writes the page back. That flush has no object log to write:
 
 - A current-format record is written verbatim. Its position, objectId hints, and exact-size flags already describe
-  durable bytes in the main object log, so the flush leaves them untouched and copies nothing.
+  durable bytes, in the main object log or, for a marked record in `[L, M)`, in the checkpoint's object log, from which
+  the reference repair copies them (section 9.10). So the flush leaves them untouched and copies nothing.
 - A version 7 record cannot reach this flush, because recovery up-converts every page of a version 7 checkpoint instead
   (section 7.5). The flush throws if one does, rather than persist a page that later releases cannot decode.
 
@@ -1012,7 +1041,9 @@ which both sides enforce, rather than by the 2 GB single-array limit.
 
 ## 9. Call sequences
 
-Indentation is call depth. Component branches and lifetime changes are included where they occur.
+Indentation is call depth. Component branches and lifetime changes are included where they occur. Section 13 gives the
+reasons for the publication, capture, and repair steps; these sequences show where they happen. `S`, `M`, `L`, and `T`
+are the addresses section 13.1 defines.
 
 ### 9.1 Normal page flush
 
@@ -1029,15 +1060,39 @@ Indentation is call depth. Component branches and lifetime changes are included 
     - `epoch.TrySuspend()`
     - ReadOnly flush starting mid-sector -> `TryGetDurableSectorPrefix(...)`
     - `new ObjectLogWriter(objectLog, storeFunctions, objectLogWriterSettings)`
+    - the checkpoint whose captures the flush keeps: for a Snapshot flush, `ActiveSnapshotObjectLog` when its log is the
+      flush's (`snapshotFlushState`); for a ReadOnly flush, `ActiveSnapshotObjectLog` as read for each marked record
     - each Valid record with objects, except a Snapshot's fuzzy next-version records
-      - `LogRecord.TryGetOutOfLineComponents(...)`, then re-read `Info.Valid`
-      - `ObjectLogWriter.WriteRecordObjects(keyOverflow, valueOverflow, valueIsObject, valueObject)`
+      - `LogRecord.TryGetOutOfLineComponents(...)`, then re-read `Info.Valid`: a record elided since is skipped
+      - publish the record, by what its value slot holds (section 13.4)
+        - an object -> `PublishFlushedObject`
+          - `TryClaim(out priorWord)`, which waits out a capture or a serializer that holds the claim
+          - not claimed, because the object is superseded
+            - marked, and captured by the flush's checkpoint (`IsCapturedBy(priorWord, tag)`) -> keep the capture's
+              stamp and write nothing; ReadOnly -> `NoteMainLogReference(address)`, which lowers `L`
+            - otherwise -> write what a superseded object serializes as: a null value, or the `(v)` bytes
+              `CacheSerializedObjectData` cached
+          - claimed -> `BeginClaimedWrite`; write; stamp; `EndClaimedWrite`; `ReleaseClaim` with `READONLY_STAMPED` or
+            `SNAPSHOT_STAMPED(tag)`, or with the phase it found if the write threw
+        - a placeholder (`SupersededObjectValue`), which a CopyUpdate's release left -> `PublishSupersededObject`
+          - marked, and the placeholder names the flush's checkpoint as the one that captured the object
+            (`CapturingSnapshot`) -> keep the stamp, as above
+          - otherwise -> write a null value
+        - an overflow value -> `PublishFlushedOverflow`
+          - a sentinel: marked, and the flush's checkpoint's `OverflowSentinel` -> keep the stamp, as above; otherwise
+            write an empty value
+          - otherwise -> `ClaimForPublication(out priorWord, out priorOwner)`; read the slot again: a different array ->
+            release the claim and retry with it, a freed slot -> skip the record; write; stamp; unless a newer record
+            owns the array, set its phase to `READONLY_STAMPED` or `SNAPSHOT_STAMPED(tag)` and its owner to this record;
+            `ReleasePublicationClaim`
+        - an overflow key alone -> write; stamp
+      - write: `ObjectLogWriter.WriteRecordObjects(keyOverflow, valueOverflow, valueIsObject, valueObject)`
         - `BeginRecord`; `AppendKey`; `AppendValue`, or `Serialize` -> serializer -> `Write` -> `AppendValue`
           - full staging buffer -> `EmitStaged` -> `EmitDataChunk` -> `ObjectLog.Allocate`
           - long source span with nothing staged -> `EmitDataChunk`
           - `AddChunkEntries` -> `WriteSpine` when the entry list is full
         - `FinishRecord` -> `TryWriteSingleExtent` or `WriteTopDirectoryRecord`; encode the hint
-      - `LogRecord.SetObjectLogPositionAndHints(in result)`
+      - stamp: `StampFlushedRecord` -> `LogRecord.SetObjectLogPositionAndHints(in result)`; clear the marker
     - `ObjectLog.FlushTail(wait: false)` if any record wrote object-log bytes
     - ReadOnly -> `RecordPartialSectorImage(...)`; mid-sector start -> `WaitForWritesBelow(start)`
     - `new PageFlushJoin(callback, asyncResult)`
@@ -1051,6 +1106,9 @@ Indentation is call depth. Component branches and lifetime changes are included 
 - `ObjectAllocatorImpl.VerifyRecordFromDiskCallback(ref ctx, ...)`
   - `AllocatorBase.VerifyRecordFromDiskCallback` -> false for an incomplete record, an Invalid record, or a mismatched
     inline key
+  - marked image -> its components are in a checkpoint's object log, which only recovery reads:
+    `OnDeserializationError(keyWasSet: false)` clears its out-of-line fields without freeing them, and
+    `prevAddressToRead` is the record's `PreviousAddress`
   - inline record -> done
   - unstamped position -> throw; a record read from disk with out-of-line components must carry one
   - `new ObjectLogReader(GetReadObjectLog(null), storeFunctions)`, with no read-ahead
@@ -1058,7 +1116,8 @@ Indentation is call depth. Component branches and lifetime changes are included 
     - `GetObjectLogRecordRef()`
     - `BeginRecord(recordRef)` -> `ObjectLog.Read`, and a second read for a long length-prefixed extent
       - `HasDirectory` -> `ParseDirectory` -> one `ObjectLog.Read` per spine record
-    - overflow key -> `KeyOverflow = ReadKey()` -> `KeysEqual(requestedKey, logRecord)`; mismatch -> return false
+    - overflow key -> `KeyOverflow = ReadKey()` -> `KeysEqual(requestedKey, logRecord)`; mismatch ->
+      `OnDeserializationError(keyWasSet)`, return false
     - overflow value -> `ValueOverflow = ReadValueOverflow()`
     - object -> `SetDeserializedValueObject(ReadValueObject())`
     - `OnObjectReadComplete()`; on an exception, `OnDeserializationError(keyWasSet)`; `finally` -> `EndRecord()`
@@ -1066,18 +1125,30 @@ Indentation is call depth. Component branches and lifetime changes are included 
 
 ### 9.3 Recovery Pass 1
 
-- `Recovery.RecoverFromPage(...)`, for a page from the main log or the snapshot file
+- `Recovery.ProcessReadPage(...)` for a page read from the main log, or `ProcessReadSnapshotPage(...)` for one read from
+  the snapshot file -> `RecoverFromPage(...)`
+  - main-log page: the walk starts at `recoverFromAddress`, or at `L` when `[L, M)` is not empty and `L` is lower
+  - main-log page: a marked image outside `[L, M)` -> `SetInvalid`, skip; the page is written back (section 9.6)
   - snapshot page: next-version record at or above `fuzzyRegionStartAddress` -> `SetInvalid`, skip
+  - main-log page, current format, a record that is kept -> `ObjectAllocatorImpl.InspectRecoveryObjectLogReference`,
+    which keeps the highest main-object-log position of an unmarked record (section 9.10)
+  - a record below `recoverFromAddress` -> skip
   - inline key -> `storeFunctions.GetKeyHashCode64(logRecord)`
   - overflow key -> `ObjectAllocatorImpl.ComputeRecoveryOverflowKeyHash(in logRecord, ..., objectLogDevice, ...)`
-    - version 8 -> `new ObjectLogReader(GetReadObjectLog(objectLogDevice), storeFunctions)`
+    - version 8 -> `new ObjectLogReader(source, storeFunctions)`, where `source` is the checkpoint's object log that
+      recovery opened for a marked record, whose stamp is a capture, and otherwise `GetReadObjectLog(objectLogDevice)`
       - `GetObjectLogRecordRef()` -> `BeginRecord` -> `ReadKey()`
       - pin the key -> `storeFunctions.GetKeyHashCode64(ConditionallyHoistedKey.CreatePinned(...))`
     - version 7 -> `LegacyObjectLogReader.ReadOverflowKeyHashCodeForRecovery(...)` through the caller's ring
+  - `FindOrCreateTag`; a next-version record at or above `fuzzyRegionStartAddress`, when next-version records are undone
+    -> `SetInvalid`, and the bucket gets its `PreviousAddress` if that is below `recoverFromAddress`; otherwise the
+    bucket gets the record's address
 
 ### 9.4 Recovery Pass 2 / page load
 
-- `Recovery.RecoveryLoadObjectsPass2(recoveryStatus, from, until, snapshotObjectLogDevice, snapshotBoundaryPage)`
+- `Recovery.RecoveryLoadObjectsPass2(recoveryStatus, from, until, snapshotObjectLogDevice, snapshotBoundaryPage)`, at
+  the end of `RecoverHybridLogAsync` for FoldOver, while the main object log is still read-only for recovery, and in
+  `RecoverHybridLogFromSnapshotFileAsync` for a Snapshot, after the reference repair (section 9.10)
   - with a size tracker, per page from the top down: `CalculatePageObjectSizes` -> `FindHeadAddressCutoffOnPage` ->
     `FlushIfNeededThenEvictPageForRecovery` for lower pages -> `FlushSnapshotPageForRecovery` when the cutoff leaves
     snapshot-region records below the head
@@ -1092,6 +1163,10 @@ Indentation is call depth. Component branches and lifetime changes are included 
           page indexes its map, which a scan that includes closed records resolves
         - first readable record -> `new ObjectLogReader(GetReadObjectLog(objectLogDevice), storeFunctions)`;
           `reader.ReadAhead = StartPageReadAhead(...)`
+          - from that record on, each Valid, unmarked, stamped record with objects ->
+            `ObjectLogReadAheadRange.Add(in recordRef, log)`
+          - `TryGetRange` -> `new ObjectLogReadAhead(log, start, end, ..., holeStart, holeEnd)`, or none when fewer than
+            two records are in the range (section 12.10)
         - `ReadRecordObjects(reader, ref logRecord, default(EmptyKey))` -> `TrackRecoveredObjectRecord`
         - `finally`: dispose the reader and the read-ahead
 - page reads outside Pass 1: `ObjectAllocatorImpl.ReadAsync` -> `AsyncReadPageWithObjectsCallback` ->
@@ -1099,6 +1174,8 @@ Indentation is call depth. Component branches and lifetime changes are included 
 
 ### 9.5 Snapshot recovery copy
 
+- `Recovery.RecoverHybridLogFromSnapshotFileAsync(...)` opens the checkpoint's object log at `snapshotEndObjectLogTail`
+  (`OpenRecoverySnapshotObjectLog`), and closes it in its `finally`
 - `Recovery.FlushSnapshotPageForRecovery(recoveryStatus, page)`
   - `AsyncFlushPagesForRecovery(snapshotScanFromAddress, page, 1, ..., objectLogRecoveryDevice,
     formerFlushedUntilAddress: snapshotScanFromAddress, untilAddress: snapshotUntilAddress)`
@@ -1106,19 +1183,22 @@ Indentation is call depth. Component branches and lifetime changes are included 
     - `asyncResult.recoverySnapshotObjectLog = GetRecoverySnapshotObjectLog(objectLogRecoveryDevice)`
     - `ObjectAllocatorImpl.WriteAsync(...)`
       - page starting in the snapshot region -> `SetLowestObjectLogAddress(objectLog.TailAddress, force: true)`
-      - each record with objects at or above `formerFlushedUntilAddress`
+      - each Valid record with objects at or above `formerFlushedUntilAddress`
         - `GetObjectLogRecordRef()`
         - first such record -> `new ObjectLogReader(snapshotSourceLog, storeFunctions)`;
-          `ReadAhead = StartPageReadAhead(snapshotSourceLog, ...)`
+          `ReadAhead = StartPageReadAhead(snapshotSourceLog, ...)`, which leaves out the page's captures (its marked
+          records): they lie below the page's other records, and are read directly
         - `BeginRecord` -> `CopyRecordTo(logWriter)` -> writer `BeginRecord`, `AppendKey`, `AppendValue`,
           `FinishRecord` -> `EndRecord`
-        - `SetObjectLogPositionAndHints(in result)`
+        - `SetObjectLogPositionAndHints(in result)`; clear the marker
       - `ObjectLog.FlushTail(wait: false)`, page writes, `PageFlushJoin`
+      - `finally`: also dispose the reader and its read-ahead
   - `WaitFlush(pageIndex)`; `snapshotPageFlushedToMain[pageIndex] = true`
 
 ### 9.6 Recovery-state flush of hybrid-log-region records
 
-- `Recovery.ProcessReadPageAndFlush(...)` -> `ProcessReadPage` reports that it invalidated next-version records
+- `Recovery.ProcessReadPageAndFlush(...)` -> `ProcessReadPage` reports that Pass 1 invalidated a record on the page: a
+  next-version record, or a marked image outside `[L, M)`
   - `AsyncFlushPagesForRecovery(scanFromAddress, page, 1, ..., checkpointVersion)`: no snapshot device and no
     up-conversion, so `asyncResult.objectLog` is null
   - `ObjectAllocatorImpl.WriteAsync(...)`
@@ -1140,11 +1220,16 @@ Indentation is call depth. Component branches and lifetime changes are included 
   - publish the range's exclusive end into `LastIssuedFlushedUntilAddress` before issuing its page writes
   - callbacks advance `FlushedUntilAddress` only after the corresponding main-log and object-log writes are durable
 - `SnapshotCheckpointSMTask.GlobalBeforeEnteringState(PREPARE)`
+  - `ObjectLog_OnPrepare()` records `objectLogBeginAddress`; `ObjectLog_OnPrepareSnapshot()` creates the checkpoint's
+    object log and opens its captures (section 9.9)
   - when `SnapshotFlushCoordinationWindowSize` is nonzero, create and publish
     `SnapshotFlushCoordination` in `Open`
   - when it is zero, do not create coordination; Snapshot retains parallel uncoordinated page submission
 - `SnapshotCheckpointSMTask.GlobalBeforeEnteringState(WAIT_FLUSH)`
   - capture TailAddress as `recoveredTailAddress`
+  - the provisional start is `FlushedUntilAddress`, or `HeadAddress` on a `NullDevice` main log; if
+    `recoveredTailAddress` is at or below it, it is `snapshotFileLogicalStartAddress`, the coordination is removed, and
+    nothing is flushed
   - call `InstallSnapshotFlushCoordination(...)`
     - enter `CapturingCutoff`, then execute a memory barrier paired with the ReadOnly worker's
       `LastIssuedFlushedUntilAddress` publication
@@ -1161,8 +1246,9 @@ Indentation is call depth. Component branches and lifetime changes are included 
       the cohort has published durable completion
     - reacquire the installation lock, capture the resulting `FlushedUntilAddress` as the stable
       `snapshotFileLogicalStartAddress`, initialize `readOnlyFlushPageLimit` to its page, and enter `Flushing`
+  - `recoveredTailAddress` at or below `snapshotFileLogicalStartAddress` -> remove the coordination and flush nothing
   - `AsyncFlushPagesForSnapshot(snapshotObjectLog, ..., snapshotFileLogicalStartAddress, recoveredTailAddress,
-    fuzzyRegionStartAddress, ...)`, where `snapshotObjectLog` is the checkpoint's own `ObjectLog`
+    fuzzyRegionStartAddress, ...)`, where `snapshotObjectLog` is the checkpoint's own `ObjectLog`, created at `PREPARE`
     - issue live Snapshot pages through the bounded completion window
     - mark out-of-order completions in fixed, reusable slots
     - advance `readOnlyFlushPageLimit` through the contiguous completed prefix; a post-cutoff ReadOnly range may
@@ -1187,6 +1273,102 @@ Indentation is call depth. Component branches and lifetime changes are included 
   - each batch of snapshot-region pages -> `UpgradeSnapshotObjectLogPageForRecovery(...)`, which loads from the
     checkpoint's version 7 object log and flushes as above
   - `CompleteObjectLogUpgrade()`
+
+### 9.9 Snapshot capture of a CopyUpdate source
+
+- `SnapshotCheckpointSMTask.GlobalBeforeEnteringState(PREPARE)` -> `ObjectLog_OnPrepareSnapshot()`
+  - `checkpointManager.GetSnapshotObjectLogDevice(token)`; `Initialize`
+  - `CreateSnapshotObjectLog(device)`: the checkpoint's `ObjectLog`, or null over a `NullDevice`
+  - `BeginSnapshotObjectLog(log)` -> `new SnapshotObjectLogState(log, tag)`, with the next checkpoint tag, wrapping at
+    `MaxCheckpointTag`, published as `ActiveSnapshotObjectLog`; null without a log
+- `InternalRMW.CreateNewRecordRMW(...)`: a CopyUpdate of a main-log source in memory, whose new record is `(v+1)`,
+  while the checkpoint still needs the source's `(v)` image (`CheckpointNeedsSourceImage`) and `ActiveSnapshotObjectLog`
+  is set
+  - object value -> `TryCaptureCopyUpdateSource(captures, sourceObject, ref source, address, ref newRecord)`
+    - durable source: below `FlushedUntilAddress` on a real main-log device -> no capture
+    - `ObjectAllocatorImpl.TryCaptureCopyUpdateSource(captures, ref source, address)`
+      - `captures.TryBeginCapture()`; admission closed -> no capture
+      - `TryGetOutOfLineComponents`; `TryClaim(out priorWord)`, which waits out a flush that holds the claim
+      - `READONLY_STAMPED` -> no capture: the main-log image holds the `(v)` value
+      - `SNAPSHOT_STAMPED(tag)` of this checkpoint -> set the marker; the record keeps the Snapshot flush's stamp
+      - otherwise -> `BeginClaimedWrite`; `WriteCapture(captures, keyOverflow, default, valueIsObject: true,
+        valueObject)`; `EndClaimedWrite`; `SetObjectLogPositionAndHints(in result)`; set the marker
+        - `WriteCapture` -> `captures.RentCaptureWriter()`, or a new `ObjectLogWriter` over the checkpoint's object
+          log -> `WriteRecordObjects` -> `ReturnBuffers` -> `captures.ReturnCaptureWriter(writer)`; a writer whose
+          write threw is disposed
+      - an exception -> `captures.RecordFailure(ex)`, which fails the checkpoint at `PERSISTENCE_CALLBACK`; the
+        CopyUpdate proceeds
+      - `finally`: `ReleaseClaim` with `CAPTURED(tag)`, or `SERIALIZED` when nothing was captured;
+        `captures.EndCapture()`
+    - captured -> `HeapObjectBase.CompleteCapture(ref newRecord)`: the new record gets a clone unless the CopyUpdater
+      set its value, and the object is superseded
+  - object not captured -> `CacheSerializedObjectData(ref newRecord, ...)`: the new record gets a clone unless the
+    CopyUpdater set its value, and the object is superseded, first caching its `(v)` bytes when a FoldOver or streaming
+    checkpoint still needs its image; bytes cached -> `NoteSerializedObjectCache(address)` widens the range a later
+    `ClearSerializedObjectData` sweeps
+  - overflow value -> `TryCaptureCopyUpdateOverflowSource(captures, ref source, address, ref newRecord,
+    out sourceKeepsArray)`
+    - durable source -> no capture
+    - the new record has its own array, because the value's length changed -> no capture; the source keeps its array
+    - `ObjectAllocatorImpl.TryCaptureCopyUpdateOverflowSource(captures, ref source, address)`
+      - `captures.TryBeginCapture()`; `valueOverflow.ClaimForPublication(out priorWord, out priorOwner)`
+      - a ReadOnly flush published this record -> no capture
+      - this checkpoint's Snapshot flush published this record -> set the marker
+      - otherwise -> `WriteCapture(captures, keyOverflow, valueOverflow, valueIsObject: false, null)`;
+        `SetObjectLogPositionAndHints(in result)`; set the marker
+      - an exception -> `captures.RecordFailure(ex)`; no capture
+      - `finally`: release the claim unless the capture keeps it through `PostCopyUpdater`; `captures.EndCapture()`
+  - `PostCopyUpdater`; `finally`: overflow value captured -> `CompleteOverflowCapture(captures, ref source)`: the slot
+    gets the checkpoint's `OverflowSentinel`, the source's share of the array's heap is credited, and the claim is
+    released with phase `REST` and no owner
+  - `PostCopyUpdater` succeeded -> `ReleaseSupersededSource(..., deleted: false, capturingSnapshot)` releases the
+    source's value, unless a checkpoint still reads it: an object whose `(v)` bytes `CacheSerializedObjectData` cached,
+    or an overflow array that still holds the `(v)` value. A captured overflow value was released above.
+    - `ReleaseCopyUpdatedSourceInPlace(ref source, capturingSnapshot)`
+      - object -> the slot gets the capturing checkpoint's `ObjectSentinel`, or `SupersededObjectValue.Released`; the
+        object's heap is credited, and the object is disposed
+      - overflow value -> the slot gets `OverflowByteArray.Released`, and the array's heap is credited
+      - the record's bytes do not change, so a flush that is writing its page needs no wait
+- `SnapshotCheckpointSMTask.GlobalBeforeEnteringState(PERSISTENCE_CALLBACK)`, after sampling `M`
+  - `ObjectLog_OnSnapshotReferencesEnd()`: `L = M`; `captures.CloseAndDrain()` stops admission, waits for the captures
+    in flight, and disposes the writers they kept; a recorded failure -> throw; `L = min(LowestMainLogAddress, M)`
+  - `ObjectLog_OnPersistenceCallback()`: `hlogEndObjectLogTail` is the main object log's `FlushedUntilAddress`; the
+    checkpoint's object log -> `FlushTail(wait: true)`, `snapshotEndObjectLogTail` is its `FlushedUntilAddress`, and it
+    is disposed
+- `REST`, or an abort -> `EndSnapshotObjectLog(captures)` unpublishes the capture state
+
+### 9.10 Recovery: object-log positioning, tail discovery, and reference repair
+
+- `TsavoriteKV.InternalRecoverAsync(recoveredICInfo, recoveredHLCInfo, ...)`
+  - `RecoveryOptions`: `snapshotReferenceStart` is `L`; `snapshotReferenceEnd` is `M` for a Snapshot, and 0 otherwise
+  - `[L, M)` not empty, in a store with an object log -> `checkpointManager.GetSnapshotObjectLogDevice(token)`
+  - version 8
+    - `ObjectAllocatorImpl.BeginMainObjectLogRecovery(info)`
+      - `RestoreObjectLog(begin, hlogEndObjectLogTail)`: a fresh main object log, where `begin` is
+        `objectLogBeginAddress`, or that tail for a Snapshot whose main-log range is empty
+      - `recoveryHighWaterReference = default`; `RecoveryReadOnly = true`: the log takes no appends, reads go to the
+        device, a read may reach past the recorded end, and a length-prefixed top extent's first read is bounded by
+        `GetReferencedExtentEnd`
+    - with the device -> `Initialize`; `OpenRecoverySnapshotObjectLog(device, snapshotEndObjectLogTail)`
+  - FoldOver -> `RecoverHybridLogAsync` (sections 9.3 and 9.4); version 8 -> `CompleteMainObjectLogRecovery(info,
+    headAddress)`, which only restores the tail
+  - Snapshot -> `RecoverHybridLogAsync` (section 9.3; objects are not loaded yet); version 8 ->
+    `CompleteMainObjectLogRecovery(info, headAddress)`; `CloseRecoverySnapshotObjectLog()`;
+    `RecoverHybridLogFromSnapshotFileAsync` (sections 9.4 and 9.5)
+- `ObjectAllocatorImpl.CompleteMainObjectLogRecovery(info, residentHeadAddress)`
+  - tail = the greatest of `hlogEndObjectLogTail`, the log's tail, and the end of the highest reference Pass 1 found
+    (`GetReferencedExtentEnd`, which reads the length prefix of an extent that is not exact)
+  - `RecoveryReadOnly = false`; `RestoreTail(BeginAddress, tail)`
+  - FoldOver, or `L` at or above `M` -> done; no checkpoint object log open -> throw
+  - `new ObjectLogReader(recoverySnapshotObjectLog, ...)`; `new ObjectLogWriter(mainObjectLog, ...)`
+  - each main-log page from the higher of `beginAddress` and `L` up to `M`, resident or not
+    - `ComputeAlignedReadExtent`; `bufferPool.Get`; `TryReadDevice(device, ...)` reads the page from the main log
+    - each Valid marked record -> `GetObjectLogRecordRef()`; `reader.BeginRecord`; `CopyRecordTo(writer)`;
+      `reader.EndRecord()`; `SetObjectLogPositionAndHints(in result)`; clear the marker. A resident record gets the
+      same stamp, and its marker is cleared
+    - any record copied -> `mainObjectLog.FlushTail(wait: true)`, then `TryWriteDevice(device, buffer, ...)` writes the
+      page back, so the copies are durable before the page that references them
+    - `buffer.Return()`
 
 ---
 
