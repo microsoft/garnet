@@ -4,10 +4,12 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -175,6 +177,101 @@ namespace Garnet.test.cluster
             Assert.That(taskStore.GetNumSessions(), Is.EqualTo(1));
             Assert.That(taskStore.TryRemove(session), Is.True);
             Assert.That(taskStore.GetNumSessions(), Is.Zero);
+        }
+
+        [TestCase(TransferOption.KEYS, 1, false)]
+        [TestCase(TransferOption.KEYS, 1, true)]
+        [TestCase(TransferOption.SLOTS, 1, false)]
+        [TestCase(TransferOption.SLOTS, 8, false)]
+        [TestCase(TransferOption.SLOTS, 16, false)]
+        [Explicit("Diagnostic allocation and latency measurements; run in an isolated process.")]
+        public void MeasureTaskStoreAdmission(TransferOption transferOption, int workers, bool promoteKeysFilter)
+        {
+            const int Iterations = 1_000_000;
+            provider.serverOptions.ParallelMigrateTaskCount = workers;
+            provider.serverOptions.MigrateKeySendBatchSize = 4096;
+            taskStore = new MigrateSessionTaskStore();
+            var key = PinnedSpanByte.FromPinnedSpan("task-store-access"u8);
+            var otherKey = PinnedSpanByte.FromPinnedSpan("allocation-probe-other-key"u8);
+
+            Measure("no-session", key, readOnly: false, expected: true);
+            Assert.That(RegisterTask(out session, transferOption: transferOption), Is.True);
+            if (transferOption == TransferOption.SLOTS)
+            {
+                var operations = GetSlotOperations(session);
+                Span<byte> filler = stackalloc byte[16];
+                filler.Clear();
+                for (var worker = 0; worker < operations.Length; worker++)
+                {
+                    for (var i = 0; i < 4095; i++)
+                    {
+                        BinaryPrimitives.WriteInt32LittleEndian(filler, worker * 4096 + i);
+                        if (!operations[worker].sketch.TryHashAndStore(filler))
+                            Assert.Fail("Could not fill the admission probe's batch");
+                    }
+                    operations[worker].sketch.SetStatus(SketchStatus.DELETING);
+                }
+                Assert.That(operations[^1].sketch.TryHashAndStore(key.ReadOnlySpan), Is.True);
+            }
+            else if (promoteKeysFilter)
+                GetOperations(session)[0].sketch.HashAndStore(otherKey);
+
+            Measure("deleting", key, readOnly: false, expected: false);
+            Measure("other-key", otherKey, readOnly: false, expected: taskStore.CanAccessKey(otherKey, 0, readOnly: false));
+            SetStatus(SketchStatus.TRANSMITTING);
+            Measure("transmitting-read", key, readOnly: true, expected: true);
+            Measure("transmitting-write", key, readOnly: false, expected: false);
+            SetStatus(SketchStatus.MIGRATED);
+            Measure("migrated", key, readOnly: false, expected: true);
+
+            var (countAllocations, sessionTotal) = Task.Factory.StartNew(() =>
+            {
+                _ = taskStore.GetNumSessions();
+                var beforeCount = GC.GetAllocatedBytesForCurrentThread();
+                var total = 0;
+                for (var i = 0; i < Iterations; i++)
+                    total += taskStore.GetNumSessions();
+                return (GC.GetAllocatedBytesForCurrentThread() - beforeCount, total);
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default).GetAwaiter().GetResult();
+            Assert.That(sessionTotal, Is.EqualTo(Iterations));
+            TestContext.Out.WriteLine($"Session count: {countAllocations} allocated bytes/{Iterations} calls");
+
+            void SetStatus(SketchStatus status)
+            {
+                if (transferOption == TransferOption.SLOTS)
+                {
+                    foreach (var worker in GetSlotOperations(session))
+                        worker.sketch.SetStatus(status);
+                }
+                else
+                    GetOperations(session)[0].sketch.SetStatus(status);
+            }
+
+            void Measure(string scenario, PinnedSpanByte probe, bool readOnly, bool expected)
+            {
+                // Isolate the measured loop from test-runner bookkeeping.
+                var (allocated, ticks, allowed) = Task.Factory.StartNew(() =>
+                {
+                    _ = MeasureAdmission(taskStore, probe, readOnly, 10_000);
+                    return MeasureAdmission(taskStore, probe, readOnly, Iterations);
+                }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default).GetAwaiter().GetResult();
+                Assert.That(allowed, Is.EqualTo(expected ? Iterations : 0), scenario);
+                TestContext.Out.WriteLine($"{transferOption}, workers={workers}, promoted={promoteKeysFilter}, {scenario}: " +
+                    $"{(double)ticks * 1_000_000_000 / Stopwatch.Frequency / Iterations:F2} ns/op, {allocated} allocated bytes/{Iterations} calls");
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static (long Allocated, long Ticks, int Allowed) MeasureAdmission(
+            MigrateSessionTaskStore store, PinnedSpanByte key, bool readOnly, int iterations)
+        {
+            var allowed = 0;
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            var start = Stopwatch.GetTimestamp();
+            for (var i = 0; i < iterations; i++)
+                allowed += store.CanAccessKey(key, 0, readOnly) ? 1 : 0;
+            var ticks = Stopwatch.GetTimestamp() - start;
+            return (GC.GetAllocatedBytesForCurrentThread() - before, ticks, allowed);
         }
 
         [TestCase(false)]
@@ -1160,6 +1257,81 @@ namespace Garnet.test.cluster
                 GC.KeepAlive(overflow);
                 GC.KeepAlive(destination);
             }
+        }
+
+        [TestCase(8)]
+        [TestCase(64)]
+        [TestCase(256)]
+        [TestCase(1024)]
+        [Explicit("Diagnostic allocation measurements; excludes per-read epoch entry, exit, and draining.")]
+        public void MeasureResidentInlineSerialization(int valueLength)
+        {
+            const int Iterations = 100_000;
+            CreateOperation(3);
+            var api = operation.LocalSession.BasicGarnetApi;
+            var key = PinnedSpanByte.FromPinnedSpan("allocation-serialization"u8);
+            var value = GC.AllocateArray<byte>(valueLength, pinned: true);
+            value.AsSpan().Fill((byte)'v');
+            Assert.That(api.SET(key, PinnedSpanByte.FromPinnedSpan(value)), Is.EqualTo(GarnetStatus.OK));
+            var destination = GC.AllocateArray<byte>(valueLength + 512, pinned: true);
+            var destinationSlice = PinnedSpanByte.FromPinnedSpan(destination);
+            var input = new UnifiedInput(RespCommand.MIGRATE);
+            var output = new UnifiedOutput();
+            try
+            {
+                var (allocated, successful) = Task.Factory.StartNew(() =>
+                {
+                    var storageSession = operation.LocalSession.storageSession;
+                    var unsafeContext = storageSession.unifiedBasicContext.Session.UnsafeContext;
+                    // Isolate resident serialization from epoch entry, exit, and drain-list work.
+                    unsafeContext.BeginUnsafe();
+                    try
+                    {
+                        for (var i = 0; i < 10_000; i++)
+                        {
+                            output.SpanByteAndMemory.SpanByte = destinationSlice;
+                            _ = storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unsafeContext);
+                        }
+
+                        var completed = 0;
+                        var before = GC.GetAllocatedBytesForCurrentThread();
+                        for (var i = 0; i < Iterations; i++)
+                        {
+                            output.SpanByteAndMemory.SpanByte = destinationSlice;
+                            if (storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unsafeContext) == GarnetStatus.OK)
+                                completed++;
+                        }
+                        return (GC.GetAllocatedBytesForCurrentThread() - before, completed);
+                    }
+                    finally
+                    {
+                        unsafeContext.EndUnsafe();
+                    }
+                }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default).GetAwaiter().GetResult();
+                Assert.That(successful, Is.EqualTo(Iterations));
+                Assert.That(output.SpanByteAndMemory.IsSpanByte, Is.True);
+                Assert.That(output.SpanByteAndMemory.Memory, Is.Null);
+                TestContext.Out.WriteLine($"{valueLength}-byte resident values: {allocated} allocated bytes/{Iterations} serializations");
+            }
+            finally
+            {
+                output.Dispose();
+                GC.KeepAlive(value);
+                GC.KeepAlive(destination);
+            }
+        }
+
+        [Test]
+        public void CancellationCallbackFailureStillDisposesMigrationResources()
+        {
+            CreateOperation(3);
+            var client = operation.Client;
+            using var registration = GetCancellationToken(session).Register(() => throw new InvalidOperationException("Cancellation callback failure"));
+
+            Assert.Throws<AggregateException>(() => session.Dispose());
+            Assert.That(client.Disposed, Is.True);
+            Assert.Throws<ObjectDisposedException>(() => operation.EnterWorker());
+            Assert.DoesNotThrow(() => session.Dispose());
         }
 
         [Test]

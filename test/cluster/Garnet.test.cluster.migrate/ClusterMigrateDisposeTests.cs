@@ -64,11 +64,17 @@ namespace Garnet.test.cluster
         /// it, and can return the send buffer twice or let the task write into it after it is back in the pool. The
         /// last task to finish disposes them, and every buffer the migration rented is then back in its pool.
         /// </summary>
-        [Test, CancelAfter(TestTimeout)]
+        [TestCase(1, false)]
+        [TestCase(1, true)]
+        [TestCase(8, false)]
+        [TestCase(8, true)]
+        [TestCase(16, false)]
+        [TestCase(16, true)]
+        [CancelAfter(TestTimeout)]
         [Category("CLUSTER")]
-        public void AMigrationWhoseTargetIsForgottenMidBatchKeepsItsConnectionsUntilItIsDone(CancellationToken cancellationToken)
+        public void AMigrationWhoseTargetIsForgottenMidBatchKeepsItsConnectionsUntilItIsDone(int workers, bool scanAhead, CancellationToken cancellationToken)
         {
-            var slot = CreateClusterHolding(Key);
+            var slot = CreateClusterHolding(Key, workers, scanAhead);
             var manager = ((ClusterProvider)context.nodes[SourceNode].Provider.StoreWrapper.clusterProvider).migrationManager;
 
             using var pause = MigrationPause.Start(context, slot, cancellationToken);
@@ -94,13 +100,19 @@ namespace Garnet.test.cluster
         /// its connections. Shutdown disposes the cluster manager before the migrations, so the migration cannot resume
         /// config merges when it goes on, and it still releases its connections, which shutdown waits for the buffers of.
         /// </summary>
-        [Test, CancelAfter(TestTimeout)]
+        [TestCase(1, false)]
+        [TestCase(1, true)]
+        [TestCase(8, false)]
+        [TestCase(8, true)]
+        [TestCase(16, false)]
+        [TestCase(16, true)]
+        [CancelAfter(TestTimeout)]
         [Category("CLUSTER")]
-        public void ANodeShutDownWhileAMigrationHandsOverItsSlotsFinishesShuttingDown(CancellationToken cancellationToken)
+        public void ANodeShutDownWhileAMigrationHandsOverItsSlotsFinishesShuttingDown(int workers, bool scanAhead, CancellationToken cancellationToken)
         {
             const ExceptionInjectionType Hold = ExceptionInjectionType.Migration_Hold_Ownership_Transfer;
 
-            var slot = CreateClusterHolding(Key);
+            var slot = CreateClusterHolding(Key, workers, scanAhead);
             var store = MigrationTaskStore(((ClusterProvider)context.nodes[SourceNode].Provider.StoreWrapper.clusterProvider).migrationManager);
 
             ExceptionInjectionHelper.EnableException(Hold);
@@ -140,9 +152,14 @@ namespace Garnet.test.cluster
         /// Creates a two node cluster with every slot on the first node, and stores the key on it.
         /// </summary>
         /// <returns>The slot of the key.</returns>
-        int CreateClusterHolding(string key)
+        int CreateClusterHolding(string key, int workers, bool scanAhead)
         {
             context.CreateInstances(2, disableObjects: true);
+            foreach (var options in context.nodeOptions)
+            {
+                options.ParallelMigrateTaskCount = workers;
+                options.UseScanAheadMigration = scanAhead;
+            }
             context.CreateConnection();
 
             _ = context.clusterTestUtils.AddDelSlotsRange(SourceNode, [(0, 16383)], addslot: true, logger: context.logger);
