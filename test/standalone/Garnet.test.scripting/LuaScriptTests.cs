@@ -1856,7 +1856,9 @@ return retArray";
 
             foreach (var (cmd, info) in fullCommands)
             {
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"redis.call('{cmd}')"));
+                var args = info.Arity > 1 ? string.Join(", ", Enumerable.Range(0, info.Arity - 1).Select(static i => $"'{i}'").Prepend($"'{cmd}'").ToArray()) : $"'{cmd}'";
+
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"redis.call({args})"));
                 ClassicAssert.True(exc.Message.StartsWith("ERR This Redis command is not allowed from script"), $"Allowed NoScript command: {cmd}");
             }
 

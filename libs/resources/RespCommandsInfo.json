@@ -5518,7 +5518,7 @@
   {
     "Command": "VADD",
     "Name": "VADD",
-    "Arity": -1,
+    "Arity": -2,
     "Flags": "DenyOom, Write, Module",
     "FirstKey": 1,
     "LastKey": 1,
@@ -5543,7 +5543,7 @@
   {
     "Command": "VCARD",
     "Name": "VCARD",
-    "Arity": -1,
+    "Arity": 2,
     "Flags": "Fast, ReadOnly, Module",
     "FirstKey": 1,
     "LastKey": 1,
@@ -5568,7 +5568,7 @@
   {
     "Command": "VDIM",
     "Name": "VDIM",
-    "Arity": -1,
+    "Arity": 2,
     "Flags": "Fast, ReadOnly, Module",
     "FirstKey": 1,
     "LastKey": 1,
@@ -5593,7 +5593,7 @@
   {
     "Command": "VEMB",
     "Name": "VEMB",
-    "Arity": -1,
+    "Arity": 2,
     "Flags": "Fast, ReadOnly, Module",
     "FirstKey": 1,
     "LastKey": 1,
@@ -5618,7 +5618,7 @@
   {
     "Command": "VGETATTR",
     "Name": "VGETATTR",
-    "Arity": -1,
+    "Arity": 3,
     "Flags": "Fast, ReadOnly, Module",
     "FirstKey": 1,
     "LastKey": 1,
@@ -5643,7 +5643,7 @@
   {
     "Command": "VINFO",
     "Name": "VINFO",
-    "Arity": -1,
+    "Arity": 2,
     "Flags": "Fast, ReadOnly, Module",
     "FirstKey": 1,
     "LastKey": 1,
@@ -5693,7 +5693,7 @@
   {
     "Command": "VLINKS",
     "Name": "VLINKS",
-    "Arity": -1,
+    "Arity": 2,
     "Flags": "Fast, ReadOnly, Module",
     "FirstKey": 1,
     "LastKey": 1,
@@ -5743,7 +5743,7 @@
   {
     "Command": "VREM",
     "Name": "VREM",
-    "Arity": -1,
+    "Arity": 3,
     "Flags": "Write, Module",
     "FirstKey": 1,
     "LastKey": 1,
@@ -5768,7 +5768,7 @@
   {
     "Command": "VSETATTR",
     "Name": "VSETATTR",
-    "Arity": -1,
+    "Arity": 4,
     "Flags": "Fast, Write, Module",
     "FirstKey": 1,
     "LastKey": 1,
