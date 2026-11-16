@@ -532,12 +532,20 @@ namespace Garnet.test
             ClassicAssert.AreEqual(5, infoResults.Length);
             ClassicAssert.AreEqual("SETIFPM", (string)((RedisResult[])infoResults[0])[0]);
             ClassicAssert.AreEqual(4, (int)((RedisResult[])infoResults[0])[1]);
+            ClassicAssert.IsEmpty((RedisResult[])((RedisResult[])infoResults[0])[2]);
+            ClassicAssert.IsEmpty((RedisResult[])((RedisResult[])infoResults[0])[6]);
             ClassicAssert.AreEqual("MYDICTSET", (string)((RedisResult[])infoResults[1])[0]);
             ClassicAssert.AreEqual(4, (int)((RedisResult[])infoResults[1])[1]);
+            ClassicAssert.IsEmpty((RedisResult[])((RedisResult[])infoResults[1])[2]);
+            ClassicAssert.IsEmpty((RedisResult[])((RedisResult[])infoResults[1])[6]);
             ClassicAssert.AreEqual("READWRITETX", (string)((RedisResult[])infoResults[2])[0]);
             ClassicAssert.AreEqual(4, (int)((RedisResult[])infoResults[2])[1]);
+            ClassicAssert.IsEmpty((RedisResult[])((RedisResult[])infoResults[2])[2]);
+            ClassicAssert.IsEmpty((RedisResult[])((RedisResult[])infoResults[2])[6]);
             ClassicAssert.AreEqual("SUM", (string)((RedisResult[])infoResults[3])[0]);
             ClassicAssert.AreEqual(-1, (int)((RedisResult[])infoResults[3])[1]);
+            ClassicAssert.IsEmpty((RedisResult[])((RedisResult[])infoResults[3])[2]);
+            ClassicAssert.IsEmpty((RedisResult[])((RedisResult[])infoResults[3])[6]);
             ClassicAssert.IsTrue(infoResults[4].IsNull);
 
             var docsResults = (RedisResult[])db.Execute("COMMAND", "DOCS", "SETIFPM");
