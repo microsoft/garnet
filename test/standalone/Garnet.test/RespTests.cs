@@ -91,7 +91,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SetValueConditionalExpiry([Values(0, 1, 2)] int storageRegion, [Values("", "EX", "PX", "KEEPTTL")] string expiryOption, [Values("IFEQ", "IFNE")] string condition)
+        public void SetValueConditionalExpiry([Values(0, 1, 2)] int storageRegion, [Values("", "EX", "PX", "EXAT", "PXAT", "KEEPTTL")] string expiryOption, [Values("IFEQ", "IFNE")] string condition)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
@@ -99,10 +99,13 @@ namespace Garnet.test
             long originalExpiry = (long)db.Execute("PEXPIRETIME", "key");
             PrepareSetIfEqualRecord(storageRegion);
 
+            var absoluteExpiry = DateTimeOffset.UtcNow.AddMinutes(2).ToUnixTimeSeconds() * 1000;
             object[] options = expiryOption switch
             {
                 "EX" => ["EX", 120],
                 "PX" => ["PX", 120000],
+                "EXAT" => ["EXAT", absoluteExpiry / 1000],
+                "PXAT" => ["PXAT", absoluteExpiry],
                 "KEEPTTL" => ["KEEPTTL"],
                 _ => []
             };
@@ -117,8 +120,41 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(-1, expiration);
             else if (expiryOption == "KEEPTTL")
                 ClassicAssert.AreEqual(originalExpiry, expiration);
+            else if (expiryOption is "EXAT" or "PXAT")
+                ClassicAssert.AreEqual(absoluteExpiry, expiration);
             else
                 ClassicAssert.GreaterOrEqual(expiration, originalExpiry + 60000);
+        }
+
+        [Test]
+        public void SetComparisonAbsoluteExpiryValidatesAndExpires(
+            [Values("IFEQ", "IFNE", "IFDEQ", "IFDNE")] string condition, [Values("EXAT", "PXAT")] string expiryOption)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            db.StringSet("key", "old", TimeSpan.FromMinutes(1));
+            var originalExpiry = (long)db.Execute("PEXPIRETIME", "key");
+            var comparison = condition switch
+            {
+                "IFEQ" => "old",
+                "IFNE" => "different",
+                "IFDEQ" => DigestOf("old"),
+                _ => DigestOf("different")
+            };
+
+            foreach (var invalidExpiry in new[] { 0L, long.MaxValue })
+            {
+                var exception = ClassicAssert.Throws<RedisServerException>(() =>
+                    db.Execute("SET", "key", "new", condition, comparison, expiryOption, invalidExpiry));
+                ClassicAssert.AreEqual("ERR invalid expire time in 'set' command", exception.Message);
+                ClassicAssert.AreEqual("old", (string)db.StringGet("key"));
+                ClassicAssert.AreEqual(originalExpiry, (long)db.Execute("PEXPIRETIME", "key"));
+            }
+
+            var past = DateTimeOffset.UtcNow.AddSeconds(-1);
+            var expiry = expiryOption == "EXAT" ? past.ToUnixTimeSeconds() : past.ToUnixTimeMilliseconds();
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "key", "new", condition, comparison, expiryOption, expiry));
+            ClassicAssert.IsFalse(db.KeyExists("key"));
         }
 
         [Test]
@@ -516,7 +552,7 @@ namespace Garnet.test
 
         [Test]
         public void SetDigestConditionalComparesCurrentValue([Values(0, 1, 2)] int storageRegion,
-            [Values("IFDEQ", "IFDNE")] string condition, [Values] bool get, [Values("", "EX", "PX", "KEEPTTL")] string expiryOption)
+            [Values("IFDEQ", "IFDNE")] string condition, [Values] bool get, [Values("", "EX", "PX", "EXAT", "PXAT", "KEEPTTL")] string expiryOption)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
@@ -526,10 +562,13 @@ namespace Garnet.test
             long expiration = (long)db.Execute("PEXPIRETIME", "key");
             string digest = DigestOf(original).ToUpperInvariant();
             PrepareSetIfEqualRecord(storageRegion);
+            var absoluteExpiry = DateTimeOffset.UtcNow.AddMinutes(2).ToUnixTimeSeconds() * 1000;
             object[] options = expiryOption switch
             {
                 "EX" => ["EX", 120],
                 "PX" => ["PX", 120000],
+                "EXAT" => ["EXAT", absoluteExpiry / 1000],
+                "PXAT" => ["PXAT", absoluteExpiry],
                 "KEEPTTL" => ["KEEPTTL"],
                 _ => []
             };
@@ -555,6 +594,8 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(-1, updatedExpiry);
             else if (expiryOption == "KEEPTTL")
                 ClassicAssert.AreEqual(expiration, updatedExpiry);
+            else if (expiryOption is "EXAT" or "PXAT")
+                ClassicAssert.AreEqual(absoluteExpiry, updatedExpiry);
             else
                 ClassicAssert.GreaterOrEqual(updatedExpiry, expiration + 60000);
             ClassicAssert.IsTrue(db.Execute("SET", "key", "rejected", condition,
@@ -1585,6 +1626,46 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SetExpiryAtOptions()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            void AssertAbsoluteTtl(string key, long unixTimeMilliseconds)
+            {
+                var ttl = (long)db.Execute("PTTL", key);
+                var expectedTtl = unixTimeMilliseconds - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                ClassicAssert.Greater(ttl, expectedTtl - 10_000);
+                ClassicAssert.LessOrEqual(ttl, expectedTtl + 1_000);
+            }
+
+            var exat = DateTimeOffset.UtcNow.AddMinutes(2).ToUnixTimeSeconds();
+            var result = db.Execute("SET", "set-exat", "value", "EXAT", exat);
+            ClassicAssert.AreEqual("OK", result.ToString());
+            AssertAbsoluteTtl("set-exat", exat * 1000);
+
+            var pxat = DateTimeOffset.UtcNow.AddMinutes(2).ToUnixTimeMilliseconds();
+            result = db.Execute("SET", "set-pxat", "value", "PXAT", pxat);
+            ClassicAssert.AreEqual("OK", result.ToString());
+            AssertAbsoluteTtl("set-pxat", pxat);
+
+            result = db.Execute("SET", "set-expired-pxat", "value", "PXAT",
+                DateTimeOffset.UtcNow.AddSeconds(-1).ToUnixTimeMilliseconds());
+            ClassicAssert.AreEqual("OK", result.ToString());
+            ClassicAssert.IsFalse(db.KeyExists("set-expired-pxat"));
+
+            var conditionalExpiry = DateTimeOffset.UtcNow.AddMinutes(2);
+            result = db.Execute("SET", "set-exat-nx", "value", "EXAT", conditionalExpiry.ToUnixTimeSeconds(), "NX");
+            ClassicAssert.AreEqual("OK", result.ToString());
+            ClassicAssert.AreEqual("value", db.StringGet("set-exat-nx").ToString());
+
+            ClassicAssert.IsTrue(db.StringSet("set-pxat-xx-get", "old-value"));
+            result = db.Execute("SET", "set-pxat-xx-get", "new-value", "PXAT", conditionalExpiry.ToUnixTimeMilliseconds(), "XX", "GET");
+            ClassicAssert.AreEqual("old-value", result.ToString());
+            AssertAbsoluteTtl("set-pxat-xx-get", conditionalExpiry.ToUnixTimeMilliseconds());
+        }
+
+        [Test]
         public void SetExpiryOutOfRangeIsRejectedWithoutKillingSession()
         {
             const string Key = nameof(SetExpiryOutOfRangeIsRejectedWithoutKillingSession);
@@ -1610,6 +1691,10 @@ namespace Garnet.test
 
                 AssertInvalidExpiry("SET", Key, "replacement", "EX", overflowSeconds);
                 AssertInvalidExpiry("SET", Key, "replacement", "PX", long.MaxValue);
+                AssertInvalidExpiry("SET", Key, "replacement", "EXAT", 0);
+                AssertInvalidExpiry("SET", Key, "replacement", "PXAT", 0);
+                AssertInvalidExpiry("SET", Key, "replacement", "EXAT", long.MaxValue);
+                AssertInvalidExpiry("SET", Key, "replacement", "PXAT", long.MaxValue);
                 AssertInvalidExpiry("SETEX", Key, overflowSeconds, "replacement");
                 AssertInvalidExpiry("PSETEX", Key, long.MaxValue, "replacement");
 
