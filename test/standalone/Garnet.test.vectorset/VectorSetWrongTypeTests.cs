@@ -184,6 +184,7 @@ namespace Garnet.test
                 RespCommand.SPUBLISH,
                 RespCommand.SSUBSCRIBE,
                 RespCommand.SUBSCRIBE,
+                RespCommand.TOUCH,
                 RespCommand.TTL,
                 RespCommand.TYPE,
                 RespCommand.UNLINK,
