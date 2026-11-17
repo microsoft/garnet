@@ -1233,7 +1233,14 @@ namespace Garnet.server
                 {
                     foreach (var (key, score) in sortedSetDictionary)
                     {
-                        pairs[key] = weights[0] * score;
+                        var initialWeight = weights[0] * score;
+
+                        if (double.IsNaN(initialWeight))
+                        {
+                            initialWeight = 0;
+                        }
+
+                        pairs[key] = initialWeight;
                     }
                 }
             }
@@ -1542,7 +1549,14 @@ namespace Garnet.server
                 pairs = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
                 foreach (var kvp in firstSortedSet.Dictionary)
                 {
-                    pairs[kvp.Key] = kvp.Value * weights[0];
+                    var initialWeight = kvp.Value * weights[0];
+
+                    if (double.IsNaN(initialWeight))
+                    {
+                        initialWeight = 0;
+                    }
+
+                    pairs[kvp.Key] = initialWeight;
                 }
             }
 
