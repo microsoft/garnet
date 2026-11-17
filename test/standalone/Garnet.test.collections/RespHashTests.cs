@@ -937,7 +937,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual("email1@example.com", members[1]);
         }
 
-
         [Test]
         public async Task CanDoHGETALL()
         {
@@ -960,6 +959,21 @@ namespace Garnet.test
             ClassicAssert.AreEqual("abc", result["foo"]);
             ClassicAssert.AreEqual("def", result["bar"]);
         }
+
+        [Test]
+        public async Task HGETALLReturnTypeAsync()
+        {
+            await using var redis2 = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig(protocol: RedisProtocol.Resp2)).ConfigureAwait(false);
+
+            var resp2EmptyResponse = await redis2.GetDatabase().ExecuteAsync("HGETALL", "foo").ConfigureAwait(false);
+            ClassicAssert.AreEqual(ResultType.Array, resp2EmptyResponse.Resp3Type);
+
+            await using var redis3 = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig(protocol: RedisProtocol.Resp3)).ConfigureAwait(false);
+
+            var resp3EmptyResponse = await redis3.GetDatabase().ExecuteAsync("HGETALL", "foo").ConfigureAwait(false);
+            ClassicAssert.AreEqual(ResultType.Map, resp3EmptyResponse.Resp3Type);
+        }
+
         [Test]
         public async Task CanDoHMSETMultipleTimes()
         {
