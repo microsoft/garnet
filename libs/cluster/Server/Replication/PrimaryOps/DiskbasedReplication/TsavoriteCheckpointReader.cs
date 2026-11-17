@@ -73,7 +73,10 @@ namespace Garnet.cluster
                 0,
                 indexSize));
 
-            // 3. Send snapshot files
+            // 3. Send snapshot files. The checkpoint's object log is sent whenever it holds data, even if the snapshot file holds none.
+            // A ReadOnly flush can write every page up to the checkpoint's tail before the Snapshot flush starts, which then writes
+            // nothing. But captures of the values that CopyUpdates superseded during the checkpoint are still in its object log, and
+            // the main-log records the ReadOnly flush wrote reference them there, so the replica's recovery reads them from that log.
             if (logFileInfo.snapshotFileEndAddress > PageHeader.Size)
             {
                 fileDataSources.Add(CreateFileDataSource(
@@ -81,13 +84,15 @@ namespace Garnet.cluster
                     checkpointEntry.metadata.storeHlogToken,
                     0,
                     logFileInfo.snapshotFileEndAddress));
+            }
 
-                if (logFileInfo.hasSnapshotObjects)
-                    fileDataSources.Add(CreateFileDataSource(
-                        CheckpointFileType.STORE_SNAPSHOT_OBJ,
-                        checkpointEntry.metadata.storeHlogToken,
-                        0,
-                        logFileInfo.snapshotObjectFileEndAddress));
+            if (logFileInfo.snapshotObjectFileEndAddress > 0)
+            {
+                fileDataSources.Add(CreateFileDataSource(
+                    CheckpointFileType.STORE_SNAPSHOT_OBJ,
+                    checkpointEntry.metadata.storeHlogToken,
+                    0,
+                    logFileInfo.snapshotObjectFileEndAddress));
             }
 
             // 4. Metadata sources

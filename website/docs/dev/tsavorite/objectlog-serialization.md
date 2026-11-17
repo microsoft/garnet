@@ -1965,7 +1965,10 @@ holding its begin address to its recorded end, or, when `[L, M)` is not empty, t
 if that is higher, which covers the copies a recovery from this checkpoint appended, and the checkpoint's object log
 from its start to its recorded end. A log that holds nothing
 gets an empty range, since its file may not exist. A main object log first created during the checkpoint records a
-begin address of zero, so if it holds objects, its range starts at zero.
+begin address of zero, so if it holds objects, its range starts at zero. The checkpoint's object log is transferred
+whenever it holds data, even when the snapshot file holds none: if ReadOnly flushes have written every page up to the
+checkpoint's tail, the Checkpoint Flush writes nothing, but the log still holds the checkpoint's captures, which the
+marked records in `[L, M)` reference.
 
 ---
 
