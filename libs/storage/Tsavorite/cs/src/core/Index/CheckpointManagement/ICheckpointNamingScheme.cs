@@ -63,6 +63,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Commit number associated with given file descriptor
         /// </summary>
+        /// <param name="fileDescriptor">A file listed in <see cref="TsavoriteLogCommitBasePath"/></param>
+        /// <returns>The commit number, or -1 if the file is not one of this log's commit-metadata files, such as another
+        /// sublog's</returns>
         long CommitNumber(FileDescriptor fileDescriptor);
 
         /// <summary>
