@@ -431,7 +431,7 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            return NetworkSET_Conditional(RespCommand.SET, 0, key, getValue: true, highPrecision: false,
+            return NetworkSET_Conditional(RespCommand.SET, 0, key, getValue: true, ExpirationOption.None,
                 ref storageApi);
         }
 
@@ -613,6 +613,7 @@ namespace Garnet.server
             var existOptions = ExistOptions.None;
             var expOption = ExpirationOption.None;
             var getValue = false;
+            var comparison = default(PinnedSpanByte);
 
             var tokenIdx = 2;
             Span<byte> nextOpt = default;
@@ -629,17 +630,18 @@ namespace Garnet.server
                 {
                     // Make sure there aren't multiple expiration options in the options sent by user
                     // and that whatever parsedOption we have recieved is one of the acceptable ones only
-                    if (expOption != ExpirationOption.None || (parsedOption is not (ExpirationOption.EX or ExpirationOption.PX or ExpirationOption.KEEPTTL)))
+                    if (expOption != ExpirationOption.None ||
+                        (parsedOption is not (ExpirationOption.EX or ExpirationOption.PX or ExpirationOption.EXAT or ExpirationOption.PXAT or ExpirationOption.KEEPTTL)))
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
                         break;
                     }
 
                     expOption = parsedOption;
-                    // based on above check if it is not KEEPTTL, it has to be either EX or PX
+                    // KEEPTTL does not take an expiration argument.
                     if (expOption != ExpirationOption.KEEPTTL)
                     {
-                        // EX and PX are followed by an expiry argument. Reject the option
+                        // Expiration options are followed by an argument. Reject the option
                         // appearing as the final token before consuming it, otherwise the
                         // read runs past the parse state (a Debug.Assert failure that aborts
                         // the process, an out-of-bounds read in Release).
@@ -683,6 +685,20 @@ namespace Garnet.server
 
                     existOptions = ExistOptions.XX;
                 }
+                else if (nextOpt.SequenceEqual(CmdStrings.IFEQ) || nextOpt.SequenceEqual(CmdStrings.IFNE)
+                    || nextOpt.SequenceEqual(CmdStrings.IFDEQ) || nextOpt.SequenceEqual(CmdStrings.IFDNE))
+                {
+                    if (existOptions != ExistOptions.None || tokenIdx >= parseState.Count)
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
+                        break;
+                    }
+
+                    existOptions = nextOpt.SequenceEqual(CmdStrings.IFEQ) ? ExistOptions.IFEQ
+                        : nextOpt.SequenceEqual(CmdStrings.IFNE) ? ExistOptions.IFNE
+                        : nextOpt.SequenceEqual(CmdStrings.IFDEQ) ? ExistOptions.IFDEQ : ExistOptions.IFDNE;
+                    comparison = parseState.GetArgSliceByRef(tokenIdx++);
+                }
                 else if (nextOpt.SequenceEqual(CmdStrings.GET))
                 {
                     getValue = true;
@@ -710,23 +726,28 @@ namespace Garnet.server
                 return true;
             }
 
-            bool isHighPrecision = expOption == ExpirationOption.PX;
-
             switch (expOption)
             {
                 case ExpirationOption.None:
                 case ExpirationOption.EX:
                 case ExpirationOption.PX:
+                case ExpirationOption.EXAT:
+                case ExpirationOption.PXAT:
                     switch (existOptions)
                     {
                         case ExistOptions.None:
                             return getValue
-                                ? NetworkSET_Conditional(RespCommand.SET, expiry, key, getValue, isHighPrecision, ref storageApi)
+                                ? NetworkSET_Conditional(RespCommand.SET, expiry, key, getValue, expOption, ref storageApi)
                                 : NetworkSET_EX(RespCommand.SET, expOption, expiry, key, val, ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, key, getValue, isHighPrecision, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, key, getValue, expOption, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, isHighPrecision, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, expOption, ref storageApi);
+                        case ExistOptions.IFEQ:
+                        case ExistOptions.IFNE:
+                        case ExistOptions.IFDEQ:
+                        case ExistOptions.IFDNE:
+                            return NetworkSETValueConditional(key, comparison, expiry, expOption, existOptions, getValue, ref storageApi);
                     }
                     break;
                 case ExpirationOption.KEEPTTL:
@@ -735,11 +756,16 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             // We can never perform a blind update due to KEEPTTL
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, key, getValue, highPrecision: false, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, key, getValue, ExpirationOption.KEEPTTL, ref storageApi);
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, key, getValue, highPrecision: false, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, key, getValue, ExpirationOption.KEEPTTL, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, highPrecision: false, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, ExpirationOption.KEEPTTL, ref storageApi);
+                        case ExistOptions.IFEQ:
+                        case ExistOptions.IFNE:
+                        case ExistOptions.IFDEQ:
+                        case ExistOptions.IFDNE:
+                            return NetworkSETValueConditional(key, comparison, expiry, expOption, existOptions, getValue, ref storageApi);
                     }
                     break;
             }
@@ -749,13 +775,83 @@ namespace Garnet.server
             return true;
         }
 
+        private bool NetworkSETValueConditional<TGarnetApi>(PinnedSpanByte key, PinnedSpanByte comparison, long expiry, ExpirationOption expOption, ExistOptions condition, bool getValue, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            long expirationTicks = 0;
+            if (expOption is not (ExpirationOption.None or ExpirationOption.KEEPTTL) &&
+                !TryGetSetExpiryTicks(expiry, expOption, out expirationTicks))
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET);
+
+            // Pending operations and AOF replay use only the new and comparison values.
+            var args = parseState.Slice(1, 2);
+            var originalOption = args.GetArgSliceByRef(1);
+            args.SetArgument(1, comparison);
+            var cmd = (condition, expOption == ExpirationOption.KEEPTTL) switch
+            {
+                (ExistOptions.IFNE, true) => RespCommand.SETKEEPTTLIFNE,
+                (ExistOptions.IFNE, false) => RespCommand.SETIFNE,
+                (ExistOptions.IFDEQ, true) => RespCommand.SETKEEPTTLIFDEQ,
+                (ExistOptions.IFDEQ, false) => RespCommand.SETIFDEQ,
+                (ExistOptions.IFDNE, true) => RespCommand.SETKEEPTTLIFDNE,
+                (ExistOptions.IFDNE, false) => RespCommand.SETIFDNE,
+                (_, true) => RespCommand.SETKEEPTTLIFEQ,
+                _ => RespCommand.SETIFEQ
+            };
+            var input = new StringInput(cmd, ref args, arg1: expirationTicks);
+            if (getValue)
+                input.header.SetSetGetFlag();
+
+            var output = GetStringOutput();
+            GarnetStatus status;
+            try
+            {
+                status = storageApi.SET_Conditional(key, ref input, ref output);
+            }
+            finally
+            {
+                args.SetArgument(1, originalOption);
+            }
+            if (status == GarnetStatus.WRONGTYPE)
+            {
+                output.SpanByteAndMemory.Memory?.Dispose();
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+            }
+            else if (status == GarnetStatus.NOTFOUND && condition is not (ExistOptions.IFNE or ExistOptions.IFDNE))
+            {
+                output.SpanByteAndMemory.Memory?.Dispose();
+                WriteNull();
+            }
+            else
+                ProcessOutput(output.SpanByteAndMemory);
+
+            return true;
+        }
+
+        private bool NetworkDIGEST<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count != 1)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.DIGEST));
+
+            var input = new StringInput(RespCommand.DIGEST);
+            var output = GetStringOutput();
+            var status = storageApi.DIGEST(parseState.GetArgSliceByRef(0), ref input, ref output);
+            if (status == GarnetStatus.WRONGTYPE)
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+            else if (status == GarnetStatus.NOTFOUND)
+                WriteNull();
+            else
+                ProcessOutput(output.SpanByteAndMemory);
+            return true;
+        }
+
         private unsafe bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, ExpirationOption expOption, long expiry, PinnedSpanByte key, PinnedSpanByte val, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(cmd == RespCommand.SET);
 
-            var highPrecision = expOption == ExpirationOption.PX;
-            if (!TryGetAbsoluteExpiryTicks(expiry, highPrecision, out var valMetadata))
+            if (!TryGetSetExpiryTicks(expiry, expOption, out var valMetadata))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET);
             }
@@ -769,11 +865,12 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, long expiry, PinnedSpanByte key, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
+        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, long expiry, PinnedSpanByte key, bool getValue, ExpirationOption expOption, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             long inputArg = 0;
-            if (expiry != 0 && !TryGetAbsoluteExpiryTicks(expiry, highPrecision, out inputArg))
+            if (expOption is not (ExpirationOption.None or ExpirationOption.KEEPTTL) &&
+                !TryGetSetExpiryTicks(expiry, expOption, out inputArg))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET);
             }
@@ -897,6 +994,24 @@ namespace Garnet.server
 
             expiryTicks = currentTicks + expiry * ticksPerUnit;
             return true;
+        }
+
+        private static bool TryGetSetExpiryTicks(long expiry, ExpirationOption expOption, out long expiryTicks)
+        {
+            switch (expOption)
+            {
+                case ExpirationOption.EX:
+                    return TryGetAbsoluteExpiryTicks(expiry, highPrecision: false, out expiryTicks);
+                case ExpirationOption.PX:
+                    return TryGetAbsoluteExpiryTicks(expiry, highPrecision: true, out expiryTicks);
+                case ExpirationOption.EXAT:
+                    return ConvertUtils.TryUnixTimestampInSecondsToTicks(expiry, out expiryTicks);
+                case ExpirationOption.PXAT:
+                    return ConvertUtils.TryUnixTimestampInMillisecondsToTicks(expiry, out expiryTicks);
+                default:
+                    expiryTicks = 0;
+                    return expiry == 0;
+            }
         }
 
         /// <summary>

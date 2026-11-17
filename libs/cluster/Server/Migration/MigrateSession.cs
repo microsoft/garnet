@@ -4,9 +4,9 @@
 using System;
 using System.Collections.Frozen;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Net;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -48,15 +48,9 @@ namespace Garnet.cluster
         SingleWriterMultiReaderLock _disposed;
 
         readonly HashSet<int> _sslots;
-        readonly CancellationTokenSource _cts = new();
-
-        /// <summary>
-        /// References to <see cref="migrateOperation"/> and <see cref="_cts"/>: one for the session's place in the
-        /// task store, released by <see cref="Dispose"/>, one for the migration task started on it, and one for each
-        /// scan task that one starts. The last release disposes them, so a client is never disposed while a task is
-        /// writing through it.
-        /// </summary>
-        int references = 1;
+        readonly ulong[] slotMembership = new ulong[ClusterConfig.MAX_HASH_SLOT_VALUE / 64];
+        readonly CancellationTokenSource migrationCancellationSource = new();
+        readonly CancellationToken migrationCancellationToken;
 
         HashSet<ulong> _namespaces;
         FrozenDictionary<ulong, ulong> _namespaceMap;
@@ -79,7 +73,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Return slots for migration
         /// </summary>
-        public HashSet<int> GetSlots => _sslots;
+        public IReadOnlyCollection<int> GetSlots => _sslots;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool ContainsSlot(int slot)
+            => (uint)slot < ClusterConfig.MAX_HASH_SLOT_VALUE &&
+                (slotMembership[slot >> 6] & (1UL << (slot & 63))) != 0;
 
         /// <summary>
         /// Get network buffer specs
@@ -107,7 +106,8 @@ namespace Garnet.cluster
         /// <summary>
         /// MigrateTask for background slot migrate tasks
         /// </summary>
-        readonly MigrateOperation[] migrateOperation;
+        readonly MigrateOperation<BucketedBloomFilter>[] migrateOperation;
+        readonly MigrateOperation<KeysMigrationFilter>[] keysMigrateOperation;
 
         /// <summary>
         /// MigrateSession Constructor
@@ -139,7 +139,7 @@ namespace Garnet.cluster
             bool _replaceOption,
             int _timeout,
             HashSet<int> _slots,
-            Sketch sketch,
+            MigrationBatch<KeysMigrationFilter> sketch,
             TransferOption transferOption)
         {
             this.logger = clusterProvider.loggerFactory.CreateLogger($"MigrateSession - {GetHashCode()}"); ;
@@ -154,22 +154,30 @@ namespace Garnet.cluster
             this._copyOption = _copyOption;
             this._replaceOption = _replaceOption;
             this._timeout = TimeSpan.FromMilliseconds(_timeout);
-            this._sslots = _slots;
+            this._sslots = new HashSet<int>(_slots);
+            foreach (var slot in _sslots)
+            {
+                ArgumentOutOfRangeException.ThrowIfNegative(slot);
+                ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(slot, ClusterConfig.MAX_HASH_SLOT_VALUE);
+                slotMembership[slot >> 6] |= 1UL << (slot & 63);
+            }
             this._slotRanges = GetRanges();
             this.transferOption = transferOption;
+            migrationCancellationToken = migrationCancellationSource.Token;
+            clusterProvider.serverOptions.ValidateMigrationOptions();
 
             Status = MigrateState.PENDING;
 
             if (transferOption == TransferOption.SLOTS)
             {
-                migrateOperation = new MigrateOperation[clusterProvider.serverOptions.ParallelMigrateTaskCount];
+                var keySendBatchSize = clusterProvider.serverOptions.MigrateKeySendBatchSize;
+                migrateOperation = new MigrateOperation<BucketedBloomFilter>[clusterProvider.serverOptions.ParallelMigrateTaskCount];
                 for (var i = 0; i < migrateOperation.Length; i++)
-                    migrateOperation[i] = new MigrateOperation(this);
+                    migrateOperation[i] = new(this, new(new BucketedBloomFilter(keySendBatchSize), maxBatchSize: keySendBatchSize + 1));
             }
             else
             {
-                migrateOperation = new MigrateOperation[1];
-                migrateOperation[0] = new MigrateOperation(this, sketch: sketch);
+                keysMigrateOperation = [new(this, sketch ?? new(new KeysMigrationFilter()))];
             }
         }
 
@@ -183,47 +191,40 @@ namespace Garnet.cluster
                 authPassword: _passwd,
                 logger: logger);
 
+        private void SetMigrateHeader(GarnetClientSession client, bool isVectorSets = false)
+            => client.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets);
+
         public LocalServerSession GetLocalSession()
             => new(clusterProvider.storeWrapper);
 
         /// <summary>
         /// Ends the migration: cancels it and closes its connections, so a task waiting on a send or a reply fails
-        /// fast. The clients expect a single user, so they are disposed by the last task to release them rather than
-        /// here, where a task may still be writing through one.
+        /// fast. Each worker defers resource disposal until its owner and child scans have finished.
         /// </summary>
         public void Dispose()
         {
             if (!_disposed.TryWriteLock()) return;
-            _cts.Cancel();
-
-            for (var i = 0; i < migrateOperation.Length; i++)
-                migrateOperation[i].Client.CloseConnection();
-
-            ReleaseReference();
-        }
-
-        /// <summary>
-        /// Takes another reference while one is held, so the session is live.
-        /// </summary>
-        internal void AddReference()
-        {
-            var taken = Interlocked.Increment(ref references);
-            Debug.Assert(taken > 1, "MigrateSession reference taken without one held");
-        }
-
-        /// <summary>
-        /// Releases a reference, and disposes the migration operations if it is the last.
-        /// </summary>
-        void ReleaseReference()
-        {
-            var remaining = Interlocked.Decrement(ref references);
-            Debug.Assert(remaining >= 0, "MigrateSession reference released more often than taken");
-            if (remaining > 0)
-                return;
-
-            for (var i = 0; i < migrateOperation.Length; i++)
-                migrateOperation[i].Dispose();
-            _cts.Dispose();
+            try
+            {
+                migrationCancellationSource.Cancel();
+            }
+            finally
+            {
+                try
+                {
+                    if (transferOption == TransferOption.SLOTS)
+                    {
+                        for (var i = 0; i < migrateOperation.Length; i++)
+                            migrateOperation[i].Dispose();
+                    }
+                    else
+                        keysMigrateOperation[0].Dispose();
+                }
+                finally
+                {
+                    migrationCancellationSource.Dispose();
+                }
+            }
         }
 
         private async ValueTask<bool> CheckConnectionAsync(GarnetClientSession client)
@@ -235,7 +236,7 @@ namespace Garnet.cluster
                 {
                     try
                     {
-                        var authResp = await client.Authenticate(_username, _passwd).WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+                        var authResp = await client.Authenticate(_username, _passwd).WaitAsync(_timeout, migrationCancellationSource.Token).ConfigureAwait(false);
 
                         if (!authResp.Equals("OK", StringComparison.Ordinal))
                         {
