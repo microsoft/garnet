@@ -786,10 +786,13 @@ awaited. Snapshot does not advance `ReadOnlyAddress`.
 
 During `Flushing`, a fixed-size ring tracks only the bounded set of concurrently issued Snapshot pages. Its size is
 `SnapshotFlushCoordinationWindowSize`: for the object allocator, 64 pages capped at its buffer size (section 9.7).
-Callbacks may complete out of order, but `readOnlyFlushPageLimit` advances only across the contiguous completed prefix.
-ReadOnly page `P` may serialize only while `P < readOnlyFlushPageLimit`; it waits only if it catches an unfinished
-Snapshot page. Completing a page immediately gives ReadOnly and eviction priority for that page. After every issued page
-drains, coordination enters `Closed` and releases the final page.
+Callbacks may complete out of order, but `readOnlyFlushPageLimit` advances only across the contiguous completed prefix:
+completing the lowest unfinished page releases it, and every later page already completed, to ReadOnly and eviction;
+completing any other page releases nothing yet. ReadOnly page `P` may serialize only while `P < readOnlyFlushPageLimit`,
+so it waits while any Snapshot page at or below `P` is unfinished. With checkpoint throttling on
+(`ThrottleCheckpointFlushDelayMs` of 0 or more; Garnet's default is 0, Tsavorite's -1), the Snapshot flush waits for
+each page's write before issuing the next, so it has at most one page write in flight. After every issued page drains,
+coordination enters `Closed` and releases the final page.
 
 Real-device non-object allocators do not install coordination and retain parallel Snapshot submission.
 A non-object `NullDevice` uses a one-slot window only to cap `HeadAddress`, because it has no durable main-log fallback.
@@ -1368,6 +1371,8 @@ are the addresses section 13.1 defines.
   - `AsyncFlushPagesForSnapshot(snapshotObjectLog, ..., snapshotFileLogicalStartAddress, recoveredTailAddress,
     fuzzyRegionStartAddress, ...)`, where `snapshotObjectLog` is the checkpoint's own `ObjectLog`, created at `PREPARE`
     - issue live Snapshot pages through the bounded completion window
+    - with checkpoint throttling on (`ThrottleCheckpointFlushDelayMs` of 0 or more), wait for each issued page's write,
+      then sleep that many milliseconds, before issuing the next page
     - mark out-of-order completions in fixed, reusable slots
     - advance `readOnlyFlushPageLimit` through the contiguous completed prefix; a post-cutoff ReadOnly range may
       flush page `P` only when `P < readOnlyFlushPageLimit`
