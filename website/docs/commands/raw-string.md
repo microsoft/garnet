@@ -370,7 +370,7 @@ Simple string reply: OK.
 #### Syntax
 
 ```bash
-    SET key value [NX | XX | IFEQ comparison-value | IFNE comparison-value | IFDEQ digest | IFDNE digest] [GET] [EX seconds | PX milliseconds | KEEPTTL]
+    SET key value [NX | XX | IFEQ comparison-value | IFNE comparison-value | IFDEQ digest | IFDNE digest] [GET] [EX seconds | PX milliseconds | EXAT unix-time-seconds | PXAT unix-time-milliseconds | KEEPTTL]
 ```
 
 Set **key** to hold the string value. If key already holds a value, it is overwritten, regardless of its type. Any previous time to live associated with the **key** is discarded on successful SET operation.
@@ -379,6 +379,8 @@ Set **key** to hold the string value. If key already holds a value, it is overwr
 
 * EX seconds -- Set the specified expire time, in seconds (a positive integer).
 * PX milliseconds -- Set the specified expire time, in milliseconds (a positive integer).
+* EXAT unix-time-seconds -- Set the specified Unix time at which the key will expire, in seconds.
+* PXAT unix-time-milliseconds -- Set the specified Unix time at which the key will expire, in milliseconds.
 * NX -- Only set the key if it does not already exist.
 * XX -- Only set the key if it already exists.
 * IFEQ comparison-value -- Atomically set an existing string only if its bytes equal comparison-value. A missing or expired key is not created.
