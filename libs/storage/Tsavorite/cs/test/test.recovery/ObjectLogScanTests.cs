@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -57,9 +58,9 @@ namespace Tsavorite.test
             // Large enough to force the key into the object allocator's overflow storage.
             readonly byte[] bytes;
 
-            internal OverflowTestKey(int key)
+            internal OverflowTestKey(int key, int length = OverflowKeyLength)
             {
-                bytes = new byte[OverflowKeyLength];
+                bytes = new byte[length];
                 _ = BitConverter.TryWriteBytes(bytes, key);
             }
 
@@ -690,6 +691,81 @@ namespace Tsavorite.test
             {
                 insertedAddress = upsertInfo.Address;
                 return base.InitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+            }
+        }
+
+        sealed class KeySnapshotScanFunctions(bool overflowKey, bool evicted) : IScanIteratorFunctions
+        {
+            internal readonly HashSet<int> seen = [];
+            public bool IncludeValues => false;
+            public bool OnStart(long beginAddress, long endAddress) => true;
+            public void OnStop(bool completed, long numberOfRecords) { }
+            public void OnException(Exception exception, long numberOfRecords) { }
+
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord record, RecordMetadata metadata, long numberOfRecords, out CursorRecordResult result)
+                where TSourceLogRecord : ISourceLogRecord
+            {
+                result = CursorRecordResult.Accept;
+                var index = BitConverter.ToInt32(record.Key);
+                Assert.That(seen.Add(index), Is.True);
+                Assert.That(record.Key.Length, Is.EqualTo(overflowKey ? OverflowKeyLength : sizeof(int)));
+                if (evicted)
+                    Assert.That(((TestObjectValue)record.ValueObject).value, Is.EqualTo(index));
+                else
+                {
+                    Assert.That(record.DataHeader.ValueIsInline, Is.True);
+                    Assert.That(record.ValueSpan.Length, Is.Zero);
+                }
+                return true;
+            }
+        }
+
+        [Test]
+        public void ObjectKeySnapshotsPreserveOverflowKeysAndSourceValues([Values] bool overflowKey, [Values] bool evicted, [Values] bool cursorScan)
+        {
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "key-snapshot.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "key-snapshot.obj.log"), deleteOnClose: true);
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                LogMemorySize = 1L << 20,
+                PageSize = 1L << 15
+            }, StoreFunctions.Create(comparer, () => new TestObjectValue.Serializer()),
+                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+            using var session = store.NewSession<OverflowTestKey, TestObjectInput, TestObjectOutput, Empty, ScanFunctions>(new ScanFunctions());
+            var basic = session.BasicContext;
+            const int count = 128;
+            for (var i = 0; i < count; i++)
+                _ = basic.Upsert(new OverflowTestKey(i, overflowKey ? OverflowKeyLength : sizeof(int)), new TestObjectValue { value = i });
+            if (evicted)
+                store.Log.FlushAndEvict(wait: true);
+            var scanner = new KeySnapshotScanFunctions(overflowKey, evicted);
+            if (cursorScan)
+            {
+                long cursor = 0;
+                while (session.ScanCursor(ref cursor, 7, scanner, store.Log.TailAddress))
+                    Assert.That(scanner.seen.Count, Is.LessThanOrEqualTo(count));
+            }
+            else
+                Assert.That(store.Log.Scan(ref scanner, store.Log.BeginAddress, store.Log.TailAddress), Is.True);
+            Assert.That(scanner.seen.Count, Is.EqualTo(count));
+            for (var i = 0; i < count; i++)
+            {
+                TestObjectInput input = default;
+                TestObjectOutput output = default;
+                var status = basic.Read(new OverflowTestKey(i, overflowKey ? OverflowKeyLength : sizeof(int)), ref input, ref output);
+                if (status.IsPending)
+                {
+                    _ = basic.CompletePendingWithOutputs(out var completed, wait: true);
+                    Assert.That(completed.Next(), Is.True);
+                    output = completed.Current.Output;
+                    status = completed.Current.Status;
+                    completed.Dispose();
+                }
+                Assert.That(status.Found, Is.True);
+                Assert.That(output.value.value, Is.EqualTo(i));
             }
         }
 

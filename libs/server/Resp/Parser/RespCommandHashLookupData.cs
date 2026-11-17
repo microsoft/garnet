@@ -1,6 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using System.Text;
+
 namespace Garnet.server
 {
     /// <summary>
@@ -13,20 +16,49 @@ namespace Garnet.server
 
         private static void PopulatePrimaryTable()
         {
-            // Helper to insert with optional subcommand flag
-            void Add(string name, RespCommand cmd, bool hasSub = false)
+            // Helper to insert with optional subcommand flag and known exact arg count
+            static void Add(string name, RespCommand cmd, bool hasSub = false, byte? exactArgCount = null)
             {
-                InsertIntoTable(primaryTable, PrimaryTableMask,
-                    System.Text.Encoding.ASCII.GetBytes(name), cmd,
-                    hasSub ? FlagHasSubcommands : (byte)0);
+                byte flags = 0;
+                if (hasSub)
+                {
+                    flags |= FlagHasSubcommands;
+                }
+
+                if (exactArgCount != null)
+                {
+                    ArgumentOutOfRangeException.ThrowIfGreaterThan(exactArgCount.Value, 64, nameof(exactArgCount));
+
+                    flags |= FlagHasExactArgCount;
+                    flags |= (byte)(exactArgCount.Value << 2);
+                }
+
+                InsertIntoTable(
+                    primaryTable,
+                    PrimaryTableMask,
+                    Encoding.ASCII.GetBytes(name),
+                    cmd,
+                    flags
+                );
             }
 
             // ===== Data commands (read + write) =====
 
             // String commands
-            Add("GET", RespCommand.GET);
+            Add("GET", RespCommand.GET, exactArgCount: 1);
             Add("SET", RespCommand.SET);
             Add("DEL", RespCommand.DEL);
+            Add("DELIFEQ", RespCommand.DELIFEQ);
+            Add("DELEX", RespCommand.DELEX);
+            Add("DIGEST", RespCommand.DIGEST, exactArgCount: 1);
+            Add("INCR", RespCommand.INCR, exactArgCount: 1);
+            Add("DECR", RespCommand.DECR, exactArgCount: 1);
+            Add("INCRBY", RespCommand.INCRBY, exactArgCount: 2);
+            Add("DECRBY", RespCommand.DECRBY, exactArgCount: 2);
+            Add("INCRBYFLOAT", RespCommand.INCRBYFLOAT, exactArgCount: 2);
+            Add("APPEND", RespCommand.APPEND, exactArgCount: 2);
+            Add("GETSET", RespCommand.GETSET, exactArgCount: 2);
+            Add("GETDEL", RespCommand.GETDEL, exactArgCount: 1);
             Add("INCR", RespCommand.INCR);
             Add("DECR", RespCommand.DECR);
             Add("INCRBY", RespCommand.INCRBY);
@@ -36,20 +68,20 @@ namespace Garnet.server
             Add("GETSET", RespCommand.GETSET);
             Add("GETDEL", RespCommand.GETDEL);
             Add("GETEX", RespCommand.GETEX);
-            Add("GETRANGE", RespCommand.GETRANGE);
-            Add("SETRANGE", RespCommand.SETRANGE);
-            Add("STRLEN", RespCommand.STRLEN);
-            Add("SUBSTR", RespCommand.SUBSTR);
+            Add("GETRANGE", RespCommand.GETRANGE, exactArgCount: 3);
+            Add("SETRANGE", RespCommand.SETRANGE, exactArgCount: 3);
+            Add("STRLEN", RespCommand.STRLEN, exactArgCount: 1);
+            Add("SUBSTR", RespCommand.SUBSTR, exactArgCount: 3);
             Add("SETNX", RespCommand.SETNX);
             Add("SETEX", RespCommand.SETEX);
             Add("PSETEX", RespCommand.PSETEX);
             Add("MGET", RespCommand.MGET);
             Add("MSET", RespCommand.MSET);
             Add("MSETNX", RespCommand.MSETNX);
-            Add("DUMP", RespCommand.DUMP);
+            Add("DUMP", RespCommand.DUMP, exactArgCount: 1);
             Add("RESTORE", RespCommand.RESTORE);
-            Add("GETBIT", RespCommand.GETBIT);
-            Add("SETBIT", RespCommand.SETBIT);
+            Add("GETBIT", RespCommand.GETBIT, exactArgCount: 2);
+            Add("SETBIT", RespCommand.SETBIT, exactArgCount: 3);
             Add("GETWITHETAG", RespCommand.GETWITHETAG);
             Add("GETIFNOTMATCH", RespCommand.GETIFNOTMATCH);
             Add("SETIFMATCH", RespCommand.SETIFMATCH);
@@ -61,24 +93,24 @@ namespace Garnet.server
             // Key commands
             Add("EXISTS", RespCommand.EXISTS);
             Add("TOUCH", RespCommand.TOUCH);
-            Add("TTL", RespCommand.TTL);
-            Add("PTTL", RespCommand.PTTL);
+            Add("TTL", RespCommand.TTL, exactArgCount: 1);
+            Add("PTTL", RespCommand.PTTL, exactArgCount: 1);
             Add("EXPIRE", RespCommand.EXPIRE);
             Add("PEXPIRE", RespCommand.PEXPIRE);
             Add("EXPIREAT", RespCommand.EXPIREAT);
             Add("PEXPIREAT", RespCommand.PEXPIREAT);
-            Add("EXPIRETIME", RespCommand.EXPIRETIME);
-            Add("PEXPIRETIME", RespCommand.PEXPIRETIME);
-            Add("PERSIST", RespCommand.PERSIST);
-            Add("TYPE", RespCommand.TYPE);
-            Add("RENAME", RespCommand.RENAME);
-            Add("RENAMENX", RespCommand.RENAMENX);
+            Add("EXPIRETIME", RespCommand.EXPIRETIME, exactArgCount: 1);
+            Add("PEXPIRETIME", RespCommand.PEXPIRETIME, exactArgCount: 1);
+            Add("PERSIST", RespCommand.PERSIST, exactArgCount: 1);
+            Add("TYPE", RespCommand.TYPE, exactArgCount: 1);
+            Add("RENAME", RespCommand.RENAME, exactArgCount: 2);
+            Add("RENAMENX", RespCommand.RENAMENX, exactArgCount: 2);
             Add("UNLINK", RespCommand.UNLINK);
-            Add("KEYS", RespCommand.KEYS);
+            Add("KEYS", RespCommand.KEYS, exactArgCount: 1);
             Add("SCAN", RespCommand.SCAN);
-            Add("DBSIZE", RespCommand.DBSIZE);
-            Add("SELECT", RespCommand.SELECT);
-            Add("SWAPDB", RespCommand.SWAPDB);
+            Add("DBSIZE", RespCommand.DBSIZE, exactArgCount: 0);
+            Add("SELECT", RespCommand.SELECT, exactArgCount: 1);
+            Add("SWAPDB", RespCommand.SWAPDB, exactArgCount: 2);
             Add("MIGRATE", RespCommand.MIGRATE);
 
             // Bitmap commands
@@ -95,21 +127,21 @@ namespace Garnet.server
 
             // Hash commands
             Add("HSET", RespCommand.HSET);
-            Add("HGET", RespCommand.HGET);
+            Add("HGET", RespCommand.HGET, exactArgCount: 2);
             Add("HDEL", RespCommand.HDEL);
-            Add("HLEN", RespCommand.HLEN);
-            Add("HEXISTS", RespCommand.HEXISTS);
-            Add("HGETALL", RespCommand.HGETALL);
-            Add("HKEYS", RespCommand.HKEYS);
-            Add("HVALS", RespCommand.HVALS);
+            Add("HLEN", RespCommand.HLEN, exactArgCount: 1);
+            Add("HEXISTS", RespCommand.HEXISTS, exactArgCount: 2);
+            Add("HGETALL", RespCommand.HGETALL, exactArgCount: 1);
+            Add("HKEYS", RespCommand.HKEYS, exactArgCount: 1);
+            Add("HVALS", RespCommand.HVALS, exactArgCount: 1);
             Add("HMSET", RespCommand.HMSET);
             Add("HMGET", RespCommand.HMGET);
             Add("HSETNX", RespCommand.HSETNX);
-            Add("HINCRBY", RespCommand.HINCRBY);
-            Add("HINCRBYFLOAT", RespCommand.HINCRBYFLOAT);
+            Add("HINCRBY", RespCommand.HINCRBY, exactArgCount: 3);
+            Add("HINCRBYFLOAT", RespCommand.HINCRBYFLOAT, exactArgCount: 3);
             Add("HRANDFIELD", RespCommand.HRANDFIELD);
             Add("HSCAN", RespCommand.HSCAN);
-            Add("HSTRLEN", RespCommand.HSTRLEN);
+            Add("HSTRLEN", RespCommand.HSTRLEN, exactArgCount: 2);
             Add("HTTL", RespCommand.HTTL);
             Add("HPTTL", RespCommand.HPTTL);
             Add("HEXPIRE", RespCommand.HEXPIRE);
@@ -128,13 +160,13 @@ namespace Garnet.server
             Add("RPUSHX", RespCommand.RPUSHX);
             Add("LPOP", RespCommand.LPOP);
             Add("RPOP", RespCommand.RPOP);
-            Add("LLEN", RespCommand.LLEN);
-            Add("LINDEX", RespCommand.LINDEX);
+            Add("LLEN", RespCommand.LLEN, exactArgCount: 1);
+            Add("LINDEX", RespCommand.LINDEX, exactArgCount: 2);
             Add("LINSERT", RespCommand.LINSERT);
-            Add("LRANGE", RespCommand.LRANGE);
-            Add("LREM", RespCommand.LREM);
-            Add("LSET", RespCommand.LSET);
-            Add("LTRIM", RespCommand.LTRIM);
+            Add("LRANGE", RespCommand.LRANGE, exactArgCount: 3);
+            Add("LREM", RespCommand.LREM, exactArgCount: 3);
+            Add("LSET", RespCommand.LSET, exactArgCount: 3);
+            Add("LTRIM", RespCommand.LTRIM, exactArgCount: 3);
             Add("LPOS", RespCommand.LPOS);
             Add("LMOVE", RespCommand.LMOVE);
             Add("LMPOP", RespCommand.LMPOP);
@@ -149,12 +181,12 @@ namespace Garnet.server
             Add("SADD", RespCommand.SADD);
             Add("SREM", RespCommand.SREM);
             Add("SPOP", RespCommand.SPOP);
-            Add("SCARD", RespCommand.SCARD);
-            Add("SMEMBERS", RespCommand.SMEMBERS);
-            Add("SISMEMBER", RespCommand.SISMEMBER);
+            Add("SCARD", RespCommand.SCARD, exactArgCount: 1);
+            Add("SMEMBERS", RespCommand.SMEMBERS, exactArgCount: 1);
+            Add("SISMEMBER", RespCommand.SISMEMBER, exactArgCount: 2);
             Add("SMISMEMBER", RespCommand.SMISMEMBER);
             Add("SRANDMEMBER", RespCommand.SRANDMEMBER);
-            Add("SMOVE", RespCommand.SMOVE);
+            Add("SMOVE", RespCommand.SMOVE, exactArgCount: 3);
             Add("SSCAN", RespCommand.SSCAN);
             Add("SDIFF", RespCommand.SDIFF);
             Add("SDIFFSTORE", RespCommand.SDIFFSTORE);
@@ -167,13 +199,13 @@ namespace Garnet.server
             // Sorted set commands
             Add("ZADD", RespCommand.ZADD);
             Add("ZREM", RespCommand.ZREM);
-            Add("ZCARD", RespCommand.ZCARD);
-            Add("ZSCORE", RespCommand.ZSCORE);
+            Add("ZCARD", RespCommand.ZCARD, exactArgCount: 1);
+            Add("ZSCORE", RespCommand.ZSCORE, exactArgCount: 2);
             Add("ZMSCORE", RespCommand.ZMSCORE);
             Add("ZRANK", RespCommand.ZRANK);
             Add("ZREVRANK", RespCommand.ZREVRANK);
-            Add("ZCOUNT", RespCommand.ZCOUNT);
-            Add("ZLEXCOUNT", RespCommand.ZLEXCOUNT);
+            Add("ZCOUNT", RespCommand.ZCOUNT, exactArgCount: 3);
+            Add("ZLEXCOUNT", RespCommand.ZLEXCOUNT, exactArgCount: 3);
             Add("ZRANGE", RespCommand.ZRANGE);
             Add("ZRANGEBYLEX", RespCommand.ZRANGEBYLEX);
             Add("ZRANGEBYSCORE", RespCommand.ZRANGEBYSCORE);
@@ -185,7 +217,7 @@ namespace Garnet.server
             Add("ZPOPMAX", RespCommand.ZPOPMAX);
             Add("ZRANDMEMBER", RespCommand.ZRANDMEMBER);
             Add("ZSCAN", RespCommand.ZSCAN);
-            Add("ZINCRBY", RespCommand.ZINCRBY);
+            Add("ZINCRBY", RespCommand.ZINCRBY, exactArgCount: 3);
             Add("ZDIFF", RespCommand.ZDIFF);
             Add("ZDIFFSTORE", RespCommand.ZDIFFSTORE);
             Add("ZINTER", RespCommand.ZINTER);
@@ -213,16 +245,16 @@ namespace Garnet.server
 
             // Vector Set commands
             Add("VADD", RespCommand.VADD);
-            Add("VCARD", RespCommand.VCARD);
-            Add("VDIM", RespCommand.VDIM);
+            Add("VCARD", RespCommand.VCARD, exactArgCount: 1);
+            Add("VDIM", RespCommand.VDIM, exactArgCount: 1);
             Add("VEMB", RespCommand.VEMB);
-            Add("VGETATTR", RespCommand.VGETATTR);
-            Add("VINFO", RespCommand.VINFO);
-            Add("VISMEMBER", RespCommand.VISMEMBER);
+            Add("VGETATTR", RespCommand.VGETATTR, exactArgCount: 2);
+            Add("VINFO", RespCommand.VINFO, exactArgCount: 1);
+            Add("VISMEMBER", RespCommand.VISMEMBER, exactArgCount: 2);
             Add("VLINKS", RespCommand.VLINKS);
             Add("VRANDMEMBER", RespCommand.VRANDMEMBER);
-            Add("VREM", RespCommand.VREM);
-            Add("VSETATTR", RespCommand.VSETATTR);
+            Add("VREM", RespCommand.VREM, exactArgCount: 2);
+            Add("VSETATTR", RespCommand.VSETATTR, exactArgCount: 3);
             Add("VSIM", RespCommand.VSIM);
             Add("XVCREATE", RespCommand.XVCREATE);
             Add("XVIMPORT", RespCommand.XVIMPORT);
@@ -255,12 +287,12 @@ namespace Garnet.server
             Add("EVALSHA", RespCommand.EVALSHA);
 
             // Pub/Sub
-            Add("PUBLISH", RespCommand.PUBLISH);
+            Add("PUBLISH", RespCommand.PUBLISH, exactArgCount: 2);
             Add("SUBSCRIBE", RespCommand.SUBSCRIBE);
             Add("PSUBSCRIBE", RespCommand.PSUBSCRIBE);
             Add("UNSUBSCRIBE", RespCommand.UNSUBSCRIBE);
             Add("PUNSUBSCRIBE", RespCommand.PUNSUBSCRIBE);
-            Add("SPUBLISH", RespCommand.SPUBLISH);
+            Add("SPUBLISH", RespCommand.SPUBLISH, exactArgCount: 2);
             Add("SSUBSCRIBE", RespCommand.SSUBSCRIBE);
 
             // Custom object scan
@@ -268,13 +300,13 @@ namespace Garnet.server
 
             // ===== Control / admin commands =====
             Add("PING", RespCommand.PING);
-            Add("ECHO", RespCommand.ECHO);
-            Add("QUIT", RespCommand.QUIT);
+            Add("ECHO", RespCommand.ECHO, exactArgCount: 1);
+            Add("QUIT", RespCommand.QUIT, exactArgCount: 0);
             Add("AUTH", RespCommand.AUTH);
             Add("HELLO", RespCommand.HELLO);
             Add("INFO", RespCommand.INFO);
-            Add("TIME", RespCommand.TIME);
-            Add("ROLE", RespCommand.ROLE);
+            Add("TIME", RespCommand.TIME, exactArgCount: 0);
+            Add("ROLE", RespCommand.ROLE, exactArgCount: 0);
             Add("SAVE", RespCommand.SAVE);
             Add("LASTSAVE", RespCommand.LASTSAVE);
             Add("BGSAVE", RespCommand.BGSAVE);
@@ -282,7 +314,7 @@ namespace Garnet.server
             Add("FLUSHALL", RespCommand.FLUSHALL);
             Add("FLUSHDB", RespCommand.FLUSHDB);
             Add("FAILOVER", RespCommand.FAILOVER);
-            Add("MONITOR", RespCommand.MONITOR);
+            Add("MONITOR", RespCommand.MONITOR, exactArgCount: 0);
             Add("REGISTERCS", RespCommand.REGISTERCS);
             Add("ASYNC", RespCommand.ASYNC);
             Add("DEBUG", RespCommand.DEBUG);
@@ -290,14 +322,14 @@ namespace Garnet.server
             Add("WATCH", RespCommand.WATCH);
             Add("WATCHMS", RespCommand.WATCHMS);
             Add("WATCHOS", RespCommand.WATCHOS);
-            Add("MULTI", RespCommand.MULTI);
-            Add("EXEC", RespCommand.EXEC);
-            Add("DISCARD", RespCommand.DISCARD);
+            Add("MULTI", RespCommand.MULTI, exactArgCount: 0);
+            Add("EXEC", RespCommand.EXEC, exactArgCount: 0);
+            Add("DISCARD", RespCommand.DISCARD, exactArgCount: 0);
             Add("UNWATCH", RespCommand.UNWATCH);
             Add("RUNTXP", RespCommand.RUNTXP);
-            Add("ASKING", RespCommand.ASKING);
-            Add("READONLY", RespCommand.READONLY);
-            Add("READWRITE", RespCommand.READWRITE);
+            Add("ASKING", RespCommand.ASKING, exactArgCount: 0);
+            Add("READONLY", RespCommand.READONLY, exactArgCount: 0);
+            Add("READWRITE", RespCommand.READWRITE, exactArgCount: 0);
             Add("REPLICAOF", RespCommand.REPLICAOF);
             Add("SECONDARYOF", RespCommand.SECONDARYOF);
             Add("SLAVEOF", RespCommand.SECONDARYOF);
