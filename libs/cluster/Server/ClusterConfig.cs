@@ -1220,6 +1220,10 @@ namespace Garnet.cluster
             var updated = false;
             var senderSlotMap = senderConfig.slotMap;
             var assignToWorkerId = GetWorkerIdFromNodeId(senderConfig.LocalNodeId);
+            var sender = workers[assignToWorkerId];
+            // Superseded sender metadata cannot authorize slot claims or handoffs.
+            if (sender.ConfigEpoch > senderConfig.LocalNodeConfigEpoch || sender.Role != senderConfig.LocalNodeRole)
+                return this;
 
             // Create a copy of the local slotMap
             var newSlotMap = new HashSlot[MAX_HASH_SLOT_VALUE];
@@ -1255,8 +1259,12 @@ namespace Garnet.cluster
 
                 if (senderConfig.IsPrimary)
                 {
-                    // Sender is claimant of this node and is a primary, hence it can update the state of this slot, if its config epoch is higher than the old epoch.
-                    if (senderConfig.LocalNodeConfigEpoch != 0 && workers[currentOwnerId].ConfigEpoch >= senderConfig.LocalNodeConfigEpoch)
+                    // A primary's newer epoch supersedes the old owner's claim.
+                    // A demoted owner also authorizes its new primary, even if the demotion's epoch advanced independently.
+                    var owner = workers[currentOwnerId];
+                    var handedOffToSender = owner.Role == NodeRole.REPLICA &&
+                        string.Equals(owner.ReplicaOfNodeId, senderConfig.LocalNodeId, StringComparison.OrdinalIgnoreCase);
+                    if (senderConfig.LocalNodeConfigEpoch != 0 && owner.ConfigEpoch >= senderConfig.LocalNodeConfigEpoch && !handedOffToSender)
                         continue;
                 }
                 else
@@ -1275,6 +1283,9 @@ namespace Garnet.cluster
                     if (!workers[currentOwnerId].Nodeid.Equals(senderConfig.LocalNodeId))
                         continue;
                     assignToWorkerId = GetWorkerIdFromNodeId(senderConfig.LocalNodePrimaryId);
+                    // Stale replica gossip must not hand slots back to a node that has itself been demoted.
+                    if (workers[assignToWorkerId].Role != NodeRole.PRIMARY)
+                        continue;
                 }
 
                 // Update happened only if workerId or state changed
