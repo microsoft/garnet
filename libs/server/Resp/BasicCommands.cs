@@ -1348,7 +1348,7 @@ namespace Garnet.server
 
                 writer.WriteArrayLength(cmdCount);
 
-                foreach (var customCmd in customCommandManagerSession.GetAllCustomCommandsInfos())
+                foreach (var customCmd in customCmds)
                 {
                     customCmd.Value.ToRespFormat(ref writer);
                 }
