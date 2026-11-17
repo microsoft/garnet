@@ -339,6 +339,21 @@ which `ComputeOverflowKeySizeHint` throws. No flag selects the split: whenever `
 KeyLength holds the high bits, zero below 512 pages. When it is set, raw RDH KeyLength holds the physical slot size,
 `ObjectIdMap.ObjectIdSize` (4).
 
+**Why a key's hint is exact only up to 511 bytes, as a value's is.** Raw RDH KeyLength and the key slot's 9-bit hint
+could together hold an exact key length of up to 524,287 bytes. That is not done, because the gain is small and the
+cost is a key-only path through framing that keys and values share:
+- **The gain.** A key's page count is already exact, so its first read covers the extent and runs less than 4 KB past
+  its end; an exact length would shorten that read, not save it. The one read it would save is the prefix read that a
+  length-prefixed extent costs while recovery establishes the main object log's tail (section 6.1): one per overflow key
+  read from the main object log in that mode. Garnet keeps keys of up to 1,022 bytes inline by default
+  (`KVSettings.DefaultMaxInlineKeySize`), so overflow keys are uncommon. When the value is also out of line, the key's
+  slot sizes the top directory record rather than the key, so an exact key length would not apply.
+- **The cost.** Keys and values share one framing path, which rests on one rule: a hint is exact exactly when its
+  extent is headerless, which is exactly when the payload is at most 511 bytes. An exact key hint above 511 bytes must
+  break that rule. Headerless key extents of up to 524,287 bytes would lose the length prefix, which catches a
+  misaddressed read, and would make RDH bits authoritative framing (section 2.2). Keeping the prefix would give the key
+  hint a third mode, and a new boundary at 524,288 bytes for every hint consumer and its tests.
+
 A value hint saturates at `LargeValueHint`, which means "large" rather than 511 pages. Its first read covers a full
 write chunk (`IStreamBuffer.BufferSize`, 4 MB) and its prefix, so one IO reads any single extent the writer produces at
 its default chunk size.
