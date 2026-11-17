@@ -105,6 +105,23 @@ namespace Garnet.server
 
         }
 
+        private RespCommandDocs(RespCommandDocs other, string name)
+        {
+            Command = other.Command;
+            Name = name;
+            Summary = other.Summary;
+            Group = other.Group;
+            Complexity = other.Complexity;
+            docFlags = other.docFlags;
+            respFormatDocFlags = other.respFormatDocFlags;
+            ReplacedBy = other.ReplacedBy;
+            Arguments = other.Arguments;
+            SubCommands = other.SubCommands;
+            Parent = other.Parent;
+        }
+
+        internal RespCommandDocs WithName(string name) => new(this, name);
+
         private static bool TryInitialize(ILogger logger)
         {
             lock (IsInitializedLock)

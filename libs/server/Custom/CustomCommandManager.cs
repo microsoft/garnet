@@ -93,11 +93,7 @@ namespace Garnet.server
             var newCmd = new CustomRawStringCommand(name, (ushort)extId, type, arity, customFunctions, expirationTicks);
             var setSuccessful = rawStringCommandMap.TrySetValue(cmdId, newCmd);
             Debug.Assert(setSuccessful);
-            customCommandNames.TryAdd(name, 0);
-            if (commandInfo != null)
-                customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
-            if (commandDocs != null)
-                customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
+            RegisterMetadata(newCmd.NameStr, commandInfo, commandDocs);
             return extId;
         }
 
@@ -121,11 +117,7 @@ namespace Garnet.server
             var newCmd = new CustomTransaction(name, (byte)cmdId, arity, proc);
             var setSuccessful = transactionProcMap.TrySetValue(cmdId, newCmd);
             Debug.Assert(setSuccessful);
-            customCommandNames.TryAdd(name, 0);
-            if (commandInfo != null)
-                customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
-            if (commandDocs != null)
-                customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
+            RegisterMetadata(newCmd.NameStr, commandInfo, commandDocs);
             return cmdId;
         }
 
@@ -175,11 +167,7 @@ namespace Garnet.server
             var scSetSuccessful = wrapper.commandMap.TrySetValue(scId, newSubCmd);
             Debug.Assert(scSetSuccessful);
 
-            customCommandNames.TryAdd(name, 0);
-            if (commandInfo != null)
-                customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
-            if (commandDocs != null)
-                customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
+            RegisterMetadata(newSubCmd.NameStr, commandInfo, commandDocs);
 
             return (extId, scId);
         }
@@ -205,12 +193,25 @@ namespace Garnet.server
             var setSuccessful = customProcedureMap.TrySetValue(cmdId, newCmd);
             Debug.Assert(setSuccessful);
 
+            RegisterMetadata(newCmd.NameStr, commandInfo, commandDocs);
+            return cmdId;
+        }
+
+        private void RegisterMetadata(string name, RespCommandsInfo commandInfo, RespCommandDocs commandDocs)
+        {
             customCommandNames.TryAdd(name, 0);
             if (commandInfo != null)
+            {
+                if (string.IsNullOrWhiteSpace(commandInfo.Name))
+                    commandInfo = commandInfo.WithName(name);
                 customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
+            }
             if (commandDocs != null)
+            {
+                if (string.IsNullOrWhiteSpace(commandDocs.Name))
+                    commandDocs = commandDocs.WithName(name);
                 customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
-            return cmdId;
+            }
         }
 
         /// <summary>
