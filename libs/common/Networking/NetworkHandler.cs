@@ -161,6 +161,7 @@ namespace Garnet.networking
         readonly SslStream sslStream;
         readonly SemaphoreSlim receivedData, expectingData;
         protected readonly CancellationTokenSource cancellationTokenSource;
+        readonly CancellationToken connectionCancellationToken;
 
         // Stream reader status: Rest = 0, Active = 1, Waiting = 2
         volatile TlsReaderStatus readerStatus;
@@ -214,6 +215,7 @@ namespace Garnet.networking
                 receivedData = new SemaphoreSlim(0);
                 expectingData = new SemaphoreSlim(0);
                 cancellationTokenSource = new();
+                connectionCancellationToken = cancellationTokenSource.Token;
 
                 transportReceiveBufferEntry = this.networkPool.Get(BaseReceiveBufferSize, PoolEntryBufferType.TransportReceiveBuffer);
                 transportReceiveBuffer = transportReceiveBufferEntry.entry;
@@ -340,9 +342,11 @@ namespace Garnet.networking
         async Task AuthenticateAsClientAsync(SslClientAuthenticationOptions sslClientOptions, string remoteEndpointName, CancellationToken token)
         {
             Debug.Assert(readerStatus == TlsReaderStatus.Active);
+            // Socket teardown must cancel the handshake's transport read even when the caller supplied a token.
+            using var authenticationCancellation = CancellationTokenSource.CreateLinkedTokenSource(token, connectionCancellationToken);
             try
             {
-                await sslStream.AuthenticateAsClientAsync(sslClientOptions, token).ConfigureAwait(false);
+                await sslStream.AuthenticateAsClientAsync(sslClientOptions, authenticationCancellation.Token).ConfigureAwait(false);
 
                 if (token.IsCancellationRequested) throw new TaskCanceledException("AuthenticateAsClientAsync was cancelled");
 
@@ -358,9 +362,9 @@ namespace Garnet.networking
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "An error has occurred");
-                readerStatus = TlsReaderStatus.Rest;
-                if (expectingData.CurrentCount == 0) expectingData.Release();
                 Dispose();
+                if (ex is OperationCanceledException && !token.IsCancellationRequested)
+                    throw new IOException("The connection closed during TLS authentication.", ex);
                 throw;
             }
         }

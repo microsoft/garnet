@@ -34,7 +34,8 @@ namespace Garnet.test
             var options = TestUtils.GetGarnetServerOptions(
                 checkpointDir: TestUtils.MethodTestDir, logDir: TestUtils.MethodTestDir,
                 endpoint: TestUtils.EndPoint, enableCluster: true, enableAOF: true, disableStorageTier: true);
-            factory = new InspectionDeviceFactoryCreator();
+            options.FastCommitThrottleFreq = 1;
+            factory = new InspectionDeviceFactoryCreator(options.GetStoreCheckpointDirectory(0));
             options.DeviceFactoryCreator = factory;
             server = new GarnetServer(options, loggerFactory);
             server.Start();
@@ -76,6 +77,15 @@ namespace Garnet.test
         public void InfoReadsCheckpointWithoutCreatingDevices(string section)
         {
             StringAssert.Contains($"storeHlogToken={token}", Inspect(section));
+        }
+
+        [Test]
+        public void InfoReadsCheckpointWhileAofCommitsUseDevices()
+        {
+            ClassicAssert.IsTrue(redis.GetDatabase().StringSet("another-key", "another-value"));
+            redis.GetDatabase().Execute("COMMITAOF");
+
+            StringAssert.Contains($"storeHlogToken={token}", Inspect());
         }
 
         [TestCase(false)]
@@ -177,14 +187,19 @@ namespace Garnet.test
                 entry.Message.Contains("disappeared during inspection", StringComparison.Ordinal)));
         }
 
-        private sealed class InspectionDeviceFactoryCreator : INamedDeviceFactoryCreator
+        private sealed class InspectionDeviceFactoryCreator(string checkpointDirectory) : INamedDeviceFactoryCreator
         {
             public Action<string, FileDescriptor> BeforeRead;
             public Action<string, FileDescriptor> AfterOpen;
             public int DeviceOpens;
 
             public INamedDeviceFactory Create(string baseName)
-                => new InspectionDeviceFactory(baseName, new LocalStorageNamedDeviceFactory(baseName: baseName), this);
+            {
+                var underlying = new LocalStorageNamedDeviceFactory(baseName: baseName);
+                return baseName == checkpointDirectory
+                    ? new InspectionDeviceFactory(baseName, underlying, this)
+                    : underlying;
+            }
         }
 
         private sealed class InspectionDeviceFactory(string baseName, INamedDeviceFactory underlying, InspectionDeviceFactoryCreator owner)

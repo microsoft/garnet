@@ -221,6 +221,10 @@ namespace Garnet.common
         /// </summary>
         Sender_Pause_Before_Slot_Release,
         /// <summary>
+        /// Server network sender: signal that a send is waiting for an earlier send's slot.
+        /// </summary>
+        Sender_Signal_Before_Slot_Wait,
+        /// <summary>
         /// Server network sender: pause after a send timeout closes the socket, before waiting for its send slot.
         /// </summary>
         Sender_Pause_Before_Timed_Out_Slot_Wait,
