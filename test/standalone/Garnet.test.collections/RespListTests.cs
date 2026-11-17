@@ -1577,6 +1577,48 @@ namespace Garnet.test
             ClassicAssert.AreEqual("marker", db.Execute("ECHO", "marker").ToString());
         }
 
+        [Test]
+        [TestCase(2, Description = "RESP2 output")]
+        [TestCase(3, Description = "RESP3 output")]
+        public async Task LPOPAndRPOPWithCountAlwaysReplyWithArray(byte respVersion)
+        {
+            using var c = TestUtils.GetGarnetClientSession(raw: true);
+            c.Connect();
+
+            _ = await c.ExecuteAsync("HELLO", respVersion.ToString()).ConfigureAwait(false);
+
+            // A single element popped with a count is still an array
+            var response = await c.ExecuteAsync("RPUSH", "one", "x").ConfigureAwait(false);
+            ClassicAssert.AreEqual(":1\r\n", response);
+            response = await c.ExecuteAsync("RPOP", "one", "2").ConfigureAwait(false);
+            ClassicAssert.AreEqual("*1\r\n$1\r\nx\r\n", response);
+
+            response = await c.ExecuteAsync("RPUSH", "one", "x").ConfigureAwait(false);
+            ClassicAssert.AreEqual(":1\r\n", response);
+            response = await c.ExecuteAsync("LPOP", "one", "2").ConfigureAwait(false);
+            ClassicAssert.AreEqual("*1\r\n$1\r\nx\r\n", response);
+
+            // An explicit count of 1 is an array too, while no count stays a bulk string
+            response = await c.ExecuteAsync("RPUSH", "two", "x", "y", "z").ConfigureAwait(false);
+            ClassicAssert.AreEqual(":3\r\n", response);
+            response = await c.ExecuteAsync("LPOP", "two", "1").ConfigureAwait(false);
+            ClassicAssert.AreEqual("*1\r\n$1\r\nx\r\n", response);
+            response = await c.ExecuteAsync("RPOP", "two", "1").ConfigureAwait(false);
+            ClassicAssert.AreEqual("*1\r\n$1\r\nz\r\n", response);
+            response = await c.ExecuteAsync("LPOP", "two").ConfigureAwait(false);
+            ClassicAssert.AreEqual("$1\r\ny\r\n", response);
+
+            // A missing key replies with a null array when a count is given
+            var expectedNullArray = respVersion >= 3 ? "_\r\n" : "*-1\r\n";
+            var expectedNull = respVersion >= 3 ? "_\r\n" : "$-1\r\n";
+            response = await c.ExecuteAsync("LPOP", "missing", "2").ConfigureAwait(false);
+            ClassicAssert.AreEqual(expectedNullArray, response);
+            response = await c.ExecuteAsync("RPOP", "missing", "2").ConfigureAwait(false);
+            ClassicAssert.AreEqual(expectedNullArray, response);
+            response = await c.ExecuteAsync("LPOP", "missing").ConfigureAwait(false);
+            ClassicAssert.AreEqual(expectedNull, response);
+        }
+
         // Issue 945
         [Test]
         public void CanHandleLowerCaseBefore()

@@ -181,6 +181,7 @@ namespace Garnet
         private void InitializeServer()
         {
             Debug.Assert(opts != null);
+            opts.ValidateMigrationOptions();
 
             if (!opts.QuietMode)
             {
