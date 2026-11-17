@@ -890,7 +890,7 @@ namespace Garnet.server
                 status = GET(keys[i], out var next, ref objectContext);
                 if (status == GarnetStatus.WRONGTYPE)
                     return GarnetStatus.WRONGTYPE;
-                
+
                 if (status == GarnetStatus.OK)
                 {
                     if (next.GarnetObject is not SetObject nextObject)
