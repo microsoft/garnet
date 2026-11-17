@@ -7450,5 +7450,27 @@ namespace Garnet.test
             db.StringSet("testkey", "testvalue");
             ClassicAssert.AreEqual("testvalue", db.StringGet("testkey").ToString());
         }
+
+        [Test]
+        public async Task GetParseAlignmentAsync()
+        {
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = connection.GetDatabase();
+
+            ClassicAssert.AreEqual("OK", (string)await db.ExecuteAsync("SET", "foo", "bar").ConfigureAwait(false));
+
+            // Reject malformed GET
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("GET"));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'GET' command", exc0.Message);
+
+            // Command stream still aligned
+            ClassicAssert.AreEqual("bar", (string)await db.ExecuteAsync("GET", "foo").ConfigureAwait(false));
+
+            var exc1 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("GET", "fizz", "buzz"));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'GET' command", exc1.Message);
+
+            // Command stream still aligned
+            ClassicAssert.AreEqual("bar", (string)await db.ExecuteAsync("GET", "foo").ConfigureAwait(false));
+        }
     }
 }
