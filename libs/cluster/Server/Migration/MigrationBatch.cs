@@ -1,0 +1,138 @@
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using Garnet.server;
+using Tsavorite.core;
+
+namespace Garnet.cluster
+{
+    internal sealed class MigrationBatch<TFilter>
+        where TFilter : struct, IBloomFilter
+    {
+        TFilter membershipFilter;
+        public ArgSliceVector argSliceVector { get; private set; }
+
+        public List<(PinnedSpanByte, bool)> Keys { private set; get; }
+        public SketchStatus Status { private set; get; }
+
+        /// <summary>
+        /// Create a migration sketch with a specialized filter and a bounded key collection.
+        /// </summary>
+        /// <param name="membershipFilter">Filter stored inline and mutated in place.</param>
+        /// <param name="maxBatchSize">Key collection capacity, including its reserved entry.</param>
+        public MigrationBatch(TFilter membershipFilter, int maxBatchSize = 1 << 18)
+        {
+            this.membershipFilter = membershipFilter;
+            Status = SketchStatus.INITIALIZING;
+            Keys = [];
+            argSliceVector = new(maxBatchSize);
+        }
+
+        #region sketchMethods
+
+        public bool TryHashAndStore(ReadOnlySpan<byte> key)
+        {
+            if (!argSliceVector.TryAddItem(key))
+                return false;
+
+            membershipFilter.Add(key);
+
+            return true;
+        }
+
+        public bool TryHashAndStore(ReadOnlySpan<byte> ns, ReadOnlySpan<byte> key)
+        {
+            Debug.Assert(ns.Length is (sizeof(byte) or sizeof(uint)), "Longer namespaces not yet supported");
+
+            if (!argSliceVector.TryAddItem(ns, key))
+                return false;
+
+            var nsRaw = VectorManager.ExtractContextFromNamespaces(ns);
+
+            membershipFilter.Add(key, seed: (uint)nsRaw);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Hash key to bloomfilter and store it for future use (NOTE: Use only with KEYS option)
+        /// </summary>
+        /// <param name="key"></param>
+        public void HashAndStore(PinnedSpanByte key)
+        {
+            membershipFilter.Add(key.ReadOnlySpan);
+            Keys.Add((key, false));
+        }
+
+        /// <summary>
+        /// Rebuild protection for a collected batch and return the reusable previous collection.
+        /// </summary>
+        /// <param name="batch">The next batch, activated only after the previous batch finishes.</param>
+        /// <returns>The previous collection, cleared when it differs from the next batch.</returns>
+        public ArgSliceVector ReplaceBatch(ArgSliceVector batch)
+        {
+            Debug.Assert(Status is SketchStatus.INITIALIZING or SketchStatus.MIGRATED);
+            var previous = argSliceVector;
+            if (previous != batch)
+                previous.Clear();
+            argSliceVector = batch;
+            ClearMembership();
+            foreach (var (ns, key, hasNamespace) in batch)
+            {
+                var seed = hasNamespace ? (uint)VectorManager.ExtractContextFromNamespaces(ns.ReadOnlySpan) : 0;
+                membershipFilter.Add(key.ReadOnlySpan, seed);
+            }
+            return previous;
+        }
+
+        /// <summary>
+        /// Probe sketch using a precomputed key hash.
+        /// </summary>
+        /// <param name="keyHash">Unmasked MurmurHash2x64A key hash.</param>
+        /// <param name="status"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Probe(ulong keyHash, out SketchStatus status)
+        {
+            var exists = membershipFilter.Contains(keyHash);
+            status = exists ? Status : SketchStatus.INITIALIZING;
+            return exists;
+        }
+
+        /// <summary>
+        /// Clear keys from working set
+        /// </summary>
+        public void Clear()
+        {
+            argSliceVector.Clear();
+            ClearMembership();
+        }
+
+        /// <summary>
+        /// Release batch protection and collected keys without zeroing the membership bitmap.
+        /// Clear or replace the batch before building protection for another batch.
+        /// </summary>
+        public void RetireBatch()
+        {
+            argSliceVector.Clear();
+            Status = SketchStatus.INITIALIZING;
+        }
+
+        void ClearMembership()
+        {
+            membershipFilter.Clear();
+            Status = SketchStatus.INITIALIZING;
+        }
+
+        /// <summary>
+        /// Set KeyMigrationStatus
+        /// </summary>
+        /// <param name="status"></param>
+        public void SetStatus(SketchStatus status) => Status = status;
+        #endregion
+    }
+}
