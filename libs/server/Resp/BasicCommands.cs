@@ -465,6 +465,29 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_STRING_EXCEEDS_MAX_SIZE);
             }
 
+            // Empty update value is equivalent to STRLEN behavior
+            if (value.Length == 0)
+            {
+                var status = storageApi.GET(key, out PinnedSpanByte currentValue);
+
+                switch (status)
+                {
+                    case GarnetStatus.OK:
+                        while (!RespWriteUtils.TryWriteInt32(currentValue.Length, ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                    case GarnetStatus.NOTFOUND:
+                        while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                    case GarnetStatus.WRONGTYPE:
+                        WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                        break;
+                }
+
+                return true;
+            }
+
             var input = new StringInput(RespCommand.SETRANGE, ref parseState, startIdx: 1);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
