@@ -85,6 +85,43 @@ namespace Garnet.client
         public PinnedSpanByte GetAvailableNetworkBufferSpan() => PinnedSpanByte.FromPinnedPointer(curr, (int)(end - curr));
 
         /// <summary>
+        /// Borrow space for a length-prefixed record without advancing or flushing the iteration buffer.
+        /// The caller must finish synchronous serialization before committing the record or using another writer.
+        /// </summary>
+        /// <returns>A pinned destination, or an invalid span if even the length prefix cannot fit.</returns>
+        public PinnedSpanByte GetRecordSerializationBuffer()
+        {
+            if (NeedsInitialization)
+                throw new InvalidOperationException("Iteration buffer is not initialized.");
+
+            // Leave room for the record type and the batch's final CRLF.
+            var capacity = Math.Min((int)(end - curr) - 3, networkBufferSettings.MaxSendBufferContentSize + sizeof(int));
+            return capacity < sizeof(int) ? default : PinnedSpanByte.FromPinnedPointer(curr + 1, capacity);
+        }
+
+        /// <summary>
+        /// Commit a record serialized into the current borrowed destination, including its length prefix.
+        /// </summary>
+        /// <param name="destination">The destination borrowed for this record.</param>
+        /// <param name="recordLength">Serialized record length, excluding the length prefix.</param>
+        /// <param name="type">Record framing type.</param>
+        public void CommitRecordSpan(PinnedSpanByte destination, int recordLength, MigrationRecordSpanType type)
+        {
+            if (NeedsInitialization || !destination.IsValid || destination.ToPointer() != curr + 1 ||
+                destination.Length > (int)(end - curr) - 3)
+                throw new InvalidOperationException("Record destination no longer belongs to the current iteration buffer.");
+            if (recordLength < 0 || recordLength > destination.Length - sizeof(int) ||
+                recordLength > networkBufferSettings.MaxSendBufferContentSize)
+                throw new ArgumentOutOfRangeException(nameof(recordLength));
+            if (*(int*)destination.ToPointer() != recordLength)
+                throw new InvalidOperationException("Serialized record length does not match its prefix.");
+
+            *curr = (byte)type;
+            curr += 1 + sizeof(int) + recordLength;
+            ++recordCount;
+        }
+
+        /// <summary>
         /// Flush and initialize buffers/parameters used for Migrate and Replica commands
         /// </summary>
         /// <param name="iterationProgressFreq"></param>
