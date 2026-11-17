@@ -5673,6 +5673,19 @@ namespace Garnet.test
 
             ClassicAssert.AreEqual(1.0, await db.SortedSetScoreAsync("foo", "a").ConfigureAwait(false));
         }
+
+        [Test]
+        [TestCase("ZUNIONSTORE")]
+        [TestCase("ZINTERSTORE")]
+        public async Task ForbidStoreNaNAsync(string command)
+        {
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = connection.GetDatabase();
+
+            ClassicAssert.AreEqual(1, await db.SortedSetAddAsync("foo", [new("bar", double.PositiveInfinity)]).ConfigureAwait(false));
+            ClassicAssert.AreEqual(1, (int)await db.ExecuteAsync(command, ["fizz", "1", "foo", "WEIGHTS", "0"]).ConfigureAwait(false));
+            ClassicAssert.AreEqual(0, await db.SortedSetScoreAsync("fizz", "bar").ConfigureAwait(false));
+        }
     }
 
     public class SortedSetComparer : IComparer<(double, byte[])>
