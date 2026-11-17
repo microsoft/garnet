@@ -252,5 +252,9 @@ namespace Garnet.common
         /// SLOWLOG GET: pause after deserializing argument pointers, before reading them.
         /// </summary>
         SlowLog_Pause_After_Deserialize,
+        /// <summary>
+        /// SET over a non-string key: pause while holding the key's lock, before rechecking its type.
+        /// </summary>
+        Set_Pause_Before_NonString_Recheck,
     }
 }

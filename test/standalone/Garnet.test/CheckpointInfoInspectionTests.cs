@@ -189,8 +189,17 @@ namespace Garnet.test
 
         private sealed class InspectionDeviceFactoryCreator(string checkpointDirectory) : INamedDeviceFactoryCreator
         {
+            /// <summary>The folders of the checkpoint files that INFO reads</summary>
+            private static readonly string[] CheckpointFolders =
+                [new DefaultCheckpointNamingScheme().LogCheckpointBasePath, new DefaultCheckpointNamingScheme().IndexCheckpointBasePath];
+
             public Action<string, FileDescriptor> BeforeRead;
             public Action<string, FileDescriptor> AfterOpen;
+
+            /// <summary>
+            /// The devices opened for checkpoint files. Other files don't count: the server's AOF writes its commit metadata
+            /// through this factory too, on its commit thread, and each SAVE starts an AOF commit that it doesn't wait for.
+            /// </summary>
             public int DeviceOpens;
 
             public INamedDeviceFactory Create(string baseName)
@@ -200,6 +209,10 @@ namespace Garnet.test
                     ? new InspectionDeviceFactory(baseName, underlying, this)
                     : underlying;
             }
+
+            /// <summary>Whether <paramref name="fileInfo"/> is in one of the checkpoint folders</summary>
+            public static bool IsCheckpointFile(FileDescriptor fileInfo)
+                => CheckpointFolders.Any(folder => fileInfo.directoryName?.StartsWith(folder, StringComparison.Ordinal) == true);
         }
 
         private sealed class InspectionDeviceFactory(string baseName, INamedDeviceFactory underlying, InspectionDeviceFactoryCreator owner)
@@ -207,7 +220,8 @@ namespace Garnet.test
         {
             public IDevice Get(FileDescriptor fileInfo)
             {
-                Interlocked.Increment(ref owner.DeviceOpens);
+                if (InspectionDeviceFactoryCreator.IsCheckpointFile(fileInfo))
+                    Interlocked.Increment(ref owner.DeviceOpens);
                 return underlying.Get(fileInfo);
             }
 

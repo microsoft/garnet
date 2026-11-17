@@ -223,6 +223,17 @@ namespace Tsavorite.core
 
         /// <summary>Sector size</summary>
         protected readonly int sectorSize;
+
+        /// <summary>
+        /// The number of times <see cref="Reset"/> has reset the device. A truncation records it when requested, and is skipped if
+        /// it has changed by the time the truncation runs: the reset device truncates from segment 0, so the truncation would remove
+        /// the new log's segments.
+        /// </summary>
+        long resetCount;
+
+        /// <summary>Held by a truncation from its check of <see cref="resetCount"/> through the device truncation, and by
+        /// <see cref="ResetCore"/> while it resets the device, so the device cannot be reset between the check and the truncation</summary>
+        readonly object truncationLock = new();
         #endregion
 
         #region Private page metadata
@@ -370,6 +381,9 @@ namespace Tsavorite.core
         ///            drained — close pages (advancing SafeHeadAddress and ClosedUntilAddress)
         ///            and free pages. Mirrors OnPagesClosed's invariant.
         ///
+        ///   Device:  reset the device, which forgets its open handles and truncated range,
+        ///            and skip any truncation requested before this (see <see cref="resetCount"/>).
+        ///
         ///   Final:   publish new BeginAddress synchronously. Publishing it last (rather than
         ///            up front) means an iterator with a stale nextAddress sees
         ///            currentAddress &gt; OLD BeginAddress and does not snap forward into the
@@ -479,6 +493,14 @@ namespace Tsavorite.core
                 phase2Done.Wait();
             }
 
+            // -------- Device: forget open handles and the truncated range --------
+            // The device then truncates from segment 0, so a truncation requested before this would remove the new log's segments.
+            // Advancing resetCount makes such a truncation skip, and taking the lock waits for one already past that check. The
+            // lock is taken with the epoch released: a truncation in progress waits for an epoch drain.
+            _ = Interlocked.Increment(ref resetCount);
+            lock (truncationLock)
+                device.Reset();
+
             // Restore caller's epoch state if they were protected on entry.
             if (wasProtected)
                 epoch.Resume();
@@ -496,7 +518,6 @@ namespace Tsavorite.core
                 for (int i = 0; i < BufferSize; i++)
                     PendingFlush[i]?.list?.Clear();
             }
-            device.Reset();
         }
 
         /// <summary>
@@ -509,18 +530,23 @@ namespace Tsavorite.core
         /// <summary>Asynchronously wraps <see cref="TruncateUntilAddressBlocking(long)"/>; fires
         /// <see cref="IRecordTriggers.OnTruncate(long)"/> AFTER the device truncation completes when
         /// <see cref="IStoreFunctions.CallOnTruncate"/> is true.</summary>
-        internal void TruncateUntilAddress(long toAddress) => _ = Task.Run(() =>
+        /// <param name="toAddress">The address to truncate the log below</param>
+        /// <param name="requestResetCount">The value of <see cref="resetCount"/> when the truncation was requested. If a
+        /// <see cref="Reset"/> has happened since, the truncation and OnTruncate are skipped.</param>
+        internal void TruncateUntilAddress(long toAddress, long requestResetCount) => _ = Task.Run(() =>
         {
-            TruncateUntilAddressBlocking(toAddress);
+            lock (truncationLock)
+            {
+                if (requestResetCount != Volatile.Read(ref resetCount))
+                    return;
+                TruncateUntilAddressBlocking(toAddress);
+            }
             if (storeFunctions.CallOnTruncate)
                 storeFunctions.OnTruncate(toAddress);
         });
 
         /// <summary>Synchronously (blocking) wraps <see cref="IDevice.TruncateUntilAddress(long)"/>; overridden when an allocator potentially has to interact with multiple devices</summary>
         protected virtual void TruncateUntilAddressBlocking(long toAddress) => device.TruncateUntilAddress(toAddress);
-
-        /// <summary>Remove disk segment</summary>
-        protected virtual void RemoveSegment(int segment) => device.RemoveSegment(segment);
 
         internal virtual bool TryComplete() => device.TryComplete();
 
@@ -902,11 +928,37 @@ namespace Tsavorite.core
                 if (storeFunctions.CallOnTruncate)
                     storeFunctions.OnTruncate(toAddress);
 
-                for (int s = lastValidSegment + 1; s <= lastAvailSegment; s++)
-                {
-                    logger?.LogInformation("Trimming tail segment {s} on disk", s);
-                    RemoveSegment(s);
-                }
+                logger?.LogInformation("Trimming disk segments above {lastSegment}", lastValidSegment);
+                TrimSegmentsAbove(recoveredHLCInfo, lastValidSegment, lastAvailSegment);
+            }
+        }
+
+        /// <summary>
+        /// Remove the log's segments above <paramref name="lastValidSegment"/>, which hold only data written after the checkpoint
+        /// being recovered
+        /// </summary>
+        /// <param name="recoveredHLCInfo">The checkpoint being recovered</param>
+        /// <param name="lastValidSegment">The highest segment that recovery needs</param>
+        /// <param name="lastAvailSegment">The highest segment the device is known to hold. Segments are removed one at a time up
+        /// to it only if the device cannot list its segments.</param>
+        private protected virtual void TrimSegmentsAbove(in HybridLogCheckpointInfo recoveredHLCInfo, int lastValidSegment, int lastAvailSegment)
+        {
+            if (device.TryRemoveSegmentsAbove(lastValidSegment, out _))
+                return;
+
+            // TryRemoveSegmentsAbove returns false only when the device cannot list its segments. So remove the segments known to
+            // exist, up to lastAvailSegment, one at a time, highest first, so that an interruption leaves the remaining segments
+            // contiguous. This relies on RemoveSegment removing only the segment named, as IDevice requires.
+            //
+            // A NativeStorageDevice with an older native library instead removes every open segment through the one named, valid
+            // ones included. It lists its own segments, and a composite device has each component remove its own, so it gets here
+            // only as a component of a composite device another of whose components cannot list its segments. That case is
+            // deliberately left unhandled: recovery itself never trims (it passes trimLog false; only tests pass true), Garnet
+            // builds no composite devices, and current native libraries remove only the segment named.
+            for (var segment = lastAvailSegment; segment > lastValidSegment; segment--)
+            {
+                logger?.LogInformation("Trimming tail segment {s} on disk", segment);
+                device.RemoveSegment(segment);
             }
         }
 
@@ -1749,11 +1801,14 @@ namespace Tsavorite.core
         /// <summary>Shift begin address</summary>
         public void ShiftBeginAddress(long newBeginAddress, bool truncateLog, bool noFlush = false)
         {
+            // Recorded with the request, so the truncation is skipped if a Reset rewinds the log before it runs
+            var requestResetCount = Volatile.Read(ref resetCount);
+
             // First update the begin address
             if (!MonotonicUpdate(ref BeginAddress, newBeginAddress, out _))
             {
                 if (truncateLog)
-                    epoch.BumpCurrentEpoch(() => TruncateUntilAddress(newBeginAddress));
+                    epoch.BumpCurrentEpoch(() => TruncateUntilAddress(newBeginAddress, requestResetCount));
                 return;
             }
 
@@ -1810,7 +1865,7 @@ namespace Tsavorite.core
                     if (h)
                         OnPagesClosed(newBeginAddress);
                     if (truncateLog)
-                        TruncateUntilAddress(newBeginAddress);
+                        TruncateUntilAddress(newBeginAddress, requestResetCount);
                 });
             }
         }
