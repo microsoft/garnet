@@ -96,7 +96,7 @@ namespace Garnet.test
             var committedPrefix = storeWrapper.TailAddress;
 
             // A mutable suffix makes replayed commit metadata advance the read-only boundary.
-            Assert.That(db.KeyDelete(new RedisKey[] { "recovery-first", "recovery-second" }), Is.EqualTo(2));
+            Assert.That(db.KeyDelete(["recovery-first", "recovery-second"]), Is.EqualTo(2));
             Assert.That(storeWrapper.TailAddress[0], Is.GreaterThan(committedPrefix[0]));
             Assert.That(db.KeyExists("recovery-first"), Is.False);
             Assert.That(db.KeyExists("recovery-second"), Is.False);
