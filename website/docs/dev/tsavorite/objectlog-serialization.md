@@ -519,7 +519,11 @@ and recovery's copies of them, are written at other times and lie elsewhere (sec
 
 ### 5.1 Page-level ordering and completion
 
-`ObjectAllocatorImpl.WriteAsync` writes one page, or part of one, for ReadOnly, Snapshot, and recovery flushes:
+`ObjectAllocatorImpl.WriteAsync` writes one page, or part of one, for ReadOnly, Snapshot, and recovery flushes. A flush
+**publishes** a record when it writes the record's out-of-line components to an object log and stamps the record with
+their position and size hints; a Snapshot capture publishes a record the same way, and the value's phase word records
+which writer last published it (section 13.1). Elsewhere, publishing an address or a word means making a new value
+visible to other threads. For each page, `WriteAsync` does the following:
 
 1. stamp the page header's object-log floor where the flush type calls for it (section 5.4);
 2. walk the records in address order and publish each eligible record: write its components with
@@ -2318,12 +2322,17 @@ array itself, so `R` and `R'` share them along with the data. Each difference be
 
 **`A`'s header holds the claim, the phase and the owner.** The header is 24 bytes: the data's start and end offsets, a
 phase word encoded as an object's, and the **owner**, the address of the record the phase describes. The owner is needed
-because records share `A` outside captures too: a CopyUpdate whose source a FoldOver or streaming checkpoint still needs
-leaves `R` and `R'` sharing `A`, and either may publish it. Records sharing `A` are versions of one key, so:
+because two records that flushes may each publish can share `A`: a CopyUpdate whose source a FoldOver or streaming
+checkpoint still needs leaves `R` and `R'` sharing `A`, and so does a copy-to-tail, which gives its copy the source's
+array. Records sharing `A` are successive records of one key, so:
 - A capture of `R` acts on `READONLY_STAMPED` or `SNAPSHOT_STAMPED(k)` only if `R` owns the phase. A phase another
   record owns means no flush has published `R`.
-- A flush of a record replaces `A`'s phase unless a newer version owns it. The walkers' address order already keeps an
-  older version's flush ahead of a newer version's publication; the rule holds if that ever changes.
+- A flush of a record replaces `A`'s phase only if no newer record owns it. Each flush publishes records in address
+  order, but the two flushes are not ordered against each other: the ReadOnly flush publishes the records of a page at
+  or above `S` only after the Snapshot flush has written that page (section 5.7), so the Snapshot flush may already
+  have published a newer record that shares `A`, on that page or a later one. Without this rule, the ReadOnly flush's
+  publication of the older record would take the phase from the newer one, and a capture of the newer record would
+  then rewrite its stamp, which the Snapshot flush's device write may still be reading.
 
 **The capture detaches `R` from `A` rather than retiring `A`.** A captured object is marked superseded, so no flush
 claims it again, and `R'` publishes its clone. `A` cannot be retired: it is `R'`'s live value. `PostCopyUpdater`
