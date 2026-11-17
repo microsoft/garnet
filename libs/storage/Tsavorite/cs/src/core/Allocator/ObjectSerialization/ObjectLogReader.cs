@@ -155,9 +155,16 @@ namespace Tsavorite.core
             var initialRead = sizedByKey
                 ? ObjectLogExtent.KeyInitialRead(record.KeyRdhLengthBits, record.KeySizeHint, isExact: false)
                 : ObjectLogExtent.ValueInitialRead(record.ValueSizeHint, isExact: false);
-            var available = log.RecoveryReadOnly
-                ? log.GetReferencedExtentEnd(in record) - topAddress
-                : Math.Min(log.RemainingOnPage(topAddress), log.ReadEndAddress - topAddress);
+            var available = Math.Min(log.RemainingOnPage(topAddress), log.ReadEndAddress - topAddress);
+
+            // While recovery establishes the main object log's tail, ReadEndAddress is the address ceiling, and TailAddress is the
+            // checkpoint's recorded tail (see ObjectLog.RecoveryReadOnly), below which every byte is on the device. So a first read
+            // that ends at or below the recorded tail is safe as it stands, and the prefix is checked against the extent's page, as
+            // GetReferencedExtentEnd would check it. A first read that would pass the recorded tail could ask for bytes the device
+            // does not hold, and such a read comes back short and fails. That happens only for a repair copy above the recorded tail,
+            // or one of the few extents that end just below it; for those, read the prefix first to find the extent's exact end.
+            if (log.RecoveryReadOnly && topAddress + Math.Min(initialRead, available) > log.TailAddress)
+                available = log.GetReferencedExtentEnd(in record) - topAddress;
             if (initialRead < ObjectLogExtent.LengthPrefixSize || available < ObjectLogExtent.LengthPrefixSize)
                 ThrowCorrupt($"a length-prefixed extent at {topAddress} has room for only {Math.Min(initialRead, available)} bytes");
             var readLength = (int)Math.Min(initialRead, available);

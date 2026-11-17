@@ -364,7 +364,13 @@ namespace Tsavorite.core
         #endregion
 
         #region Reading
-        /// <summary>Read device-backed references while recovery discovers the append tail; no appends are allowed in this mode.</summary>
+        /// <summary>
+        /// Set while recovery establishes the append tail. <see cref="TailAddress"/> is then the checkpoint's recorded tail, below which
+        /// every byte is on the device; but records may also reference copies above it, which an earlier recovery of the same checkpoint
+        /// appended. So <see cref="Read"/> bounds a read by the address ceiling rather than the tail, and always serves it with device
+        /// IO rather than from the in-memory pages, which hold only the recorded tail's page, up to that tail. Recovery appends nothing
+        /// in this mode, and an append throws, since it would land on those copies.
+        /// </summary>
         internal bool RecoveryReadOnly { get; set; }
 
         internal long ReadEndAddress => RecoveryReadOnly ? MaxExclusiveAddress : TailAddress;

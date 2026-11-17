@@ -251,6 +251,49 @@ namespace Tsavorite.test.Objects
             Verify(record, "referenced bytes survive restoration and a subsequent sector rewrite");
         }
 
+        /// <summary>
+        /// While recovery establishes the tail, a length-prefixed extent whose first read ends at or below the recorded tail is read
+        /// in one IO, as at runtime. One whose first read would pass the recorded tail first reads its prefix, so that the read never
+        /// asks for bytes the device may not hold. It either ends just below the recorded tail or lies above it, as a copy that an
+        /// earlier recovery appended does.
+        /// </summary>
+        [Test, Category(ObjectLogCategory)]
+        public void RecoveryReadsBelowTheRecordedTailWithoutAPrefixRead()
+        {
+            // 600 bytes serialize as a length-prefixed single extent, whose one-page hint makes the first read run to its page's end.
+            const int PrefixedValueLength = 600;
+            static long PageOf(long address) => address >> PageSizeBits;
+            static long AddressOf(TestRecord record) => (long)(record.Ref.PositionWord & ObjectLogPositionInfo.AddressMask);
+
+            var belowTail = new TestRecord(0, ValueKind.Overflow, PrefixedValueLength);
+            Write(belowTail);
+            while (PageOf(objectLog.TailAddress) == PageOf(AddressOf(belowTail)))
+                Write(new TestRecord(0, ValueKind.Overflow, 100));
+            var nearTail = new TestRecord(0, ValueKind.Overflow, PrefixedValueLength);
+            Write(nearTail);
+            var recordedTail = objectLog.TailAddress;
+            Assert.That(PageOf(recordedTail), Is.EqualTo(PageOf(AddressOf(nearTail))), "The recorded tail must be on the near record's page");
+            var aboveTail = new TestRecord(0, ValueKind.Overflow, PrefixedValueLength);
+            Write(aboveTail);
+            _ = objectLog.FlushTail(wait: true);
+            CloseLog();
+            OpenLog(restoreTail: recordedTail);
+            objectLog.RecoveryReadOnly = true;
+
+            foreach (var (record, expectedReads, what) in new[]
+            {
+                (belowTail, 1, "a page wholly below the recorded tail"),
+                (nearTail, 2, "the recorded tail's page"),
+                (aboveTail, 2, "above the recorded tail"),
+            })
+            {
+                countingDevice.ResetReadCount();
+                Verify(record, what);
+                Assert.That(countingDevice.ReadCount, Is.EqualTo(expectedReads), $"{what}: device reads");
+            }
+            objectLog.RecoveryReadOnly = false;
+        }
+
         /// <summary>Every combination of key length, value kind, and value length round-trips, read from memory and then from the device.</summary>
         [Test, Category(ObjectLogCategory)]
         public void RecordsRoundTripFromMemoryAndDevice([Values] ValueKind valueKind)

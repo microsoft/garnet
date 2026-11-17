@@ -14,6 +14,8 @@ namespace Tsavorite.test.recovery
 {
     using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>>;
     using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>;
+    using SbKeyAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordTriggers>>;
+    using SbKeyStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordTriggers>;
 
     /// <summary>
     /// Recovery and scans read the objects of a main-log page's records through a read-ahead, so a page of small objects costs a read or
@@ -176,6 +178,189 @@ namespace Tsavorite.test.recovery
                 Assert.That(reads, Is.LessThanOrEqualTo(walks * 2 * pagesSpanned),
                     $"{checkpointType} recovery of {NumRecords} small objects on {pagesSpanned} pages took {reads} object-log reads");
                 VerifyAll(recoverStore);
+            }
+            finally
+            {
+                recoverStore.Dispose();
+            }
+        }
+
+        /// <summary>Settings for the length-prefixed cases: object-log pages that hold about a hundred of their extents each.</summary>
+        static KVSettings CreateLengthPrefixedSettings(IDevice log, IDevice objlog, ICheckpointManager checkpointManager) => new()
+        {
+            IndexSize = 1L << 16,
+            LogDevice = log,
+            ObjectLogDevice = objlog,
+            SegmentSize = 1L << 20,
+            LogMemorySize = 1L << 20,
+            PageSize = 1L << 14,
+            ObjectLogPageSize = 1L << 16,
+            ObjectLogMemorySize = 1L << 18,
+            ObjectLogSegmentSize = 1L << 22,
+            CheckpointManager = checkpointManager,
+        };
+
+        static TsavoriteKV<ClassStoreFunctions, ClassAllocator> CreateLargeObjectStore(IDevice log, IDevice objlog, ICheckpointManager checkpointManager)
+            => new(CreateLengthPrefixedSettings(log, objlog, checkpointManager),
+                StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestLargeObjectValue.Serializer()),
+                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+        static TsavoriteKV<SbKeyStoreFunctions, SbKeyAllocator> CreateOverflowKeyStore(IDevice log, IDevice objlog, ICheckpointManager checkpointManager)
+        {
+            var settings = CreateLengthPrefixedSettings(log, objlog, checkpointManager);
+            settings.MaxInlineKeySize = 16;
+            settings.MaxInlineValueSize = 1 << 10;
+            return new(settings, StoreFunctions.Create(new SpanByteComparer(), () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance),
+                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+        }
+
+        /// <summary>
+        /// A FoldOver recovery loads objects before it has established the main object log's tail. An object that serializes to more
+        /// than 511 bytes has a length-prefixed extent; below the checkpoint's recorded tail, it is read through its page's read-ahead
+        /// rather than after a read of its own prefix.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task FoldOverRecoveryReadsLengthPrefixedObjectsWithoutAReadEach()
+        {
+            const int NumObjects = 4_000;
+            const int ObjectSize = 600;     // Serializes to 604 bytes, with its 4-byte size
+
+            Guid token;
+            using (var log = CreateLogDevice())
+            using (var objlog = CreateObjectLogDevice())
+            using (var checkpointManager = CreateCheckpointManager())
+            {
+                var store = CreateLargeObjectStore(log, objlog, checkpointManager);
+                try
+                {
+                    using (var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+                    {
+                        for (var key = 0; key < NumObjects; key++)
+                            _ = session.BasicContext.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue(ObjectSize), Empty.Default);
+                    }
+                    Assert.That(store.TryInitiateHybridLogCheckpoint(out token, CheckpointType.FoldOver), Is.True);
+                    await store.CompleteCheckpointAsync().AsTask().ConfigureAwait(false);
+                }
+                finally
+                {
+                    store.Dispose();
+                }
+            }
+
+            using var recoveryLog = CreateLogDevice();
+            using var objectLogFile = CreateObjectLogDevice();
+            var countingObjectLog = new ControlledReadFailureDevice(objectLogFile);
+            using var recoveryCheckpointManager = CreateCheckpointManager();
+            var recoverStore = CreateLargeObjectStore(recoveryLog, countingObjectLog, recoveryCheckpointManager);
+            try
+            {
+                _ = await recoverStore.RecoverAsync(default, token).ConfigureAwait(false);
+                var reads = countingObjectLog.ReadCount;
+                Assert.That(reads, Is.LessThan(NumObjects / 10),
+                    $"FoldOver recovery of {NumObjects} objects of {ObjectSize} bytes took {reads} object-log reads");
+
+                using var session = recoverStore.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                var context = session.BasicContext;
+                TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                var expected = new TestLargeObjectValue(ObjectSize).value;
+                for (var key = 0; key < NumObjects; key++)
+                {
+                    TestLargeObjectOutput output = new();
+                    var status = context.Read(new TestObjectKey { key = key }, ref input, ref output, Empty.Default);
+                    if (status.IsPending)
+                        (status, output) = context.GetSinglePendingResult();
+                    Assert.That(status.Found, Is.True, $"key {key} not found");
+                    Assert.That(output.valueObject.value, Is.EqualTo(expected), $"key {key} has the wrong value");
+                }
+            }
+            finally
+            {
+                recoverStore.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Pass 1 hashes each overflow key, reading it from the object log before recovery has established the main object log's tail. A
+        /// key longer than 511 bytes has a length-prefixed extent; below the checkpoint's recorded tail it takes one read, not a read of
+        /// its prefix and then another of the key. Every record is flushed and evicted before the checkpoint, so a Snapshot's main-log
+        /// range holds every key, and the object load after Pass 1 reads almost nothing.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoveryReadsEachOverflowKeyOnce([Values(CheckpointType.FoldOver, CheckpointType.Snapshot)] CheckpointType checkpointType)
+        {
+            const int NumKeys = 2_000;
+            const int KeySize = 1_100;      // Longer than Garnet's default 1,022-byte inline key limit
+            const int ValueSize = 50;       // Inline, so each record's only extent is its key
+
+            static byte[] MakeKey(int index)
+            {
+                var key = new byte[KeySize];
+                for (var i = 0; i < KeySize; i++)
+                    key[i] = (byte)((index * 7) + i + 1);
+                _ = BitConverter.TryWriteBytes(key, index);
+                return key;
+            }
+
+            static byte[] MakeValue(int index)
+            {
+                var value = new byte[ValueSize];
+                for (var i = 0; i < ValueSize; i++)
+                    value[i] = (byte)(index + i);
+                return value;
+            }
+
+            Guid token;
+            using (var log = CreateLogDevice())
+            using (var objlog = CreateObjectLogDevice())
+            using (var checkpointManager = CreateCheckpointManager())
+            {
+                var store = CreateOverflowKeyStore(log, objlog, checkpointManager);
+                try
+                {
+                    using (var session = store.NewSession<TestSpanByteKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+                    {
+                        for (var index = 0; index < NumKeys; index++)
+                            _ = session.BasicContext.Upsert(TestSpanByteKey.FromArray(MakeKey(index)), MakeValue(index).AsSpan(), Empty.Default);
+                    }
+                    store.Log.FlushAndEvict(wait: true);
+                    Assert.That(store.TryInitiateHybridLogCheckpoint(out token, checkpointType), Is.True);
+                    await store.CompleteCheckpointAsync().AsTask().ConfigureAwait(false);
+                }
+                finally
+                {
+                    store.Dispose();
+                }
+            }
+
+            using var recoveryLog = CreateLogDevice();
+            using var objectLogFile = CreateObjectLogDevice();
+            var countingObjectLog = new ControlledReadFailureDevice(objectLogFile);
+            using var recoveryCheckpointManager = CreateCheckpointManager();
+            var recoverStore = CreateOverflowKeyStore(recoveryLog, countingObjectLog, recoveryCheckpointManager);
+            try
+            {
+                _ = await recoverStore.RecoverAsync(default, token).ConfigureAwait(false);
+                var reads = countingObjectLog.ReadCount;
+                Assert.That(reads, Is.LessThanOrEqualTo(NumKeys + (NumKeys / 50)),
+                    $"{checkpointType} recovery of {NumKeys} overflow keys of {KeySize} bytes took {reads} object-log reads");
+
+                using var session = recoverStore.NewSession<TestSpanByteKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                var context = session.BasicContext;
+                for (var index = 0; index < NumKeys; index++)
+                {
+                    TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Inline, expectedSpanLength = ValueSize };
+                    TestLargeObjectOutput output = new();
+                    var status = context.Read(TestSpanByteKey.FromArray(MakeKey(index)), ref input, ref output, Empty.Default);
+                    if (status.IsPending)
+                    {
+                        Assert.That(context.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                        (status, output) = GetSinglePendingResult(completedOutputs);
+                    }
+                    Assert.That(status.Found, Is.True, $"key {index} not found");
+                    Assert.That(output.valueArray, Is.EqualTo(MakeValue(index)), $"key {index} has the wrong value");
+                }
             }
             finally
             {

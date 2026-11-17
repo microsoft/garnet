@@ -325,8 +325,10 @@ hint can therefore run past the extent; the reader takes the extent's length fro
 "Clamped" means limited to the bytes left on the extent's object-log page and below the log's tail, so that a read never
 asks for bytes past the end of the log's data: a device can return such a read short, and a short read fails
 (section 12.4). A length-prefixed extent never spans a page. While recovery establishes the main object log's tail
-(`ObjectLog.RecoveryReadOnly`, section 12.4), the tail is not yet known, so the read is limited instead to the extent's
-exact end, which `ObjectLog.GetReferencedExtentEnd` first reads from the length prefix in a separate device read.
+(`ObjectLog.RecoveryReadOnly`, section 12.4), the log's tail is the checkpoint's recorded tail, below which every byte
+is on the device, so a first read that ends at or below it is clamped only to the page. A first read that would pass it
+is limited instead to the extent's exact end, which `ObjectLog.GetReferencedExtentEnd` first reads from the length
+prefix, with a read of its own.
 
 For a key whose exact flag is clear, the high 10 bits of the page count are in raw RDH KeyLength:
 
@@ -346,8 +348,9 @@ could together hold an exact key length of up to 524,287 bytes. That is not done
 cost is a key-only path through framing that keys and values share:
 - **The gain.** A key's page count is already exact, so its first read covers the extent and runs less than 4 KB past
   its end; an exact length would shorten that read, not save it. The one read it would save is the prefix read that a
-  length-prefixed extent costs while recovery establishes the main object log's tail (section 6.1): one per overflow key
-  read from the main object log in that mode. Garnet keeps keys of up to 1,022 bytes inline by default
+  length-prefixed extent costs while recovery establishes the main object log's tail, and then only when its first read
+  would pass the checkpoint's recorded tail (above): a key that an earlier recovery copied above it, or one that ends
+  within 4 KB below it. Garnet keeps keys of up to 1,022 bytes inline by default
   (`KVSettings.DefaultMaxInlineKeySize`), so overflow keys are uncommon. When the value is also out of line, the key's
   slot sizes the top directory record rather than the key, so an exact key length would not apply.
 - **The cost.** Keys and values share one framing path, which rests on one rule: a hint is exact exactly when its
@@ -409,9 +412,9 @@ flags, which components are out of line, the key slot's hint and raw RDH KeyLeng
 `TopExtentInitialRead` gives the first read's length, decoded with `ObjectLogExtent.KeyInitialRead` when the key is
 overflow and `ObjectLogExtent.ValueInitialRead` otherwise; the page read-ahead (section 6.5) and Pass 2's size estimate
 (section 7.2) use it. `ObjectLogReader.ReadTopExtent` decodes the same hint itself: it reads exactly `hint` bytes for an
-exact extent, and clamps a page-count read to the page and the tail, or to the extent's exact end while recovery
-establishes the main object log's tail (section 6.1). A reader captures the reference before it materializes any
-component, because assigning a component unstamps the record.
+exact extent, and clamps a page-count read to the page and the tail. While recovery establishes the main object log's
+tail, one that would pass the checkpoint's recorded tail is clamped instead to the extent's exact end (section 6.1). A
+reader captures the reference before it materializes any component, because assigning a component unstamps the record.
 
 `LogRecord.GetObjectLogRecordStartPositionAndLengths` serves the version 7 paths: when the checkpoint version selects
 the version 7 decode (`HybridLogRecoveryInfo.UsesDownlevelObjectLog`), it returns the record's position and exact split
@@ -863,11 +866,12 @@ the key's slot when the key is overflow and by the value's slot otherwise:
 - Exact: one read of exactly `hint` bytes, or none for a zero-length component.
 - Length-prefixed: one read of the decoded first read (section 3.3), clamped to the bytes left on the extent's page and
   below the log's read end, `ReadEndAddress`, which is its tail. While recovery establishes the main object log's tail
-  (`ObjectLog.RecoveryReadOnly`, section 12.4), the read end is `MaxExclusiveAddress`, and
-  `ObjectLog.GetReferencedExtentEnd` first reads the prefix directly; the first read is then clamped to the extent's
-  exact end, and the prefix costs one more read, which a read-ahead does not serve. The prefix must exceed
-  `ExactCutoff` (511) and fit within those bytes. When the extent is longer than the first read, a second read on the
-  same page fetches the rest.
+  (`ObjectLog.RecoveryReadOnly`, section 12.4), the read end is `MaxExclusiveAddress`, and the log's tail is the
+  checkpoint's recorded tail. A first read that ends at or below the recorded tail is clamped only to the page. One that
+  would pass it is clamped instead to the extent's exact end, which `ObjectLog.GetReferencedExtentEnd` first reads from
+  the prefix; that read calls `ObjectLog.Read` itself, so the reader's read-ahead does not serve it. The prefix must
+  exceed `ExactCutoff` (511) and fit within those bytes. When the extent is longer than the first read, a second read on
+  the same page fetches the rest.
 
 The extent stays in the reader's `topBuffer`. Without a directory, its payload is the record's one component; with one,
 `ParseDirectory` follows.
@@ -967,10 +971,11 @@ Every current-format read validates against its log's `[BeginAddress, ReadEndAdd
 object-log page. `ReadEndAddress` is the log's tail, except while the main object log is read-only for recovery, when it
 is the address ceiling, `MaxExclusiveAddress`: an earlier recovery from the same checkpoint may have appended copies
 above the recorded end, which main-log records now reference (section 13.7), so until `CompleteMainObjectLogRecovery`
-sets the tail, after Pass 1 and, for a FoldOver, after Pass 2, a read is bounded by the extent it reads rather than by
-the tail. `CompleteMainObjectLogRecovery` sets the tail to the end of the highest reference if that is higher, and
-recovery's own appends follow it: the reference repair's copies and a Snapshot recovery's snapshot-region copies
-(section 7.4) extend the main object log, and later reads are checked against that live tail. A recovery call selects
+sets the tail, after Pass 1 and, for a FoldOver, after Pass 2, a read is bounded by its page, and by the recorded end or
+the extent it reads (section 6.1), rather than by the tail. `CompleteMainObjectLogRecovery` sets the tail to the end of
+the highest reference if that is higher, and recovery's own appends follow it: the reference repair's copies and a
+Snapshot recovery's snapshot-region copies (section 7.4) extend the main object log, and later reads are checked
+against that live tail. A recovery call selects
 the object log by device: none for the main object log, or the checkpoint's object-log device; Pass 1's hash of a
 marked main-log record's key and the reference repair use the checkpoint's object log that recovery opened. Version 7
 reads go through the legacy reader (section 7.5), which bounds a read of the checkpoint's object log by its recorded end
@@ -1002,8 +1007,9 @@ It does not hash a record below `recoverFromAddress`. `RecoverFromPage` hashes a
 1. creates an `ObjectLogReader` over the record's object log: for a marked record, the checkpoint's object log that
    recovery opened (section 7), and otherwise the one `GetReadObjectLog` selects by device;
 2. calls `BeginRecord`, whose first read covers the whole top extent, the key alone or a directory, because the key's
-   page count is exact; while the main object log is read-only for recovery, a length-prefixed extent's prefix is read
-   first (`GetReferencedExtentEnd`), which costs a second read;
+   page count is exact; while the main object log is read-only for recovery, a length-prefixed extent whose first read
+   would pass the checkpoint's recorded tail has its prefix read first (`GetReferencedExtentEnd`), which costs a second
+   read (section 6.1);
 3. calls `ReadKey`, which reads only the key into one exact `OverflowByteArray`; and
 4. pins the key while calling the store's `GetKeyHashCode64`.
 
@@ -1036,8 +1042,9 @@ main object log and the part above reads the checkpoint's. A page loaded from th
 floor reset (section 5.4).
 
 A FoldOver's Pass 2 runs inside `RecoverHybridLogAsync`, before `CompleteMainObjectLogRecovery` restores the main object
-log's append tail, so its reads run under `ObjectLog.RecoveryReadOnly` (section 6.1): `ObjectLog.Read` goes to the
-device, and a length-prefixed top extent costs a read of its prefix. A Snapshot's Pass 2 runs after it.
+log's append tail, so its reads run under `ObjectLog.RecoveryReadOnly` (section 6.1): `ObjectLog.Read` serves them all
+with device IO, and a length-prefixed top extent whose first read would pass the checkpoint's recorded tail costs a read
+of its prefix. A Snapshot's Pass 2 runs after it.
 
 The walk stops at a page-extent guard: a zeroed `RecordDataHeader`, a non-positive record size, or a record that would
 overrun the range, since a sector-aligned read can extend past the bytes a flush wrote. An Invalid record, including a
@@ -1259,7 +1266,8 @@ are the addresses section 13.1 defines.
     - version 8 -> `new ObjectLogReader(source, storeFunctions)`, where `source` is the checkpoint's object log that
       recovery opened for a marked record, whose stamp is a capture, and otherwise `GetReadObjectLog(objectLogDevice)`
       - `GetObjectLogRecordRef()` -> `BeginRecord` -> `ReadKey()`; while the main object log is read-only for
-        recovery, `BeginRecord` first reads a length-prefixed extent's prefix (`GetReferencedExtentEnd`)
+        recovery, `BeginRecord` first reads the prefix (`GetReferencedExtentEnd`) of a length-prefixed extent whose
+        first read would pass the checkpoint's recorded tail
       - pin the key -> `storeFunctions.GetKeyHashCode64(ConditionallyHoistedKey.CreatePinned(...))`
     - version 7 -> `LegacyObjectLogReader.ReadOverflowKeyHashCodeForRecovery(...)` through the caller's ring
   - `FindOrCreateTag`; a next-version record at or above `fuzzyRegionStartAddress`, when next-version records are undone
@@ -1480,9 +1488,9 @@ are the addresses section 13.1 defines.
     - `ObjectAllocatorImpl.BeginMainObjectLogRecovery(info)`
       - `RestoreObjectLog(begin, hlogEndObjectLogTail)`: a fresh main object log, where `begin` is
         `objectLogBeginAddress`, or that tail for a Snapshot whose main-log range is empty
-      - `recoveryHighWaterReference = default`; `RecoveryReadOnly = true`: the log takes no appends, a single read
-        goes to the device and may reach past the recorded end, and a length-prefixed top extent's first read is
-        bounded by `GetReferencedExtentEnd`
+      - `recoveryHighWaterReference = default`; `RecoveryReadOnly = true`: the log takes no appends, its tail is the
+        recorded end, a single read is served by device IO and may reach past the recorded end, and a length-prefixed
+        top extent's first read that would pass the recorded end is bounded by `GetReferencedExtentEnd`
     - with the device -> `Initialize`; `OpenRecoverySnapshotObjectLog(device, snapshotEndObjectLogTail)`
   - FoldOver -> `RecoverHybridLogAsync` (sections 9.3 and 9.4); version 8 -> `CompleteMainObjectLogRecovery(info,
     recoveryStatus.headAddress)`, which only restores the tail
@@ -1515,7 +1523,8 @@ are the addresses section 13.1 defines.
 - A key's page count is exact over 19 bits: low bits of 511 are ordinary data, and the count carries into raw RDH
   KeyLength at 512 pages.
 - A value hint of 511 with the exact flag clear means "large": the first read is `LargeInitialRead`, clamped to the page
-  and the tail, or to the extent's exact end while recovery establishes the main object log's tail.
+  and the tail. While recovery establishes the main object log's tail, it is clamped only to the page if it then ends at
+  or below the recorded tail, and otherwise to the extent's exact end.
 - No allocation, extent, entry, or read spans an object-log page: `ObjectLog.Allocate` never returns one, the reader
   rejects a length-prefixed extent or a directory entry that would, and `ObjectLog.Read` refuses one. An exact top
   extent is checked only by that read; a page read-ahead serves a read from adjacent windows without that check, and
@@ -1547,7 +1556,8 @@ The object-size boundary suites (`ObjectSizeBoundaryDiskIOTests`, `ObjectSizeBou
 the exact cutoff, sector and 4 KB boundaries, the value hint's saturation, and multi-chunk records, over pending reads,
 Snapshot and FoldOver recovery, low-memory eviction, overflow keys with inline and overflow values, and object-log
 segment crossings. `ObjectLogChunkFormatTests` cover framing, page cuts, directories, spines, corrupt structure, and
-read-ahead, including the range a page walk reads ahead through; `ObjectLogDirectoryTests` cover the directory encoding.
+read-ahead, including the range a page walk reads ahead through; `ObjectLogDirectoryTests` cover the directory encoding;
+and `ObjectLogReadAheadTests` count the object-log reads that recovery and scans make.
 
 ---
 
@@ -1642,15 +1652,17 @@ decision and the device submission happen under one epoch acquisition: range val
 a concurrent `Truncate` retire the segment the read is about to resolve. Protection is released before awaiting
 completion, since the rented buffer and its in-flight read belong to the call rather than to the page ring.
 
-While recovery establishes the main object log's tail (`RecoveryReadOnly`, section 12.11), the log takes no appends,
-`Read` serves every address from the device, and validation bounds a read by `MaxExclusiveAddress` instead of
-`TailAddress`, because an image that an earlier recovery repaired can reference bytes past the recorded end
-(section 13.7). An append at the recorded end would overwrite those bytes, and the restarted log holds in memory only
-the page that contains the recorded end, while those bytes can lie on later pages. Without a tail, a reader also has no
-bound for a first read that a hint rounds up past the extent (section 3.3), and such a read near the end of the log's
-data could come back short, which fails (below). So it sizes a length-prefixed top extent by first reading its prefix
-(`GetReferencedExtentEnd`), a separate device read that the read-ahead does not serve, and then reads exactly the
-extent. Pass 1 and a FoldOver recovery's object load run in this mode.
+While recovery establishes the main object log's tail (`RecoveryReadOnly`, section 12.11), the log's tail is the
+checkpoint's recorded end, but an image that an earlier recovery repaired can reference bytes past it (section 13.7).
+So validation bounds a read by `MaxExclusiveAddress` instead of `TailAddress`, and `Read` serves every address with
+device IO rather than from memory: memory holds only the page that contains the recorded end, read up to that end, so it
+lacks those bytes. Recovery appends nothing in this mode, since its copies come after the tail is set; the log refuses
+an append anyway, because one at the recorded end would overwrite those bytes. Every byte below the recorded end is on
+the device, so a reader still clamps a length-prefixed top extent's first read only to its page when that read ends at
+or below the recorded end (section 3.3). A first read that would pass the recorded end could come back short, which
+fails (below), so for that extent the reader first reads the prefix (`GetReferencedExtentEnd`), with a read of its own
+that the read-ahead does not serve, and then reads exactly the extent. Pass 1 and a FoldOver recovery's object load run
+in this mode.
 
 A device may report success having transferred fewer bytes than requested — a truncated or externally altered file does
 exactly that. Because the read buffer is rented without clearing, copying the full request on a short read would return
@@ -1867,11 +1879,11 @@ than a chunk is emitted straight from the source. Each emitted chunk is one allo
   written out as a spine record.
 
 **Reading.** One IO reads the extent the position addresses; a second, on the same page, finishes a value-sized extent
-longer than `LargeInitialRead`; while recovery establishes the main object log's tail, a length-prefixed extent first
-costs a read of its prefix (section 12.4). A directory's spine is walked backward, one read per spine
-record, and every entry is validated before any data is read. Component lengths are then exact: an overflow array is
-allocated once at its final size, and an object's deserializer is bounded by its own byte count. Each entry outside the
-top record is one read.
+longer than `LargeInitialRead`; while recovery establishes the main object log's tail, a length-prefixed extent whose
+first read would pass the checkpoint's recorded tail first costs a read of its prefix (section 12.4). A directory's
+spine is walked backward, one read per spine record, and every entry is validated before any data is read. Component
+lengths are then exact: an overflow array is allocated once at its final size, and an object's deserializer is bounded
+by its own byte count. Each entry outside the top record is one read.
 
 **Reading a page's records.** A walk over the records of a main-log page read from disk - recovery's object load, a
 scan, and the copy of a Snapshot's objects into the main object log during recovery - reads ahead instead of reading
