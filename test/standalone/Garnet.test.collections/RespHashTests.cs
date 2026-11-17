@@ -537,6 +537,32 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase("01")]
+        [TestCase("+1")]
+        [TestCase("-0")]
+        public async Task HINCRBYRejectsInvalidIntegersAsync(string by)
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            ClassicAssert.IsTrue(await db.HashSetAsync("foo", "bar", "01").ConfigureAwait(false));
+
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("HINCRBY", "foo", "bar", "1"));
+            ClassicAssert.AreEqual("ERR hash value is not an integer", exc0.Message);
+            ClassicAssert.AreEqual("01", (string)await db.HashGetAsync("foo", "bar").ConfigureAwait(false));
+
+            ClassicAssert.IsFalse(await db.HashSetAsync("foo", "bar", "1").ConfigureAwait(false));
+
+            var exc1 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("HINCRBY", "foo", "bar", by));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range", exc1.Message);
+            ClassicAssert.AreEqual("1", (string)await db.HashGetAsync("foo", "bar").ConfigureAwait(false));
+
+            var exc2 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("HINCRBY", "foo", "fizz", by));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range", exc2.Message);
+            ClassicAssert.IsNull((string)await db.HashGetAsync("foo", "fizz").ConfigureAwait(false));
+        }
+
+        [Test]
         public void CanDoHashDecrement()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
