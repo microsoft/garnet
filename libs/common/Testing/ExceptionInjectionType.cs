@@ -248,5 +248,9 @@ namespace Garnet.common
         /// ROLE: pause after selecting a replica response, before writing it.
         /// </summary>
         Role_Pause_After_Role_Check,
+        /// <summary>
+        /// SLOWLOG GET: pause after deserializing argument pointers, before reading them.
+        /// </summary>
+        SlowLog_Pause_After_Deserialize,
     }
 }

@@ -61,6 +61,9 @@ namespace Garnet.server
         bool NetworkGET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (parseState.Count != 1)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GET));
+
             // Only take the scatter-gather path when the next command is itself a GET to batch with.
             // A single (request/response) GET, or a GET followed by a non-GET, falls through to the simple
             // path so it is as cheap as with sg-get off (no look-ahead, no scatter-gather setup).
