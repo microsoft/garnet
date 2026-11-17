@@ -193,9 +193,11 @@ For a current-format Snapshot, the sequence is:
    that tail but cannot append until it has discovered the safe append tail.
 2. Read the required main-log pages below `M` and repair/rebuild the index. Include `[L, M)` even
    when index-assisted replay or residency would otherwise skip it. A marked reference in that
-   range belongs to the selected snapshot; obsolete marked images outside it are invalidated before
-   reading their keys. Full object loading is deferred. With the default `undoNextVersion: true`,
-   fuzzy-region next-version records are invalidated and their index entries repaired.
+   range belongs to the selected snapshot; obsolete marked images outside it are left out of the
+   index without reading their keys, and unchanged on the device, so an older retained checkpoint
+   that marked them can still be recovered. Full object loading is deferred. With the default
+   `undoNextVersion: true`, fuzzy-region next-version records are invalidated and their index
+   entries repaired.
 3. During that same walk, retain the highest **main-object-log position**, with its hints, among
    accepted main-owned references. It need not occur in the last hybrid-log record. Establish its
    exact extent end from an exact hint or a length-prefix read, without deserializing its value.
@@ -247,8 +249,9 @@ to its recovered tail. It does not open Snapshot 1 to interpret the earlier over
 The earlier overlap does not require opening Snapshot 1. A record superseded while taking Snapshot 1
 is needed in its old form only by Snapshot 1; Snapshot 2 contains its `(v+1)` replacement. A marked,
 superseded image outside Snapshot 2's `[L, M)` is obsolete and is rejected before reading even an
-overflow key. Positions inside Snapshot 2's ownership range refer to Snapshot 2, not to an arbitrary
-earlier snapshot.
+overflow key. Recovery leaves it on the device as written, so Snapshot 1, if retained, can still be
+recovered after Snapshot 2. Positions inside Snapshot 2's ownership range refer to Snapshot 2, not
+to an arbitrary earlier snapshot.
 
 If recovery of Snapshot 1 restores the old value as current, it first copies that value into the main
 object log and durably repoints its record. A subsequent Snapshot 2 can then use ordinary main-log

@@ -253,9 +253,10 @@ version 7 reader (section 7.5).
 
 A main-log image's address is in the main object log, and a snapshot-file image's is in its checkpoint's object log. A
 main-log image with `RecordInfo.HasSnapshotObjectLogReference` set holds a Snapshot capture's position in the
-checkpoint's object log (section 13): recovery reads such an image's overflow key from that log and invalidates the
-image outside `[L, M)`, a walk over a main-log page invalidates it and gives it empty components without reading, and
-the single-record pending read skips it and follows `PreviousAddress`.
+checkpoint's object log (section 13): recovery reads such an image's overflow key from that log when the image is in
+`[L, M)`, and leaves one outside `[L, M)` out of its index without reading or changing it, a walk over a main-log page
+invalidates it and gives it empty components without reading, and the single-record pending read skips it and follows
+`PreviousAddress`.
 
 Only the exact-size flag of the slot that sizes the extent applies, so a reader takes that slot's hint and flag
 together.
@@ -995,8 +996,10 @@ and `L` is lower, so that it inspects every record an earlier recovery's referen
 recorded end of the main object log (section 13.7); for the same reason `SetRecoveryPageRanges` reads the main log from
 no higher than the higher of `beginAddress` and `L`. Before hashing, it:
 
-- invalidates a marked image outside `[L, M)`, whose stamp addresses a checkpoint object log that this recovery does
-  not read (section 13.7); the page is then written back (section 7.3); and
+- leaves out of the index, without reading it, a marked image outside `[L, M)`, whose stamp addresses another
+  checkpoint's object log (section 13.7). It does not invalidate the image, so the device keeps it as written, even when
+  the page is written back for another record (section 7.3), and the checkpoint that marked it, if retained, can still
+  be recovered (section 13.9); and
 - for a version 8 record that it keeps, passes the record to `InspectRecoveryObjectLogReference`, which keeps the
   highest main-object-log reference of an unmarked record, from which `CompleteMainObjectLogRecovery` sets the main
   object log's tail (section 9.10).
@@ -1048,13 +1051,14 @@ of its prefix. A Snapshot's Pass 2 runs after it.
 
 The walk stops at a page-extent guard: a zeroed `RecordDataHeader`, a non-positive record size, or a record that would
 overrun the range, since a sector-aligned read can extend past the bytes a flush wrote. An Invalid record, including a
-marked image that Pass 1 or the walk invalidated, and a Valid object record with no readable position are materialized
+marked image that the walk invalidated, and a Valid object record with no readable position are materialized
 without reading (section 3.2) and add nothing to the size tracker.
 
 ### 7.3 Recovery flush of hybrid-log-region records
 
-When Pass 1 invalidates a record on a page read from the main log, a next-version record or a marked image outside
-`[L, M)`, `ProcessReadPageAndFlush` writes the page back. That flush has no object log to write:
+When Pass 1 invalidates a next-version record on a page read from the main log, `ProcessReadPageAndFlush` writes the
+page back; a marked image outside `[L, M)` on that page goes back as it was read (section 7.1). That flush has no
+object log to write:
 
 - A current-format record is written verbatim. Its position, objectId hints, and exact-size flags already describe
   durable bytes, in the main object log or, for a marked record in `[L, M)`, in the checkpoint's object log, from which
@@ -1088,9 +1092,10 @@ some of its records below the head, `FlushSnapshotPageForRecovery` flushes it to
 Objects are not deserialized, and each record's inline image keeps its size. Recovery then marks the page as flushed to
 the main log, and Pass 2 reads it from the main object log. Main and snapshot positions are never mixed. Every pass that
 could see both splits the boundary page at `snapshotScanFromAddress`, and below the boundary a position in a
-checkpoint's object log carries the marker: Pass 1 reads such a record's overflow key from that log and invalidates one
-outside `[L, M)`, `CompleteMainObjectLogRecovery` copies the rest into the main object log and clears their markers
-(section 13.7), and a page walk of the main object log invalidates any it finds.
+checkpoint's object log carries the marker: Pass 1 reads such a record's overflow key from that log if the record is in
+`[L, M)` and otherwise leaves it out of the index, `CompleteMainObjectLogRecovery` copies those in `[L, M)` into the
+main object log and clears their markers (section 13.7), and a page walk of the main object log invalidates any it
+finds.
 
 ### 7.5 Version 7 recovery
 
@@ -1256,7 +1261,7 @@ are the addresses section 13.1 defines.
 - `Recovery.ProcessReadPage(...)` for a page read from the main log, or `ProcessReadSnapshotPage(...)` for one read from
   the snapshot file -> `RecoverFromPage(...)`
   - main-log page: the walk starts at `recoverFromAddress`, or at `L` when `[L, M)` is not empty and `L` is lower
-  - main-log page: a marked image outside `[L, M)` -> `SetInvalid`, skip; the page is written back (section 9.6)
+  - main-log page: a marked image outside `[L, M)` -> skip, leaving it unchanged (section 7.1)
   - snapshot page: next-version record at or above `fuzzyRegionStartAddress` -> `SetInvalid`, skip
   - main-log page, current format, a record that is kept -> `ObjectAllocatorImpl.InspectRecoveryObjectLogReference`,
     which keeps the highest main-object-log position of an unmarked record (section 9.10)
@@ -1327,8 +1332,8 @@ are the addresses section 13.1 defines.
 
 ### 9.6 Recovery-state flush of hybrid-log-region records
 
-- `Recovery.ProcessReadPageAndFlush(...)` -> `ProcessReadPage` reports that Pass 1 invalidated a record on the page: a
-  next-version record, or a marked image outside `[L, M)`
+- `Recovery.ProcessReadPageAndFlush(...)` -> `ProcessReadPage` reports that Pass 1 invalidated a next-version record
+  on the page
   - `AsyncFlushPagesForRecovery(scanFromAddress, page, 1, ..., checkpointVersion)`: no snapshot device and no
     up-conversion, so `asyncResult.objectLog` is null
   - `ObjectAllocatorImpl.WriteAsync(...)`
@@ -1933,8 +1938,8 @@ waiting (`FlushTail(wait: false)`) and issues the page's own device writes. The 
 and that object-log flush have all completed, through one join that invokes the page callback exactly once with the
 first error; the object log reports durability through `ObjectLog.OnFlushed`, so no thread blocks on it. The main log's
 `FlushedUntilAddress` therefore never covers a record whose main-object-log bytes are not durable; a capture becomes
-durable when `PERSISTENCE_CALLBACK` flushes the checkpoint's object log, and recovery invalidates a marked image outside
-its checkpoint's `[L, M)` (section 13.7).
+durable when `PERSISTENCE_CALLBACK` flushes the checkpoint's object log, and a recovery leaves out of its index any
+marked image outside its own `[L, M)` (section 13.7).
 
 A Snapshot flush stamps no floor. It writes the same live page before the ReadOnly flush does, and its tail is an address
 in the checkpoint's object log, which bounds nothing in the main one; the ReadOnly flush keeps an existing floor, so a
@@ -2337,8 +2342,9 @@ log.
 ### 13.9 Why recovery copies captures
 
 A superseded record's `(v)` value is required only by the checkpoint during which it was superseded. Subsequent
-checkpoints contain its `(v+1)` replacement. They invalidate an obsolete marked image before reading its overflow key
-or value; they do not reopen its earlier snapshot.
+checkpoints contain its `(v+1)` replacement. Their recovery leaves an obsolete marked image out of its index before
+reading its overflow key or value, and does not reopen the earlier snapshot. It leaves the image on the device as the
+ReadOnly flush wrote it, so the earlier checkpoint, if retained, can still be recovered afterwards.
 
 If recovery makes the old `(v)` record current again, it cannot leave that record dependent on a snapshot directory.
 The record can be below the restored read-only boundary, so an ordinary future flush need not revisit it. Recovery

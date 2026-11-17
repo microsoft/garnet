@@ -643,6 +643,96 @@ namespace Tsavorite.test.recovery
         }
 
         /// <summary>
+        /// Recovering a later checkpoint leaves the main-log image that an earlier checkpoint marked out of its index, but unchanged on the
+        /// device, so the earlier checkpoint, if retained, still recovers that record's <c>(v)</c> value afterwards.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task EarlierCheckpointRecoversAfterALaterOneIsRecovered([Values] bool overflowKeys)
+        {
+            var key = new TestObjectKey { key = 1 };
+            Guid earlierToken, laterToken;
+            long sourceAddress, newAddress;
+            var store = CreateStore(overflowKeys);
+            try
+            {
+                sourceAddress = UpsertSource(store, key);
+
+                // The capture marks the source, and the ReadOnly flush during the earlier checkpoint writes the marked image.
+                var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
+                store.stateMachineDriver.UnsafeRegisterCallback(pause);
+                try
+                {
+                    Assert.That(store.TryInitiateFullCheckpoint(out earlierToken, CheckpointType.Snapshot), Is.True);
+                    Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True);
+                    newAddress = store.Log.TailAddress;
+                    Rmw(store, sourceAddress, expectCapture: true);
+                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                }
+                finally
+                {
+                    pause.Release.Set();
+                }
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+                Assert.That(store.TryInitiateFullCheckpoint(out laterToken, CheckpointType.Snapshot), Is.True);
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+
+                Assert.That(OwnsMarkedImage(store, earlierToken, sourceAddress), Is.True, "The earlier checkpoint must own the marked image");
+                Assert.That(OwnsMarkedImage(store, laterToken, sourceAddress), Is.False, "The later checkpoint must not own the marked image");
+            }
+            finally
+            {
+                store.Dispose();
+            }
+
+            // Recover the later checkpoint without an index, so its recovery inspects the marked image's page, then write and flush past it.
+            store = CreateStore(overflowKeys);
+            try
+            {
+                _ = await store.RecoverAsync(default, laterToken).ConfigureAwait(false);
+                ReadSourceVersion(store, key, newAddress, "the later checkpoint", expectedCount: InitialCount + 1);
+                using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions()))
+                {
+                    for (var ii = 0; ii < 64; ii++)
+                        _ = session.BasicContext.Upsert(new TestObjectKey { key = 1000 + ii }, new SharedListHeapObject([ii]), Empty.Default);
+                }
+                store.Log.FlushAndEvict(wait: true);
+                ReadSourceVersion(store, key, newAddress, "the later checkpoint, after eviction", expectedCount: InitialCount + 1);
+            }
+            finally
+            {
+                store.Dispose();
+            }
+
+            store = CreateStore(overflowKeys);
+            try
+            {
+                _ = await store.RecoverAsync(default, earlierToken).ConfigureAwait(false);
+                ReadSourceVersion(store, key, sourceAddress, "the earlier checkpoint, after recovering the later one");
+                store.Log.FlushAndEvict(wait: true);
+                ReadSourceVersion(store, key, sourceAddress, "the earlier checkpoint, after recovering the later one, after eviction");
+            }
+            finally
+            {
+                store.Dispose();
+            }
+
+            static bool OwnsMarkedImage(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, Guid token, long address)
+            {
+                HybridLogCheckpointInfo checkpoint = default;
+                try
+                {
+                    checkpoint.Recover(token, store.checkpointManager);
+                    return checkpoint.info.snapshotObjectLogStartAddress <= address && address < checkpoint.info.mainLogRecoveryEndAddress;
+                }
+                finally
+                {
+                    checkpoint.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
         /// Recovery invalidates some records without reading their components: the capturing checkpoint's (v+1) record, and, recovering a later
         /// checkpoint, the source's main-log image that references the capturing checkpoint's object log. Their slots must still index their
         /// page's map, holding empty components, because a scan that includes closed records, such as a bounded ScanCursor, resolves them; and a

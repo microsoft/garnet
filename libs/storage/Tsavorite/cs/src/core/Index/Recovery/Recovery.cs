@@ -1804,11 +1804,16 @@ namespace Tsavorite.core
                 if (!info.Invalid)
                 {
                     var recordLogicalAddress = pageStartLogicalAddress + recordOffset;
+
+                    // A marked image outside this checkpoint's [L, M) belongs to another checkpoint, which the marker does not identify, and its
+                    // components are in that checkpoint's object log. It was superseded while that checkpoint ran, so it is not live here: leave it
+                    // out of the index without reading its key or value. Leave it on the device as it is, too: setting Invalid here would reach the
+                    // device if this page were written back, by this pass or by a recovery flush of the snapshot boundary page, and the checkpoint
+                    // that marked it, if retained, could no longer recover the record. Every reader of a marked image skips it, and the object load
+                    // invalidates it in memory.
                     if (!isSnapshotPage && info.HasSnapshotObjectLogReference
                         && (recordLogicalAddress < options.snapshotReferenceStart || recordLogicalAddress >= options.snapshotReferenceEnd))
                     {
-                        info.SetInvalid();
-                        touched = true;
                         recordOffset += logRecord.AllocatedSize;
                         continue;
                     }
