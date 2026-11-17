@@ -25,6 +25,7 @@ namespace Tsavorite.core
 
         private SectorAlignedMemory recordBuffer;
         private readonly bool assumeInMemory;
+        private readonly bool includeValues = true;
 
         private DiskLogRecord diskLogRecord;
         private bool currentRecordFromDisk;
@@ -42,16 +43,18 @@ namespace Tsavorite.core
         /// <param name="epoch">Epoch to use for protection; may be null if <paramref name="assumeInMemory"/> is true.</param>
         /// <param name="assumeInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
+        /// <param name="includeValues">Whether in-memory snapshots must retain values.</param>
         internal ObjectScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
                 long beginAddress, long endAddress, LightEpoch epoch, DiskScanBufferingMode diskScanBufferingMode,
                 InMemoryScanBufferingMode memScanBufferingMode = InMemoryScanBufferingMode.NoBuffering,
-                bool includeClosedRecords = false, bool assumeInMemory = false, ILogger logger = null)
+                bool includeClosedRecords = false, bool assumeInMemory = false, ILogger logger = null, bool includeValues = true)
             : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, endAddress, diskScanBufferingMode, memScanBufferingMode,
                   includeClosedRecords, epoch, hlogBase.LogPageSizeBits, hlogBase._wrapper, logger: logger)
         {
             this.store = store;
             this.hlogBase = hlogBase;
             this.assumeInMemory = assumeInMemory;
+            this.includeValues = includeValues;
             if (frameSize > 0)
             {
                 frame = new BlittableFrame(frameSize, hlogBase.PageSize, hlogBase.GetDeviceSectorSize());
@@ -242,8 +245,7 @@ namespace Tsavorite.core
 
                     if (currentAddress >= headAddress || assumeInMemory)
                     {
-                        // TODO: for this PR we always buffer the in-memory records; pull iterators require it, and currently push iterators are implemented on top of pull.
-                        // Copy the entire record into bufferPool memory so we don't have a ref to log data outside epoch protection.
+                        // Snapshot under epoch protection so callbacks do not retain references to log pages.
                         OperationStackContext<TStoreFunctions, TAllocator> stackCtx = default;
                         try
                         {
@@ -263,20 +265,28 @@ namespace Tsavorite.core
                                 }
                             }
 
-                            if (recordBuffer == null)
-                                recordBuffer = hlogBase.bufferPool.Get((int)allocatedSize);
-                            else if (recordBuffer.AlignedTotalCapacity < (int)allocatedSize)
+                            if (!includeValues)
                             {
-                                recordBuffer.Return();
-                                recordBuffer = hlogBase.bufferPool.Get((int)allocatedSize);
+                                var source = hlogBase._wrapper.CreateLogRecord(currentAddress, physicalAddress);
+                                diskLogRecord = DiskLogRecord.CopyKeyForScan(in source, hlogBase.bufferPool, ref recordBuffer, hlogBase._wrapper.TransientObjectIdMap);
                             }
+                            else
+                            {
+                                if (recordBuffer == null)
+                                    recordBuffer = hlogBase.bufferPool.Get((int)allocatedSize);
+                                else if (recordBuffer.AlignedTotalCapacity < (int)allocatedSize)
+                                {
+                                    recordBuffer.Return();
+                                    recordBuffer = hlogBase.bufferPool.Get((int)allocatedSize);
+                                }
 
-                            // These objects are still alive in the log, so do not dispose the value object if any.
-                            // Don't pass the recordBuffer to diskLogRecord; we reuse that here.
-                            var remapPtr = recordBuffer.GetValidPointer();
-                            Buffer.MemoryCopy((byte*)physicalAddress, remapPtr, allocatedSize, allocatedSize);
-                            var memoryLogRecord = hlogBase._wrapper.CreateRemappedLogRecordOverPinnedTransientMemory(currentAddress, (long)remapPtr);
-                            diskLogRecord = new DiskLogRecord(in memoryLogRecord);
+                                // These objects are still alive in the log, so do not dispose the value object if any.
+                                // Don't pass the recordBuffer to diskLogRecord; we reuse that here.
+                                var remapPtr = recordBuffer.GetValidPointer();
+                                Buffer.MemoryCopy((byte*)physicalAddress, remapPtr, allocatedSize, allocatedSize);
+                                var memoryLogRecord = hlogBase._wrapper.CreateRemappedLogRecordOverPinnedTransientMemory(currentAddress, (long)remapPtr);
+                                diskLogRecord = new DiskLogRecord(in memoryLogRecord);
+                            }
                             currentRecordFromDisk = false;
                         }
                         finally

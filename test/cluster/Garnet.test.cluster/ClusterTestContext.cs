@@ -377,7 +377,9 @@ namespace Garnet.test.cluster
             string replicaDiskBasedSyncChunkSize = "16m",
             int replicaDiskBasedSyncPipelineDepth = 4,
             int replicaDiskBasedSyncWriteBuffers = 1,
-            bool replicaDiskBasedSyncWriteBuffersConcurrently = false)
+            bool replicaDiskBasedSyncWriteBuffersConcurrently = false,
+            string migrationSendBufferSize = null,
+            int migrationPipelineDepth = 1)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, Port);
@@ -444,7 +446,9 @@ namespace Garnet.test.cluster
                 replicaDiskBasedSyncChunkSize: replicaDiskBasedSyncChunkSize,
                 replicaDiskBasedSyncPipelineDepth: replicaDiskBasedSyncPipelineDepth,
                 replicaDiskBasedSyncWriteBuffers: replicaDiskBasedSyncWriteBuffers,
-                replicaDiskBasedSyncWriteBuffersConcurrently: replicaDiskBasedSyncWriteBuffersConcurrently);
+                replicaDiskBasedSyncWriteBuffersConcurrently: replicaDiskBasedSyncWriteBuffersConcurrently,
+                migrationSendBufferSize: migrationSendBufferSize,
+                migrationPipelineDepth: migrationPipelineDepth);
 
             foreach (var node in nodes)
                 node.Start();

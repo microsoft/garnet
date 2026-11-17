@@ -35,7 +35,8 @@ namespace Garnet.cluster
 
             try
             {
-                var reservedCtxs = await migrateOperation[0].Client.ExecuteForArrayAsync("CLUSTER", "RESERVE", "VECTOR_SET_CONTEXTS", neededContexts.ToString());
+                var client = transferOption == TransferOption.SLOTS ? migrateOperation[0].Client : keysMigrateOperation[0].Client;
+                var reservedCtxs = await client.ExecuteForArrayAsync("CLUSTER", "RESERVE", "VECTOR_SET_CONTEXTS", neededContexts.ToString());
 
                 var rootNamespacesMigrating = _namespaces.Where(static x => (x % VectorManager.ContextStep) == 0);
 
@@ -104,23 +105,22 @@ namespace Garnet.cluster
                     i++;
                 }
 
+                var allRunners = Task.WhenAll(migrateOperationRunners);
                 try
                 {
-                    var scanResults = await Task.WhenAll(migrateOperationRunners).WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+                    var scanResults = await allRunners.WaitAsync(_timeout, migrationCancellationToken).ConfigureAwait(false);
                     if (!scanResults.All(static x => x))
                     {
                         logger?.LogWarning("Aborting migration due to ScanStoreTask failure");
                         return false;
                     }
 
-                    // Handle migration of discovered RangeIndex keys with sketch protection.
-                    // All RI keys are added to the sketch in one batch, then a single epoch
-                    // barrier per phase gates concurrent operations.
+                    // Protect each RangeIndex batch before taking its snapshots.
                     var rangeIndexKeys = new HashSet<byte[]>(migrateOperation.SelectMany(static mo => mo.RangeIndexKeys), ByteArrayComparer.Instance);
 
-                    if (rangeIndexKeys.Count > 0)
+                    foreach (var batch in rangeIndexKeys.Chunk(migrateOperation[0].KeySendBatchSize))
                     {
-                        if (!await MigrateRangeIndexKeysAsync(migrateOperation[0], rangeIndexKeys, _cts.Token).ConfigureAwait(false))
+                        if (!await MigrateRangeIndexKeysAsync(migrateOperation[0], batch, migrationCancellationSource.Token).ConfigureAwait(false))
                             return false;
                     }
 
@@ -154,21 +154,21 @@ namespace Garnet.cluster
                                 VectorManager.SerializeMigratedIndexKey(serializeBufferArr, key, value, expiration);
 
                                 if (gcs.NeedsInitialization)
-                                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: true);
+                                    SetMigrateHeader(gcs, isVectorSets: true);
 
                                 while (!gcs.TryWriteRecordSpan(serializeBufferArr.AsSpan()[..neededSpace], MigrationRecordSpanType.VectorSetIndex, out var task))
                                 {
-                                    if (!await HandleMigrateTaskResponseAsync(task).ConfigureAwait(false))
+                                    if (!await migrateOperation[0].HandleMigrateTaskResponseAsync(task).ConfigureAwait(false))
                                     {
                                         logger?.LogCritical("Failed to migrate Vector Set key {key} during migration", SpanByte.ToShortString(key));
                                         return false;
                                     }
 
-                                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: true);
+                                    SetMigrateHeader(gcs, isVectorSets: true);
                                 }
 
                                 // Force a flush before doing the delete, in case that fails
-                                if (!await HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer()).ConfigureAwait(false))
+                                if (!await migrateOperation[0].HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer(), drain: true).ConfigureAwait(false))
                                 {
                                     logger?.LogCritical("Flush failed before deletion of Vector Set {key} duration migration", SpanByte.ToShortString(key));
                                     return false;
@@ -194,8 +194,20 @@ namespace Garnet.cluster
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "{CreateAndRunMigrateTasks}: {beginAddress} {tailAddress} {pageSize}", nameof(CreateAndRunMigrateTasksAsync), beginAddress, tailAddress, pageSize);
-                    await _cts.CancelAsync().ConfigureAwait(false);
+                    if (!migrationCancellationToken.IsCancellationRequested)
+                        await migrationCancellationSource.CancelAsync().ConfigureAwait(false);
                     return false;
+                }
+                finally
+                {
+                    try
+                    {
+                        await allRunners.ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "Migration workers failed while joining");
+                    }
                 }
 
                 return true;
@@ -203,79 +215,25 @@ namespace Garnet.cluster
 
             async Task<bool> ScanStoreTaskAsync(int taskId, long beginAddress, long tailAddress, int pageSize)
             {
-                // The driver can stop waiting for this task on a timeout or cancellation, so the task holds its own
-                // reference to the operation it uses
-                AddReference();
-                try
-                {
-                    return await ScanStoreAsync(taskId, beginAddress, tailAddress, pageSize).ConfigureAwait(false);
-                }
-                finally
-                {
-                    ReleaseReference();
-                }
-            }
-
-            async Task<bool> ScanStoreAsync(int taskId, long beginAddress, long tailAddress, int pageSize)
-            {
                 // Force async
                 await Task.Yield();
 
                 var migrateOperation = this.migrateOperation[taskId];
-                var range = (tailAddress - beginAddress) / clusterProvider.storeWrapper.serverOptions.ParallelMigrateTaskCount;
-                var workerStartAddress = beginAddress + (taskId * range);
-                var workerEndAddress = beginAddress + ((taskId + 1) * range);
-
-                workerStartAddress = workerStartAddress - (2 * pageSize) > 0 ? workerStartAddress - (2 * pageSize) : 0;
-                workerEndAddress = workerEndAddress + (2 * pageSize) < storeTailAddress ? workerEndAddress + (2 * pageSize) : storeTailAddress;
+                var taskCount = this.migrateOperation.Length;
+                var range = (tailAddress - beginAddress) / taskCount;
+                var pageMask = ~((long)pageSize - 1);
+                // Disjoint page-aligned ranges begin at valid records and avoid concurrent copies of the same record.
+                var workerStartAddress = Math.Max(beginAddress, (beginAddress + taskId * range) & pageMask);
+                var workerEndAddress = taskId == taskCount - 1
+                    ? tailAddress
+                    : Math.Max(beginAddress, (beginAddress + (taskId + 1) * range) & pageMask);
+                if (workerStartAddress >= workerEndAddress)
+                    return true;
                 if (!await migrateOperation.InitializeAsync().ConfigureAwait(false))
                     return false;
 
-                var cursor = workerStartAddress;
                 logger?.LogWarning("<{taskId}> migrate scan range [{workerStartAddress}, {workerEndAddress}]", taskId, workerStartAddress, workerEndAddress);
-                while (true)
-                {
-                    var current = cursor;
-                    // Build Sketch
-                    migrateOperation.sketch.SetStatus(SketchStatus.INITIALIZING);
-                    migrateOperation.Scan(ref current, workerEndAddress);
-
-                    // Stop if no keys have been found
-                    if (migrateOperation.sketch.argSliceVector.IsEmpty) break;
-
-                    logger?.LogWarning("[{taskId}> Scan from {cursor} to {current} and discovered {count} keys",
-                        taskId, cursor, current, migrateOperation.sketch.argSliceVector.Count);
-
-                    // Transition EPSM to MIGRATING
-                    migrateOperation.sketch.SetStatus(SketchStatus.TRANSMITTING);
-
-#if DEBUG
-                    // Only on Debug mode
-                    await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Migration_Slot_Keys_Transmitting).ConfigureAwait(false);
-#endif
-
-                    await WaitForConfigPropagationAsync().ConfigureAwait(false);
-
-                    // Transmit all keys gathered
-                    if (!await migrateOperation.TransmitSlotsAsync().ConfigureAwait(false))
-                    {
-                        logger?.LogWarning("[{taskId}> TransmitSlots failed for {cursor} to {current} (with {count} keys)", taskId, cursor, current, migrateOperation.sketch.argSliceVector.Count);
-                        return false;
-                    }
-
-                    // Transition EPSM to DELETING
-                    migrateOperation.sketch.SetStatus(SketchStatus.DELETING);
-                    await WaitForConfigPropagationAsync().ConfigureAwait(false);
-
-                    // Deleting keys (Currently gathering keys from push-scan and deleting them outside)
-                    migrateOperation.DeleteKeys();
-
-                    // Clear keys from buffer
-                    migrateOperation.sketch.Clear();
-                    cursor = current;
-                }
-
-                return true;
+                return await migrateOperation.MigrateSlotsAsync(workerStartAddress, workerEndAddress, tailAddress).ConfigureAwait(false);
             }
         }
     }

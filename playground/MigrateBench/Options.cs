@@ -29,6 +29,9 @@ namespace MigrateBench
         [Option("timeout", Required = false, Default = 10, HelpText = "Migrate timeout in seconds")]
         public int Timeout { get; set; }
 
+        [Option("poll-interval-ms", Required = false, Default = 20, HelpText = "Delay between migration-task polls in milliseconds (zero enables busy polling).")]
+        public int PollIntervalMs { get; set; }
+
         [Option("verbose", Required = false, Default = false, HelpText = "Print detailed information")]
         public bool Verbose { get; set; }
 
