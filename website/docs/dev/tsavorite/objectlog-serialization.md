@@ -182,8 +182,11 @@ Current-format object-log flush and read paths do not:
 - derive authoritative object-log framing from either RDH field; or
 - rewrite RDH lengths after deserializing an object, except to restore/assert the physical 4-byte objectId slot.
 
-This also keeps the file-IO format independent of the migration/replication format. Network serialization may add
-component length prefixes outside the inline record image, but it leaves RDH lengths unchanged.
+Object-log and network serialization code never changes the raw RDH `ValueLength`, the value field's physical length.
+An overflow key's raw `KeyLength` may change: a stamp writes the page-count high bits into it, and assigning the key
+restores 4 (section 2.1). This also keeps the file-IO format independent of the migration/replication format. Network
+serialization may add component length prefixes outside the inline record image; it sends the RDH as the source record
+has it, and the receiver's assignment of an overflow key restores that key's raw `KeyLength`.
 
 ### 2.3 Legacy exception
 
@@ -2085,6 +2088,13 @@ A CopyUpdate captures `O` whenever `R` is not durable yet and no ReadOnly flush 
 still write `R` after `PostCopyUpdater`, and the CopyUpdate cannot tell which image recovery will read, because `M` is
 sampled later.
 
+**Nothing may change the shared value before `PostCopyUpdater`.** The capture runs after `CopyUpdater` and the new
+record's insertion, and before `PostCopyUpdater`, and it writes what `O` holds at that point. So a `CopyUpdater` must
+not change anything it shares with the source: one that sets the new record's value to a clone of `O` must not change
+the clone, whose collections are `O`'s. Garnet's object `CopyUpdater` leaves the value unset, so the clone is made after
+the capture, and makes every change in `PostCopyUpdater`. That also leaves the source untouched when the insertion fails
+and the operation retries.
+
 **A durable `R` is not captured, and the CopyUpdate releases `O` right after `PostCopyUpdater`.** The ReadOnly flush
 serialized `O` before the CopyUpdate, and recovery reads that image: `R` stays below `M`, because FUA only advances and
 every `(v)` record is below `T`. Neither flush writes `R` again, so the release is safe:
@@ -2297,13 +2307,14 @@ its marked main-log images, while its snapshot suffix is selected directly by to
 
 An overflow value is an array `A` (`OverflowByteArray`) in the record's `ObjectIdMap` slot. When a CopyUpdate keeps the
 value's length, `LogRecord.TryCopyFrom` gives the new record `R'` the array `A` of the source `R`, and `PostCopyUpdater`
-changes it. A Snapshot checkpoint captures `R`'s `A` as it captures an object, after the new record is inserted and
-before `PostCopyUpdater`, with these differences.
+changes it. A Snapshot checkpoint captures `R`'s `A` as it captures an object: after the new record is inserted and
+before `PostCopyUpdater`, under the same rule that nothing changes the shared value before `PostCopyUpdater`
+(section 13.3). Garnet's SETBIT, BITFIELD and SETRANGE make their change in `PostCopyUpdater`.
 
-**The new record must not change `A` before `PostCopyUpdater`.** `CopyUpdater` runs before the new record is inserted,
-which is before the capture. So a `CopyUpdater` must not write a value it shares with the source; Garnet's SETBIT,
-BITFIELD and SETRANGE make their change in `PostCopyUpdater`. That also leaves the source untouched when the insertion
-fails and the operation retries.
+The data is shared as an object's collections are; what differs is where the publication state lives. An object's claim
+and phase are fields of its `HeapObjectBase`, and the new record gets a clone, a separate `HeapObjectBase` that shares
+only the collections, so `O`'s phase describes `R` alone. An array's claim and phase are in a header at the start of the
+array itself, so `R` and `R'` share them along with the data. Each difference below follows from that.
 
 **`A`'s header holds the claim, the phase and the owner.** The header is 24 bytes: the data's start and end offsets, a
 phase word encoded as an object's, and the **owner**, the address of the record the phase describes. The owner is needed
@@ -2314,12 +2325,14 @@ leaves `R` and `R'` sharing `A`, and either may publish it. Records sharing `A` 
 - A flush of a record replaces `A`'s phase unless a newer version owns it. The walkers' address order already keeps an
   older version's flush ahead of a newer version's publication; the rule holds if that ever changes.
 
-**The capture detaches `R` from `A` after `PostCopyUpdater`.** `PostCopyUpdater` receives the source and may read its
-value, so the capture keeps `A`'s claim through `PostCopyUpdater`. It then points `R`'s slot at the checkpoint's
-**sentinel**, an array with no data that each Snapshot checkpoint creates, credits `R`'s share of `A`'s heap to the size
-tracker, and releases `A` at `REST`: `A` now belongs to `R'` alone, which no flush has published. Replacing the slot
-changes only the `ObjectIdMap`, not `R`'s page bytes, so a device write of `R`'s page can be in flight. `R` needs no
-deferred release: the sentinel holds no memory of its own.
+**The capture detaches `R` from `A` rather than retiring `A`.** A captured object is marked superseded, so no flush
+claims it again, and `R'` publishes its clone. `A` cannot be retired: it is `R'`'s live value. `PostCopyUpdater`
+receives the source and may read its value, so `R` keeps `A` until `PostCopyUpdater` returns, and the capture keeps
+`A`'s claim until then, so that no flush publishes `A` for `R` while `R'` changes it. The capture then points `R`'s slot
+at the checkpoint's **sentinel**, an array with no data that each Snapshot checkpoint creates, credits `R`'s share of
+`A`'s heap to the size tracker, and releases `A` at `REST`: `A` now belongs to `R'` alone, which no flush has published.
+Replacing the slot changes only the `ObjectIdMap`, not `R`'s page bytes, so a device write of `R`'s page can be in
+flight. `R` needs no deferred release: the sentinel holds no memory of its own.
 
 **A flush identifies the capture by the sentinel.** A marked record whose slot holds the active checkpoint's sentinel
 keeps its stamp, as a captured object does. Any other sentinel is stale, and the flush writes the record, which is
@@ -2336,4 +2349,5 @@ FoldOver or streaming checkpoint does not capture.
 
 **A flush checks the slot again after claiming `A`.** The walk reads `R`'s slot before claiming `A`, and a capture may
 detach `R` in between, after which `A` may hold the new version's change. A flush that finds a different array in the slot
-releases `A` and decides again from what the slot holds.
+releases `A` and decides again from what the slot holds. A flush of a captured object needs no such check: the object's
+own phase says it was captured, while `A`'s phase, once released for `R'`, says nothing about `R`.
