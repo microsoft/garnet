@@ -5508,6 +5508,20 @@ namespace Garnet.test
             ClassicAssert.IsTrue(db.KeyDelete(key));
         }
 
+        [Test]
+        public async Task EmptySetRangeIgnoredAsync()
+        {
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = connection.GetDatabase();
+
+            ClassicAssert.IsTrue(await db.StringSetAsync("foo", "bar").ConfigureAwait(false));
+            ClassicAssert.AreEqual(3, await db.StringSetRangeAsync("foo", 8, "").ConfigureAwait(false));
+            ClassicAssert.AreEqual(3, await db.StringLengthAsync("foo").ConfigureAwait(false));
+
+            ClassicAssert.AreEqual(0, await db.StringSetRangeAsync("fizz", 8, "").ConfigureAwait(false));
+            ClassicAssert.IsFalse(await db.KeyExistsAsync("fizz").ConfigureAwait(false));
+        }
+
         /// <summary>
         /// APPEND rejects a result longer than the maximum string size, as SETRANGE does, and leaves the value unchanged.
         /// </summary>
