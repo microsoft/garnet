@@ -302,7 +302,7 @@ namespace Garnet.test
                 if (commandInfo.Flags != default && commandInfo.Flags.HasFlag(RespCommandFlags.NoMulti))
                     continue;
 
-                var commandDoc = respCommandsDocs.Where(x => x.Key == commandInfo.Name).FirstOrDefault().Value;
+                var commandDoc = respCommandsDocs.FirstOrDefault(x => x.Key == commandInfo.Name).Value;
 
                 // Exclude cluster commands
                 if (commandDoc == default || commandDoc.Group == RespCommandGroup.Cluster)

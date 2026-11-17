@@ -783,6 +783,7 @@ namespace Tsavorite.core
         /// <param name="isProtected"></param>
         public void UnsafeCommitMetadataOnly(TsavoriteLogRecoveryInfo info, bool isProtected)
         {
+            GarnetAsserts.Assert(isProtected == epoch.ThisInstanceProtected());
             lock (ongoingCommitRequests)
             {
                 ongoingCommitRequests.Enqueue((info.UntilAddress, info));
