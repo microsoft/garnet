@@ -729,21 +729,8 @@ Vector Set keys are type-safe:
 
 ## Configuration
 
-Enable Vector Sets with the server flag:
-
-```bash
-garnet-server --enable-vector-set-preview
-```
-
-Or in `garnet.conf`:
-
-```
-"EnableVectorSetPreview": true
-```
-
 | Option                                                        | Default           | Description                                                                                                                          |
 |---------------------------------------------------------------|-------------------|--------------------------------------------------------------------------------------------------------------------------------------|
-| `--enable-vector-set-preview` / `EnableVectorSetPreview`      | `false`           | Master switch for all `V*` commands. When off, every Vector Set command returns `ERR Vector Set (preview) commands are not enabled`. |
 | `--vector-set-replay-task-count` / `VectorSetReplayTaskCount` | `0` (= CPU count) | Number of workers used to replay consecutive `VADD`s or `XVIMPORT` terms in parallel.                                                |
 
 ---
