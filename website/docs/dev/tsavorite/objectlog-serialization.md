@@ -320,11 +320,13 @@ which is its header, entries, and any combined final data. An extent whose paylo
 | Value | Clear | `ObjectLogExtent.LargeValueHint` (511): 511 or more pages | `ObjectLogExtent.LargeInitialRead` (4 MB + 4 bytes), clamped |
 
 A page count is `ceil((LengthPrefixSize + payload) / 4 KB)`: it includes the 4-byte prefix
-(`ObjectLogExtent.LengthPrefixSize`), in units of `RecordDataHeader.kFlushPageSize` (4 KB). "Clamped" means limited to
-the bytes left on the extent's object-log page and below the log's tail; a length-prefixed extent never spans a page.
-While recovery establishes the main object log's tail (`ObjectLog.RecoveryReadOnly`), the tail is not yet known, so the
-read is limited instead to the extent's exact end, which `ObjectLog.GetReferencedExtentEnd` first reads from the length
-prefix.
+(`ObjectLogExtent.LengthPrefixSize`), in units of `RecordDataHeader.kFlushPageSize` (4 KB). A first read sized from a
+hint can therefore run past the extent; the reader takes the extent's length from its prefix and ignores the rest.
+"Clamped" means limited to the bytes left on the extent's object-log page and below the log's tail, so that a read never
+asks for bytes past the end of the log's data: a device can return such a read short, and a short read fails
+(section 12.4). A length-prefixed extent never spans a page. While recovery establishes the main object log's tail
+(`ObjectLog.RecoveryReadOnly`, section 12.4), the tail is not yet known, so the read is limited instead to the extent's
+exact end, which `ObjectLog.GetReferencedExtentEnd` first reads from the length prefix in a separate device read.
 
 For a key whose exact flag is clear, the high 10 bits of the page count are in raw RDH KeyLength:
 
@@ -861,10 +863,11 @@ the key's slot when the key is overflow and by the value's slot otherwise:
 - Exact: one read of exactly `hint` bytes, or none for a zero-length component.
 - Length-prefixed: one read of the decoded first read (section 3.3), clamped to the bytes left on the extent's page and
   below the log's read end, `ReadEndAddress`, which is its tail. While recovery establishes the main object log's tail
-  (`ObjectLog.RecoveryReadOnly`), the read end is `MaxExclusiveAddress`, and `ObjectLog.GetReferencedExtentEnd` first
-  reads the prefix directly; the first read is then clamped to the extent's exact end, and the prefix costs one more
-  read, which a read-ahead does not serve. The prefix must exceed `ExactCutoff` (511) and fit within those bytes. When
-  the extent is longer than the first read, a second read on the same page fetches the rest.
+  (`ObjectLog.RecoveryReadOnly`, section 12.4), the read end is `MaxExclusiveAddress`, and
+  `ObjectLog.GetReferencedExtentEnd` first reads the prefix directly; the first read is then clamped to the extent's
+  exact end, and the prefix costs one more read, which a read-ahead does not serve. The prefix must exceed
+  `ExactCutoff` (511) and fit within those bytes. When the extent is longer than the first read, a second read on the
+  same page fetches the rest.
 
 The extent stays in the reader's `topBuffer`. Without a directory, its payload is the record's one component; with one,
 `ParseDirectory` follows.
@@ -1641,9 +1644,13 @@ completion, since the rented buffer and its in-flight read belong to the call ra
 
 While recovery establishes the main object log's tail (`RecoveryReadOnly`, section 12.11), the log takes no appends,
 `Read` serves every address from the device, and validation bounds a read by `MaxExclusiveAddress` instead of
-`TailAddress`, because an image that an earlier recovery repaired can reference bytes past the recorded end. A reader
-then sizes a length-prefixed top extent by first reading its prefix (`GetReferencedExtentEnd`), a device read the
-read-ahead does not serve. Pass 1 and a FoldOver recovery's object load run in this mode.
+`TailAddress`, because an image that an earlier recovery repaired can reference bytes past the recorded end
+(section 13.7). An append at the recorded end would overwrite those bytes, and the restarted log holds in memory only
+the page that contains the recorded end, while those bytes can lie on later pages. Without a tail, a reader also has no
+bound for a first read that a hint rounds up past the extent (section 3.3), and such a read near the end of the log's
+data could come back short, which fails (below). So it sizes a length-prefixed top extent by first reading its prefix
+(`GetReferencedExtentEnd`), a separate device read that the read-ahead does not serve, and then reads exactly the
+extent. Pass 1 and a FoldOver recovery's object load run in this mode.
 
 A device may report success having transferred fewer bytes than requested — a truncated or externally altered file does
 exactly that. Because the read buffer is rented without clearing, copying the full request on a short read would return
