@@ -249,6 +249,76 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        public async Task DeleteRootVectorSetAsync()
+        {
+            const string CopyVectorSetKey = nameof(DeleteRootVectorSetAsync);
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            var baseSet = await MakeRandomVectorSetAsync(db).ConfigureAwait(false);
+            var copySetRes = (string)await db.ExecuteAsync("XVSCOPY", baseSet.Name, CopyVectorSetKey).ConfigureAwait(false);
+            ClassicAssert.AreEqual("OK", copySetRes);
+
+            // Make an addition to copy
+            ClassicAssert.IsTrue(await db.VectorSetAddAsync(CopyVectorSetKey, VectorSetAddRequest.Member("fizzbuzz", Enumerable.Repeat(3.0f, baseSet.Dimensions).ToArray(), "{\"id\":12345}")).ConfigureAwait(false));
+
+            // Make a removal
+            var toRemove = VectorSetValuesForSeed(baseSet.Seed).ElementAt(10).Element;
+            ClassicAssert.IsTrue(await db.VectorSetRemoveAsync(CopyVectorSetKey, toRemove));
+
+            // Make an update
+            var toUpdate = VectorSetValuesForSeed(baseSet.Seed).ElementAt(15).Element;
+            ClassicAssert.IsFalse(await db.VectorSetAddAsync(CopyVectorSetKey, VectorSetAddRequest.Member(toUpdate, Enumerable.Repeat(8.0f, baseSet.Dimensions).ToArray(), "{\"id\":789}")).ConfigureAwait(false));
+
+            // Delete the base Vector Set
+            ClassicAssert.IsTrue(await db.KeyDeleteAsync(baseSet.Name).ConfigureAwait(false));
+
+            // Wait for cleanup
+            server.Provider.StoreWrapper.DefaultDatabase.VectorManager.WaitForQuiescence();
+
+            // Validate we copied rows over
+            ClassicAssert.IsFalse(await db.KeyExistsAsync(baseSet.Name));
+            foreach (var (elem, vals, attrs) in VectorSetValuesForSeed(baseSet.Seed))
+            {
+                if (elem.Equals(toRemove))
+                {
+                    ClassicAssert.IsFalse(await db.VectorSetContainsAsync(CopyVectorSetKey, elem).ConfigureAwait(false));
+                    continue;
+                }
+
+                var expectedVals = vals;
+                var expectedAttrs = attrs;
+
+                if (elem.Equals(toUpdate))
+                {
+                    expectedVals = Enumerable.Repeat(8.0f, baseSet.Dimensions).ToArray();
+                    expectedAttrs = "{\"id\":789}";
+                }
+
+                using var actualVals = await db.VectorSetGetApproximateVectorAsync(CopyVectorSetKey, elem).ConfigureAwait(false);
+                var actualAttrs = await db.VectorSetGetAttributesJsonAsync(CopyVectorSetKey, elem).ConfigureAwait(false);
+
+                ClassicAssert.IsTrue(actualVals.Span.SequenceEqual(expectedVals));
+
+                if (expectedAttrs == null)
+                {
+                    ClassicAssert.IsNull(actualAttrs);
+                }
+                else
+                {
+                    ClassicAssert.AreEqual(expectedAttrs, actualAttrs);
+                }
+            }
+
+            using var copyAdditionValues = await db.VectorSetGetApproximateVectorAsync(CopyVectorSetKey, "fizzbuzz").ConfigureAwait(false);
+            var copyAdditionAttrs = await db.VectorSetGetAttributesJsonAsync(CopyVectorSetKey, "fizzbuzz").ConfigureAwait(false);
+
+            ClassicAssert.IsTrue(copyAdditionValues.Span.SequenceEqual(Enumerable.Repeat(3.0f, baseSet.Dimensions).ToArray()));
+            ClassicAssert.AreEqual("{\"id\":12345}", copyAdditionAttrs);
+        }
+
         /// <summary>
         /// Create a (repeatbly) random Vector Set to test with.
         /// </summary>
