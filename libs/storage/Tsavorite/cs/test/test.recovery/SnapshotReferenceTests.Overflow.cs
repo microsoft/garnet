@@ -247,8 +247,8 @@ namespace Tsavorite.test.recovery
                 Assert.That(GetValueOverflow(store, newAddress).Array, Is.SameAs(sharedArray), "Precondition: the new record shares the source's array");
                 Assert.That(GetValueOverflow(store, sourceAddress).Array, Is.SameAs(OverflowByteArray.Released.Array),
                     "The CopyUpdate did not release the source's share of the array");
-                Assert.That(tracker.LogHeapSizeBytes, Is.EqualTo(heapBefore + OverflowByteArray.Released.HeapMemorySize),
-                    "The array the two records share must be counted once");
+                Assert.That(tracker.LogHeapSizeBytes, Is.EqualTo(heapBefore),
+                    "The array the two records share must be counted once, and the released sentinel not at all");
 
                 store.Log.FlushAndEvict(wait: true);
                 Assert.That(tracker.LogHeapSizeBytes, Is.Zero, "Eviction must credit exactly what the records were charged");

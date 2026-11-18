@@ -483,41 +483,85 @@ namespace Tsavorite.core
         {
             if (logRecord.IsSet)
             {
-                // Decrement heap from the tracker before clearing fields. The amount depends on
-                // what's still alive on the record at dispose time:
-                //  - Deleted: value only (key stays for chain traversal; key accounted at eviction).
-                //    Tombstone is NOT yet set, so GetValueHeapMemorySize returns the correct value.
-                //  - Elided / RevivificationFreeList: full remaining heap (key + value). The record
-                //    is being removed from the chain entirely, so both key and value are freed.
-                //    Eviction skips invalid records, so this is the last chance to account for them.
-                //  - CAS failures / InsertAbandoned: no decrement needed — the record was never
-                //    CAS'd into the chain, so +key/+value were never added to the tracker.
-                if (disposeReason == DisposeReason.Deleted)
-                {
-                    var valueHeap = logRecord.GetValueHeapMemorySize();
-                    if (valueHeap != 0)
-                        logSizeTracker?.IncrementSize(-valueHeap);
-                }
-                else if (disposeReason is DisposeReason.Elided or DisposeReason.RevivificationFreeList)
-                {
-                    // Subtract whatever heap remains. The record is being removed from the chain
-                    // entirely (or transferred to the freelist), so eviction will never visit it.
-                    // For tombstoned records, CalculateHeapMemorySize returns 0, but key overflow
-                    // is still alive and needs to be subtracted.
-                    long remainingHeap;
-                    if (!logRecord.Info.Tombstone)
-                        remainingHeap = logRecord.CalculateHeapMemorySize();
-                    else
-                        remainingHeap = logRecord.DataHeader.KeyIsOverflow ? logRecord.KeyOverflow.HeapMemorySize : 0;
-                    if (remainingHeap != 0)
-                        logSizeTracker?.IncrementSize(-remainingHeap);
-                }
-
+                CreditDisposedHeap(ref logRecord, disposeReason);
                 storeFunctions.OnDispose(ref logRecord, disposeReason);
 
                 logRecord.ClearHeapFields(disposeReason != DisposeReason.Deleted);
                 logRecord.ClearOptionals();
             }
+        }
+
+        /// <summary>
+        /// Release the out-of-line value of a record that is superseded, deleted or elided, without changing any of the record's bytes.
+        /// </summary>
+        /// <param name="logRecord">The record, on its page</param>
+        /// <param name="disposeReason"><see cref="DisposeReason.Deleted"/> or <see cref="DisposeReason.Elided"/></param>
+        /// <remarks>
+        /// <para>This is a terminal release: the record is never rewritten or reused while its page is resident, and something that does not
+        /// hold its key's lock may still read it. A flush writes the live page; a scan copies a record on a page entirely below
+        /// SafeReadOnlyAddress without a lock, and a pull scan never locks; the deferred-disposal drain holds no lock. So only the page's
+        /// <see cref="ObjectIdMap"/> changes:</para>
+        /// <list type="number">
+        /// <item>The size tracker is credited as <see cref="OnDispose"/> credits it for <paramref name="disposeReason"/>; see
+        /// <see cref="CreditDisposedHeap"/>.</item>
+        /// <item>The delete trigger runs, and sees the value.</item>
+        /// <item>The value's slot gets <see cref="SupersededObjectValue.Released"/> or <see cref="OverflowByteArray.Released"/>, which read as
+        /// no value. A slot that already holds a placeholder keeps it. The object is not disposed: Tsavorite disposes only a CopyUpdate's
+        /// source, whose new record has taken the value, and an application releases a deleted value's external resources in the trigger, as
+        /// with <see cref="OnDispose"/>.</item>
+        /// </list>
+        /// <para>Nothing else changes: unlike <see cref="OnDispose"/>, this does not free the slot, release the key, or clear the optionals.
+        /// A freed slot could be given to another record on the page while a reader still resolves this record's id to it. The slot stays
+        /// allocated until the page is evicted, or until an exclusive reset that reuses the record frees it. That costs nothing on a page that
+        /// no longer allocates, which is where almost every terminal release happens, and never grows a page's map beyond one entry per
+        /// out-of-line field of its records.</para>
+        /// </remarks>
+        internal void ReleaseInPlace(ref LogRecord logRecord, DisposeReason disposeReason)
+        {
+            Debug.Assert(disposeReason is DisposeReason.Deleted or DisposeReason.Elided, $"{disposeReason} is not a terminal release");
+            if (!logRecord.IsSet)
+                return;
+
+            CreditDisposedHeap(ref logRecord, disposeReason);
+            storeFunctions.OnDispose(ref logRecord, disposeReason);
+
+            var dataHeader = logRecord.DataHeader;
+            if (dataHeader.ValueIsObject)
+                _ = logRecord.ExchangeValueObjectSlot(SupersededObjectValue.Released);
+            else if (dataHeader.ValueIsOverflow)
+                _ = logRecord.ExchangeValueOverflowSlot(OverflowByteArray.Released);
+        }
+
+        /// <summary>
+        /// Credit the size tracker with the heap that disposing or releasing <paramref name="logRecord"/> for <paramref name="disposeReason"/>
+        /// drops, before the record's fields change.
+        /// </summary>
+        /// <remarks>
+        /// <list type="bullet">
+        /// <item>Deleted: the value only. The key stays for chain traversal, and is credited at eviction. The tombstone is not yet set, so
+        /// <see cref="LogRecord.GetValueHeapMemorySize"/> returns the value's size.</item>
+        /// <item>Elided, RevivificationFreeList: everything the record still holds, key and value. The record is leaving the chain, and
+        /// eviction skips invalid records, so this is the last chance to credit it. A tombstone's value was credited when it was deleted.</item>
+        /// <item>CAS failures, InsertAbandoned: nothing. The record was never in the chain, so its heap was never counted.</item>
+        /// </list>
+        /// <para>A placeholder counts as no heap, so a value released twice is credited once.</para>
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CreditDisposedHeap(ref LogRecord logRecord, DisposeReason disposeReason)
+        {
+            if (logSizeTracker is null)
+                return;
+
+            long heap;
+            if (disposeReason == DisposeReason.Deleted)
+                heap = logRecord.GetValueHeapMemorySize();
+            else if (disposeReason is DisposeReason.Elided or DisposeReason.RevivificationFreeList)
+                heap = !logRecord.Info.Tombstone ? logRecord.CalculateHeapMemorySize() : logRecord.DataHeader.KeyIsOverflow ? logRecord.KeyOverflow.HeapMemorySize : 0;
+            else
+                return;
+
+            if (heap != 0)
+                logSizeTracker.IncrementSize(-heap);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1132,15 +1176,15 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        /// <remarks>Points the source's value slot at the checkpoint's sentinel and credits the source's share of the array's heap, which the new
-        /// record also counts; eviction then subtracts the sentinel's share. The array is released at REST: it now belongs to the new record alone,
+        /// <remarks>Points the source's value slot at the checkpoint's sentinel and credits the source's share of the array's heap, the whole array,
+        /// which the new record also counts; a sentinel counts as no heap. The array is released at REST: it now belongs to the new record alone,
         /// which no flush has published. The source's bytes are unchanged, so this is safe while a device write of its page is in flight.</remarks>
         internal override void CompleteOverflowCapture(SnapshotObjectLogState captures, ref LogRecord sourceRecord)
         {
             // The capture holds the claim, so the slot still holds the array the new record shares.
             var valueOverflow = sourceRecord.ValueOverflow;
             sourceRecord.ReplaceValueOverflowSlot(captures.OverflowSentinel);
-            var credit = valueOverflow.HeapMemorySize - captures.OverflowSentinel.HeapMemorySize;
+            var credit = valueOverflow.HeapMemorySize;
             if (credit != 0)
                 logSizeTracker?.IncrementSize(-credit);
             valueOverflow.ReleasePublicationClaim((int)SerializationPhase.REST, owner: 0);
@@ -1164,7 +1208,7 @@ namespace Tsavorite.core
         /// <item>An overflow value's slot gets <see cref="OverflowByteArray.Released"/>. The array may also be the new record's, which then owns
         /// it. An overflow source is released here only when no checkpoint still needs its array: none needs its image, or its image is durable
         /// or already published by a ReadOnly flush, or the checkpoint has stopped capturing. A flush that reads the slot after this writes an
-        /// empty value, which nothing recovers. The sentinel's share of the heap is credited at eviction, as for a capture's sentinel.</item>
+        /// empty value, which nothing recovers. The whole array is credited; a sentinel counts as no heap.</item>
         /// </list>
         /// </remarks>
         internal void ReleaseCopyUpdatedSourceInPlace(ref LogRecord source, SnapshotObjectLogState capturingSnapshot)
@@ -1186,7 +1230,7 @@ namespace Tsavorite.core
                 var valueOverflow = source.ExchangeValueOverflowSlot(OverflowByteArray.Released);
                 if (valueOverflow.IsEmpty)
                     return;
-                var credit = valueOverflow.HeapMemorySize - OverflowByteArray.Released.HeapMemorySize;
+                var credit = valueOverflow.HeapMemorySize;
                 if (credit != 0)
                     logSizeTracker?.IncrementSize(-credit);
             }

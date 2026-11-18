@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -51,8 +51,11 @@ namespace Tsavorite.core
         /// <summary>The total size of the array allocated (includes space for offset values)</summary>
         public readonly int TotalSize => Array.Length;
 
-        /// <summary>The total heap size of the array (includes space for offset values and .net array overhead)</summary>
-        public readonly int HeapMemorySize => Array is null ? 0 : Array.Length + MemoryUtils.ByteArrayOverhead;
+        /// <summary>The total heap size of the array (includes space for offset values and .net array overhead); 0 for a sentinel.</summary>
+        /// <remarks>A sentinel is shared by every record whose slot holds it, so no record's heap includes it, as no record's heap includes a
+        /// <see cref="SupersededObjectValue"/>. A release that leaves a sentinel in a record's slot credits the size tracker with the whole
+        /// array it replaced, and the record's eviction credits nothing for the sentinel.</remarks>
+        public readonly int HeapMemorySize => Array is null || IsSentinel ? 0 : Array.Length + MemoryUtils.ByteArrayOverhead;
 
         readonly int EndOffset => Unsafe.As<byte, OverflowHeader>(ref Array[0]).endOffset;
 

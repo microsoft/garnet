@@ -1630,8 +1630,9 @@ namespace Tsavorite.core
         /// object the slot held.</summary>
         /// <returns>The object replaced; null, with the slot unchanged, if the slot held no object or already held a placeholder.</returns>
         /// <remarks>Only the <see cref="ObjectIdMap"/> changes, so a device write of the record's page in flight is unaffected. A CopyUpdate
-        /// uses this to release its superseded source's object; see <see cref="SupersededObjectValue"/>. The caller holds the record's key,
-        /// so no other writer changes the slot.</remarks>
+        /// uses this to release its superseded source's object, and a terminal release (the allocator's <c>ReleaseInPlace</c>) to release a
+        /// deleted or elided record's; see <see cref="SupersededObjectValue"/>. The caller has the record to itself: it holds the record's key,
+        /// or it claimed the record's deferred disposal, so no other writer changes the slot.</remarks>
         internal readonly IHeapObject ExchangeValueObjectSlot(SupersededObjectValue replacement)
         {
             Debug.Assert(DataHeader.ValueIsObject, "ExchangeValueObjectSlot requires an object value");
@@ -1646,7 +1647,8 @@ namespace Tsavorite.core
         /// <summary>Point this record's overflow value slot at <paramref name="replacement"/> without changing the record's bytes, and return the
         /// array the slot held.</summary>
         /// <returns>The array replaced; empty, with the slot unchanged, if the slot held no array or already held a sentinel.</returns>
-        /// <remarks>As for <see cref="ExchangeValueObjectSlot"/>: a CopyUpdate uses this to release its superseded source's share of the array.</remarks>
+        /// <remarks>As for <see cref="ExchangeValueObjectSlot"/>: a CopyUpdate uses this to release its superseded source's share of the array,
+        /// and a terminal release to release a deleted or elided record's array.</remarks>
         internal readonly OverflowByteArray ExchangeValueOverflowSlot(OverflowByteArray replacement)
         {
             Debug.Assert(DataHeader.ValueIsOverflow, "ExchangeValueOverflowSlot requires an overflow value");

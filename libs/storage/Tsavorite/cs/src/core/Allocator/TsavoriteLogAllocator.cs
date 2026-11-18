@@ -139,6 +139,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
+        /// <inheritdoc/>
+        public void ReleaseInPlace(ref LogRecord logRecord, DisposeReason disposeReason) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
+
         /// <summary>
         /// Always false. This allocator backs <see cref="TsavoriteLog"/>, which has no key-value operation paths, so
         /// nothing queries it; it returns a value rather than throwing because it is a predicate used in a condition.

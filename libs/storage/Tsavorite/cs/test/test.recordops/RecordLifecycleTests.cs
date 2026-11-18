@@ -1054,6 +1054,46 @@ namespace Tsavorite.test
 
         #endregion
 
+        #region Terminal release
+
+        /// <summary>
+        /// A terminal release of a deleted or elided record changes only the page's ObjectIdMap: the record's bytes stay as they were, and its
+        /// value's slot stays allocated, holding the released placeholder, which reads as no value. The release runs the delete trigger once,
+        /// credits the size tracker as a disposal for the same reason does, and does not dispose the value: Tsavorite disposes only a
+        /// CopyUpdate's source, whose new record has the value.
+        /// </summary>
+        [Test, Category("TsavoriteKV")]
+        public void ReleaseInPlaceChangesOnlyTheObjectIdMap([Values(DisposeReason.Deleted, DisposeReason.Elided)] DisposeReason reason)
+        {
+            const long TargetSize = 1L << 20;
+            store.Log.SetLogSizeTracker(new LogSizeTracker<LifecycleStoreFunctions, LifecycleAllocator>(store.Log, TargetSize, TargetSize / 10, TargetSize / 50, logger: null));
+
+            var address = NextRecordAddress();
+            Upsert(1, 100);
+            var logRecord = store.hlogBase._wrapper.CreateLogRecord(address);
+            var value = (TrackedObjectValue)logRecord.ValueObject;
+
+            // An elision closes the record before it releases it.
+            if (reason == DisposeReason.Elided)
+                logRecord.InfoRef.SealAndInvalidate();
+            var bytesBefore = RecordBytes(address);
+            var heapBefore = store.Log.HeapSizeBytes;
+            tracker.Reset();
+
+            store.hlog.ReleaseInPlace(ref logRecord, reason);
+
+            Assert.That(RecordBytes(address), Is.EqualTo(bytesBefore), "The release changed the record's bytes");
+            Assert.That(logRecord.TryGetOutOfLineComponents(out _, out _, out var slotObject), Is.True, "The release freed the value's slot");
+            Assert.That(slotObject, Is.SameAs(SupersededObjectValue.Released), "The value's slot does not hold the released placeholder");
+            Assert.That(logRecord.ValueObject, Is.Null, "A released value must read as no value");
+            Assert.That(logRecord.ObjectIdMap.freeSlots.IsEmpty, Is.True, "The release returned the value's slot to the free list");
+            Assert.That(tracker.DisposeCount(reason), Is.EqualTo(1), "The release must run the delete trigger once");
+            Assert.That(value.DisposeCount, Is.Zero, "Tsavorite must not dispose a deleted or elided value");
+            Assert.That(store.Log.HeapSizeBytes, Is.EqualTo(heapBefore - value.HeapMemorySize), "The release must credit the value's heap");
+        }
+
+        #endregion
+
         #region Delete
 
         [Test, Category("TsavoriteKV")]

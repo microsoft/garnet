@@ -143,6 +143,10 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void ReleaseInPlace(ref LogRecord logRecord, DisposeReason disposeReason) => _this.ReleaseInPlace(ref logRecord, disposeReason);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool IsFrozenForFlush(long logicalAddress) => _this.IsFrozenForFlush(logicalAddress);
 
         /// <inheritdoc/>

@@ -143,6 +143,10 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason) => _this.OnDispose(ref logRecord, disposeReason);
 
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ReleaseInPlace(ref LogRecord logRecord, DisposeReason disposeReason) => _this.ReleaseInPlace(ref logRecord, disposeReason);
+
         /// <summary>
         /// Always false: this allocator's records have no heap fields and no object log, so disposal neither frees an
         /// <see cref="ObjectIdMap"/> slot nor leaves an ObjectLogPosition referring to freed bytes. Flushing writes the

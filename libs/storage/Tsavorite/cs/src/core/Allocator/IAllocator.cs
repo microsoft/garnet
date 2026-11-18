@@ -124,6 +124,16 @@ namespace Tsavorite.core
         void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason);
 
         /// <summary>
+        /// Release the out-of-line value of a record that is superseded, deleted or elided, without changing any of the record's bytes: a
+        /// terminal release. It credits the size tracker and runs the delete trigger as <see cref="OnDispose"/> does for
+        /// <paramref name="disposeReason"/>, but changes only the page's <see cref="ObjectIdMap"/>: the value's slot gets a placeholder and is
+        /// not freed, and the key and the optionals stay.
+        /// </summary>
+        /// <param name="logRecord">The record, on its page</param>
+        /// <param name="disposeReason"><see cref="DisposeReason.Deleted"/> or <see cref="DisposeReason.Elided"/></param>
+        void ReleaseInPlace(ref LogRecord logRecord, DisposeReason disposeReason);
+
+        /// <summary>
         /// Whether a flush may be reading <paramref name="logicalAddress"/> from the live page, now or as soon as it starts, so the
         /// record's image must not be mutated or its heap freed.
         /// </summary>

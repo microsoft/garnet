@@ -221,6 +221,18 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// A terminal release: run the delete trigger and change nothing else. This allocator's records have no out-of-line fields, and the
+        /// optionals stay, because nothing reads a superseded or elided record's expiration or ETag; so the release changes none of the record's
+        /// bytes, which a scan may be copying without a lock.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void ReleaseInPlace(ref LogRecord logRecord, DisposeReason disposeReason)
+        {
+            if (logRecord.IsSet)
+                storeFunctions.OnDispose(ref logRecord, disposeReason);
+        }
+
         internal void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) { /* This allocator has no IHeapObject */ }
 
         /// <summary>
