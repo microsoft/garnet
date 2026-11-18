@@ -333,8 +333,6 @@ namespace Garnet.server
                 where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             pairs = default;
-            if (key.Length == 0)
-                return GarnetStatus.OK;
 
             // Prepare the input
             var op = lowScoresFirst ? SortedSetOperation.ZPOPMIN : SortedSetOperation.ZPOPMAX;
