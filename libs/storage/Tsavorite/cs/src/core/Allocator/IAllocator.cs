@@ -181,6 +181,13 @@ namespace Tsavorite.core
         internal void ReleaseCopyUpdatedSourceInPlace(ref LogRecord source, SnapshotObjectLogState capturingSnapshot);
 
         /// <summary>
+        /// Release the value of a record that an Upsert has superseded, without changing the record's bytes, and without disposing the value,
+        /// which came from the Upsert's caller. Only the object allocator has heap values to release.
+        /// </summary>
+        /// <param name="source">The superseded record: a main-log record, or a read-cache copy that the Upsert dropped from its chain</param>
+        void ReleaseUpsertSourceInPlace(ref LogRecord source);
+
+        /// <summary>
         /// Mark the deleted source record at <paramref name="logicalAddress"/> for deferred disposal, because a flush or a checkpoint still reads
         /// it. The caller holds the epoch.
         /// </summary>

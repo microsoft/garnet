@@ -170,6 +170,9 @@ namespace Tsavorite.core
         /// <summary>Nothing to release: this allocator's records have no heap values.</summary>
         readonly void IAllocator<TStoreFunctions>.ReleaseCopyUpdatedSourceInPlace(ref LogRecord source, SnapshotObjectLogState capturingSnapshot) { }
 
+        /// <summary>Nothing to release: this allocator's records have no heap values.</summary>
+        public readonly void ReleaseUpsertSourceInPlace(ref LogRecord source) { }
+
         /// <summary>Marks the record. Nothing claims the mark: this allocator has no drain, and its eviction walks no records, so a deferred
         /// deletion's trigger does not run.</summary>
         public readonly void DeferDispose(ref LogRecord source, long logicalAddress) => source.InfoRef.DeferredDispose = true;

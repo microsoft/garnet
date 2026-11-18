@@ -104,8 +104,8 @@ Recovery Pass 2 instead repopulates the resident page's own `ObjectIdMap`.
 ## Releasing a record's out-of-line value
 
 A record's out-of-line value, an overflow array or a heap object, is released once nothing needs it: when a CopyUpdate,
-a Delete or an expiration supersedes the record, or when an elision removes the record from its hash chain. A release
-takes one of two forms, depending on whether anything else may still read the record.
+an Upsert, a Delete or an expiration supersedes the record, or when an elision removes the record from its hash chain.
+A release takes one of two forms, depending on whether anything else may still read the record.
 
 ### Terminal releases
 
@@ -124,7 +124,8 @@ So a terminal release changes only the page's `ObjectIdMap`, never the record's 
    `DisposeReason.Deleted` or `DisposeReason.Elided`), which sees the value.
 3. It points the value's slot at a [placeholder](#placeholders). It does not dispose the object, except a CopyUpdate's
    source, whose new record has taken the value; an application releases a deleted value's external resources in the
-   trigger.
+   trigger. An Upsert's superseded object is not disposed: its new value came from the Upsert's caller, which may still
+   hold the old object, or pass it again.
 
 The key, the optionals (ETag and expiration), the object-log position, the filler and the header stay as they are, and
 the slot is not freed (see [Retained slots](#retained-slots)). Debug builds assert that `ReleaseInPlace` changes none
@@ -133,6 +134,7 @@ of the record's bytes after its `RecordInfo`.
 | Release | Where |
 |---|---|
 | A CopyUpdate's main-log source; the object is disposed | `ReleaseCopyUpdatedSourceInPlace` |
+| An Upsert's superseded record: the main-log source it found, or, if it found none, the chain's head when that is the key's record and in memory; also a read-cache source it dropped from the chain. The object is not disposed | `ReleaseUpsertSupersededValue`, through `ReleaseUpsertSourceInPlace` |
 | A Snapshot capture's overflow source; the slot gets the checkpoint's sentinel | `CompleteOverflowCapture` |
 | A source deleted by a Delete or an expiration | `ReleaseSupersededSource`, or later the drain or eviction (`RunDeferredDispose`), through `ReleaseInPlace(Deleted)` |
 | A source elided below the revivifiable range | `DetachBypassedSource`, through `ReleaseInPlace(Elided)` |
@@ -206,6 +208,8 @@ Retention costs something only on a page that still allocates after the release:
 - **A deleted source at or above `ReadOnlyAddress`,** released by the operation that superseded it. This is rare: a
   Delete or an expiration there is normally done in place, as an exclusive reset. It happens when an in-place update
   fails and an RMW then expires the key through a new record.
+- **A CopyUpdate's or an Upsert's source at or above `ReadOnlyAddress`,** which the operation could not update in place,
+  and could not elide because an older record of the key lies below it.
 - **Elisions above `ReadOnlyAddress`,** only when `RevivifiableFraction` is below 1.0.
 
 **Bound.** Retention never allocates; it only prevents reuse. So a page's map never holds more entries than it would if
@@ -271,6 +275,14 @@ Such a release is marked `DeferredDispose` on the record and run by the drain or
 [The same shape, without a checkpoint](state-machine.md#the-same-shape-without-a-checkpoint). An elision is declined
 for such a record, because it invalidates the record. A CopyUpdate's release never waits: its new record holds the key's
 value, and no trigger runs.
+
+An Upsert's release does not wait for a flush either, for the same reasons; a flush walking the record writes either the
+value or a null value. It is skipped instead, leaving the value until eviction, while a checkpoint still needs the
+record's `(v)` image and that image is not yet durable, or while a streaming snapshot's scan may still push the record.
+Unlike a CopyUpdate, an Upsert has no capture to hand the `(v)` value to, and nothing to defer: no trigger runs. An
+Upsert searches only down to `ReadOnlyAddress`, so for one that found no source it reads the chain's head after its new
+record is in the chain, first its header and then, only for an out-of-line value, its key. A key's record behind another
+key's record at the head keeps its value until eviction.
 
 ### What a scan sees
 

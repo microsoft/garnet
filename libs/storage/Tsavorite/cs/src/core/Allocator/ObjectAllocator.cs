@@ -165,6 +165,9 @@ namespace Tsavorite.core
             => _this.ReleaseCopyUpdatedSourceInPlace(ref source, capturingSnapshot);
 
         /// <inheritdoc/>
+        public readonly void ReleaseUpsertSourceInPlace(ref LogRecord source) => _this.ReleaseUpsertSourceInPlace(ref source);
+
+        /// <inheritdoc/>
         public readonly void DeferDispose(ref LogRecord source, long logicalAddress) => _this.DeferDispose(ref source, logicalAddress);
 
         /// <inheritdoc/>

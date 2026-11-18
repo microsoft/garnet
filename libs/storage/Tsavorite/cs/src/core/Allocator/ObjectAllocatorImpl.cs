@@ -1233,27 +1233,57 @@ namespace Tsavorite.core
         /// </remarks>
         internal void ReleaseCopyUpdatedSourceInPlace(ref LogRecord source, SnapshotObjectLogState capturingSnapshot)
         {
+            Debug.Assert(capturingSnapshot is null || !source.DataHeader.ValueIsOverflow, "A capture of an overflow value releases its source in CompleteOverflowCapture");
+            ReleaseSupersededValueInPlace(ref source, capturingSnapshot?.ObjectSentinel ?? SupersededObjectValue.Released)?.Dispose();
+        }
+
+        /// <summary>
+        /// Release the value of a record that an Upsert has superseded, without changing the record's bytes, and without disposing the value.
+        /// </summary>
+        /// <param name="source">The superseded record: a main-log record, or a read-cache copy that the Upsert dropped from its chain</param>
+        /// <remarks>
+        /// <para>Points the value's slot at <see cref="SupersededObjectValue.Released"/> or <see cref="OverflowByteArray.Released"/> and credits
+        /// the value's heap, as <see cref="ReleaseCopyUpdatedSourceInPlace"/> does for a source that no checkpoint captured. A slot that already
+        /// holds a placeholder keeps it.</para>
+        /// <para>The object is not disposed. An Upsert's new value comes from its caller, not from the source, so Tsavorite does not own the
+        /// source's object: the caller may still hold it, or have passed it again as the new value. A new record that holds the same object is
+        /// charged for it, and the release credits the source's charge, so the object is counted once. Not disposing also keeps the object
+        /// whole for a flush that read the slot before the release: that flush writes the value, and one that reads the slot after it writes
+        /// a null value. Either is an image of a superseded record, which nothing recovers as live.</para>
+        /// </remarks>
+        internal void ReleaseUpsertSourceInPlace(ref LogRecord source) => _ = ReleaseSupersededValueInPlace(ref source, SupersededObjectValue.Released);
+
+        /// <summary>
+        /// Point the value slot of a superseded record at a placeholder, without changing the record's bytes, and credit the size tracker with
+        /// the value's heap.
+        /// </summary>
+        /// <param name="source">The superseded record</param>
+        /// <param name="objectPlaceholder">The placeholder for an object value. An overflow value's slot gets <see cref="OverflowByteArray.Released"/>.</param>
+        /// <returns>The object the slot held, for the caller to dispose if it owns it; null for an overflow value, or if the slot held no object or
+        /// already held a placeholder.</returns>
+        private IHeapObject ReleaseSupersededValueInPlace(ref LogRecord source, SupersededObjectValue objectPlaceholder)
+        {
             var dataHeader = source.DataHeader;
             if (dataHeader.ValueIsObject)
             {
-                var valueObject = source.ExchangeValueObjectSlot(capturingSnapshot?.ObjectSentinel ?? SupersededObjectValue.Released);
+                var valueObject = source.ExchangeValueObjectSlot(objectPlaceholder);
                 if (valueObject is null)
-                    return;
+                    return null;
                 var valueHeap = valueObject.HeapMemorySize;
                 if (valueHeap != 0)
                     logSizeTracker?.IncrementSize(-valueHeap);
-                valueObject.Dispose();
+                return valueObject;
             }
-            else if (dataHeader.ValueIsOverflow)
+            if (dataHeader.ValueIsOverflow)
             {
-                Debug.Assert(capturingSnapshot is null, "A capture of an overflow value releases its source in CompleteOverflowCapture");
                 var valueOverflow = source.ExchangeValueOverflowSlot(OverflowByteArray.Released);
                 if (valueOverflow.IsEmpty)
-                    return;
+                    return null;
                 var credit = valueOverflow.HeapMemorySize;
                 if (credit != 0)
                     logSizeTracker?.IncrementSize(-credit);
             }
+            return null;
         }
 
         /// <summary>

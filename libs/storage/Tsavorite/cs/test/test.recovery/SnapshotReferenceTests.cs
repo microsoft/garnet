@@ -883,6 +883,73 @@ namespace Tsavorite.test.recovery
             }
         }
 
+        /// <summary>
+        /// An Upsert during a checkpoint keeps the value of the <c>(v)</c> record it supersedes while the checkpoint still needs the record's image
+        /// and that image is not durable, so the checkpoint's flush writes the value and recovery returns it. Once the image is durable, the Upsert
+        /// releases the value at once, and recovery reads the image from the main log.
+        /// </summary>
+        /// <remarks>A <c>(v+1)</c> Upsert of a mutable <c>(v)</c> record writes a new record and seals the record it found. An Upsert of a
+        /// durable record finds nothing at or above ReadOnlyAddress, and reads the record as the head of its chain.</remarks>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task UpsertDuringACheckpointKeepsTheSupersededValueUntilItsImageIsDurable(
+            [Values(CheckpointType.FoldOver, CheckpointType.Snapshot)] CheckpointType checkpointType, [Values] bool durableBeforeCheckpoint)
+        {
+            var key = new TestObjectKey { key = 1 };
+            var when = $"{checkpointType}, durable before the checkpoint: {durableBeforeCheckpoint}";
+            Guid token;
+            long sourceAddress;
+            var store = CreateStore();
+            try
+            {
+                // A first record, so that the source's address is the tail its upsert reads.
+                _ = UpsertSource(store, new TestObjectKey { key = 2 });
+                sourceAddress = UpsertSource(store, key);
+                if (durableBeforeCheckpoint)
+                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+                // The callback runs before IN_PROGRESS ends, and before either checkpoint type flushes anything.
+                var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
+                store.stateMachineDriver.UnsafeRegisterCallback(pause);
+                try
+                {
+                    Assert.That(store.TryInitiateFullCheckpoint(out token, checkpointType), Is.True);
+                    Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True, "The checkpoint did not reach IN_PROGRESS");
+                    Assert.That(store.Log.FlushedUntilAddress > sourceAddress, Is.EqualTo(durableBeforeCheckpoint),
+                        $"Precondition: the source's image is durable only if it was made durable before the checkpoint ({when})");
+
+                    var newAddress = store.Log.TailAddress;
+                    _ = UpsertSource(store, key);
+                    Assert.That(store.hlogBase._wrapper.CreateLogRecord(newAddress).Info.IsInNewVersion, Is.True, $"The Upsert was not a (v+1) write ({when})");
+                    var sourceHoldsValue = store.hlogBase._wrapper.CreateLogRecord(sourceAddress).ValueObject is not null;
+                    Assert.That(sourceHoldsValue, Is.EqualTo(!durableBeforeCheckpoint),
+                        durableBeforeCheckpoint
+                            ? $"The Upsert kept the value of a record whose image is durable ({when})"
+                            : $"The Upsert released the value of a record whose image the checkpoint still needs ({when})");
+                }
+                finally
+                {
+                    pause.Release.Set();
+                }
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                store.Dispose();
+            }
+
+            store = CreateStore();
+            try
+            {
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+                ReadSourceVersion(store, key, sourceAddress, when);
+            }
+            finally
+            {
+                store.Dispose();
+            }
+        }
+
         /// <summary>Copy-updates every record, a mutable one included, by declining every in-place update.</summary>
         sealed class CopyUpdatingListFunctions : SharedListFunctions
         {

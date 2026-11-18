@@ -623,11 +623,11 @@ For each record:
     leaves the object's phase naming the flush that published it: `READONLY_STAMPED`, or `SNAPSHOT_STAMPED` with the
     checkpoint's tag.
   - A superseded object, which is never claimed because the CopyUpdate's new record shares its collections and may
-    have changed them, or the placeholder a CopyUpdate's release left in the slot: if the record is marked and the
-    active Snapshot checkpoint captured it, the flush keeps the record's stamp, which locates the capture in that
-    checkpoint's object log, and writes nothing. Otherwise it writes what a superseded object serializes as, a null
-    value or the `(v)` bytes `CacheSerializedObjectData` cached, or, for a placeholder, an empty value, which reads back
-    as null.
+    have changed them, or the placeholder that a CopyUpdate's or an Upsert's release left in the slot: if the record is
+    marked and the active Snapshot checkpoint captured it, the flush keeps the record's stamp, which locates the capture
+    in that checkpoint's object log, and writes nothing. Otherwise it writes what a superseded object serializes as, a
+    null value or the `(v)` bytes `CacheSerializedObjectData` cached, or, for a placeholder, an empty value, which reads
+    back as null.
   - An overflow value: the flush claims the array, writes it, stamps the record, and records the publication in the
     array's phase unless a newer record that shares the array owns it. A sentinel in the slot, which a capture or a
     release left, is treated as the placeholder is: a marked record whose slot holds the active checkpoint's sentinel
@@ -756,7 +756,9 @@ finishes. `OnDispose` implementations must copy off cleanup state and defer clea
 finishes. Tsavorite's own releases of a resident record change no byte of the image: they point the value's
 `ObjectIdMap` slot at a placeholder (`SupersededObjectValue`) or a sentinel (`OverflowByteArray.Released`) (see
 [Releasing a record's out-of-line value](object-allocator.md#releasing-a-records-out-of-line-value)). A CopyUpdate's
-release of its source does not wait (`ReleaseCopyUpdatedSourceInPlace`, section 13.3). A deleted record in a flush's
+release of its source does not wait (`ReleaseCopyUpdatedSourceInPlace`, section 13.3), nor does an Upsert's release of the
+record it supersedes (`ReleaseUpsertSourceInPlace`), which also does not dispose the object, so a flush that claimed it
+first still serializes it whole. A deleted record in a flush's
 frozen range (`IsFrozenForFlush`) keeps its value until `FlushedUntilAddress` passes it, so that the flush writes the
 value and the delete trigger runs after the OnFlush trigger: its disposal is marked `DeferredDispose` and run by the
 drain on flush completion, the drain at the end of a hold, or eviction.

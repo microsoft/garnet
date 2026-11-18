@@ -322,14 +322,16 @@ namespace Tsavorite.core
         /// <para>The freeze is read after the compare-and-swap. A streaming snapshot publishes its hold before it samples the tail, with a full
         /// fence between, so if this does not see the hold, the new record is below the sampled tail and the scan pushes it, not the source.</para>
         /// </remarks>
-        private void DetachBypassedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+        /// <returns>True if the source stays valid, sealed. False if it was elided: it may already be on the free list, and another thread may
+        /// be reusing it, so the caller must not read it again.</returns>
+        private bool DetachBypassedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord source, bool disposalDeferred)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (disposalDeferred || IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, source.Info))
             {
                 source.InfoRef.Seal();
-                return;
+                return true;
             }
 
             source.InfoRef.SealAndInvalidate();
@@ -343,6 +345,82 @@ namespace Tsavorite.core
                 _ = TransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, address, ref source);
             else
                 ReleaseInPlace(ref source, DisposeReason.Elided);
+            return false;
+        }
+
+        /// <summary>
+        /// Release the out-of-line value of the record that an Upsert's new record has just superseded, without disposing it, so that the value
+        /// does not stay in memory, counted by the size tracker, until the record's page is evicted.
+        /// </summary>
+        /// <param name="key">The Upsert's key</param>
+        /// <param name="sessionFunctions">The session, whose phase says whether a checkpoint is in progress</param>
+        /// <param name="stackCtx">The Upsert's context, whose record source is the source the Upsert found, if any</param>
+        /// <param name="srcLogRecord">The source the Upsert found, if any: a read-cache copy, or a main-log record at or above ReadOnlyAddress
+        /// that the Upsert sealed or that has since slipped below SafeReadOnlyAddress. Never an elided source, which may already be reused.</param>
+        /// <param name="previousAddress">The new record's PreviousAddress: the head of the main-log chain that the new record was put in front of</param>
+        /// <remarks>
+        /// <para>The superseded main-log record is the source the Upsert found in the main log. For an Upsert that found none there, it is the
+        /// chain's head, if that is in memory and is the key's record. Upsert searches only down to ReadOnlyAddress, so the head is read only
+        /// here, after the new record is in the chain: first its header, and its key only if its value is out of line. A key's record that lies
+        /// behind another key's record at the head keeps its value until eviction.</para>
+        /// <para>A read-cache source is a copy that the new record's compare-and-swap dropped from the chain. Nothing flushes or checkpoints
+        /// it, so its value is released through the read cache, whose tracker charged the value. The key's main-log record may also be in
+        /// memory, at the head, so the head is checked as well.</para>
+        /// <para>A tombstone's value was released when it was deleted. A closed head is already superseded or elided.</para>
+        /// <para>The value is kept while a streaming snapshot's scan may still push the record, or a checkpoint still needs the record's
+        /// <c>(v)</c> image and that image is not yet durable. These are the conditions under which a deleted source's disposal waits; see
+        /// <see cref="ReleaseSupersededSource{TInput, TOutput, TContext, TSessionFunctionsWrapper}"/>. A kept value stays until eviction. A
+        /// flush that is walking the record does not hold the release back, as it does not hold back a CopyUpdate's: the release changes none
+        /// of the record's bytes and does not dispose the value, so the flush writes either the value or a null value.</para>
+        /// <para>The Upsert holds its bucket's lock, so no other operation changes the superseded record meanwhile. A scan that copies the
+        /// record without a lock may report it with its value or without it, as it may a CopyUpdate's source.</para>
+        /// </remarks>
+        private void ReleaseUpsertSupersededValue<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, TSessionFunctionsWrapper sessionFunctions,
+                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord srcLogRecord, long previousAddress)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            if (!hlog.HasObjectLog)
+                return;
+
+            if (stackCtx.recSrc.HasMainLogSrc)
+            {
+                Debug.Assert(srcLogRecord.Info.Valid, "An Upsert's found source stays valid unless it was elided");
+                if (!srcLogRecord.Info.Tombstone)
+                    ReleaseUpsertSupersededMainLogValue<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref srcLogRecord, stackCtx.recSrc.LogicalAddress);
+                return;
+            }
+
+            if (stackCtx.recSrc.HasReadCacheSrc)
+                readcache.ReleaseUpsertSourceInPlace(ref srcLogRecord);
+
+            if (previousAddress < hlogBase.HeadAddress)
+                return;
+            var head = hlog.CreateLogRecord(previousAddress);
+            var info = head.Info;
+            if (info.IsClosed || info.Tombstone || head.DataHeader.ValueIsInline || !storeFunctions.KeysEqual(key, head))
+                return;
+
+            // A deleted source whose disposal waits is superseded by the record that deleted it, which lies above it in the chain.
+            Debug.Assert(!info.DeferredDispose, "A record whose disposal is deferred is never the head of its chain");
+            ReleaseUpsertSupersededMainLogValue<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref head, previousAddress);
+        }
+
+        /// <summary>Release the value of a main-log record that an Upsert has superseded, unless a streaming snapshot's scan or a checkpoint still
+        /// needs it; see <see cref="ReleaseUpsertSupersededValue{TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper}"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ReleaseUpsertSupersededMainLogValue<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+                ref LogRecord record, long address)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            if (hlogBase.IsHeldForStreamingScan(address)
+                    || (IsFrozenForCheckpoint<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, address, record.Info)
+                        && (hlogBase.IsNullDevice || address >= hlogBase.FlushedUntilAddress)))
+                return;
+            hlog.ReleaseUpsertSourceInPlace(ref record);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]

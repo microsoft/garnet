@@ -718,7 +718,7 @@ namespace Tsavorite.core
                 // Whether or not the new record was copy-updated, it took the source's PreviousAddress when the source was chosen for elision,
                 // so the CAS bypassed the source.
                 if (allocOptions.elideSourceRecord)
-                    DetachBypassedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), sourceDisposalDeferred);
+                    _ = DetachBypassedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), sourceDisposalDeferred);
                 else
                 {
                     // If it is in mutable or fuzzy region, we must Seal

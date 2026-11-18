@@ -164,6 +164,9 @@ namespace Tsavorite.core
             => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
+        public readonly void ReleaseUpsertSourceInPlace(ref LogRecord source) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
+
+        /// <inheritdoc/>
         public readonly void DeferDispose(ref LogRecord source, long logicalAddress) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <summary>Nothing to drain: <see cref="TsavoriteLog"/> has no key-value operations to mark records. Called on every flush completion,

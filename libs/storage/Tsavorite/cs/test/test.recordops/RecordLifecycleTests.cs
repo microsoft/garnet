@@ -16,6 +16,8 @@ namespace Tsavorite.test
 {
     using LifecycleAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, RecordLifecycleTests.LifecycleRecordTriggers>>;
     using LifecycleStoreFunctions = StoreFunctions<TestObjectKey.Comparer, RecordLifecycleTests.LifecycleRecordTriggers>;
+    using OneChainAllocator = ObjectAllocator<StoreFunctions<RecordLifecycleTests.OneChainComparer, DefaultRecordTriggers>>;
+    using OneChainStoreFunctions = StoreFunctions<RecordLifecycleTests.OneChainComparer, DefaultRecordTriggers>;
 
     /// <summary>
     /// Lifecycle tests for <see cref="IRecordTriggers"/> on the object allocator. These tests go beyond
@@ -736,15 +738,17 @@ namespace Tsavorite.test
             await store.CompleteCheckpointAsync().ConfigureAwait(false);
         }
 
-        /// <summary>A streaming snapshot's scan functions that delete a key while the second scan pushes another, and record what it pushes.</summary>
-        private sealed class DeleteDuringStreamingScan(Action onPushOfFirstKey) : IStreamingSnapshotIteratorFunctions
+        /// <summary>A streaming snapshot's scan functions that run an action on the store, such as a Delete or an Upsert of another key, while the
+        /// second scan pushes key 1, and record what the scan pushes.</summary>
+        private sealed class ActDuringStreamingScan(Action onPushOfFirstKey) : IStreamingSnapshotIteratorFunctions
         {
             /// <summary>The value pushed for each key; -1 if the record no longer held a value object.</summary>
             internal readonly ConcurrentDictionary<int, int> Pushed = new();
 
-            /// <summary>Deletions the triggers had run when the scan pushed each key.</summary>
+            /// <summary>Deletions the triggers had run when the scan pushed each key; zero if <see cref="DeletionCount"/> is not set.</summary>
             internal readonly ConcurrentDictionary<int, int> DeletionsAtPush = new();
 
+            /// <summary>Counts the deletions the triggers have run, for <see cref="DeletionsAtPush"/>.</summary>
             internal Func<int> DeletionCount;
             internal Exception Failure;
             bool acted;
@@ -756,7 +760,7 @@ namespace Tsavorite.test
             {
                 var key = BitConverter.ToInt32(logRecord.Key);
                 Pushed[key] = logRecord.DataHeader.ValueIsObject && logRecord.ValueObject is TestObjectValue value ? value.value : -1;
-                DeletionsAtPush[key] = DeletionCount();
+                DeletionsAtPush[key] = DeletionCount?.Invoke() ?? 0;
                 if (key == 1 && !acted)
                 {
                     acted = true;
@@ -795,7 +799,7 @@ namespace Tsavorite.test
 
             using var deleteSession = NewSession();
             tracker.Reset();
-            var scan = new DeleteDuringStreamingScan(() =>
+            var scan = new ActDuringStreamingScan(() =>
             {
                 // The scan has suspended its epoch to push key 1, and has sampled the tail, so the tombstone lies above it.
                 if (durableBeforeDelete)
@@ -840,7 +844,7 @@ namespace Tsavorite.test
             using var session = NewSession();
             tracker.Reset();
 
-            var scan = new DeleteDuringStreamingScan(() =>
+            var scan = new ActDuringStreamingScan(() =>
             {
                 // Make the record immutable, so the Delete supersedes it with a tombstone at the tail rather than deleting it in place.
                 store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
@@ -1121,6 +1125,215 @@ namespace Tsavorite.test
             Assert.That(tracker.DisposeCount(reason), Is.EqualTo(1), "The release must run the delete trigger once");
             Assert.That(value.DisposeCount, Is.Zero, "Tsavorite must not dispose a deleted or elided value");
             Assert.That(store.Log.HeapSizeBytes, Is.EqualTo(heapBefore - value.HeapMemorySize), "The release must credit the value's heap");
+        }
+
+        #endregion
+
+        #region Upsert — release of the superseded value
+
+        /// <summary>Declines every in-place write, so that an Upsert of a mutable record writes a new record.</summary>
+        private sealed class NoInPlaceWriteFunctions : TestObjectFunctionsDelete
+        {
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
+                => false;
+        }
+
+        /// <summary>Hashes every key alike, so that all keys share one tag chain.</summary>
+        internal struct OneChainComparer : IKeyComparer
+        {
+            public readonly long GetHashCode64<TKey>(TKey key)
+                where TKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+                => Utility.GetHashCode(1);
+
+            public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+                where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+                where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+                => new TestObjectKey.Comparer().Equals(k1, k2);
+        }
+
+        /// <summary>The value object of the record at <paramref name="logicalAddress"/>.</summary>
+        private TrackedObjectValue ValueAt(long logicalAddress) => (TrackedObjectValue)store.hlogBase._wrapper.CreateLogRecord(logicalAddress).ValueObject;
+
+        /// <summary>
+        /// An Upsert of a key whose record is below ReadOnlyAddress writes a new record without finding the old one, then reads the head of the
+        /// chain, finds the key's record there, and releases its value: the value's slot gets the released placeholder, the size tracker is
+        /// credited, and the record's bytes do not change. The value is not disposed, because it came from the caller, who may still hold it.
+        /// </summary>
+        [Test, Category("TsavoriteKV")]
+        public void UpsertReleasesTheValueOfTheImmutableRecordItSupersedes()
+        {
+            const long TargetSize = 1L << 20;
+            store.Log.SetLogSizeTracker(new LogSizeTracker<LifecycleStoreFunctions, LifecycleAllocator>(store.Log, TargetSize, TargetSize / 10, TargetSize / 50, logger: null));
+
+            var sourceAddress = NextRecordAddress();
+            Upsert(1, 100);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            var value = ValueAt(sourceAddress);
+            var bytesBefore = RecordBytes(sourceAddress);
+            var heapBefore = store.Log.HeapSizeBytes;
+
+            Upsert(1, 200);
+
+            var source = store.hlogBase._wrapper.CreateLogRecord(sourceAddress);
+            Assert.That(source.TryGetOutOfLineComponents(out _, out _, out var slotObject), Is.True, "The release freed the value's slot");
+            Assert.That(slotObject, Is.SameAs(SupersededObjectValue.Released), "The Upsert did not release the value of the record it superseded");
+            Assert.That(RecordBytes(sourceAddress), Is.EqualTo(bytesBefore), "The release changed the superseded record's bytes");
+            Assert.That(value.DisposeCount, Is.Zero, "Tsavorite must not dispose an Upsert's superseded value");
+            Assert.That(store.Log.HeapSizeBytes, Is.EqualTo(heapBefore),
+                "The Upsert must charge the new value and credit the superseded one, which is the same size");
+        }
+
+        /// <summary>
+        /// An Upsert that finds its key's record in the mutable region but cannot write it in place, and cannot elide it because an older record
+        /// of the key lies below it, seals the record and releases its value, without disposing it.
+        /// </summary>
+        [Test, Category("TsavoriteKV")]
+        public void UpsertReleasesTheValueOfAMutableRecordItSeals()
+        {
+            // An older record of the key keeps the source in the chain, so the Upsert does not elide it. Another key's record puts the source above
+            // SafeReadOnlyAddress, where the Upsert seals the record it supersedes.
+            Upsert(1, 50);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            Upsert(2, 20);
+            var sourceAddress = store.Log.TailAddress;
+            Upsert(1, 100);
+            Assert.That(sourceAddress, Is.GreaterThan(store.Log.SafeReadOnlyAddress), "Precondition: the source is mutable, above SafeReadOnlyAddress");
+            var value = ValueAt(sourceAddress);
+
+            using (var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, NoInPlaceWriteFunctions>(new NoInPlaceWriteFunctions()))
+                _ = s.BasicContext.Upsert(new TestObjectKey { key = 1 }, new TrackedObjectValue { value = 200 }, 0);
+
+            var source = store.hlogBase._wrapper.CreateLogRecord(sourceAddress);
+            Assert.That(source.Info.Valid && source.Info.IsSealed, Is.True, $"Precondition: the Upsert sealed its source rather than eliding it: {source.Info}");
+            Assert.That(SourceHoldsObject(sourceAddress), Is.False, "The Upsert did not release the value of the record it sealed");
+            Assert.That(value.DisposeCount, Is.Zero, "Tsavorite must not dispose an Upsert's superseded value");
+        }
+
+        /// <summary>
+        /// An Upsert that finds no record of its key at or above ReadOnlyAddress reads the head of the chain, and releases its value only if it is
+        /// the key's record. Another key's record that shares the chain keeps its value.
+        /// </summary>
+        [Test, Category("TsavoriteKV")]
+        public void UpsertKeepsTheValueOfAnotherKeyAtTheHeadOfItsChain()
+        {
+            using var oneChainLog = new NullDevice();
+            using var oneChainObjLog = new NullDevice();
+            using var oneChainStore = new TsavoriteKV<OneChainStoreFunctions, OneChainAllocator>(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = oneChainLog,
+                ObjectLogDevice = oneChainObjLog,
+                MutableFraction = 0.1,
+                LogMemorySize = 1L << 15,
+                PageSize = MinKvLogPageSize
+            }, StoreFunctions.Create(new OneChainComparer(), () => new TestObjectValue.Serializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+            using var session = oneChainStore.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
+
+            _ = session.BasicContext.Upsert(new TestObjectKey { key = 1 }, new TestObjectValue { value = 100 }, 0);
+            var otherAddress = oneChainStore.Log.TailAddress;
+            _ = session.BasicContext.Upsert(new TestObjectKey { key = 2 }, new TestObjectValue { value = 200 }, 0);
+            oneChainStore.Log.ShiftReadOnlyAddress(oneChainStore.Log.TailAddress, wait: true);
+
+            _ = session.BasicContext.Upsert(new TestObjectKey { key = 1 }, new TestObjectValue { value = 101 }, 0);
+
+            Assert.That(oneChainStore.hlogBase._wrapper.CreateLogRecord(otherAddress).ValueObject, Is.InstanceOf<TestObjectValue>(),
+                "The Upsert released the value of another key's record at the head of its chain");
+            var input = new TestObjectInput();
+            var output = new TestObjectOutput();
+            var status = session.BasicContext.Read(new TestObjectKey { key = 2 }, ref input, ref output, 0);
+            Assert.That(status.Found, Is.True, "The other key was not found");
+            Assert.That(output.value?.value, Is.EqualTo(200), "The other key lost its value");
+        }
+
+        /// <summary>
+        /// An Upsert of a record whose page the ReadOnly flush is walking releases the record's value at once, as a CopyUpdate does: without
+        /// changing the record's bytes, which the flush writes from the live page, and without disposing the value, which the flush may still be
+        /// serializing.
+        /// </summary>
+        [Test, Category("TsavoriteKV")]
+        public void UpsertDuringTheReadOnlyFlushWalkReleasesTheSupersededValueWithoutChangingItsBytes()
+        {
+            var sourceAddress = NextRecordAddress();
+            Upsert(1, 100);
+
+            if (!ObjectFlushInjection.IsAvailable)
+                Assert.Ignore("ObjectFlushInjection is compiled out in Release, so the flush walk cannot be held open.");
+
+            using var insideFlushWindow = new SemaphoreSlim(0);
+            using var releaseFlush = new SemaphoreSlim(0);
+            var hookFired = false;
+
+            ObjectFlushInjection.Hook = (phase, logicalAddress) =>
+            {
+                if (phase != ObjectFlushPhase.AfterCapture || logicalAddress != sourceAddress || hookFired)
+                    return;
+                hookFired = true;
+                _ = insideFlushWindow.Release();
+                _ = releaseFlush.Wait(TimeSpan.FromSeconds(30));
+            };
+
+            try
+            {
+                var shift = Task.Run(() => store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true));
+                Assert.That(insideFlushWindow.Wait(TimeSpan.FromSeconds(30)), Is.True,
+                    "the flush never reached AfterCapture, so this test proves nothing (note the hook is DEBUG-only)");
+                Assert.That(store.hlog.IsFrozenForFlush(sourceAddress), Is.True, "Precondition: the flush is walking the source");
+
+                var value = ValueAt(sourceAddress);
+                var bytesBefore = RecordBytes(sourceAddress);
+                Upsert(1, 200);
+                Assert.That(SourceHoldsObject(sourceAddress), Is.False, "The Upsert did not release the superseded value at once");
+                Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).DataHeader.ValueIsObject, Is.True,
+                    "The release must leave the record an object record");
+                Assert.That(RecordBytes(sourceAddress), Is.EqualTo(bytesBefore), "The release changed the bytes of a record the flush is writing");
+                Assert.That(value.DisposeCount, Is.Zero, "The release disposed a value the flush may still be serializing");
+
+                _ = releaseFlush.Release();
+                Assert.That(shift.Wait(TimeSpan.FromSeconds(30)), Is.True, "the read-only shift did not complete");
+            }
+            finally
+            {
+                ObjectFlushInjection.Reset();
+            }
+        }
+
+        /// <summary>
+        /// A streaming snapshot's second scan pushes the latest version of each key below the tail it samples, so it pushes a record that an Upsert
+        /// supersedes after that sample. The Upsert must leave the value of a record the scan has not reached, even one whose image is durable.
+        /// </summary>
+        [Test, Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task StreamingSnapshotPushesTheValueOfARecordSupersededDuringItsScan()
+        {
+            Upsert(1, 100);
+            var supersededAddress = store.Log.TailAddress;
+            Upsert(2, 200);
+            Assert.That(store.Log.SafeReadOnlyAddress, Is.LessThanOrEqualTo(supersededAddress),
+                "Precondition: the record is mutable when the checkpoint starts, so the second scan reads it");
+
+            using var upsertSession = NewSession();
+            var scan = new ActDuringStreamingScan(() =>
+            {
+                // Make the record durable and immutable. The Upsert's new record lies above the tail the scan sampled; the Upsert finds nothing at
+                // or above ReadOnlyAddress, and reads the record as the head of its chain.
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                _ = upsertSession.BasicContext.Upsert(new TestObjectKey { key = 2 }, new TrackedObjectValue { value = 300 }, 0);
+            });
+
+            _ = await store.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: scan).ConfigureAwait(false);
+
+            Assert.That(scan.Failure, Is.Null, $"The scan failed: {scan.Failure}");
+            Assert.That(scan.Pushed.TryGetValue(2, out var pushed), Is.True, "The scan did not push the record superseded after its tail sample");
+            Assert.That(pushed, Is.EqualTo(200), "The scan pushed a released value for the superseded record");
         }
 
         #endregion
@@ -1496,17 +1709,17 @@ namespace Tsavorite.test
         /// Read-cache heap-size accounting parity. Every byte of heap a promoted read-cache record adds to
         /// the read-cache <see cref="LogSizeTracker{TStoreFunctions, TAllocator}"/> (at copy-to-read-cache
         /// time, via <c>UpdateSize(add: true)</c>) must be removed again when that record leaves memory (at
-        /// page-close eviction, via <c>EvictRecordsInRange</c>, or — for RMW CopyUpdate — at the in-place
-        /// source-value clear). In particular, a value-changing update over a key that is currently cached in
+        /// page-close eviction, via <c>EvictRecordsInRange</c>, or — for an update that supersedes it — at the
+        /// in-place release of its value). In particular, a value-changing update over a key that is currently cached in
         /// the read cache must NOT leak the cached record's heap from the read-cache tracker.
         ///
         /// Two value-changing paths are exercised:
         /// <list type="bullet">
-        /// <item><b>Upsert</b> (blind): detaches the read-cache prefix; the orphaned source stays Valid with
-        /// its value intact and is decremented at page-close eviction. Regression for a latent leak in the old
-        /// splice design, which invalidated the read-cache source in place (<c>PostCopyToTail</c> ->
-        /// <c>SetInvalidAtomic</c>); since <c>EvictRecordsInRange</c> skips Invalid records, the
-        /// <c>+UpdateSize</c> from promotion was never matched and the tracker drifted upward.</item>
+        /// <item><b>Upsert</b> (blind): detaches the read-cache prefix and releases the orphaned source's value in place, without
+        /// disposing it, crediting the read-cache tracker; the source stays Valid, and page-close eviction credits only what it still holds.
+        /// Regression for a latent leak in the old splice design, which invalidated the read-cache source in place (<c>PostCopyToTail</c> ->
+        /// <c>SetInvalidAtomic</c>); since <c>EvictRecordsInRange</c> skips Invalid records, the <c>+UpdateSize</c> from promotion was never
+        /// matched and the tracker drifted upward.</item>
         /// <item><b>RMW</b> (CopyUpdate): clears and disposes the read-cache source value object in place and
         /// must decrement the <i>read-cache</i> tracker (the allocator that owns the source), not the main-log
         /// tracker. Regression for crediting the wrong tracker, which leaked the read-cache tracker and
@@ -1566,7 +1779,7 @@ namespace Tsavorite.test
 
             // Value-changing update over every read-cached key. Each operation finds the read-cache record as
             // its source (HasReadCacheSrc) and publishes a new main-log record, detaching the read-cache prefix.
-            // Upsert leaves the orphaned source value intact; RMW CopyUpdate clears/disposes it in place.
+            // Upsert releases the orphaned source's value in place; RMW CopyUpdate clears/disposes it in place.
             using (var s = NewSession())
             {
                 for (int i = 0; i < n; i++)
@@ -1584,9 +1797,12 @@ namespace Tsavorite.test
                 }
             }
 
+            // The keys are inline, so the read-cache tracker counted only the values, which each update released at once.
+            ClassicAssert.AreEqual(0, store.ReadCache.HeapSizeBytes,
+                $"{updateOp} did not release its read-cache source's value at once: {store.ReadCache.HeapSizeBytes} remains (promoted {heapAfterPromote})");
+
             // Evict the entire read cache. Every promoted record must have had its value heap decremented
-            // exactly once (at the RMW clear, or here at page-close eviction for the Upsert orphans), so the
-            // read-cache tracker returns to zero with no leak and no double-decrement.
+            // exactly once, at the update, so the read-cache tracker stays at zero with no leak and no double-decrement.
             store.ReadCache.FlushAndEvict(wait: true);
 
             ClassicAssert.AreEqual(0, store.ReadCache.HeapSizeBytes,

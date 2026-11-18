@@ -361,9 +361,11 @@ namespace Tsavorite.core
                         hlogBase.logSizeTracker?.IncrementSize(valueHeap);
                 }
 
-                // ElideSourceRecord means the new record took the source's PreviousAddress, so the CAS bypassed the source in the chain.
+                // ElideSourceRecord means the new record took the source's PreviousAddress, so the CAS bypassed the source in the chain. An elided
+                // source may already be on the free list and reused, so it is not read again.
+                var sourceElided = false;
                 if (allocOptions.elideSourceRecord)
-                    DetachBypassedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord, disposalDeferred: false);
+                    sourceElided = !DetachBypassedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord, disposalDeferred: false);
                 else
                 {
                     // If it is in mutable or fuzzy region, we must Seal
@@ -373,6 +375,12 @@ namespace Tsavorite.core
 
                 stackCtx.ClearNewRecord();
                 operationState.logicalAddress = newLogicalAddress;
+
+                // Release the superseded record's value. This follows ClearNewRecord, so that an exception from the value's HeapMemorySize, which
+                // is application code, cannot invalidate the new record and make a source whose value is already released the key's latest again.
+                if (!sourceElided)
+                    ReleaseUpsertSupersededValue<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(key, sessionFunctions, ref stackCtx, ref srcLogRecord,
+                        newLogRecord.Info.PreviousAddress);
 
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
             }

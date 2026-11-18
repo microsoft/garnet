@@ -267,7 +267,7 @@ namespace Tsavorite.core
                     // un-accounts the value, or marks that for later if the source is frozen. Then elide it, which credits the key, or
                     // seal it if it must stay valid.
                     var disposalDeferred = ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord, deleted: true);
-                    DetachBypassedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord, disposalDeferred);
+                    _ = DetachBypassedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord, disposalDeferred);
                 }
                 else if (stackCtx.recSrc.HasMainLogSrc)
                 {

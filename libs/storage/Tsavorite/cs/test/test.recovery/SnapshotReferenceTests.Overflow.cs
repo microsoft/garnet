@@ -304,6 +304,45 @@ namespace Tsavorite.test.recovery
         }
 
         /// <summary>
+        /// An Upsert of a key whose record is below ReadOnlyAddress releases that record's overflow value in place: the record's slot gets the
+        /// released sentinel, and the size tracker is credited the array at once. Evicting every record then credits exactly what the records
+        /// were charged, overflow keys included.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void UpsertReleasesTheOverflowValueOfTheRecordItSupersedes([Values] bool overflowKeys)
+        {
+            const long TargetSize = 1L << 16;
+            var store = CreateOverflowStore(overflowKeys);
+            try
+            {
+                var tracker = new LogSizeTracker<ClassStoreFunctions, ClassAllocator>(store.Log, TargetSize, TargetSize / 8, TargetSize / 16, logger: null);
+                store.Log.SetLogSizeTracker(tracker);
+
+                // A first record, so that the source's address is the tail its upsert reads.
+                _ = UpsertOverflow(store, 2, InitialFill);
+                var sourceAddress = UpsertOverflow(store, 1, InitialFill);
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                var heapBefore = tracker.LogHeapSizeBytes;
+
+                var newAddress = UpsertOverflow(store, 1, CapturedFill);
+                Assert.That(GetValueOverflow(store, sourceAddress).Array, Is.SameAs(OverflowByteArray.Released.Array),
+                    "The Upsert did not release the overflow value of the record it superseded");
+                Assert.That(store.hlogBase._wrapper.CreateLogRecord(newAddress).TryGetOutOfLineComponents(out var newKey, out _, out _), Is.True,
+                    "Precondition: the Upsert wrote a record with a resolvable key");
+                Assert.That(tracker.LogHeapSizeBytes, Is.EqualTo(heapBefore + newKey.HeapMemorySize),
+                    "The Upsert must charge the new record and credit the superseded array, which is the size of the new one");
+
+                store.Log.FlushAndEvict(wait: true);
+                Assert.That(tracker.LogHeapSizeBytes, Is.Zero, "Eviction must credit exactly what the records were charged");
+            }
+            finally
+            {
+                store.Dispose();
+            }
+        }
+
+        /// <summary>
         /// Scan compaction copies every record in its range into a temporary store, whose inline limit is the default, far above this store's,
         /// so the copies of overflow values are inline there; and it copies a record whose value a CopyUpdate released, whose sentinel reads as
         /// empty, as an empty value. Compaction then moves each key's latest record to the tail with its value.

@@ -234,14 +234,18 @@ invalidated the read-cache source in place after such an update — and during a
 splice/promotion race — without decrementing, which leaked read-cache heap from the
 tracker; removing those in-place invalidations fixed it.)
 
-There is one in-place exception: an **RMW `CopyUpdate`** whose source is a read-cache
-object record clears and disposes that source's value slot in place (the record stays
-`Valid`; only the value is freed). It must decrement the **read-cache** tracker — the
-allocator that *owns* the source record (`recSrc.AllocatorBase`), since that is where
-the value heap was charged at promotion — not the main-log tracker. Eviction later
-recomputes the now-zero value heap for the still-`Valid` record, so there is no
-double-decrement. (Crediting the main-log tracker here was a latent bug: it leaked the
-read-cache tracker and under-counted the main log.)
+There are two in-place exceptions. Each leaves the record `Valid` and releases only its value, and must decrement the
+**read-cache** tracker — the allocator that *owns* the source record (`recSrc.AllocatorBase`), since that is where the
+value heap was charged at promotion — not the main-log tracker:
+
+- an **RMW `CopyUpdate`** whose source is a read-cache object record clears and disposes that source's value slot in
+  place; and
+- an **Upsert** whose source is a read-cache record points that source's value slot at the released placeholder, without
+  disposing the value or changing the record's bytes, as it does for the main-log record it supersedes (see
+  [Releasing a record's out-of-line value](object-allocator.md#releasing-a-records-out-of-line-value)).
+
+Eviction later recomputes the now-zero value heap for the still-`Valid` record, so there is no double-decrement.
+(Crediting the main-log tracker here was a latent bug: it leaked the read-cache tracker and under-counted the main log.)
 
 ## Checkpointing
 
