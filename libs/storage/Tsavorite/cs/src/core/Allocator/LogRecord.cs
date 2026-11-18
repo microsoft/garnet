@@ -317,8 +317,8 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// We track the deserialized length of an object value in the ObjectLogPosition field after deserialization is complete. This allows
-        /// flushes during recovery to both avoid re-serializing the object and know how to reset the ObjectLogPosition.
+        /// Sets a deserialized object value into the record, and stores its deserialized length in the ObjectLogPosition field, which no longer holds an
+        /// object-log position once the object is in memory.
         /// </summary>
         /// <param name="heapObject">The deserialized object</param>
         /// <param name="deserializedLength">The deserialized length of the object</param>
@@ -1566,9 +1566,8 @@ namespace Tsavorite.core
         /// <remarks>
         /// Used by the snapshot-recovery flush, which copies a record's object bytes from the snapshot object-log to the main object-log and must
         /// repoint the disk-image record to the main position. The record's objects are NOT deserialized at this point (objectIdMap is empty and the
-        /// int* slots still hold the on-disk R11 length high-bits), so unlike <see cref="SetObjectLogRecordStartPositionAndLength"/> and
-        /// <see cref="SetRecoveredObjectLogRecordStartPosition"/> this must not read the lengths from objectIdMap. The existing R11 length encoding
-        /// is preserved as-is, since the copied lengths are unchanged.
+        /// int* slots still hold the on-disk R11 length high-bits), so unlike <see cref="SetObjectLogRecordStartPositionAndLength"/> this must not
+        /// read the lengths from objectIdMap. The existing R11 length encoding is preserved as-is, since the copied lengths are unchanged.
         /// <para>IMPORTANT: Like the other position setters, this is only safe to call on the disk-image copy of the record (srcBuffer).</para>
         /// </remarks>
         internal readonly void RepointObjectLogPosition(in ObjectLogFilePositionInfo objectLogFilePosition)
@@ -1625,65 +1624,6 @@ namespace Tsavorite.core
             // Read the position word; mask off flag bits to return just segment+offset.
             var word = *(ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress());
             return word & ObjectLogFilePositionInfo.SegmentAndOffsetMask;
-        }
-
-        /// <summary>
-        /// For recovery, we have already deserialized all objects and know their lengths: Overflow is in the Key or Value field,
-        /// and Object is in the ObjectLogPosition field. So we can set up the pagePositionInfo for this record directly rather than
-        /// re-serializing, which also keeps the objectLogTail consistent.
-        /// </summary>
-        /// <param name="pagePositionInfo">The cumulative position on the page (starting from the PageHeader)</param>
-        /// <remarks>
-        /// IMPORTANT: This is only to be called in the disk image copy of the log record, not in the actual log record itself.
-        /// See <see cref="SetObjectLogRecordStartPositionAndLength"/> for encoding details.
-        /// </remarks>
-        /// <returns>The total "serialized" lengths from this LogRecord; will be 0 for inline records. Caller will adjust for
-        ///     segment boundaries.</returns>
-        internal readonly ulong SetRecoveredObjectLogRecordStartPosition(ObjectLogFilePositionInfo pagePositionInfo)
-        {
-            if (DataHeader.RecordIsInline)
-            {
-                Debug.Fail("Cannot call SetRecoveredObjectLogRecordStartPositionAndLengths for an inline record");
-                return 0;
-            }
-
-            var dataHeader = DataHeader;
-            var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
-            var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
-
-            // For ValueObject, the deserialized length was stored at objectLogPositionPtr by SetDeserializedValueObject; save it.
-            var valueObjectLength = *objectLogPositionPtr;
-            *objectLogPositionPtr = pagePositionInfo.word | ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
-
-            ulong objectLengths = 0;
-            if (dataHeader.KeyIsOverflow)
-            {
-                var (_ /*kLen*/, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
-                var overflow = objectIdMap.GetOverflowByteArray(*(int*)keyAddress);
-                objectLengths += (uint)overflow.Length;
-                var actualKeyLength = (ulong)overflow.Length;
-                dataHeader.KeyLength = (int)(actualKeyLength & RecordDataHeader.kKeyLengthLowBitsMask);
-                *(int*)keyAddress = (int)(actualKeyLength >> RecordDataHeader.kKeyLengthBits);
-            }
-
-            if (dataHeader.ValueIsOverflow)
-            {
-                var overflow = objectIdMap.GetOverflowByteArray(*(int*)valueAddress);
-                objectLengths += (uint)overflow.Length;
-                var actualValueLength = (ulong)overflow.Length;
-                dataHeader.ValueLength = (int)(actualValueLength & RecordDataHeader.kValueLengthLowBitsMask);
-                *(int*)valueAddress = (int)(actualValueLength >> RecordDataHeader.kValueLengthBits);
-            }
-            else if (dataHeader.ValueIsObject)
-            {
-                objectLengths += valueObjectLength;
-                dataHeader.ValueLength = (int)(valueObjectLength & RecordDataHeader.kValueLengthLowBitsMask);
-                *(uint*)valueAddress = (uint)(valueObjectLength >> RecordDataHeader.kValueLengthBits);
-            }
-
-            // Atomic publish via SetDataHeader.
-            SetDataHeader(dataHeader);
-            return objectLengths;
         }
 
         /// <summary>Whether the <c>ReuseObjectIdForSize</c> flag is set on this record's ObjectLogPosition slot. The flag indicates
