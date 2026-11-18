@@ -259,6 +259,50 @@ namespace Tsavorite.test.recovery
             }
         }
 
+        /// <summary>
+        /// A Delete of a durable source releases its overflow value in place: the source's slot gets the released sentinel, and the size tracker
+        /// is credited the array at once. The sentinel counts as no heap, so evicting every record then credits exactly what the records were
+        /// charged, overflow keys included.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void DeleteReleasesAnOverflowValueInPlaceAndEvictionCreditsTheRest([Values] bool overflowKeys)
+        {
+            const long TargetSize = 1L << 16;
+            var store = CreateOverflowStore(overflowKeys);
+            try
+            {
+                var tracker = new LogSizeTracker<ClassStoreFunctions, ClassAllocator>(store.Log, TargetSize, TargetSize / 8, TargetSize / 16, logger: null);
+                store.Log.SetLogSizeTracker(tracker);
+
+                // An earlier record for the key keeps the source in a chain, so the Delete seals the source rather than eliding it.
+                _ = UpsertOverflow(store, 1, InitialFill);
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                var sourceAddress = UpsertOverflow(store, 1, CapturedFill);
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                var arraySize = GetValueOverflow(store, sourceAddress).HeapMemorySize;
+                var heapBefore = tracker.LogHeapSizeBytes;
+
+                var tombstoneAddress = store.Log.TailAddress;
+                using (var session = store.NewSession<TestObjectKey, FillInput, FillOutput, Empty, FillFunctions>(new FillFunctions()))
+                    _ = session.BasicContext.Delete(new TestObjectKey { key = 1 });
+
+                Assert.That(GetValueOverflow(store, sourceAddress).Array, Is.SameAs(OverflowByteArray.Released.Array),
+                    "The Delete did not release the source's value in place");
+                Assert.That(store.hlogBase._wrapper.CreateLogRecord(tombstoneAddress).TryGetOutOfLineComponents(out var tombstoneKey, out _, out _), Is.True,
+                    "Precondition: the Delete wrote a tombstone with a resolvable key");
+                Assert.That(tracker.LogHeapSizeBytes, Is.EqualTo(heapBefore - arraySize + tombstoneKey.HeapMemorySize),
+                    "The Delete must credit the source's array once, and charge only the tombstone's key");
+
+                store.Log.FlushAndEvict(wait: true);
+                Assert.That(tracker.LogHeapSizeBytes, Is.Zero, "Eviction must credit exactly what the records were charged");
+            }
+            finally
+            {
+                store.Dispose();
+            }
+        }
+
         static void ReadOverflowVersion(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, int key, long expectedAddress, byte expectedFill, string when)
         {
             using var session = store.NewSession<TestObjectKey, FillInput, FillOutput, Empty, FillFunctions>(new FillFunctions());

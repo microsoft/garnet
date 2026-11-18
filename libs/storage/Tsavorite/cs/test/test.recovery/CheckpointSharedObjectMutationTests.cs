@@ -743,10 +743,9 @@ namespace Tsavorite.test.recovery
         /// CPR and the epoch bumps in <c>RunStateMachine</c> make the *version* decision correct — the Delete below
         /// correctly RCUs a (v+1) tombstone over a (v) source — but neither waits for the snapshot's data capture, and
         /// the session's <c>IsInV1</c> stays true through <see cref="Phase.WAIT_FLUSH"/> for exactly that reason.
-        /// Disposing here would run
-        /// <c>LogField.ClearObjectIdAndConvertToInline</c> on the live record: it calls <c>objectIdMap.Free</c> and flips
-        /// the field to inline, while the snapshot flush, which writes the live page, resolves the record's object id against
-        /// the live map, so it loses the (v) value, or serializes a later record that reused the slot in its place.
+        /// Disposing here would release the source's value, pointing its slot at a placeholder, while the snapshot flush, which writes the
+        /// live page, resolves the record's object id against the live map: it would write no value for the (v) record, so the checkpoint
+        /// would lose it.
         /// </para>
         /// <para>
         /// The Delete marks the source instead, and the drain disposes it once FlushedUntilAddress passes it. On this real
@@ -778,8 +777,8 @@ namespace Tsavorite.test.recovery
                 sourceAddress = firstValidAddress;
 
             var sourceBeforeCheckpoint = store.hlogBase._wrapper.CreateLogRecord(sourceAddress);
-            Assert.That(sourceBeforeCheckpoint.DataHeader.ValueIsInline, Is.False,
-                "the source record should hold an object id, otherwise this test cannot observe the slot being freed");
+            Assert.That(sourceBeforeCheckpoint.ValueObject, Is.Not.Null,
+                "the source record should hold its value object, otherwise this test cannot observe the value being released");
 
             // Create the session BEFORE the checkpoint so it participates in the state machine from PREPARE onward, which
             // is how a real long-lived session behaves. IsFrozen reads the *session's* phase, and a session created in the
@@ -807,9 +806,8 @@ namespace Tsavorite.test.recovery
             {
                 Assert.That(store.Log.TailAddress, Is.GreaterThan(tailBeforeDelete),
                     "the Delete did not RCU a new tombstone, so it never reached the superseded-source path");
-                Assert.That(source.DataHeader.ValueIsInline, Is.False,
-                    "the checkpoint-frozen source was disposed: its ObjectIdMap slot was freed and the field converted to inline, "
-                    + "which lets the in-flight snapshot resolve that id to whatever record reuses the slot");
+                Assert.That(source.ValueObject, Is.Not.Null,
+                    "the checkpoint-frozen source was disposed: its value was released, so the in-flight snapshot writes no value for it");
                 Assert.That(source.Info.DeferredDispose, Is.True,
                     "a checkpoint freeze must be marked, so that the drain or eviction disposes it once no flush reads it; "
                     + $"the record's info is {source.Info}");
@@ -819,10 +817,12 @@ namespace Tsavorite.test.recovery
             await store.CompleteCheckpointAsync().ConfigureAwait(false);
 
             // The ReadOnly flush of the source's page lets the drain dispose it while the page is still resident. The drain runs after the
-            // flush completion releases this wait, so poll for it.
+            // flush completion releases this wait, so poll for it. The disposal releases the value in place, leaving a placeholder that reads
+            // as no value.
             store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
-            Assert.That(SpinWait.SpinUntil(() => store.hlogBase._wrapper.CreateLogRecord(sourceAddress).DataHeader.ValueIsInline, TimeSpan.FromSeconds(30)),
+            Assert.That(SpinWait.SpinUntil(() => store.hlogBase._wrapper.CreateLogRecord(sourceAddress).ValueObject is null, TimeSpan.FromSeconds(30)),
                 Is.True, "the drain did not dispose the deleted source once its flush completed");
+            Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).DataHeader.ValueIsObject, Is.True, "the disposal converted the source's value");
             Assert.That(store.Log.HeadAddress, Is.LessThanOrEqualTo(sourceAddress), "the source was evicted, so eviction rather than the drain may have disposed it");
             Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).Info.DeferredDispose, Is.False, "the drain claims the mark when it disposes the source");
         }

@@ -131,20 +131,22 @@ namespace Tsavorite.core
         /// <remarks>
         /// <para>This is ONLY to be done for transient log records, not records on the main log.</para>
         /// <para>A scan copies a record on a page entirely below SafeReadOnlyAddress without a lock, so the copy can be taken while the operation that
-        /// superseded the record, or the deferred-disposal drain, releases its out-of-line fields. Each release frees the field's slot, then writes
-        /// <see cref="ObjectIdMap.InvalidObjectId"/> into the field, then publishes an inline header. So a field whose slot id is
-        /// <see cref="ObjectIdMap.InvalidObjectId"/>, or whose slot no longer holds a component of the field's kind, has been released:</para>
+        /// superseded the record, or the deferred-disposal drain, releases its out-of-line fields. A release takes one of two forms:</para>
         /// <list type="bullet">
-        /// <item>A released value resolves to nothing: a null value object, or an empty overflow value. So does a value a CopyUpdate released
-        /// without changing the record's bytes: its slot holds a placeholder (<see cref="SupersededObjectValue"/>), which
-        /// <see cref="ValueObject"/> reads as null, or an overflow sentinel, which reads as an empty value.</item>
-        /// <item>A released overflow key cannot be reported, so the remap fails. A key is released only when a sealed and invalidated record is
-        /// disposed: an elision, a free-listing, or an abandoned insert.</item>
+        /// <item>A CopyUpdate's release of its source, and the disposal of a deleted record, change none of the record's bytes. The value's slot
+        /// keeps its id and gets a placeholder (<see cref="SupersededObjectValue"/>), which <see cref="ValueObject"/> reads as null, or an
+        /// overflow sentinel, which reads as an empty value. The slot is not freed, so no other record is given it while the page is
+        /// resident.</item>
+        /// <item>The disposal of a sealed and invalidated record (an elision, a free-listing, or an abandoned insert) frees each field's slot,
+        /// then writes <see cref="ObjectIdMap.InvalidObjectId"/> into the field, then publishes an inline header. A value released this way
+        /// resolves to nothing: a null value object, or an empty overflow value. A released overflow key cannot be reported, so the remap
+        /// fails.</item>
         /// </list>
         /// <para>A slot that still holds a component holds this record's when the record's page lies entirely below SafeReadOnlyAddress: nothing
-        /// allocates on that page's map, so a released slot is not reused while the page is resident. On any other page, a scan that has the store
-        /// locks the record's key for the copy, so no release made under that lock (by a CopyUpdate, a Delete or an elision) is in progress; a scan
-        /// without the store (the pull iterator of <c>LogAccessor.Scan</c>) does not lock anywhere.</para>
+        /// allocates on that page's map, so a freed slot is not reused while the page is resident. On any other page, a scan that has the store
+        /// locks the record's key for the copy, so no release made under that lock (by a CopyUpdate, a Delete or an elision) is in progress, and
+        /// the drain, which takes no lock, frees no slot; a scan without the store (the pull iterator of <c>LogAccessor.Scan</c>) does not lock
+        /// anywhere.</para>
         /// </remarks>
         /// <returns>False if the overflow key had been released; no transient slot is allocated then.</returns>
         public readonly bool TryRemapOverPinnedTransientMemory(ObjectIdMap allocatorMap, ObjectIdMap transientMap)

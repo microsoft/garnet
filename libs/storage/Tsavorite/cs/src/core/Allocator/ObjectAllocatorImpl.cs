@@ -100,12 +100,14 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>
         /// This allocator resolves objectIds against the live <see cref="ObjectIdMap"/>, stamps ObjectLogPosition and size hints
-        /// into the live record, and writes the live page to the device with the epoch suspended. Disposal in that window
-        /// corrupts the image two ways: releasing the heap can persist a Valid record whose ObjectLogPosition refers to a freed -
-        /// or recycled, hence unrelated - object, and <see cref="LogRecord.ClearOptionals"/> zeroes the ObjectLogPosition field
-        /// this flush just stamped. So a deleted record keeps its heap and metadata until the window closes; its disposal is marked
-        /// with <see cref="RecordInfo.DeferredDispose"/> and run by the drain on flush completion, or by eviction. A CopyUpdate's release of
-        /// its source does not wait: it replaces only the value's <see cref="ObjectIdMap"/> slot, which changes no byte of the image.
+        /// into the live record, and writes the live page to the device with the epoch suspended. Freeing a record's fields or
+        /// rewriting its layout in that window corrupts the image two ways: a freed slot can persist a Valid record whose
+        /// ObjectLogPosition refers to a freed - or recycled, hence unrelated - object, and <see cref="LogRecord.ClearOptionals"/>
+        /// zeroes the ObjectLogPosition field this flush just stamped. So an operation does not elide or revivify a frozen record.
+        /// The disposal of a deleted record changes only the value's <see cref="ObjectIdMap"/> slot, but still waits for the
+        /// window to close, so that the flush writes the value and the delete trigger runs after the OnFlush trigger: it is marked
+        /// with <see cref="RecordInfo.DeferredDispose"/> and run by the drain on flush completion, or by eviction. A CopyUpdate's
+        /// release of its source does not wait: it too replaces only the value's slot, and its new record holds the key's value.
         /// <para>
         /// The upper bound is <see cref="AllocatorBase{TStoreFunctions, TAllocator}.ReadOnlyAddress"/>. A read-only shift publishes
         /// ReadOnlyAddress and then bumps the epoch with <see cref="OnPagesMarkedReadOnly"/>, which advances SafeReadOnlyAddress and starts
@@ -755,13 +757,15 @@ namespace Tsavorite.core
         }
 
         /// <summary>Run a deferred disposal of a deleted record that the caller has claimed with <see cref="RecordInfo.TryTakeDeferredDispose"/>.</summary>
-        /// <remarks>The record was deleted, by a Delete or an expiration, and is disposed as deleted, which runs the application's delete trigger,
-        /// whether or not the record was sealed. A marked record stays valid, because the operation that marked it seals it rather than eliding
-        /// it; the check is defensive, so that a record invalidated some other way, whose components that path released, is not disposed again.</remarks>
+        /// <remarks>The record was deleted, by a Delete or an expiration, and is released in place as deleted (<see cref="ReleaseInPlace"/>), which
+        /// runs the application's delete trigger, whether or not the record was sealed, and changes none of the record's bytes. The drain holds no
+        /// lock, and a scan may be copying the record; the release's placeholder keeps the value's slot from being given to another record while
+        /// that copy's ids are resolved. A marked record stays valid, because the operation that marked it seals it rather than eliding it; the
+        /// check is defensive, so that a record invalidated some other way, whose components that path released, is not released again.</remarks>
         private void RunDeferredDispose(ref LogRecord logRecord)
         {
             if (logRecord.Info.Valid)
-                OnDispose(ref logRecord, DisposeReason.Deleted);
+                ReleaseInPlace(ref logRecord, DisposeReason.Deleted);
         }
 
         /// <summary>
@@ -816,9 +820,9 @@ namespace Tsavorite.core
                 // Honor a deferred disposal here if eviction reaches the record before the drain does. Clearing the mark without
                 // disposing would resurrect exactly the leak this exists to close: eviction calls only OnEvict, so a deleted
                 // record's external resources would never be released. Running it first reproduces the ordinary sequence --
-                // disposal at the supersede site, then eviction -- so the heap accounting below sees a value-cleared record and
-                // does not double-count. Invalid records were skipped above, which is what keeps an elided record, whose
-                // disposal already ran, from being disposed twice.
+                // disposal at the supersede site, then eviction -- so the heap accounting below sees a released value, which counts
+                // as no heap, and does not double-count. Invalid records were skipped above, which is what keeps an elided record,
+                // whose disposal already ran, from being disposed twice.
                 if (TryTakeDeferredDispose(ref logRecord, GetPageIndexForAddress(address)))
                     RunDeferredDispose(ref logRecord);
 

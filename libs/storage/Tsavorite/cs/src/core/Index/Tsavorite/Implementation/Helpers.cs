@@ -37,6 +37,9 @@ namespace Tsavorite.core
         void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason) => hlog.OnDispose(ref logRecord, disposeReason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void ReleaseInPlace(ref LogRecord logRecord, DisposeReason disposeReason) => hlog.ReleaseInPlace(ref logRecord, disposeReason);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => hlog.OnDisposeDiskRecord(ref logRecord, disposeReason);
 
         /// <summary>
@@ -211,7 +214,8 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Release the in-memory source record that an operation has just superseded. A CopyUpdate's source has its value released at once; a
-        /// deleted source is disposed, or marked to be disposed later while a flush or a checkpoint still reads the record.
+        /// deleted source is disposed, or marked to be disposed later while a flush, a checkpoint or a streaming snapshot's scan still reads the
+        /// record.
         /// </summary>
         /// <param name="sessionFunctions">The session, whose phase says whether a checkpoint is in progress</param>
         /// <param name="stackCtx">The operation's context, whose record source is the superseded record</param>
@@ -235,12 +239,15 @@ namespace Tsavorite.core
         /// <para>A CopyUpdate's release does not wait for a flush or a checkpoint that reads the source: it points the value's slot at a
         /// placeholder and changes none of the record's bytes; see the allocator's <c>ReleaseCopyUpdatedSourceInPlace</c>. A read-cache source,
         /// which nothing flushes, has its value cleared.</para>
-        /// <para>A deleted source's disposal runs the delete trigger and clears the record's heap fields and optionals, so it waits while the
-        /// record is frozen, and is marked on the record to run later:</para>
+        /// <para>A deleted source's disposal is a terminal release (the allocator's <c>ReleaseInPlace</c>): it runs the delete trigger, then
+        /// points the value's slot at a placeholder, and changes none of the record's bytes. It waits while the record is frozen, and is marked on
+        /// the record to run later, so that what still reads the record sees its value, and any external state that the delete trigger
+        /// removes:</para>
         /// <list type="bullet">
-        /// <item><b>By a flush:</b> a ReadOnly flush is writing the record from the live page, or may start to. The disposal waits until
-        /// FlushedUntilAddress passes the record. On a NullDevice main log, whose flush writes nothing, the record is frozen only while the
-        /// OnFlush trigger and the read-only observer may still read it.</item>
+        /// <item><b>By a flush:</b> a ReadOnly flush is reading the record from the live page, or may start to: it runs the OnFlush trigger and
+        /// the read-only observer on the record, then writes it. The disposal waits until FlushedUntilAddress passes the record, so the flush
+        /// writes the value, and the delete trigger runs after the OnFlush trigger. On a NullDevice main log, whose flush writes nothing, the
+        /// record is frozen only while the OnFlush trigger and the read-only observer may still read it.</item>
         /// <item><b>By a checkpoint:</b> a Snapshot checkpoint captured the record, or the checkpoint still needs the record's <c>(v)</c> image,
         /// which includes its value and, for an application such as Garnet's RangeIndex, external state that the delete trigger would remove.
         /// On a real main-log device the disposal also waits only until FlushedUntilAddress passes the record: the Snapshot flush completes a
@@ -255,8 +262,8 @@ namespace Tsavorite.core
         /// covers: the streaming scan's, or a checkpoint's on a NullDevice main log. The drain at the end of the hold runs those, and eviction
         /// runs any mark it reaches first. Marking a frozen record is safe although the flush writes the live page, <see cref="RecordInfo"/>
         /// included: the flush never changes <see cref="RecordInfo"/> in memory, it is one aligned word, so a device sees it with or without the
-        /// mark, and every read from disk strips the mark. The freeze exists to prevent destructive changes: freeing heap, zeroing the
-        /// object-log position a flush just stamped, or changing the record's layout.</para>
+        /// mark, and every read from disk strips the mark. The freeze holds back what the record's readers must not see: the disposal, which
+        /// releases the value and runs the delete trigger, and an elision, which invalidates the record.</para>
         /// <para>A marked source must stay valid, because the drain and eviction skip invalid records; see <see cref="DetachBypassedSource{TInput, TOutput, TContext, TSessionFunctionsWrapper}"/>.</para>
         /// </remarks>
         /// <returns>True if the disposal of a deleted source was marked to run later, rather than run now</returns>
@@ -286,7 +293,7 @@ namespace Tsavorite.core
                     && (hlogBase.IsNullDevice || address >= hlogBase.FlushedUntilAddress));
             if (!heldByCheckpoint && !hlog.IsFrozenForFlush(address))
             {
-                OnDispose(ref source, DisposeReason.Deleted);
+                ReleaseInPlace(ref source, DisposeReason.Deleted);
                 return false;
             }
 
@@ -357,9 +364,9 @@ namespace Tsavorite.core
             if (logicalAddress < GetMinRevivifiableAddress())
                 return false;
 
-            // Application-level dispose (storeFunctions.OnDispose) was already called at the delete site.
-            // Call hlog.OnDispose with RevivificationFreeList to clear the key for freelist reuse
-            // (Deleted reason passes clearKey=false, but freelist reuse needs the key space cleared).
+            // Application-level dispose (storeFunctions.OnDispose) was already called at the delete site. Call hlog.OnDispose with
+            // RevivificationFreeList to free the record's out-of-line fields for freelist reuse: a deletion leaves the key, and a deletion
+            // released in place (ReleaseInPlace) also leaves the value's slot, holding a placeholder.
             OnDispose(ref logRecord, DisposeReason.RevivificationFreeList);
 
             return RevivificationManager.TryAdd(logicalAddress, ref logRecord, ref sessionFunctions.Ctx.RevivificationStats);

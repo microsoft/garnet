@@ -3,6 +3,8 @@
 
 using System;
 using System.IO;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -380,6 +382,23 @@ namespace Tsavorite.test
             }
         }
 
+        /// <summary>Writes an expiration on every Upsert, so that a release that cleared the record's optionals would change its bytes.</summary>
+        internal class ObjExpiringUpsertFunctions : TestObjectFunctionsDelete
+        {
+            /// <summary>The expiration every Upsert writes; Tsavorite does not interpret it.</summary>
+            internal const long Expiration = 1L << 40;
+
+            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref TestObjectInput input)
+            {
+                var fieldInfo = base.GetUpsertFieldInfo(key, value, ref input);
+                fieldInfo.HasExpiration = true;
+                return fieldInfo;
+            }
+
+            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
+                => base.InitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo) && logRecord.TrySetExpiration(Expiration);
+        }
+
         private TsavoriteKV<ObjTrackingStoreFunctions, ObjTrackingAllocator> store;
         private IDevice log, objlog;
         private GatedCompletionDevice gatedLog;
@@ -405,7 +424,8 @@ namespace Tsavorite.test
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 15,
-                PageSize = MinKvLogPageSize
+                PageSize = MinKvLogPageSize,
+                CheckpointDir = MethodTestDir
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(),
                     new ObjTrackingRecordTriggers(tracker))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
@@ -429,6 +449,117 @@ namespace Tsavorite.test
         {
             using var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
             _ = s.BasicContext.Upsert(new TestObjectKey { key = key }, new TestObjectValue { value = value }, 0);
+        }
+
+        /// <summary>Upsert <paramref name="key"/> with a new value and an expiration, and return a weak reference to the value, which only the
+        /// store then holds.</summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private WeakReference UpsertExpiring(int key, int value)
+        {
+            var valueObject = new TestObjectValue { value = value };
+            using var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, ObjExpiringUpsertFunctions>(new ObjExpiringUpsertFunctions());
+            _ = s.BasicContext.Upsert(new TestObjectKey { key = key }, valueObject, 0);
+            return new WeakReference(valueObject);
+        }
+
+        /// <summary>The address of the record the next upsert writes: the tail, or the first page's first valid address on an empty log.</summary>
+        private long NextRecordAddress()
+        {
+            var address = store.Log.TailAddress;
+            var firstValidAddress = store.hlogBase.GetFirstValidLogicalAddressOnPage(store.hlogBase.GetPage(address));
+            return address < firstValidAddress ? firstValidAddress : address;
+        }
+
+        /// <summary>A copy of the bytes of the record at <paramref name="logicalAddress"/> after its <see cref="RecordInfo"/>, which a deletion's
+        /// seal and deferred-disposal mark change.</summary>
+        private unsafe byte[] BytesAfterRecordInfo(long logicalAddress)
+        {
+            var logRecord = store.hlogBase._wrapper.CreateLogRecord(logicalAddress);
+            return new ReadOnlySpan<byte>((byte*)logRecord.physicalAddress + RecordInfo.Size, logRecord.AllocatedSize - RecordInfo.Size).ToArray();
+        }
+
+        /// <summary>The index of the <see cref="ObjectIdMap"/> slot that the value of the record at <paramref name="logicalAddress"/> refers to.</summary>
+        private unsafe int ValueSlot(long logicalAddress)
+        {
+            var logRecord = store.hlogBase._wrapper.CreateLogRecord(logicalAddress);
+            Assert.That(logRecord.DataHeader.ValueIsObject, Is.True, $"The record at {logicalAddress} has no object value");
+            return ObjectIdMap.GetIndex(*(int*)logRecord.DataHeader.GetValueFieldInfo(logRecord.physicalAddress).valueAddress);
+        }
+
+        /// <summary>Copy the record at <paramref name="logicalAddress"/> into pinned memory, as a scan does before it resolves the copy's object
+        /// ids.</summary>
+        private unsafe SectorAlignedMemory CopyRecord(long logicalAddress)
+        {
+            var logRecord = store.hlogBase._wrapper.CreateLogRecord(logicalAddress);
+            var copy = store.hlogBase.bufferPool.Get(logRecord.AllocatedSize);
+            Buffer.MemoryCopy((void*)logRecord.physicalAddress, copy.GetValidPointer(), logRecord.AllocatedSize, logRecord.AllocatedSize);
+            return copy;
+        }
+
+        /// <summary>Resolve the object ids of <paramref name="copy"/>, a copy of the record at <paramref name="logicalAddress"/>, as a scan does,
+        /// and return the copy's value object.</summary>
+        private unsafe IHeapObject ResolveCopiedValue(long logicalAddress, SectorAlignedMemory copy)
+        {
+            Assert.That(store.hlogBase._wrapper.TryCreateRemappedLogRecordOverPinnedTransientMemory(logicalAddress, (long)copy.GetValidPointer(), out var remapped),
+                Is.True, "The copy's key could not be resolved");
+            try
+            {
+                return remapped.ValueObject;
+            }
+            finally
+            {
+                remapped.Dispose();
+            }
+        }
+
+        /// <summary>The number of out-of-line fields (overflow keys, and object or overflow values) of the records on <paramref name="page"/>
+        /// below the tail.</summary>
+        private int CountOutOfLineFields(int page)
+        {
+            var count = 0;
+            var endAddress = Math.Min(store.Log.TailAddress, store.hlogBase.GetLogicalAddressOfStartOfPage(page + 1));
+            for (var address = store.hlogBase.GetFirstValidLogicalAddressOnPage(page); address < endAddress;)
+            {
+                var logRecord = store.hlogBase._wrapper.CreateLogRecord(address);
+                if (logRecord.DataHeader.KeyIsOverflow)
+                    count++;
+                if (!logRecord.DataHeader.ValueIsInline)
+                    count++;
+                address += logRecord.AllocatedSize;
+            }
+            return count;
+        }
+
+        /// <summary>Assert that the value of the record at <paramref name="logicalAddress"/> was released in place: the record is still an object
+        /// record, and its value's slot is allocated and holds the released placeholder.</summary>
+        private void AssertReleasedInPlace(long logicalAddress)
+        {
+            var logRecord = store.hlogBase._wrapper.CreateLogRecord(logicalAddress);
+            Assert.That(logRecord.DataHeader.ValueIsObject, Is.True, "The release converted the record's value");
+            Assert.That(logRecord.TryGetOutOfLineComponents(out _, out _, out var slotObject), Is.True, "The release freed the value's slot");
+            Assert.That(slotObject, Is.SameAs(SupersededObjectValue.Released), "The value's slot does not hold the released placeholder");
+            Assert.That(logRecord.ValueObject, Is.Null, "A released value must read as no value");
+        }
+
+        /// <summary>Assert that nothing holds the objects that <paramref name="values"/> refer to.</summary>
+        private static void AssertCollectable(params WeakReference[] values)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            foreach (var value in values)
+                Assert.That(value.IsAlive, Is.False, "Something still holds a released value");
+        }
+
+        /// <summary>Stop holding writes, and let every write the gate captured complete.</summary>
+        private void ReleaseGatedWrites()
+        {
+            gatedLog.Gate = false;
+            for (var i = 0; i < gatedLog.CapturedCount; i++)
+            {
+                gatedLog.Release(i);
+                gatedLog.WaitForCompletion(i, TimeSpan.FromSeconds(30));
+            }
         }
 
         #region Delete
@@ -1185,6 +1316,135 @@ namespace Tsavorite.test
 
             ClassicAssert.AreEqual(0, tracker.DisposeRecordDeletedCount, "Nothing was deleted");
             Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).Info.Valid, Is.False, "The bypassed source should be elided");
+        }
+
+        #endregion
+
+        #region A deletion is released in place
+
+        /// <summary>
+        /// A Delete of a durable source that nothing freezes releases the source at once, in place: the delete trigger runs, the value's slot
+        /// keeps its id and gets the released placeholder, and none of the record's bytes change but its <see cref="RecordInfo"/>, which the
+        /// Delete seals; the record's expiration stays. A scan may be copying the record without a lock meanwhile.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjDeleteReleasesADurableSourceWithoutChangingItsBytesTest()
+        {
+            // An earlier record of the key keeps the source in a chain, so the Delete seals the source rather than eliding it.
+            _ = UpsertExpiring(1, 50);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            var sourceAddress = NextRecordAddress();
+            var sourceValue = UpsertExpiring(1, 100);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            Assert.That(store.hlog.IsFrozenForFlush(sourceAddress), Is.False, "Precondition: the source is durable");
+            Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).Expiration, Is.EqualTo(ObjExpiringUpsertFunctions.Expiration),
+                "Precondition: the source has an expiration");
+            var bytesBefore = BytesAfterRecordInfo(sourceAddress);
+            tracker.Reset();
+
+            using (var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete()))
+                _ = s.BasicContext.Delete(new TestObjectKey { key = 1 });
+
+            ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "The Delete must release a durable source at once");
+            var source = store.hlogBase._wrapper.CreateLogRecord(sourceAddress);
+            Assert.That(source.Info.Valid && source.Info.IsSealed, Is.True, $"Precondition: the Delete sealed the source: {source.Info}");
+            Assert.That(BytesAfterRecordInfo(sourceAddress), Is.EqualTo(bytesBefore), "The release changed the record's bytes");
+            AssertReleasedInPlace(sourceAddress);
+            AssertCollectable(sourceValue);
+        }
+
+        /// <summary>
+        /// The drain releases a deletion that a flush froze once the flush completes, and takes no lock to do so, so a scan may have copied the
+        /// record, under the key's lock, and not yet resolved the copy's object ids. The flush leaves the records' page straddling
+        /// ReadOnlyAddress, as a FoldOver checkpoint's does, and new records then allocate from the page's ObjectIdMap. The release changes none
+        /// of the record's bytes but its <see cref="RecordInfo"/>, and keeps the value's slot, holding the released placeholder: so no new record
+        /// is given the slot, and the copy's value resolves to no value rather than to a new record's. The retained slots never grow the page's
+        /// map beyond one entry per out-of-line field of its records, and hold none of the released values.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public void ObjDeletionsFrozenForFlushKeepTheirSlotsWhenTheDrainReleasesThemTest([Values] bool foldOverCheckpoint)
+        {
+            const int SourceCount = 4;
+            var sourceAddresses = new long[SourceCount];
+            var sourceValues = new WeakReference[SourceCount];
+            for (var i = 0; i < SourceCount; i++)
+            {
+                sourceAddresses[i] = NextRecordAddress();
+                sourceValues[i] = UpsertExpiring(i, i * 10);
+            }
+            var page = store.hlogBase.GetPage(sourceAddresses[0]);
+
+            // Create the session before the checkpoint, so that it takes part from PREPARE onward and sees the checkpoint in progress.
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
+
+            // Hold the flush's device write, so FlushedUntilAddress stays below the records once the flush has walked them. A FoldOver
+            // checkpoint's flush, like the read-only shift, moves ReadOnlyAddress to the tail, which is mid-page.
+            gatedLog.Gate = true;
+            if (foldOverCheckpoint)
+                Assert.That(store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver), Is.True);
+            else
+                store.hlogBase.ShiftReadOnlyAddressWithWait(store.Log.TailAddress, wait: false);
+
+            byte[][] bytesBefore;
+            SectorAlignedMemory copy = null;
+            try
+            {
+                gatedLog.WaitForPending(1, TimeSpan.FromSeconds(30));
+                tracker.Reset();
+                for (var i = 0; i < SourceCount; i++)
+                {
+                    Assert.That(store.hlog.IsFrozenForFlush(sourceAddresses[i]), Is.True, "Precondition: the flush is writing the record");
+                    _ = session.BasicContext.Delete(new TestObjectKey { key = i });
+                    Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddresses[i]).Info.DeferredDispose, Is.True, "Precondition: the deletion is marked");
+                }
+                ClassicAssert.AreEqual(0, tracker.DisposeRecordDeletedCount, "Precondition: the deletions wait for the flush");
+                bytesBefore = sourceAddresses.Select(BytesAfterRecordInfo).ToArray();
+
+                // The scan's copy of the first record, whose object ids it has not resolved yet.
+                copy = CopyRecord(sourceAddresses[0]);
+            }
+            finally
+            {
+                ReleaseGatedWrites();
+            }
+
+            try
+            {
+                Assert.That(SpinWait.SpinUntil(() => tracker.DisposeRecordDeletedCount == SourceCount, TimeSpan.FromSeconds(30)), Is.True,
+                    "The drain did not release the deletions once the flush completed");
+                if (foldOverCheckpoint)
+                    store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+
+                // New records on the same page allocate from its map.
+                var newAddresses = new long[SourceCount];
+                for (var i = 0; i < SourceCount; i++)
+                {
+                    newAddresses[i] = NextRecordAddress();
+                    UpsertObj(SourceCount + i, 100 + i);
+                }
+                Assert.That(store.hlogBase.GetPage(store.Log.TailAddress - 1), Is.EqualTo(page), "Precondition: the new records are on the deleted records' page");
+
+                Assert.That(ResolveCopiedValue(sourceAddresses[0], copy), Is.Null, "The scan's copy resolved to another record's value");
+                var sourceSlots = sourceAddresses.Select(ValueSlot).ToArray();
+                foreach (var newAddress in newAddresses)
+                    Assert.That(sourceSlots, Has.No.Member(ValueSlot(newAddress)), "A new record was given a slot that a released record holds");
+
+                for (var i = 0; i < SourceCount; i++)
+                {
+                    Assert.That(BytesAfterRecordInfo(sourceAddresses[i]), Is.EqualTo(bytesBefore[i]), $"The release of record {i} changed its bytes");
+                    AssertReleasedInPlace(sourceAddresses[i]);
+                }
+
+                var objectIdMap = store.hlogBase._wrapper.CreateLogRecord(sourceAddresses[0]).ObjectIdMap;
+                Assert.That(objectIdMap.Count, Is.EqualTo(CountOutOfLineFields(page)), "The page's map must hold one entry per out-of-line field of its records");
+                AssertCollectable(sourceValues);
+            }
+            finally
+            {
+                copy.Return();
+            }
         }
 
         #endregion
