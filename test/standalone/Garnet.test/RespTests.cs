@@ -3691,7 +3691,7 @@ namespace Garnet.test
         public void SingleRenameWithOldKeyAndNewKeyAsSame()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
+            var db = redis.GetDatabase();
             var origValue = "test1";
             var key = "key1";
             db.StringSet(key, origValue);
@@ -3919,7 +3919,7 @@ namespace Garnet.test
 
             var result = db.KeyRename(key, key, When.NotExists);
 
-            ClassicAssert.IsTrue(result);
+            ClassicAssert.IsFalse(result);
             string retValue = db.StringGet(key);
             ClassicAssert.AreEqual(origValue, retValue);
         }
@@ -3967,16 +3967,20 @@ namespace Garnet.test
         public async Task RenameValidationAsync()
         {
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            //await using var redis = await ConnectionMultiplexer.ConnectAsync("127.0.0.1:6379").ConfigureAwait(false);
             var db = redis.GetDatabase();
+
+            //db.KeyDelete("foo");
+            //db.KeyDelete("fizz");
 
             ClassicAssert.IsTrue(await db.StringSetAsync("foo", "bar").ConfigureAwait(false));
 
-            var exc0 = ClassicAssert.ThrowsAsync<RedisSerializationException>(() => db.ExecuteAsync("RENAME", "fizz", "fizz"));
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("RENAME", "fizz", "fizz"));
             ClassicAssert.AreEqual("ERR no such key", exc0.Message);
 
             ClassicAssert.IsFalse(await db.KeyRenameAsync("foo", "foo", When.NotExists).ConfigureAwait(false));
 
-            var exc1 = ClassicAssert.ThrowsAsync<RedisSerializationException>(() => db.ExecuteAsync("RENAMENX", "fizz", "foo"));
+            var exc1 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("RENAMENX", "fizz", "foo"));
             ClassicAssert.AreEqual("ERR no such key", exc1.Message);
         }
 
