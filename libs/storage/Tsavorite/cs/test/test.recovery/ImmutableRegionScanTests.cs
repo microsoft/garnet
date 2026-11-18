@@ -25,9 +25,11 @@ namespace Tsavorite.test.recovery
 
     /// <summary>
     /// A scan locks a record's key while it copies the record unless the record's page lies entirely below SafeReadOnlyAddress. At or above
-    /// SafeReadOnlyAddress an in-place update can change the record, and a page that holds SafeReadOnlyAddress shares its ObjectIdMap with mutable
-    /// records, which can reuse a released slot. On a page entirely below it, the only change is the release of a superseded record's out-of-line
-    /// fields, so the scan copies without a lock, and a field released while the record was copied resolves as nothing.
+    /// SafeReadOnlyAddress an in-place update can change a record, and a conversion (a reset for reuse, or an in-place Delete or expiration) can
+    /// free a record's out-of-line slots. On a page entirely below it, a flush's stamp does not change what a copy reports, an elision closes the
+    /// record first, and a release replaces only the value's slot with a placeholder that reads as no value. So the scan copies such a record
+    /// without a lock, retakes a copy whose record was closed while it was copied, and reports a value released while the record was copied as
+    /// nothing.
     /// </summary>
     [TestFixture]
     internal unsafe class ImmutableRegionScanTests : TestBase
@@ -42,9 +44,9 @@ namespace Tsavorite.test.recovery
         /// <summary>A record a scan reported: its address, key, whether it was invalid, and a description of its value.</summary>
         internal readonly record struct Reported(long Address, int Key, bool Invalid, string Value);
 
-        /// <summary>The out-of-line field a simulated release has freed (<c>Slot</c>), or has also set to <see cref="ObjectIdMap.InvalidObjectId"/>
+        /// <summary>The out-of-line field a simulated conversion has freed (<c>Slot</c>), or has also set to <see cref="ObjectIdMap.InvalidObjectId"/>
         /// (<c>Id</c>), before it publishes the record's inline header.</summary>
-        public enum ReleasedField
+        public enum FreedField
         {
             ObjectValueSlot,
             ObjectValueId,
@@ -203,25 +205,27 @@ namespace Tsavorite.test.recovery
         }
 
         /// <summary>
-        /// On a page entirely below SafeReadOnlyAddress a scan copies a record without a lock, so the copy can be taken while the operation that superseded
-        /// the record releases a field: after the release frees the field's slot, and possibly after it sets the field to InvalidObjectId, but before it
-        /// publishes the inline header. A released value is reported as nothing, and a record whose key was released is not reported.
+        /// A conversion frees a field's slot, then sets the field to InvalidObjectId, then publishes the record's inline header. It holds the key's
+        /// lock, which a scan that has the store takes for every record a conversion can reach, but a pull scan takes no lock and can copy the
+        /// record between those steps. Each step's state is set up here on a record the scan copies without a lock: a freed value is reported as
+        /// nothing, and a record whose key was freed is not reported. A push scan never sees these states, but runs the same remap, so it is
+        /// checked too.
         /// </summary>
         [Test]
         [Category("TsavoriteKV")]
-        public void ScanOfARecordWhoseFieldIsBeingReleasedReportsNothing([Values] ReleasedField field, [Values] bool pushScan)
+        public void ScanOfARecordWhoseFieldIsBeingFreedReportsNothing([Values] FreedField field, [Values] bool pushScan)
         {
-            var keyReleased = field is ReleasedField.OverflowKeySlot or ReleasedField.OverflowKeyId;
-            var overflowValueReleased = field is ReleasedField.OverflowValueSlot or ReleasedField.OverflowValueId;
-            CreateStore(overflowKeys: keyReleased);
+            var keyFreed = field is FreedField.OverflowKeySlot or FreedField.OverflowKeyId;
+            var overflowValueFreed = field is FreedField.OverflowValueSlot or FreedField.OverflowValueId;
+            CreateStore(overflowKeys: keyFreed);
             var objectAddress = UpsertList(1);
             var overflowAddress = UpsertOverflow(2);
             var controlAddress = UpsertList(3);
             _ = MakeImmutable();
 
-            var target = overflowValueReleased ? overflowAddress : objectAddress;
+            var target = overflowValueFreed ? overflowAddress : objectAddress;
             var record = store.hlogBase._wrapper.CreateLogRecord(target);
-            var (_, fieldAddress) = keyReleased
+            var (_, fieldAddress) = keyFreed
                 ? record.DataHeader.GetKeyFieldInfo(record.physicalAddress)
                 : record.DataHeader.GetValueFieldInfo(record.physicalAddress);
             var slotWord = *(int*)fieldAddress;
@@ -229,7 +233,7 @@ namespace Tsavorite.test.recovery
             var index = ObjectIdMap.GetIndex(slotWord);
             var component = map.objectArray.Get(index);
 
-            if (field is ReleasedField.ObjectValueSlot or ReleasedField.OverflowValueSlot or ReleasedField.OverflowKeySlot)
+            if (field is FreedField.ObjectValueSlot or FreedField.OverflowValueSlot or FreedField.OverflowKeySlot)
                 map.objectArray.Set(index, null);
             else
             {
@@ -256,52 +260,82 @@ namespace Tsavorite.test.recovery
             }
 
             List<Reported> expected = [];
-            if (!keyReleased)
-                expected.Add(new(objectAddress, 1, Invalid: false, overflowValueReleased ? "list:1" : "null"));
-            expected.Add(new(overflowAddress, 2, Invalid: false, overflowValueReleased ? "overflow:0" : $"overflow:{OverflowValueLength}"));
+            if (!keyFreed)
+                expected.Add(new(objectAddress, 1, Invalid: false, overflowValueFreed ? "list:1" : "null"));
+            expected.Add(new(overflowAddress, 2, Invalid: false, overflowValueFreed ? "overflow:0" : $"overflow:{OverflowValueLength}"));
             expected.Add(new(controlAddress, 3, Invalid: false, "list:1"));
             Assert.That(records, Is.EqualTo(expected));
         }
 
         /// <summary>
-        /// A copy taken without a lock is retaken if the record was closed or its header changed while it was copied: an elision closes the record
-        /// before it releases its value, and a flush stamps an overflow key's size hint into the header. Other changes to a record's info, such as
-        /// its snapshot marker, do not affect what the copy reports, so they do not cause a retry.
+        /// A copy taken without a lock is retaken only if the record was closed while it was copied: an elision closes the record before it releases
+        /// its value. A flush's stamp of the record's object-log position and read-size hints is not a closing, because it keeps each objectId's
+        /// index and the record's layout: a copy taken before or after the stamp, or torn across it, remaps to the record's own key and value. The
+        /// stamp here is the one a flush writes for an overflow key longer than <see cref="RecordDataHeader.kOutOfLineExactSizeCutoff"/> bytes,
+        /// the only stamp that rewrites the record's header. A change to the record's other info, such as its snapshot marker, is not a closing.
         /// </summary>
         [Test]
         [Category("TsavoriteKV")]
-        public void CopyCheckDetectsAClosingOrAHeaderPublish()
+        public void CopyCheckDetectsAClosingButNotAFlushStamp()
         {
-            CreateStore(overflowKeys: false);
+            CreateStore(overflowKeys: true);
             var address = UpsertList(1);
             _ = MakeImmutable();
 
             var record = store.hlogBase._wrapper.CreateLogRecord(address);
             var size = (int)record.AllocatedSize;
-            var copy = GC.AllocateArray<byte>(size, pinned: true);
-            var copyAddress = (long)Unsafe.AsPointer(ref copy[0]);
-            Buffer.MemoryCopy((void*)record.physicalAddress, (void*)copyAddress, size, size);
-            bool Changed() => ScanIteratorBase<ClassAllocator>.ChangedWhileCopied(record.physicalAddress, copyAddress);
+            List<byte[]> copies = [];
+            long CopyOf(long sourceAddress)
+            {
+                var copy = GC.AllocateArray<byte>(size, pinned: true);
+                copies.Add(copy);
+                var copyAddress = (long)Unsafe.AsPointer(ref copy[0]);
+                Buffer.MemoryCopy((void*)sourceAddress, (void*)copyAddress, size, size);
+                return copyAddress;
+            }
+            bool Closed(long copyAddress) => ScanIteratorBase<ClassAllocator>.ClosedWhileCopied(record.physicalAddress, copyAddress);
 
-            Assert.That(Changed(), Is.False, "An unchanged record was reported changed");
+            var beforeStamp = CopyOf(record.physicalAddress);
+            Assert.That(Closed(beforeStamp), Is.False, "An unchanged record was reported closed");
+
+            var flushed = record.GetObjectLogRecordRef();
+            var keySizeHint = ObjectLogExtent.EncodeKeyHint(RecordDataHeader.kOutOfLineExactSizeCutoff + 1, out var keyRdhLengthBits, out var keyIsExact);
+            Assert.That(keyIsExact, Is.False);
+            ObjectLogWriteResult stamp = new()
+            {
+                PositionWord = flushed.PositionWord & ~ObjectLogPositionInfo.kKeyIsExactSizeMask,
+                KeySizeHint = keySizeHint,
+                KeyRdhLengthBits = keyRdhLengthBits,
+                ValueSizeHint = flushed.ValueSizeHint,
+            };
+            record.SetObjectLogPositionAndHints(in stamp);
+            Assert.That(record.DataHeader.word, Is.Not.EqualTo(new LogRecord(beforeStamp).DataHeader.word), "The stamp did not rewrite the record's header");
+            Assert.That(Closed(beforeStamp), Is.False, "A flush's stamp was reported as a closing");
 
             record.InfoRef.HasSnapshotObjectLogReference = true;
-            Assert.That(Changed(), Is.False, "A marker change was reported as a change to what the copy holds");
+            Assert.That(Closed(beforeStamp), Is.False, "A marker change was reported as a closing");
             record.InfoRef.HasSnapshotObjectLogReference = false;
 
             record.InfoRef.SealAndInvalidate();
-            Assert.That(Changed(), Is.True, "A record closed while it was copied was not detected");
+            Assert.That(Closed(beforeStamp), Is.True, "A record closed while it was copied was not detected");
             record.InfoRef.UnsealAndValidate();
-            Assert.That(Changed(), Is.False);
+            Assert.That(Closed(beforeStamp), Is.False);
 
-            var header = record.DataHeader;
-            var published = header;
-            published.RecordType = (byte)(header.RecordType + 1);
-            record.SetDataHeader(published);
-            Assert.That(Changed(), Is.True, "A header published while the record was copied was not detected");
-            record.SetDataHeader(header);
-            Assert.That(Changed(), Is.False);
-            GC.KeepAlive(copy);
+            // A copy torn across the stamp: one header with the other's objectId slots.
+            var afterStamp = CopyOf(record.physicalAddress);
+            var stampedHeaderOnly = CopyOf(beforeStamp);
+            new LogRecord(stampedHeaderOnly).SetDataHeader(new LogRecord(afterStamp).DataHeader);
+            var stampedSlotsOnly = CopyOf(afterStamp);
+            new LogRecord(stampedSlotsOnly).SetDataHeader(new LogRecord(beforeStamp).DataHeader);
+
+            Reported expected = new(address, 1, Invalid: false, "list:1");
+            foreach (var (copyAddress, name) in new[] { (beforeStamp, "before"), (afterStamp, "after"), (stampedHeaderOnly, "stamped header"), (stampedSlotsOnly, "stamped slots") })
+            {
+                Assert.That(store.hlogBase._wrapper.TryCreateRemappedLogRecordOverPinnedTransientMemory(address, copyAddress, out var remapped), Is.True,
+                    $"The {name} copy's key was not found");
+                Assert.That(Describe(in remapped, address), Is.EqualTo(expected), $"The {name} copy remapped to another record's key or value");
+            }
+            GC.KeepAlive(copies);
         }
 
         /// <summary>
@@ -367,15 +401,16 @@ namespace Tsavorite.test.recovery
             Assert.That(scans, Is.GreaterThan(0), "No scan completed");
         }
 
-        /// <summary>A valid record has its own key and a list value, or nothing if its value was released while it was copied. An invalid record was
-        /// superseded and released; what a scan reports for it is not checked here.</summary>
+        /// <summary>A valid record has its own key and a list value, or nothing if its value was released while it was copied: a release below
+        /// ReadOnlyAddress leaves the value out of line, with a placeholder in its slot. An invalid record was superseded and released; what a scan
+        /// reports for it is not checked here.</summary>
         static void ValidateScannedRecord(Reported record, int keyCount)
         {
             if (record.Invalid)
                 return;
             if (record.Key < 0 || record.Key >= keyCount)
                 throw new AssertionException($"A scan reported key {record.Key} at {record.Address}");
-            if (!record.Value.StartsWith("list:", StringComparison.Ordinal) && record.Value != "null" && record.Value != $"inline:{ObjectIdMap.ObjectIdSize}")
+            if (!record.Value.StartsWith("list:", StringComparison.Ordinal) && record.Value != "null")
                 throw new AssertionException($"A scan reported value {record.Value} for key {record.Key} at {record.Address}");
         }
 

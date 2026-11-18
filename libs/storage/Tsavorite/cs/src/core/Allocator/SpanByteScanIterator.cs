@@ -239,7 +239,7 @@ namespace Tsavorite.core
                         {
                             // Lock the key's bucket to ensure no value tearing while copying to temp storage, but only where a record can be updated in place.
                             // - Below SafeReadOnlyAddress nothing updates a record in place, and a superseded record's release changes none of its bytes; an
-                            //   elision closes the record. So no lock is taken, and the copy is checked instead (see ChangedWhileCopied). These records have no
+                            //   elision closes the record. So no lock is taken, and the copy is checked instead (see ClosedWhileCopied). These records have no
                             //   ObjectIdMap slots, so unlike ObjectScanIterator this does not need the whole page to be below SafeReadOnlyAddress.
                             // - A Sealed and Invalid record is locked: it may be a new record whose operation has not yet CAS'd it, or one an elision is disposing.
                             // - An Invalid record that is not Sealed came from recovery, which clears the Sealed bit of every image it reads. Nothing writes it,
@@ -275,7 +275,7 @@ namespace Tsavorite.core
 
                             if (immutable)
                             {
-                                if (ChangedWhileCopied(physicalAddress, (long)remapPtr))
+                                if (ClosedWhileCopied(physicalAddress, (long)remapPtr))
                                 {
                                     nextAddress = currentAddress;
                                     continue;

@@ -239,7 +239,7 @@ namespace Tsavorite.core
                         {
                             // Lock the key's bucket to ensure no value tearing while copying to temp storage, but only where a record can be updated in place.
                             // - On a page entirely below SafeReadOnlyAddress nothing updates a record in place. A superseded record's release changes only its
-                            //   value's slot, and an elision closes the record first, so no lock is taken, and the copy is checked instead (see ChangedWhileCopied).
+                            //   value's slot, and an elision closes the record first, so no lock is taken, and the copy is checked instead (see ClosedWhileCopied).
                             // - On any other page a record is locked, so that an in-place update of a mutable record does not tear the copy. A record below
                             //   SafeReadOnlyAddress there is locked too, because the test is per page, although nothing frees its slots: a release below
                             //   ReadOnlyAddress changes only the value's slot, so none of its slots is reallocated to the page's mutable records before this
@@ -278,7 +278,7 @@ namespace Tsavorite.core
 
                             if (immutable)
                             {
-                                if (ChangedWhileCopied(physicalAddress, (long)remapPtr))
+                                if (ClosedWhileCopied(physicalAddress, (long)remapPtr))
                                 {
                                     nextAddress = currentAddress;
                                     continue;

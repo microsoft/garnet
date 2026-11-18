@@ -130,22 +130,24 @@ namespace Tsavorite.core
         /// <summary>Remaps the object Ids to the transient map.</summary>
         /// <remarks>
         /// <para>This is ONLY to be done for transient log records, not records on the main log.</para>
-        /// <para>A scan copies a record on a page entirely below SafeReadOnlyAddress without a lock, so the copy can be taken while the operation that
-        /// superseded the record, or the deferred-disposal drain, releases its out-of-line fields. A release takes one of two forms:</para>
+        /// <para>A scan may copy a record while its out-of-line fields are being released: a scan copies a record on a page entirely below
+        /// SafeReadOnlyAddress without a lock, and a pull scan (<c>LogAccessor.Scan</c>) never locks. What the copy's ids resolve to depends on
+        /// how the fields are released:</para>
         /// <list type="bullet">
-        /// <item>A CopyUpdate's release of its source, the disposal of a deleted record, and an elision below the revivifiable range change none
-        /// of the record's bytes, and an elided record keeps its key. The value's slot keeps its id and gets a placeholder
+        /// <item>A release (a CopyUpdate's release of its source, the disposal of a deleted record, an elision below the revivifiable range)
+        /// changes none of the record's bytes, and an elided record keeps its key. The value's slot keeps its id and gets a placeholder
         /// (<see cref="SupersededObjectValue"/>), which <see cref="ValueObject"/> reads as null, or an overflow sentinel, which reads as an
-        /// empty value. The slot is not freed, so no other record is given it while the page is resident.</item>
-        /// <item>The reset of a sealed and invalidated record for reuse (a free-listing, or an abandoned insert) frees each field's slot, then
-        /// writes <see cref="ObjectIdMap.InvalidObjectId"/> into the field, then publishes an inline header. A value released this way resolves
-        /// to nothing: a null value object, or an empty overflow value. A released overflow key cannot be reported, so the remap fails.</item>
+        /// empty value. The slot is not freed while the page is resident, so the copy's ids resolve to this record's components or
+        /// placeholders.</item>
+        /// <item>A conversion (a reset for reuse, such as a free-listing or an abandoned insert, or an in-place Delete or expiration) frees each
+        /// field's slot, then writes <see cref="ObjectIdMap.InvalidObjectId"/> into the field, then publishes an inline header. It holds the key's
+        /// lock, and it reaches only records at or above ReadOnlyAddress and new records its operation has not inserted, none of which can be on a
+        /// page entirely below SafeReadOnlyAddress before the operation ends. A scan that has the store locks the key of a valid or sealed record
+        /// on any other page for the copy, so only a pull scan can copy a record while it is converted. Then a field whose id is
+        /// <see cref="ObjectIdMap.InvalidObjectId"/>, or whose slot no longer holds a component of the field's kind, resolves to nothing: a null
+        /// value object, or an empty overflow value; and a freed overflow key cannot be reported, so the remap fails. A freed slot that another
+        /// record has been given resolves to that record's component, as an in-place update can tear a mutable record under a pull scan.</item>
         /// </list>
-        /// <para>A slot that still holds a component holds this record's when the record's page lies entirely below SafeReadOnlyAddress: nothing
-        /// allocates on that page's map, so a freed slot is not reused while the page is resident. On any other page, a scan that has the store
-        /// locks the record's key for the copy, so no release made under that lock (by a CopyUpdate, a Delete or an elision) is in progress, and
-        /// the drain, which takes no lock, frees no slot; a scan without the store (the pull iterator of <c>LogAccessor.Scan</c>) does not lock
-        /// anywhere.</para>
         /// </remarks>
         /// <returns>False if the overflow key had been released; no transient slot is allocated then.</returns>
         public readonly bool TryRemapOverPinnedTransientMemory(ObjectIdMap allocatorMap, ObjectIdMap transientMap)

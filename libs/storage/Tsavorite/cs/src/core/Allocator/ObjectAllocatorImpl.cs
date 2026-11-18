@@ -517,6 +517,11 @@ namespace Tsavorite.core
         /// allocated until the page is evicted, or until an exclusive reset that reuses the record frees it. That costs nothing on a page that
         /// no longer allocates, which is where almost every terminal release happens, and never grows a page's map beyond one entry per
         /// out-of-line field of its records.</para>
+        /// <para>Debug builds check that the release writes none of the record's bytes after its <see cref="RecordInfo"/>. The check begins after
+        /// the trigger, which is the application's code. Nothing else writes those bytes meanwhile, provided the trigger does not refresh the epoch:
+        /// a flush stamps only a record it is walking, the callers release only records that no flush is walking, and no operation writes a record
+        /// that is superseded, deleted or elided. A trigger that refreshes the epoch, as <see cref="LightEpoch.BumpCurrentEpoch(Action)"/> does, can
+        /// let a flush begin on the record, and the check could then report the flush's stamp.</para>
         /// </remarks>
         internal void ReleaseInPlace(ref LogRecord logRecord, DisposeReason disposeReason)
         {
@@ -526,12 +531,20 @@ namespace Tsavorite.core
 
             CreditDisposedHeap(ref logRecord, disposeReason);
             storeFunctions.OnDispose(ref logRecord, disposeReason);
+#if DEBUG
+            var bytesBefore = new ReadOnlySpan<byte>((byte*)logRecord.physicalAddress + RecordInfo.Size, logRecord.AllocatedSize - RecordInfo.Size).ToArray();
+#endif
 
             var dataHeader = logRecord.DataHeader;
             if (dataHeader.ValueIsObject)
                 _ = logRecord.ExchangeValueObjectSlot(SupersededObjectValue.Released);
             else if (dataHeader.ValueIsOverflow)
                 _ = logRecord.ExchangeValueOverflowSlot(OverflowByteArray.Released);
+
+#if DEBUG
+            Debug.Assert(new ReadOnlySpan<byte>((byte*)logRecord.physicalAddress + RecordInfo.Size, bytesBefore.Length).SequenceEqual(bytesBefore),
+                $"A terminal release ({disposeReason}) changed the record's bytes: {logRecord}");
+#endif
         }
 
         /// <summary>
@@ -1214,6 +1227,8 @@ namespace Tsavorite.core
         /// or already published by a ReadOnly flush, or the checkpoint has stopped capturing. A flush that reads the slot after this writes an
         /// empty value, which nothing recovers. The whole array is credited; a sentinel counts as no heap.</item>
         /// </list>
+        /// <para>Unlike <see cref="ReleaseInPlace"/>, this has no Debug check that the record's bytes are unchanged: a flush may be walking the
+        /// source, and its stamp would trip the check.</para>
         /// </remarks>
         internal void ReleaseCopyUpdatedSourceInPlace(ref LogRecord source, SnapshotObjectLogState capturingSnapshot)
         {

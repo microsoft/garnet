@@ -67,29 +67,28 @@ namespace Tsavorite.core
         protected readonly bool includeClosedRecords;
 
         /// <summary>
-        /// Whether a record the iterator copied without a lock changed while it was copied.
+        /// Whether a record the iterator copied without a lock was closed while it was copied.
         /// </summary>
         /// <remarks>
         /// <para>The iterators copy without a lock where nothing updates a record in place: below SafeReadOnlyAddress, and for records with
         /// ObjectIdMap slots only on a page entirely below it (see <see cref="LogRecord.TryRemapOverPinnedTransientMemory"/>). A release there
-        /// changes only the value's slot, to a placeholder that reads as no value, so it needs no retry: a CopyUpdate's release of its source, the
-        /// disposal of a deleted record, by its Delete or expiration or by the deferred-disposal drain, and an elision, which first seals and
-        /// invalidates the record, so the record is closed before its value is released. A header there changes only when a flush stamps an
-        /// overflow key's size hint, which does not change what the copy reports.</para>
-        /// <para>So a copy whose closed state differs from the record's afterward straddled an elision, and it is taken again, as is one whose
-        /// header differs, which straddled a flush's stamp. A record changes only a few times, so the retries end.</para>
+        /// changes none of the record's bytes, only its value's slot, to a placeholder that reads as no value: a CopyUpdate's release of its
+        /// source, the disposal of a deleted record, by its Delete or expiration or by the deferred-disposal drain, and an elision, which first
+        /// seals and invalidates the record. The record's other bytes change there only when a flush stamps its object-log position and read-size
+        /// hints, which keep each objectId's index and the record's layout, so they do not change what the copy reports.</para>
+        /// <para>So only the record's closed state is compared: a copy whose closed state differs from the record's afterward straddled an
+        /// elision, and it is taken again. A record closes only a few times, so the retries end.</para>
         /// </remarks>
         /// <param name="physicalAddress">The record in the log</param>
         /// <param name="copyAddress">The copy of the record</param>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        internal static unsafe bool ChangedWhileCopied(long physicalAddress, long copyAddress)
+        internal static unsafe bool ClosedWhileCopied(long physicalAddress, long copyAddress)
         {
             // Order the copy's reads before these; a weakly ordered processor could otherwise satisfy some of them later.
             Interlocked.MemoryBarrier();
             var liveInfo = LogRecord.GetInfo(physicalAddress);
             var copyInfo = LogRecord.GetInfo(copyAddress);
-            return liveInfo.Valid != copyInfo.Valid || liveInfo.IsSealed != copyInfo.IsSealed
-                || new LogRecord(physicalAddress).DataHeader.word != new LogRecord(copyAddress).DataHeader.word;
+            return liveInfo.Valid != copyInfo.Valid || liveInfo.IsSealed != copyInfo.IsSealed;
         }
 
         /// <summary>
