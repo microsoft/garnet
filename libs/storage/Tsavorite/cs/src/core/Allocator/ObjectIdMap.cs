@@ -131,7 +131,11 @@ namespace Tsavorite.core
             return id;
         }
 
-        /// <summary>Free a slot for reuse by another record on this page (e.g. when sending a record to the revivification freelist, on a failed CAS, on record disposal, etc.).
+        /// <summary>Free a slot for reuse by another record on this page, in an exclusive reset: when sending a record to the revivification free
+        /// list, on a failed CAS or an abandoned insert, or when an in-place Delete or expiration converts a mutable record. A terminal release of a
+        /// superseded, deleted or elided record does not free its value's slot; it points the slot at a placeholder, so that no other record is given
+        /// the slot while a reader may still resolve the record's id. See "Releasing a record's out-of-line value" in
+        /// website/docs/dev/tsavorite/object-allocator.md.
         /// The slot is cleared so its previous occupant (byte[] overflow or IHeapObject) becomes unreachable via the map and eligible for GC. If the application needs
         /// to run <see cref="IDisposable.Dispose"/> on an IHeapObject (e.g. to release external resources), it should do so in <see cref="IRecordTriggers.OnDispose"/>
         /// before the containing record is cleared.</summary>

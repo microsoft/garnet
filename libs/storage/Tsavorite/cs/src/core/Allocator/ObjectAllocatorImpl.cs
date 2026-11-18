@@ -516,7 +516,7 @@ namespace Tsavorite.core
         /// A freed slot could be given to another record on the page while a reader still resolves this record's id to it. The slot stays
         /// allocated until the page is evicted, or until an exclusive reset that reuses the record frees it. That costs nothing on a page that
         /// no longer allocates, which is where almost every terminal release happens, and never grows a page's map beyond one entry per
-        /// out-of-line field of its records.</para>
+        /// out-of-line field of its records. See "Releasing a record's out-of-line value" in website/docs/dev/tsavorite/object-allocator.md.</para>
         /// <para>Debug builds check that the release writes none of the record's bytes after its <see cref="RecordInfo"/>. The check begins after
         /// the trigger, which is the application's code. Nothing else writes those bytes meanwhile, provided the trigger does not refresh the epoch:
         /// a flush stamps only a record it is walking, the callers release only records that no flush is walking, and no operation writes a record

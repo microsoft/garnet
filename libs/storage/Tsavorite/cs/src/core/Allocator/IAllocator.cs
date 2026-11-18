@@ -120,7 +120,9 @@ namespace Tsavorite.core
         /// <summary>Return the <see cref="ObjectIdMap"/> for a specific page number (not index)</summary>
         ObjectIdMap GetPageObjectIdMap(int pageNumber);
 
-        /// <summary>Dispose an in-memory log record</summary>
+        /// <summary>Dispose an in-memory log record by an exclusive reset: credit the size tracker, run the application's dispose trigger, free the
+        /// slots of its out-of-line fields (keeping a deleted record's key) and convert them to inline, and clear its optionals. Only for a record
+        /// nothing else can read; a record that a scan, a flush or the drain may still read is released with <see cref="ReleaseInPlace"/>.</summary>
         void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason);
 
         /// <summary>

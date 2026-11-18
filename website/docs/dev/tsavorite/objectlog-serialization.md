@@ -612,9 +612,12 @@ For each record:
 - A fully inline record has nothing to write.
 - In a ReadOnly or Snapshot flush, `LogRecord.TryGetOutOfLineComponents` first takes the overflow key and the
   overflow value or object, rooting them, and reports a slot that a concurrent operation has already freed rather than
-  throwing. The flush then re-reads the live `RecordInfo`. Elision invalidates a record before it frees the record's
-  heap, so a flush that lost the record's heap finds an Invalid record, which it skips as if it had been Invalid from
-  the start. Otherwise the flush publishes the record according to what its value slot holds (sections 9.1 and 13.4):
+  throwing. The flush then re-reads the live `RecordInfo`. A Valid record never loses a component while a flush walks
+  it: a release points the value's slot at a placeholder rather than freeing it, and the paths that free slots, a reset
+  for reuse and an in-place Delete or expiration, reach only a record that is invalidated first or that no flush is
+  walking (see [Releasing a record's out-of-line value](object-allocator.md#releasing-a-records-out-of-line-value)). So
+  a flush that lost the record's heap finds an Invalid record, which it skips as if it had been Invalid from the start.
+  Otherwise the flush publishes the record according to what its value slot holds (sections 9.1 and 13.4):
   - An object: the flush claims it, which waits out a Snapshot capture or a serializer that holds the claim, writes the
     components with `WriteRecordObjects(keyOverflow, valueOverflow, valueIsObject, valueObject)`, stamps the record, and
     leaves the object's phase naming the flush that published it: `READONLY_STAMPED`, or `SNAPSHOT_STAMPED` with the
@@ -750,11 +753,13 @@ only while no flush of that checkpoint has published the record (section 13.4).
 
 The no-copy path also requires `OnDispose` not to tear down flush-critical bytes before the asynchronous page write
 finishes. `OnDispose` implementations must copy off cleanup state and defer clearing those bytes until that write
-finishes. A deleted record in a flush's frozen range (`IsFrozenForFlush`) keeps its heap and metadata until
-`FlushedUntilAddress` passes it: its disposal is marked `DeferredDispose` and run by the drain on flush completion, the
-drain at the end of a hold, or eviction. A CopyUpdate's release of its source does not wait:
-`ReleaseCopyUpdatedSourceInPlace` points the value's `ObjectIdMap` slot at a placeholder (`SupersededObjectValue`) or a
-sentinel (`OverflowByteArray.Released`), which changes no byte of the image (section 13.3).
+finishes. Tsavorite's own releases of a resident record change no byte of the image: they point the value's
+`ObjectIdMap` slot at a placeholder (`SupersededObjectValue`) or a sentinel (`OverflowByteArray.Released`) (see
+[Releasing a record's out-of-line value](object-allocator.md#releasing-a-records-out-of-line-value)). A CopyUpdate's
+release of its source does not wait (`ReleaseCopyUpdatedSourceInPlace`, section 13.3). A deleted record in a flush's
+frozen range (`IsFrozenForFlush`) keeps its value until `FlushedUntilAddress` passes it, so that the flush writes the
+value and the delete trigger runs after the OnFlush trigger: its disposal is marked `DeferredDispose` and run by the
+drain on flush completion, the drain at the end of a hold, or eviction.
 
 The write covers whole sectors, `[RoundDown(start, sectorSize), RoundUp(end, sectorSize))`. A flush that writes the page
 header, because its range includes the page's first record or it is an up-conversion, starts at the page's offset 0.
@@ -770,7 +775,7 @@ that lies entirely below `BeginAddress` comes from the live page: nothing reads 
 because the flush of a range below `BeginAddress` is skipped. The rest of the span is written directly from the live
 page. `AllocatorBase` holds this mechanism (`partialSectorImages`, `TryGetDurableSectorPrefix`,
 `RecordPartialSectorImage`), and `SpanByteAllocator`'s ReadOnly flushes use it too, since superseding a record there
-elides it or clears its optional fields in the live page.
+may elide it in the live page.
 
 Devices do not order overlapping writes, and the object allocator issues adjacent fragments without the `PendingFlush`
 chaining `AllocatorBase` uses for the same reason. So a ReadOnly flush starting mid-sector issues its writes only once
@@ -1486,8 +1491,9 @@ are the addresses section 13.1 defines.
       - overflow value -> the slot gets `OverflowByteArray.Released`, and the array's heap is credited
       - the record's bytes do not change, so a flush that is writing its page needs no wait
   - `PostCopyUpdater` returned `ExpireAndStop` -> the new record becomes a tombstone, and `ReleaseSupersededSource(...,
-    deleted: true, capturingSnapshot)` disposes an in-memory source, or marks the disposal to run later while a flush or
-    the checkpoint may still read the source; `WrongType` -> the source's value is kept
+    deleted: true, capturingSnapshot)` disposes an in-memory source with `ReleaseInPlace(Deleted)`, which runs the delete
+    trigger and points the value's slot at a placeholder, or marks the disposal to run later while a flush or the
+    checkpoint may still read the source; `WrongType` -> the source's value is kept
 - `SnapshotCheckpointSMTask.GlobalBeforeEnteringState(PERSISTENCE_CALLBACK)`, after sampling `M`
   - `ObjectLog_OnSnapshotReferencesEnd()`: `L = M`; `captures.CloseAndDrain()` stops admission, waits for the captures
     in flight, and disposes the writers they kept; a recorded failure -> throw; `L = min(LowestMainLogAddress, M)`
@@ -2185,16 +2191,18 @@ gets the shared released placeholder. Nothing reads `O`'s content again: `O` is 
   null value does. The placeholder never reaches the store's value serializer.
 - Recovery stamps the main-log image of a captured `R` with the position of the capture's copy (section 13.7), which
   needs `R` to still be an object record.
-- The slot is not freed, so no other record takes it while a flush may still look it up.
+- The slot is not freed, so no other record takes it while a flush may still look it up (see
+  [Retained slots](object-allocator.md#retained-slots)).
 
 So such a release never waits for a flush or a checkpoint, on a real main-log device or a `NullDevice`. A reader of
 a superseded record, such as a scan that includes closed records, finds no value object: `LogRecord.ValueObject` reads a
 placeholder as null.
 
 **When `PostCopyUpdater` expires the key** (`RMWAction.ExpireAndStop`), the new record becomes a tombstone and `R` is
-released as deleted. That disposal changes `R`'s bytes, so it is deferred while a ReadOnly flush may write `R`, and, for
-a captured `R` or one the checkpoint still needs, until `FlushedUntilAddress` passes `R`, or until the checkpoint ends
-on a `NullDevice` main log; meanwhile `R` keeps `O`, which is already superseded. When `PostCopyUpdater` fails with
+released as deleted. That disposal changes none of `R`'s bytes either, but it runs the delete trigger and drops the
+value, so it is deferred while a ReadOnly flush may write `R`, and, for a captured `R` or one the checkpoint still
+needs, until `FlushedUntilAddress` passes `R`, or until the checkpoint ends on a `NullDevice` main log; meanwhile `R`
+keeps `O`, which is already superseded. When `PostCopyUpdater` fails with
 `RMWAction.WrongType`, `R`'s value is not released.
 
 **Captures apply to `HeapObjectBase` values while the checkpoint's object log is published**

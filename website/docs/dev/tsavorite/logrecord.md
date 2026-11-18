@@ -175,15 +175,15 @@ For Compaction or other operations that must carry an in-memory record's data th
 `ObjectScanIterator` must copy in-memory source records for Pull iterations, so it implements `ISourceLogRecord` by delegating to a `DiskLogRecord` that is instantiated over its copy buffer. The copy's object Ids are remapped to the transient `ObjectIdMap`. How a copy is kept consistent depends on where the record is:
 
 - **On a page that is not entirely below `SafeReadOnlyAddress`**, a scan that has the store locks the key's bucket for the copy.
-  - At or above `SafeReadOnlyAddress`, an in-place update can change the record.
-  - Below it on the page that holds it, nothing updates the record in place, but the page's `ObjectIdMap` also serves the page's mutable records. A slot that an unlocked copy's record released could be reallocated to one of them before the copy's slots are resolved.
+  - At or above `SafeReadOnlyAddress`, an in-place update can change the record, and an exclusive reset (a reset for reuse, or an in-place Delete or expiration) can free its slots, write `InvalidObjectId` into its fields and publish an inline header. Both hold the key's lock.
+  - Below it on the page that holds it, nothing updates the record in place or frees its slots, but the test is per page, so the record is locked too.
   - A Sealed and Invalid record is locked too: it may be a new record whose operation has not yet CAS'd it, or one an elision is disposing.
   - An Invalid record that is not Sealed came from recovery, which clears the Sealed bit of every image it reads. Nothing writes it, and its key may be empty, so it is not locked.
-- **On a page entirely below `SafeReadOnlyAddress`**, nothing updates a record in place, so no lock is taken. An operation that supersedes the record, or the deferred-disposal drain, can still release its fields while it is copied. Each release frees the field's slot, then sets the field to `InvalidObjectId`, then publishes an inline header; an elision first seals and invalidates the record.
-  - A copy is taken again if the record was closed, or its header was published, while it was copied. A scan that excludes closed records skips a record closed by then.
-  - A field whose slot had already been released resolves as nothing: a null value object, or an empty overflow value. A record whose overflow key had been released is skipped, because it cannot be reported.
-  - A slot that still holds a component holds this record's, because nothing allocates on such a page's map.
-- **A scan without the store** (the pull iterator of `LogAccessor.Scan`) does not lock anywhere.
+- **On a page entirely below `SafeReadOnlyAddress`**, nothing updates a record in place, so no lock is taken. An operation that supersedes the record, or the deferred-disposal drain, can still release its value while it is copied, and a flush can stamp it. Neither changes what the copy reports: a release changes none of the record's bytes, and points the value's slot at a placeholder without freeing it (see [Releasing a record's out-of-line value](object-allocator.md#releasing-a-records-out-of-line-value)); a flush's stamp keeps the record's layout and each objectId's index. An elision first seals and invalidates the record.
+  - A copy is taken again if the record was closed while it was copied (`ClosedWhileCopied`). A scan that excludes closed records skips a record closed by then.
+  - A value released before or while the record was copied resolves as nothing: the placeholder reads as a null value object, or an empty overflow value.
+  - Every slot holds this record's component or a placeholder: no slot on such a page is freed while the page is resident, and nothing allocates on its map.
+- **A scan without the store** (the pull iterator of `LogAccessor.Scan`) does not lock anywhere, so it can also copy a record while an exclusive reset changes it: after the reset frees a field's slot, and possibly after it sets the field to `InvalidObjectId`, but before it publishes the inline header. Such a field resolves as nothing; a record whose overflow key was freed is skipped, because it cannot be reported; and a freed slot that another record has been given resolves to that record's component, as an in-place update can tear a mutable record under a pull scan.
 
 `SpanByteScanIterator` follows the same rules, except that its records have no `ObjectIdMap` slots, so it copies any record below `SafeReadOnlyAddress` without a lock.
 

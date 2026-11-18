@@ -540,13 +540,13 @@ PREPARE ──► IN_PROGRESS ──► WAIT_INDEX_CHECKPOINT ──► WAIT_FLU
 
 Throughout that span, ordinary `(v+1)` traffic — `Delete`, and RMW that finds an
 expired source — supersedes `(v)` records and would, in the absence of a guard,
-immediately dispose them. Disposal is destructive: it runs
-`LogField.ClearObjectIdAndConvertToInline`, which calls `objectIdMap.Free` and
-flips the field to inline **in the live record**. The Snapshot flush reads the
-live record too: after the disposal it finds an inline field in place of the
-`(v)` value, and a flush that read the object id just before resolves it against
-the **live** map, where another record may already have reused the slot. Either
-way the checkpoint loses the `(v)` value or serializes an unrelated object.
+immediately dispose them. Disposal changes none of the record's bytes (see
+[Releasing a record's out-of-line value](object-allocator.md#releasing-a-records-out-of-line-value)),
+but it drops the value: it runs the application's delete trigger, which may remove
+external state the `(v)` image depends on, and points the value's `ObjectIdMap`
+slot at a placeholder **in the live map**. The Snapshot flush reads the live
+record and map, so a flush that reads the slot after the disposal writes no value
+for the record, and the checkpoint loses the `(v)` value.
 
 `IsFrozen` exists for exactly this window. `ReleaseSupersededSource`, which every operation that supersedes an in-memory
 record calls after its last callback, defers the release while the record is frozen:
@@ -564,15 +564,18 @@ Note that this is a *different* hazard from the one that preserving the supersed
 object's `(v)` content solves (see
 [Persisting superseded `(v)` values during a checkpoint](objectlog-serialization.md#13-persisting-superseded-v-values-during-a-checkpoint)).
 That preserves the `(v)` **content** when a `(v+1)` record shares the object
-through a shallow clone; it says nothing about the **slot**. Both are needed.
+through a shallow clone; it says nothing about a deletion, which drops the
+**value** itself. Both are needed.
 
 ### The same shape, without a checkpoint
 
 No-copy flushing introduces a second, structurally identical window that has
 nothing to do with the state machine at all. The object allocator's read-only
 flush serializes directly from the live page, so between the moment a record
-becomes immutable and the moment its bytes are durable, it is just as
-unsafe to dispose:
+becomes immutable and the moment its bytes are durable, the flush is reading it:
+an elision would invalidate it, and a disposal would drop the value the flush
+writes and run the delete trigger before the flush's OnFlush trigger and
+read-only observer:
 
 ```
 FlushedUntilAddress <= A < ReadOnlyAddress       → IsFrozenForFlush(A)
@@ -603,9 +606,10 @@ the image the previous flush kept, or from the device, never from the live page.
 A FoldOver checkpoint recovers those records from the main log, so they can be
 elided or released in memory without changing the checkpoint's image.
 
-Every release of a superseded source that changes its record honors it: elision
-is declined, and `ReleaseSupersededSource` defers a Delete's or an expiration's
-disposal. An operation chooses to elide its source before it allocates its new
+Elision honors it, and so does a deletion's disposal, although that changes
+none of the record's bytes: elision is declined, and `ReleaseSupersededSource`
+defers a Delete's or an expiration's disposal, so the flush writes the value and
+the delete trigger runs after the OnFlush trigger. An operation chooses to elide its source before it allocates its new
 record, and a freeze can begin after that choice, so it checks again after the
 compare-and-swap that inserts the new record (`DetachBypassedSource`). A source
 frozen by then, or whose disposal was deferred, is sealed rather than elided: the
@@ -613,9 +617,9 @@ new record already bypasses it, and an invalid record's mark would never run,
 because the drain and eviction skip invalid records. An expiration that elides its
 source in place, with no new record, checks the freeze again before it disposes
 the source, and adds a tombstone record instead if the source is frozen.
-A CopyUpdate's release of its source's value does not wait: it points
-the value's `ObjectIdMap` slot at a placeholder, which changes none of the
-record's bytes, and a flush writes a placeholder as a null value.
+A CopyUpdate's release of its source's value does not wait: its new record
+holds the key's value, no trigger runs, and a flush writes the placeholder the
+release leaves as a null value.
 
 The freeze protects a superseded source's record *image*. Outside a checkpoint,
 nothing needs the source's pre-update *content*. The CopyUpdate's new record is
@@ -724,10 +728,10 @@ that writes that sector from the image the first one kept, and
 does the same for the first flush after recovery.
 
 `SpanByteAllocator` reports nothing as frozen for flush, but its ReadOnly flushes
-take the same partial-sector image, so eliding a record in that sector, or a
-Delete's `ClearOptionals` there, does not change a completed FoldOver's image
-either. `InlineFlushBoundarySectorRecoveryTests` covers both, including the first
-flush after recovery.
+take the same partial-sector image, so eliding a record in that sector does not
+change a completed FoldOver's image either; a Delete's disposal there changes none
+of the record's bytes. `InlineFlushBoundarySectorRecoveryTests` covers both,
+including the first flush after recovery.
 
 ## Rules for state-machine task code
 
