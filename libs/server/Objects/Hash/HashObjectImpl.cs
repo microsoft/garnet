@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
+using System.Buffers.Text;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
@@ -411,7 +413,23 @@ namespace Garnet.server
 
             if (!exists || IsExpired(key))
             {
-                hashValueRef = incrSlice.ToArray();
+                // Exponent format can't be stored, so normalize it
+                if (incrSlice.ReadOnlySpan.ContainsAny((byte)'e', (byte)'E'))
+                {
+                    Span<byte> scratchSpace = stackalloc byte[30];
+
+                    if (!Utf8Formatter.TryFormat(incr, scratchSpace, out var written, new StandardFormat('R')))
+                    {
+                        throw new GarnetException("Could not format float point value");
+                    }
+
+                    hashValueRef = scratchSpace[..written].ToArray();
+                }
+                else
+                {
+                    hashValueRef = incrSlice.ToArray();
+                }
+
                 UpdateSize(key, hashValueRef, add: true);
             }
             else
