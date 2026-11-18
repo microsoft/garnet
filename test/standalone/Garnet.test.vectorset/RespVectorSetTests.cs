@@ -70,8 +70,18 @@ namespace Garnet.test
             ReadOnlySpan<RespCommand> vectorSetCommands = [RespCommand.VADD, RespCommand.VCARD, RespCommand.VDIM, RespCommand.VEMB, RespCommand.VGETATTR, RespCommand.VINFO, RespCommand.VISMEMBER, RespCommand.VLINKS, RespCommand.VRANDMEMBER, RespCommand.VREM, RespCommand.VSETATTR, RespCommand.VSIM, RespCommand.XVCREATE, RespCommand.XVIMPORT];
             foreach (var cmd in vectorSetCommands)
             {
+                var cmdStr = cmd.ToString();
+                object[] args =
+                    cmd switch
+                    {
+                        RespCommand.VCARD or RespCommand.VDIM or RespCommand.VINFO => ["foo"],
+                        RespCommand.VGETATTR or RespCommand.VISMEMBER or RespCommand.VREM => ["foo", "bar"],
+                        RespCommand.VSETATTR => ["foo", "bar", "fizz"],
+                        _ => [],
+                    };
+
                 // Should all fault before any validation
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(cmd.ToString()));
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(cmdStr, args));
                 ClassicAssert.AreEqual("ERR Vector Set (preview) commands are not enabled", exc.Message);
             }
         }
@@ -2302,6 +2312,24 @@ namespace Garnet.test
 
             var res2 = db.KeyExists("foo");
             ClassicAssert.IsFalse(res2);
+        }
+
+        [Test]
+        public void TouchVectorSet()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", "vectors", "VALUES", 3, 1, 2, 3, "member", "NOQUANT"));
+            ClassicAssert.IsTrue(db.KeyExpire("vectors", TimeSpan.FromMinutes(5)));
+            var expiration = (long)db.Execute("PEXPIRETIME", "vectors");
+
+            ClassicAssert.IsTrue(db.KeyTouch("vectors"));
+            ClassicAssert.AreEqual(2, db.KeyTouch(["vectors", "missing", "vectors"]));
+            ClassicAssert.AreEqual(expiration, (long)db.Execute("PEXPIRETIME", "vectors"));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VCARD", "vectors"));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VISMEMBER", "vectors", "member"));
+            ClassicAssert.IsFalse(db.KeyExists("missing"));
         }
 
         [Test]

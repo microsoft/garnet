@@ -114,11 +114,15 @@ namespace Garnet.server
 
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
+                case RespCommand.SETIFNE:
+                case RespCommand.SETIFDNE:
                     fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                     fieldInfo.HasExpiration = input.arg1 != 0;
                     return fieldInfo;
 
                 case RespCommand.SETKEEPTTL:
+                case RespCommand.SETKEEPTTLIFNE:
+                case RespCommand.SETKEEPTTLIFDNE:
                     // Copy input to value; do not change expiration
                     fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                     return fieldInfo;
@@ -287,6 +291,10 @@ namespace Garnet.server
 
                     case RespCommand.SETKEEPTTLXX:
                     case RespCommand.SETKEEPTTL:
+                    case RespCommand.SETKEEPTTLIFEQ:
+                    case RespCommand.SETKEEPTTLIFNE:
+                    case RespCommand.SETKEEPTTLIFDEQ:
+                    case RespCommand.SETKEEPTTLIFDNE:
                         fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                         fieldInfo.HasExpiration = srcLogRecord.DataHeader.HasExpiration;
                         return fieldInfo;
@@ -294,6 +302,10 @@ namespace Garnet.server
                     case RespCommand.SET:
                     case RespCommand.SETEXXX:
                     case RespCommand.SETEXNX:
+                    case RespCommand.SETIFEQ:
+                    case RespCommand.SETIFNE:
+                    case RespCommand.SETIFDEQ:
+                    case RespCommand.SETIFDNE:
                         fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                         fieldInfo.HasExpiration = input.arg1 != 0;
                         return fieldInfo;
@@ -340,6 +352,8 @@ namespace Garnet.server
 
                     case RespCommand.GETDEL:
                     case RespCommand.DELIFGREATER:
+                    case RespCommand.DELIFEQ:
+                    case RespCommand.DELEX:
                         // Min allocation (only metadata) needed since this is going to be used for tombstoning anyway.
                         return fieldInfo;
 

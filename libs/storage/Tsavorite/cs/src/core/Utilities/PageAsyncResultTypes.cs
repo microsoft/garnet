@@ -90,8 +90,9 @@ namespace Tsavorite.core
         /// includes FoldOver checkpoints</summary>
         ReadOnly = 0,
 
-        /// <summary>The flush is for <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AsyncFlushPagesForRecovery"/>, so the object log files have
-        /// already been written; we must reuse the deserialized object lengths to update the LogRecord's ObjectLogPosition rather than serialize again.</summary>
+        /// <summary>The flush is for <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AsyncFlushPagesForRecovery"/>, so objects are not serialized again:
+        /// records read from the main log keep their object-log positions, as their objects are already in the main object log, and records read from the
+        /// snapshot file have their objects copied from the snapshot object log to the main object log, and are repointed there.</summary>
         Recovery,
 
         /// <summary>The flush is for <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AsyncFlushPagesForSnapshot"/>, so we do not hold the epoch

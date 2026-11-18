@@ -3494,6 +3494,26 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase(2, Description = "RESP2 output")]
+        [TestCase(3, Description = "RESP3 output")]
+        public async Task ZMPopInfiniteScoresRespOutput(byte respVersion)
+        {
+            using var c = TestUtils.GetGarnetClientSession(raw: true);
+            c.Connect();
+
+            var response = await c.ExecuteAsync("HELLO", respVersion.ToString()).ConfigureAwait(false);
+
+            response = await c.ExecuteAsync("ZADD", "z", "-inf", "a", "1.5", "b", "+inf", "c").ConfigureAwait(false);
+            ClassicAssert.AreEqual(":3\r\n", response);
+
+            var expectedResponse = (respVersion >= 3) ?
+                        "*2\r\n$1\r\nz\r\n*3\r\n*2\r\n$1\r\na\r\n,-inf\r\n*2\r\n$1\r\nb\r\n,1.5\r\n*2\r\n$1\r\nc\r\n,inf\r\n" :
+                        "*2\r\n$1\r\nz\r\n*3\r\n*2\r\n$1\r\na\r\n$4\r\n-inf\r\n*2\r\n$1\r\nb\r\n$3\r\n1.5\r\n*2\r\n$1\r\nc\r\n$3\r\ninf\r\n";
+            response = await c.ExecuteAsync("ZMPOP", "2", "missing", "z", "MIN", "COUNT", "3").ConfigureAwait(false);
+            ClassicAssert.AreEqual(expectedResponse, response);
+        }
+
+        [Test]
         public async Task ZScanWithExpiredItems()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -4321,32 +4341,46 @@ namespace Garnet.test
         [TestCase(100)]
         public void CanManageErrorsInZCountLC(int bytesSent)
         {
-            using var lightClientRequest = TestUtils.CreateRequest();
-            var response = lightClientRequest.SendCommands("ZCOUNT nokey 12 232 4343 5454", "PING");
-            var expectedResponse = $"{FormatWrongNumOfArgsError("ZCOUNT")}+PONG\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommands("ZCOUNT nokey 12 232 4343 5454", "PING");
+                var expectedResponse = $"{FormatWrongNumOfArgsError("ZCOUNT")}+PONG\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
 
-            response = lightClientRequest.SendCommandChunks("ZCOUNT nokey 12 232 4343 5454", bytesSent);
-            expectedResponse = FormatWrongNumOfArgsError("ZCOUNT");
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommandChunks("ZCOUNT nokey 12 232 4343 5454", bytesSent);
+                var expectedResponse = FormatWrongNumOfArgsError("ZCOUNT");
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
 
             // no arguments
-            response = lightClientRequest.SendCommandChunks("ZCOUNT nokey", bytesSent);
-            expectedResponse = FormatWrongNumOfArgsError("ZCOUNT");
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommandChunks("ZCOUNT nokey", bytesSent);
+                var expectedResponse = FormatWrongNumOfArgsError("ZCOUNT");
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
 
             // not found key
-            response = lightClientRequest.SendCommandChunks("ZCOUNT nokey", bytesSent);
-            expectedResponse = FormatWrongNumOfArgsError("ZCOUNT");
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommandChunks("ZCOUNT nokey", bytesSent);
+                var expectedResponse = FormatWrongNumOfArgsError("ZCOUNT");
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
 
-            response = lightClientRequest.SendCommandChunks("ZCOUNT nokey 1 2", bytesSent);
-            expectedResponse = ":0\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommandChunks("ZCOUNT nokey 1 2", bytesSent);
+                var expectedResponse = ":0\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = lightClientRequest.SendCommands("ZCOUNT nokey 1 2", "PING");
-            expectedResponse = ":0\r\n+PONG\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+                response = lightClientRequest.SendCommands("ZCOUNT nokey 1 2", "PING");
+                expectedResponse = ":0\r\n+PONG\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
         }
 
         [Test]
@@ -4412,31 +4446,39 @@ namespace Garnet.test
         public void CanDoIncrByLC(int bytesSent)
         {
             //ZINCRBY key increment member
-            using var lightClientRequest = TestUtils.CreateRequest();
-            var response = lightClientRequest.SendCommand("ZADD board 340 Dave");
-            lightClientRequest.SendCommand("ZADD board 400 Kendra");
-            lightClientRequest.SendCommand("ZADD board 560 Tom");
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommand("ZADD board 340 Dave");
+                _ = lightClientRequest.SendCommand("ZADD board 400 Kendra");
+                _ = lightClientRequest.SendCommand("ZADD board 560 Tom");
 
-            response = lightClientRequest.SendCommandChunks("ZINCRBY board 10 Tom", bytesSent);
-            var expectedResponse = "$3\r\n570\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+                response = lightClientRequest.SendCommandChunks("ZINCRBY board 10 Tom", bytesSent);
+                var expectedResponse = "$3\r\n570\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = lightClientRequest.SendCommand("ZINCRBY board -590 Tom");
-            expectedResponse = "$3\r\n-20\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+                response = lightClientRequest.SendCommand("ZINCRBY board -590 Tom");
+                expectedResponse = "$3\r\n-20\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
 
-            response = lightClientRequest.SendCommandChunks("ZINCRBY board -590", bytesSent);
-            expectedResponse = FormatWrongNumOfArgsError("ZINCRBY");
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommandChunks("ZINCRBY board -590", bytesSent);
+                var expectedResponse = FormatWrongNumOfArgsError("ZINCRBY");
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
 
             //using key exists but non existing member
-            response = lightClientRequest.SendCommandChunks("ZINCRBY board 10 Julia", bytesSent);
-            expectedResponse = "$2\r\n10\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommandChunks("ZINCRBY board 10 Julia", bytesSent);
+                var expectedResponse = "$2\r\n10\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = lightClientRequest.SendCommandChunks("ZCARD board", bytesSent);
-            expectedResponse = ":4\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+                response = lightClientRequest.SendCommandChunks("ZCARD board", bytesSent);
+                expectedResponse = ":4\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
         }
 
         [Test]

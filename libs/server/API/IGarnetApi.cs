@@ -54,6 +54,15 @@ namespace Garnet.server
         GarnetStatus DEL_ETagConditional(PinnedSpanByte key, ref StringInput input);
 
         /// <summary>
+        /// Delete a string only when its value satisfies the supplied comparison.
+        /// </summary>
+        /// <param name="key">Key to delete.</param>
+        /// <param name="input">Command, comparison value, and equality condition.</param>
+        /// <param name="output">RESP integer indicating whether the key was deleted.</param>
+        /// <returns>The storage operation status.</returns>
+        GarnetStatus DELETE_Conditional(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
+
+        /// <summary>
         /// SET
         /// </summary>
         GarnetStatus SET(PinnedSpanByte key, Memory<byte> value);
@@ -178,6 +187,19 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <returns></returns>
         GarnetStatus EXISTS(PinnedSpanByte key);
+
+        #endregion
+
+        #region TOUCH
+
+        /// <summary>
+        /// Touches a key using the normal read path without returning its value.
+        /// </summary>
+        /// <param name="key">The key to touch.</param>
+        /// <param name="input">The TOUCH command input.</param>
+        /// <param name="output">The unified store output.</param>
+        /// <returns>OK if the key exists; otherwise NOTFOUND.</returns>
+        GarnetStatus TOUCH(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output);
 
         #endregion
 
@@ -1422,6 +1444,15 @@ namespace Garnet.server
     /// </summary>
     public interface IGarnetReadApi
     {
+        /// <summary>
+        /// Compute the XXH3-64 digest of the current string value.
+        /// </summary>
+        /// <param name="key">Key to read.</param>
+        /// <param name="input">DIGEST command input.</param>
+        /// <param name="output">RESP bulk string containing the hexadecimal digest.</param>
+        /// <returns>The storage operation status.</returns>
+        GarnetStatus DIGEST(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
+
         #region GET
         /// <summary>
         /// GET

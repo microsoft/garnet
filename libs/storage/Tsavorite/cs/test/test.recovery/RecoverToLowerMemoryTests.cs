@@ -23,6 +23,8 @@ namespace Tsavorite.test.recovery
     /// evict snapshot pages to honor the budget. Garnet always uses the ObjectAllocator (even for string values), so this
     /// exercises the same allocator as the Garnet server. Every record — whether it stayed resident or was evicted to disk —
     /// must read back correctly. Regression for issue #1950 (a snapshot page lost during eviction-while-recovering).
+    /// <see cref="RecoverWithMidPageHeadCountsOnlyResidentObjects"/> also covers FoldOver checkpoints, checking that the tracker counts only the objects
+    /// that recovery leaves resident.
     /// </summary>
     [TestFixture]
     public class RecoverToLowerMemoryTests : TestBase
@@ -145,7 +147,8 @@ namespace Tsavorite.test.recovery
             }
         }
 
-        static TsavoriteKV<LargeObjStoreFunctions, LargeObjAllocator> CreateObjectStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize)
+        static TsavoriteKV<LargeObjStoreFunctions, LargeObjAllocator> CreateObjectStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize,
+                bool heapSizedValues = false)
             => new(new()
             {
                 IndexSize = 1L << 20,
@@ -156,8 +159,33 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = memorySize,
                 SegmentSize = 1L << 20,
                 CheckpointDir = checkpointDir,
-            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestLargeObjectValue.Serializer(), DefaultRecordTriggers.Instance),
+            }, StoreFunctions.Create(new TestObjectKey.Comparer(),
+                    () => heapSizedValues ? new HeapSizedObjectValue.Serializer() : new TestLargeObjectValue.Serializer(), DefaultRecordTriggers.Instance),
                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+        /// <summary>
+        /// A <see cref="TestLargeObjectValue"/> whose heap size is its payload length, so a <see cref="LogSizeTracker{TStoreFunctions, TAllocator}"/> counts it.
+        /// </summary>
+        sealed class HeapSizedObjectValue : TestLargeObjectValue
+        {
+            public HeapSizedObjectValue(byte[] payload)
+            {
+                value = payload;
+                HeapMemorySize = payload.Length;
+            }
+
+            public new sealed class Serializer : BinaryObjectSerializer<IHeapObject>
+            {
+                public override void Deserialize(out IHeapObject obj) => obj = new HeapSizedObjectValue(reader.ReadBytes(reader.ReadInt32()));
+
+                public override void Serialize(IHeapObject obj)
+                {
+                    var payload = ((TestLargeObjectValue)obj).value;
+                    writer.Write(payload.Length);
+                    writer.Write(payload);
+                }
+            }
+        }
 
         /// <summary>
         /// Companion to <see cref="RecoverSnapshotToLowerMemoryInlineOnly"/> that exercises the object path: records hold several-KB heap objects, so
@@ -229,6 +257,89 @@ namespace Tsavorite.test.recovery
                 {
                     store2.Dispose();
                 }
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Recovers an object store whose final HeadAddress falls mid-page, so the head page holds records below HeadAddress whose objects stay on disk.
+        /// HeadAddress lands mid-page either because the recovery budget holds only part of the object heap, so recovery cuts the head page off where the
+        /// budget runs out, or because the checkpoint's own HeadAddress is mid-page: a FlushAndEvict partway through the writes, recovered with ample budget.
+        /// For a Snapshot checkpoint, the writes after FlushAndEvict move the read-only address, and so flushedLogicalAddress, to the next page boundary,
+        /// so recovery reads the head page from the main log. Recovery must load, and count in the tracker's heap size, only the objects of records from
+        /// HeadAddress up, so evicting the whole log afterwards must bring the tracked heap size back to zero.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverWithMidPageHeadCountsOnlyResidentObjects(
+            [Values(CheckpointType.FoldOver, CheckpointType.Snapshot)] CheckpointType checkpointType,
+            [Values] bool midPageCheckpointHead)
+        {
+            const int objSize = 2000;
+            const int numObjRecords = 1000;
+
+            var checkpointDir = Path.Combine(MethodTestDir, "checkpoints");
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "hlog.log"), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "hlog.obj.log"), deleteOnClose: false);
+            try
+            {
+                Guid token;
+                using (var store1 = CreateObjectStore(log, objlog, checkpointDir, 128 * 1024, heapSizedValues: true))
+                {
+                    using (var session = store1.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+                    {
+                        var bContext = session.BasicContext;
+                        for (var key = 0; key < numObjRecords; key++)
+                        {
+                            if (midPageCheckpointHead && key == numObjRecords / 2)
+                                store1.Log.FlushAndEvict(wait: true);
+
+                            var payload = new byte[objSize];
+                            payload[0] = (byte)key;             // make each object's payload identifiable by key
+                            payload[1] = (byte)(key >> 8);
+                            _ = bContext.Upsert(new TestObjectKey { key = key }, new HeapSizedObjectValue(payload));
+                        }
+                    }
+                    ClassicAssert.IsTrue(store1.TryInitiateHybridLogCheckpoint(out token, checkpointType));
+                    await store1.CompleteCheckpointAsync().AsTask().ConfigureAwait(false);
+                }
+
+                // A 64 KB budget holds only part of the 2 MB object heap, so recovery cuts the head page off mid-page. With a mid-page checkpoint
+                // HeadAddress, a 4 MB budget holds every resident object, so HeadAddress stays where the checkpoint had it.
+                var recoveryMemorySize = midPageCheckpointHead ? 4L << 20 : 64L << 10;
+                using var store2 = CreateObjectStore(log, objlog, checkpointDir, recoveryMemorySize, heapSizedValues: true);
+                var tracker = new LogSizeTracker<LargeObjStoreFunctions, LargeObjAllocator>(store2.Log, recoveryMemorySize, recoveryMemorySize / 8, recoveryMemorySize / 16, logger: null);
+                store2.Log.SetLogSizeTracker(tracker);
+                _ = await store2.RecoverAsync(default, token).ConfigureAwait(false);
+                ClassicAssert.Greater(store2.Log.HeadAddress % MinKvLogPageSize, PageHeader.Size, "HeadAddress must be past the first record on its page");
+                ClassicAssert.Greater(tracker.LogHeapSizeBytes, 0, "recovery must load the resident objects");
+
+                using (var session = store2.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+                {
+                    var bContext = session.BasicContext;
+                    for (var key = 0; key < numObjRecords; key++)
+                    {
+                        TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                        TestLargeObjectOutput output = new();
+                        var status = bContext.Read(new TestObjectKey { key = key }, ref input, ref output);
+                        if (status.IsPending)
+                        {
+                            Assert.That(bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                            (status, output) = GetSinglePendingResult(completedOutputs);
+                        }
+                        ClassicAssert.IsTrue(status.Found, $"key {key} not found");
+                        ClassicAssert.AreEqual(objSize, output.valueObject.value.Length, $"key {key} wrong object size");
+                        ClassicAssert.AreEqual((byte)key, output.valueObject.value[0], $"key {key} wrong object payload[0]");
+                        ClassicAssert.AreEqual((byte)(key >> 8), output.valueObject.value[1], $"key {key} wrong object payload[1]");
+                    }
+                }
+
+                store2.Log.FlushAndEvict(wait: true);
+                ClassicAssert.AreEqual(0, tracker.LogHeapSizeBytes, "evicting the whole log must release every object counted in the heap size");
             }
             finally
             {

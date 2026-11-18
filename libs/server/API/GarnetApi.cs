@@ -39,6 +39,10 @@ namespace Garnet.server
 
         #region GET
         /// <inheritdoc />
+        public GarnetStatus DIGEST(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
+            => storageSession.DIGEST(key, ref input, ref output, ref stringContext);
+
+        /// <inheritdoc />
         public GarnetStatus GET(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.GET(key, ref input, ref output, ref stringContext);
 
@@ -108,6 +112,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus DEL_ETagConditional(PinnedSpanByte key, ref StringInput input)
             => storageSession.DEL_Conditional(key, ref input, ref stringContext);
+
+        /// <inheritdoc />
+        public GarnetStatus DELETE_Conditional(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
+            => storageSession.DELETE_Conditional(key, ref input, ref output, ref stringContext);
 
         /// <inheritdoc />
         public GarnetStatus SET(PinnedSpanByte key, Memory<byte> value)
@@ -271,6 +279,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus Read_UnifiedStore(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output)
             => storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
+
+        /// <inheritdoc />
+        public GarnetStatus Read_UnifiedStore(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, ref ReadOptions readOptions)
+            => storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref readOptions, ref unifiedContext);
 
         /// <inheritdoc />
         public void ReadWithPrefetch<TBatch>(ref TBatch batch, long userContext = default)

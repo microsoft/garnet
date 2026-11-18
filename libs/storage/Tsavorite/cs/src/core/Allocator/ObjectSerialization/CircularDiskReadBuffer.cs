@@ -169,8 +169,10 @@ namespace Tsavorite.core
         {
             var buffer = buffers[currentIndex] ?? throw new TsavoriteException($"Internal error in read buffer sequencing; empty buffer[{currentIndex}] encountered with unreadLengthRemaining {unreadLengthRemaining}");
 
-            // Because each partial flush ends with a sector-aligning write, we may have a record start position greater than our ongoing buffer.currentPosition
-            // incrementing. It should never be less. recordFilePosition is only guaranteed to be sector-aligned if it's the first record after a partial flush. 
+            // A record's objects start at or after the current position, never before it. Each partial flush ends with a sector-aligning write, so a record
+            // written by a later flush starts up to a sector further on. A record that is not read leaves a larger gap: recovery's undo of the checkpoint's
+            // v+1 records invalidates them but leaves their objects in place, and the record after them can follow those objects. The read covers the whole
+            // range from the first record read to the end of the last one, so skip forward to the record, across buffers and segments if the gap spans them.
             if (!buffer.HasData && !buffer.WaitForDataAvailable())
                 return false;
 
@@ -178,19 +180,15 @@ namespace Tsavorite.core
             {
                 var bufferFilePosition = buffer.GetCurrentFilePosition();
                 Debug.Assert(recordFilePosition.word >= bufferFilePosition.word, $"Record file position ({recordFilePosition}) should be >= ongoing position {bufferFilePosition}");
-                Debug.Assert(recordFilePosition.SegmentId == bufferFilePosition.SegmentId, $"Record file segment ({recordFilePosition.SegmentId}) should == ongoing position {bufferFilePosition.SegmentId}");
                 var increment = recordFilePosition - bufferFilePosition;
-                Debug.Assert(increment < objectLogDevice.SectorSize, $"Increment {increment} must be less than SectorSize ({objectLogDevice.SectorSize})");
 
-                // We might cleanly align to the start of the next buffer, if there was a flush that ended on a buffer boundary.
-                // Otherwise, we should always be within the current buffer. We should only do this "continue" once.
-                if (buffer.currentPosition + (int)increment < buffer.endPosition)
+                // The record starts in this buffer, or further on; a record that starts exactly at the end of this buffer starts the next one.
+                if (increment < (ulong)(buffer.endPosition - buffer.currentPosition))
                 {
                     buffer.currentPosition += (int)increment;
                     break;
                 }
 
-                Debug.Assert(buffer.currentPosition + (int)increment == buffer.endPosition, $"Increment {increment} overflows buffer (curPos {buffer.currentPosition}, endPos {buffer.endPosition}) by more than alignment");
                 if (!MoveToNextBuffer(out buffer))
                     break;
             }
