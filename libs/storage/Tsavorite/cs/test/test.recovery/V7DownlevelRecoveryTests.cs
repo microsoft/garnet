@@ -273,7 +273,7 @@ namespace Tsavorite.test.recovery
 
         // Build a FoldOver checkpoint of object-value records, transformed to a DENSE v7 object log so LARGE values (length-prefixed in the
         // current format, dense in v7) are exercised.
-        Guid BuildV7DenseObjectValueFixture(int numRecords, int valueSize)
+        Guid BuildV7DenseObjectValueFixture(int numRecords, int valueSize, int emptyValueKey = -1)
         {
             var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
             Guid token;
@@ -298,8 +298,9 @@ namespace Tsavorite.test.recovery
                 objlog.Dispose();
             }
 
-            // Record i (page order) is key i; its dense object-log bytes are the serialized object value.
-            TransformCheckpointToV7Dense(checkpointDir, MethodTestDir, token, i => (null, SerializeLargeObject(MakePayload(i, valueSize))));
+            // Record i (page order) is key i; its dense object-log bytes are the serialized object value, or none for emptyValueKey, as a flush
+            // writes for a record that has no value object.
+            TransformCheckpointToV7Dense(checkpointDir, MethodTestDir, token, i => (null, i == emptyValueKey ? [] : SerializeLargeObject(MakePayload(i, valueSize))));
             return token;
         }
 
@@ -999,6 +1000,59 @@ namespace Tsavorite.test.recovery
                     }
                     ClassicAssert.IsTrue(status.Found, $"key {key} not found after large v7 recovery (size {valueSize})");
                     VerifyPayload(key, valueSize, output.valueObject?.value);
+                }
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+                upgradeObjlog.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A v7 object value with no bytes, which a flush writes for a record that has no value object, loads as the released placeholder. The
+        /// up-conversion writes it as an empty value, as a current-format flush writes a released value, rather than passing the placeholder to
+        /// the store's value serializer; the record reads as having no value object, before eviction and from the up-converted image after it.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverV7EmptyObjectValueFoldOver()
+        {
+            const int NumRecords = 6, ValueSize = 100, EmptyValueKey = 3;
+            var token = BuildV7DenseObjectValueFixture(NumRecords, ValueSize, EmptyValueKey);
+
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            IDevice upgradeObjlog = CreateUpgradeObjectLog();
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog);
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+
+                using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                var bContext = session.BasicContext;
+                foreach (var when in new[] { "after recovery", "after eviction" })
+                {
+                    if (when == "after eviction")
+                        store.Log.FlushAndEvict(wait: true);
+                    for (var key = 0; key < NumRecords; key++)
+                    {
+                        TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                        TestLargeObjectOutput output = new();
+                        var status = bContext.Read(new TestObjectKey { key = key }, ref input, ref output);
+                        if (status.IsPending)
+                        {
+                            ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var completed, wait: true));
+                            (status, output) = GetSinglePendingResult(completed);
+                        }
+                        ClassicAssert.IsTrue(status.Found, $"key {key} not found {when}");
+                        if (key == EmptyValueKey)
+                            ClassicAssert.IsNull(output.valueObject, $"the empty v7 value read as an object {when}");
+                        else
+                            VerifyPayload(key, ValueSize, output.valueObject?.value);
+                    }
                 }
             }
             finally

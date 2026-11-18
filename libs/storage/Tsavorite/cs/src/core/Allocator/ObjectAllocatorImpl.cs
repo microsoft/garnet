@@ -1975,6 +1975,10 @@ namespace Tsavorite.core
                                     if (!logRecord.TryGetOutOfLineComponents(out var keyOverflow, out var valueOverflow, out var valueObject))
                                         throw new TsavoriteException($"Object-log upgrade could not capture the out-of-line components of the record at {logicalAddress}");
 
+                                    // A value with no bytes in the downlevel log loaded as the released placeholder. Write it as an empty value, as a
+                                    // flush writes a released value, rather than passing the placeholder to the store's value serializer.
+                                    if (valueObject is SupersededObjectValue)
+                                        valueObject = null;
                                     var result = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, logRecord.DataHeader.ValueIsObject, valueObject);
                                     logRecord.SetObjectLogPositionAndHints(in result);
                                     logRecord.InfoRef.HasSnapshotObjectLogReference = false;

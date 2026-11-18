@@ -1368,6 +1368,7 @@ namespace Tsavorite.core
                 {
                     Debug.Assert(DataHeader.ValueIsOverflow, "Expected this.DataHeader.ValueIsOverflow to be set already");
                     var srcOverflow = srcLogRecord.ValueOverflow;
+                    Debug.Assert(!srcOverflow.IsSentinel, "Expected srcLogRecord's overflow value to be set; a released source holds a sentinel");
 
                     // Initialization gave this record its own array, sized for the new value. When the caller changes the value's length
                     // the source's array cannot hold the result, so copy into this record's array and zero any growth, as
