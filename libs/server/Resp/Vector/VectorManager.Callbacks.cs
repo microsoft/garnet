@@ -503,6 +503,7 @@ namespace Garnet.server
                 input = default;
                 input.CallbackContext = callbackContext;
                 input.Callback = (nint)callback;
+                input.CopyOnWrite = VectorInput.CopyOnWriteOperation.ReadWithCenotaph;
 
                 // Internal index, because that's the index DiskANN is expecting
                 input.Index = internalCurrentIndex;
@@ -778,6 +779,56 @@ namespace Garnet.server
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
 
+            // Deletes when we've made a shallow copy are tricky
+            //
+            // We want to actually do the delete IF the value is only present in the latest context
+            // but we need to write a cenotaph (because Tombstone already means something) if any previous version has data
+            if (!ActiveThreadShallowCopyBackReferences.IsEmpty)
+            {
+                ReadOnlySpan<byte> keyWithoutNamespace;
+                unsafe
+                {
+                    keyWithoutNamespace = new ReadOnlySpan<byte>((byte*)keyData, (int)keyLength);
+                }
+
+                Span<byte> outputTempSpace = stackalloc byte[128];
+                var output = SpanByteAndMemory.FromPinnedSpan(outputTempSpace);
+                try
+                {
+                    var inLatest = ReadSizeUnknown(context, keyWithoutNamespace, ref output, allowContextTraveral: false);
+                    output.Dispose();
+                    output = SpanByteAndMemory.FromPinnedSpan(outputTempSpace);
+
+                    var inOlder = ReadSizeUnknown(context, keyWithoutNamespace, ref output, allowContextTraveral: true, skipContextsInChain: 1);
+
+                    var canDelete = inLatest && !inOlder;
+                    if (!canDelete)
+                    {
+                        // Need to write a cenotaph - which is just an empty value
+                        var cenotaphStatus = ctx.Upsert(keyWithNamespace, default(ReadOnlySpan<byte>));
+                        if (cenotaphStatus.IsPending)
+                        {
+                            VectorInput inputIgnored = default;
+                            VectorOutput outputIgnored = default;
+                            CompletePending(ref cenotaphStatus, ref inputIgnored, ref outputIgnored, ref ctx);
+                        }
+
+                        if (cenotaphStatus.IsCompletedSuccessfully)
+                        {
+                            return 1;
+                        }
+
+                        return 0;
+                    }
+
+                    // Otherwise we can delete like usual
+                }
+                catch
+                {
+                    output.Dispose();
+                }
+            }
+
             var status = ctx.Delete(keyWithNamespace);
             Debug.Assert(!status.IsPending, "Deletes should never go async");
 
@@ -917,7 +968,7 @@ namespace Garnet.server
             return EvaluateCandidateFilter(context, new ReadOnlySpan<byte>((byte*)valueData, (int)valueLength));
         }
 
-        private static unsafe bool ReadSizeUnknown(ulong context, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
+        private static unsafe bool ReadSizeUnknown(ulong context, ReadOnlySpan<byte> key, ref SpanByteAndMemory value, int skipContextsInChain = 0, bool allowContextTraveral = true)
         {
             Debug.Assert(context <= uint.MaxValue, "Contexts > 2^32-1 are not supported");
 
@@ -929,7 +980,21 @@ namespace Garnet.server
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
 
-            var remainingContexts = ActiveThreadShallowCopyBackReferences.Span;
+            var remainingContexts = allowContextTraveral ? ActiveThreadShallowCopyBackReferences.Span : default;
+
+            // Skip some number of contexts if configured
+            // 
+            // Note that the first context (the one passed as a parameter) is already in keyWithNamespace
+            for (var i = 0; i < skipContextsInChain; i++)
+            {
+                var nextRootContext = remainingContexts[0];
+                remainingContexts = remainingContexts[1..];
+
+                context = nextRootContext | (context & (ContextStep - 1));
+                nsBytes = nsBytesRaw;
+                StoreContextInNamespace(context, ref nsBytes);
+                keyWithNamespace = new(nsBytes, key);
+            }
 
             while (true)
             {
@@ -978,6 +1043,13 @@ namespace Garnet.server
                     }
 
                     value.Length = asSpanByte.SpanByteAndMemory.Length;
+
+                    // Did we read a cenotaph?
+                    if (!ActiveThreadShallowCopyBackReferences.IsEmpty && asSpanByte.SpanByteAndMemory.Length == 0)
+                    {
+                        return false;
+                    }
+
                     return true;
                 }
             }

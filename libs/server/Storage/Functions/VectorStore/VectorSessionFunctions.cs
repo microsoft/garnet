@@ -81,6 +81,12 @@ namespace Garnet.server
 
                         AssertAlignment(in srcLogRecord, dataPtr);
 
+                        // Ignore empty records if we're in a COW context and data length is zero - this implies we've written a "cenotaph" to fake a deletion
+                        if (input.CopyOnWrite == VectorInput.CopyOnWriteOperation.ReadWithCenotaph && dataLen == 0)
+                        {
+                            return false;
+                        }
+
                         if (isAttribute)
                         {
                             // Attribute reads _may_ reverse p/invoke back into Garnet for filtering, so DO NOT suppress GC transition

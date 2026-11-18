@@ -692,6 +692,11 @@ namespace Garnet.server
             /// Do not allow overwriteing records as part of an RMW.
             /// </summary>
             DisallowOverwrite,
+
+            /// <summary>
+            /// We're performing a read, and need to ignore centoaphs.
+            /// </summary>
+            ReadWithCenotaph,
         }
 
         public int SerializedLength => throw new NotImplementedException();
