@@ -636,6 +636,20 @@ For each record:
   (section 13.6).
 - A recovery flush copies, re-serializes, or keeps each record's components, as section 7 describes.
 
+**Calling the serializer while holding the object's claim.** In `PublishFlushedObject`, after `TryClaim` succeeds,
+`HeapObjectBase.BeginClaimedWrite(valueObject)` sets the `[ThreadStatic]` field `HeapObjectBase.publishingObject` to
+that object. The synchronous call chain is `WriteRecordObjects` -> the store's value serializer ->
+`HeapObjectBase.Serialize`. `Serialize` compares `publishingObject` with `this`; a match means this thread already
+holds this object's claim, so it calls `WriteType` and `DoSerialize` directly instead of trying to claim it again.
+Without that check, the publisher would wait for its own `SERIALIZING` phase to end and never finish.
+
+`publishingObject` is not a lock or another per-object field: the object's phase word excludes other publishers, and
+the thread-static reference identifies the object being serialized under that existing claim. `EndClaimedWrite`
+clears the reference in `finally`, before `ReleaseClaim` publishes the final phase, including when serialization or
+stamping throws. The capture path uses the same bracket around `WriteCapture` (section 13.4). This relies on
+synchronous, same-thread serialization with no nested claimed write: the field holds one object, and the end method
+clears it rather than restoring an outer value. It is not an asynchronous-flow or general reentrancy mechanism.
+
 ### 5.3 Writing a record
 
 `ObjectLogWriter` turns a record's components into extents; section 12.10 states the rules and section 12.9 the
@@ -2207,9 +2221,13 @@ object again.
 **The claim serializes the publishers.** A flush and a capture each write `O` to an object log and stamp `R`. Each holds
 `O`'s claim from its object-log write through its last stamp, so one finishes before the other starts, and `R` never
 ends up with one writer's position and another's hints or marker. The store's value serializer calls back
-`IHeapObject.Serialize` inside the publisher's write; it runs under the publisher's claim, which a thread-static field
-identifies. Any other `Serialize` claims `O` for its own write and leaves the phase as it found it. A CopyUpdate never
-changes `O` while it is claimed: the capture, and the marking of `O` as superseded, wait for the claim.
+`IHeapObject.Serialize` inside the publisher's write; it runs under the publisher's claim, identified by
+`HeapObjectBase.publishingObject` as described in section 5.2. A capture that must serialize `O` calls
+`BeginClaimedWrite(O)` before `WriteCapture` and `EndClaimedWrite()` in `finally`; it retains the claim while stamping
+`R`, then releases it as `CAPTURED(k)` on success. A capture that reuses an existing stamp does not call the serializer
+and needs no thread-static bracket. Any other `Serialize` claims `O` for its own write and leaves the phase as it found
+it. A CopyUpdate never changes `O` while it is claimed: the capture, and the marking of `O` as superseded, wait for the
+claim.
 
 **A capture never changes a record that a device write may be reading.** Both flushes write the live page, so a device
 can read `R`'s position word and hints until the write completes. A capture therefore rewrites them only while no flush
