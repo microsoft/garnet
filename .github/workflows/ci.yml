@@ -38,6 +38,10 @@ jobs:
         filters: |
           tsavorite:
             - 'libs/storage/Tsavorite/**'
+            - 'Directory.Packages.props'
+            - 'Directory.Build.props'
+            - 'Directory.Build.targets'
+            - 'global.json'
           website:
             - 'website/**'
           garnet:
