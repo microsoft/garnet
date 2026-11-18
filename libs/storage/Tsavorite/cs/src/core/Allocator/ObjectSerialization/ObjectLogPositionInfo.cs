@@ -48,17 +48,18 @@ namespace Tsavorite.core
         internal const ulong kUnusedBit63Mask = 1UL << kUnusedBit63;
 
         /// <summary>Bit position of the <c>HasDirectory</c> flag in a position word.
-        /// <para>When set, the position addresses a <b>directory record</b> rather than a single data chunk: the record's out-of-line bytes
-        /// are spread over several chunks whose addresses and lengths the directory records. When clear -- the common case -- the position
-        /// addresses one data chunk, which the reader reads in a single IO with no framing to parse beyond its length prefix. The reader
-        /// therefore learns the record's shape before issuing any IO.</para>
+        /// <para>When set, the record's top extent (see <see cref="ObjectLogExtent"/>) is its top <b>directory record</b> rather than a single
+        /// extent. The directory lists the address and length of each of the record's chunks; a record has one when it has more than one chunk,
+        /// or both an overflow key and an out-of-line value. When clear -- the common case -- the top extent is a single extent holding the
+        /// record's only out-of-line component, which the reader reads in a single IO with no framing to parse beyond any length prefix. The
+        /// reader therefore learns the record's shape before issuing any IO.</para>
         /// <para>This is a separate bit from the position's stamped/unstamped state and from the exact-size flags, so a single-chunk
         /// record and a multi-chunk one are distinguished without consulting either.</para></summary>
         internal const int kHasDirectoryBit = 62;
         internal const ulong kHasDirectoryMask = 1UL << kHasDirectoryBit;
 
         /// <summary>Bit position of the <c>KeyIsExactSize</c> flag in a position word.
-        /// <para>Meaningful when the key is overflow, in which case the key's objectId slot sizes the addressed extent (the key alone, or a
+        /// <para>Meaningful when the key is overflow, in which case the key's objectId slot sizes the record's top extent (the key alone, or a
         /// directory). When set, the extent is headerless and the top <see cref="ObjectIdMap.ObjectIdSizeHintBits"/> bits of the key's objectId
         /// slot hold its exact byte length (&lt;= <see cref="ObjectIdMap.MaxObjectIdSizeHint"/>). When clear, the extent is length-prefixed,
         /// and its exact 4 KB page count is split between the raw RDH KeyLength high bits and the objectId hint low bits. See
@@ -67,7 +68,7 @@ namespace Tsavorite.core
         internal const ulong kKeyIsExactSizeMask = 1UL << kKeyIsExactSizeBit;
 
         /// <summary>Bit position of the <c>ValueIsExactSize</c> flag in a position word.
-        /// <para>Meaningful when the key is not overflow, in which case the value's objectId slot sizes the addressed extent (the value alone,
+        /// <para>Meaningful when the key is not overflow, in which case the value's objectId slot sizes the record's top extent (the value alone,
         /// or a directory). When set, the extent is headerless and the top <see cref="ObjectIdMap.ObjectIdSizeHintBits"/> bits of the value's
         /// objectId slot hold its exact byte length (&lt;= <see cref="ObjectIdMap.MaxObjectIdSizeHint"/>). When clear, the extent is
         /// length-prefixed and the hint is its 4 KB page count, saturating at <see cref="ObjectLogExtent.LargeValueHint"/>.</para></summary>

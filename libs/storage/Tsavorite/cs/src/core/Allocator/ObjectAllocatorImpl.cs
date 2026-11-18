@@ -2694,10 +2694,10 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>
         /// A flush writes a page's records to the object log in page order, so most of their extents lie in one ascending range. A record's
-        /// earlier data chunks precede its top extent, so those of the range's first record lie below the range and are read directly, and
-        /// those of its other records lie within it. Marked records are left out: on a main-log page the walk invalidates them, since their
-        /// positions are in a checkpoint's object log, and on a page read from a checkpoint's object log they are captures, which lie below
-        /// the page's other records.
+        /// earlier data chunks precede its top extent (the extent its position addresses; see <see cref="ObjectLogExtent"/>), so those of the
+        /// range's first record lie below the range and are read directly, and those of its other records lie within it. Marked records are
+        /// left out: on a main-log page the walk invalidates them, since their positions are in a checkpoint's object log, and on a page read
+        /// from a checkpoint's object log they are captures, which lie below the page's other records.
         /// </remarks>
         private ObjectLogReadAhead StartPageReadAhead(ObjectLog log, long recordPhysicalAddress, long endPhysicalAddress)
         {

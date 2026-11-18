@@ -72,10 +72,10 @@ A ReadOnly or Snapshot page whose `objectIdMap` is empty has no out-of-line data
 span directly without walking its records. ReadOnly releases epoch protection while object serialization and device IO
 run.
 
-Object-allocator Snapshot writes use a fixed-size completion window of up to 64 pages, with or without an object log.
-Several pages may be in flight, but `SnapshotFlushCoordination` advances the ReadOnly page limit only through the
-contiguous completed prefix. A ReadOnly flush therefore waits only when it catches an unfinished Snapshot page;
-completed pages remain available for main-object-log restamping and eviction. A real-device allocator other than
+Object-allocator Snapshot writes use a fixed-size completion window that tracks up to 64 pages, with or without an
+object log. Several pages may be in flight, but `SnapshotFlushCoordination` advances the ReadOnly page limit only
+through the contiguous completed prefix. A ReadOnly flush therefore waits only when it catches an unfinished Snapshot
+page; completed pages remain available for main-object-log restamping and eviction. A real-device allocator other than
 `ObjectAllocator` installs no coordination and keeps parallel Snapshot issuance.
 
 The no-copy path requires a record's flush-critical bytes to remain readable until its asynchronous page write

@@ -13,11 +13,12 @@ namespace Tsavorite.core
     /// <remarks>
     /// <para>A flush writes a page's records to the object log in page order, so the extents a walk of the page reads mostly lie in one
     /// range, which <see cref="ObjectLogReadAheadRange"/> chooses, and the walk reads the records in that range in ascending order. Within a
-    /// record it reads the top extent first, then any spine records, which lie below the top, and then the data entries in ascending order;
-    /// all of them lie at or above the end of the previous record's top extent. The read-ahead keeps up to <c>maxWindows</c> windows of the
-    /// range in flight or resident, from the lowest address the walk may still read, and slides forward as the walk reports, through
-    /// <see cref="Release"/>, that it is done with the bytes below an address. The range may have a hole that none of its records reads,
-    /// such as the bytes between a page's records and recovery's copies that end the page; no window reads it.</para>
+    /// record it reads the top extent first (the extent the record's position addresses, and its highest; see <see cref="ObjectLogExtent"/>),
+    /// then any spine records, which lie below the top, and then the data entries in ascending order; all of them lie at or above the end of
+    /// the previous record's top extent. The read-ahead keeps up to <c>maxWindows</c> windows of the range in flight or resident, from the
+    /// lowest address the walk may still read, and slides forward as the walk reports, through <see cref="Release"/>, that it is done with
+    /// the bytes below an address. The range may have a hole that none of its records reads, such as the bytes between a page's records and
+    /// recovery's copies that end the page; no window reads it.</para>
     /// <para>The walk also reads records outside the range, such as captures and recovery's copies, whose extents were written at other
     /// times. Their reads go direct. A release beyond the range or within its hole is ignored, and one below what was already released does
     /// nothing, so such a record leaves the windows where the range's records need them, except as the remarks on

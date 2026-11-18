@@ -6,20 +6,24 @@ using System.Runtime.CompilerServices;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Framing of the extent an object-log position addresses, and the record hints that size its first read.
+    /// Framing of a record's top extent, the object-log extent its position addresses, and the record hints that size its first read.
     /// </summary>
     /// <remarks>
-    /// A position addresses either a single data chunk (the record's only out-of-line component) or, when its
-    /// <see cref="ObjectLogPositionInfo.kHasDirectoryMask"/> bit is set, the record's top directory record. Either way the
-    /// addressed extent is framed one of two ways:
+    /// <para>A record's <b>top extent</b> is the extent its object-log position addresses, and the first one a reader reads. It is either a
+    /// single extent holding the record's only out-of-line component or, when the position's <see cref="ObjectLogPositionInfo.kHasDirectoryMask"/>
+    /// bit is set, the record's top directory record: the last record of its directory, which links back to any older spine records and can
+    /// carry the record's final data. The writer allocates the top extent after the record's other extents, so it is the record's
+    /// highest-addressed extent, hence "top": the record's data chunks and spine records lie below it, and a reader finds them only through
+    /// directory entries.</para>
+    /// <para>Either way the top extent is framed one of two ways:</para>
     /// <list type="bullet">
     /// <item><b>Exact</b>: a payload of at most <see cref="ExactCutoff"/> bytes is stored headerless, and the record's hint carries
     /// its exact length.</item>
     /// <item><b>Length-prefixed</b>: a larger payload is preceded by a 4-byte length, and the record's hint carries a 4 KB page count
     /// that sizes the first read. The prefix supplies the exact length, so no read depends on parsing another chunk first.</item>
     /// </list>
-    /// Extents reached through a directory entry, which are data chunks and spine directory records, carry no prefix: the entry holds
-    /// their exact length.
+    /// <para>Extents reached through a directory entry, which are data chunks and spine directory records, carry no prefix: the entry holds
+    /// their exact length.</para>
     /// </remarks>
     internal static class ObjectLogExtent
     {
@@ -146,12 +150,13 @@ namespace Tsavorite.core
         /// <summary>Whether the position is unstamped, so the record has no object-log bytes to read.</summary>
         internal readonly bool IsUnstamped => ObjectLogPositionInfo.WordIsUnstamped(PositionWord);
 
-        /// <summary>The address of the extent the position addresses.</summary>
+        /// <summary>The address of the record's top extent (see <see cref="ObjectLogExtent"/>): the position word's address bits.</summary>
         internal readonly long Address => (long)(PositionWord & ObjectLogPositionInfo.AddressMask);
 
-        /// <summary>The first read of the extent the position addresses, sized by the key slot when the key is overflow and by the value
-        /// slot otherwise. It covers the whole extent unless the value slot sizes it and the extent is longer than
-        /// <see cref="ObjectLogExtent.LargeInitialRead"/>; a key's page count is exact.</summary>
+        /// <summary>The length of the first read of the record's top extent (see <see cref="ObjectLogExtent"/>), sized by the key slot when
+        /// the key is overflow and by the value slot otherwise. It covers the whole top extent unless the value slot sizes it and the extent
+        /// is longer than <see cref="ObjectLogExtent.LargeInitialRead"/>; a key's page count is exact. It is unclamped: when not exact, it can
+        /// run past the extent's end, its object-log page, and the log's tail.</summary>
         internal readonly long TopExtentInitialRead => KeyIsOverflow
             ? ObjectLogExtent.KeyInitialRead(KeyRdhLengthBits, KeySizeHint, (PositionWord & ObjectLogPositionInfo.kKeyIsExactSizeMask) != 0)
             : ObjectLogExtent.ValueInitialRead(ValueSizeHint, (PositionWord & ObjectLogPositionInfo.kValueIsExactSizeMask) != 0);

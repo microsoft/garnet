@@ -108,14 +108,22 @@ OBJECT LOG, at obj-pos
   +------------------------------+--------+---------+-------------------------+
 ```
 
-A record's out-of-line components form one stream, key first. A record with one out-of-line component that fits one
-chunk is written as a single extent, which the position addresses, unless the writer cuts that extent at an object-log
-page end (section 5.3). Otherwise, including whenever the record has both an overflow key and an out-of-line value, the
-position addresses the record's top directory record. It lists the address and exact length of each component's
-portion of every chunk, the earliest through a chain of spine records when they outgrow one record, each linked by an
-entry that holds its exact length (section 4). The object log has no record-level
-framing, and consecutive records' extents are not necessarily contiguous, so a reader obtains each record's location
-from that record's object-log position word rather than deriving it from the preceding record.
+A record's out-of-line components form one stream, key first. The writer stores the record's object-log bytes as
+*extents*, each one object-log allocation: the stream's chunks, and any directory records that list them. The position
+addresses one of them, the record's **top extent**, which a reader reads first:
+
+- A record with one out-of-line component that fits one chunk is written as a single extent, which is its top extent,
+  unless the writer cuts that extent at an object-log page end (section 5.3).
+- Otherwise, including whenever the record has both an overflow key and an out-of-line value, the top extent is the
+  record's *top directory record*. It lists the address and exact length of each component's portion of every chunk,
+  the earliest through a chain of older *spine records* when they outgrow one record, each linked by an entry that holds
+  its exact length (section 4). It can also carry the record's final data.
+
+The writer allocates the top extent after the record's other extents, so it is the record's highest-addressed extent;
+hence "top". The record's data chunks and spine records lie below it, and a reader finds them only through directory
+entries. The object log has no record-level framing, and consecutive records' extents are not necessarily contiguous,
+so a reader obtains each record's location from that record's object-log position word rather than deriving it from
+the preceding record.
 
 The objectId has two roles, which a live slot can hold at once:
 
@@ -308,7 +316,7 @@ zero is recorded as absent (null) without invoking the deserializer.
 
 ### 3.3 Hint encoding
 
-A hint describes the extent the position addresses: a single extent's payload, or a top directory record's payload,
+A hint describes the record's top extent (section 1): a single extent's payload, or a top directory record's payload,
 which is its header, entries, and any combined final data. An extent whose payload is at most
 `ObjectLogExtent.ExactCutoff` (511) bytes is exact and headerless; a larger one is length-prefixed (section 4.1).
 
@@ -410,12 +418,13 @@ restamp the record and clear the marker (sections 7.4 and 13.7).
 
 `LogRecord.GetObjectLogRecordRef()` captures what a reader needs as an `ObjectLogRecordRef`: the position word with its
 flags, which components are out of line, the key slot's hint and raw RDH KeyLength, and the value slot's hint. Its
-`TopExtentInitialRead` gives the first read's length, decoded with `ObjectLogExtent.KeyInitialRead` when the key is
-overflow and `ObjectLogExtent.ValueInitialRead` otherwise; the page read-ahead (section 6.5) and Pass 2's size estimate
-(section 7.2) use it. `ObjectLogReader.ReadTopExtent` decodes the same hint itself: it reads exactly `hint` bytes for an
-exact extent, and clamps a page-count read to the page and the tail. While recovery establishes the main object log's
-tail, one that would pass the checkpoint's recorded tail is clamped instead to the extent's exact end (section 6.1). A
-reader captures the reference before it materializes any component, because assigning a component unstamps the record.
+`TopExtentInitialRead` gives the length of the top extent's first read, decoded with `ObjectLogExtent.KeyInitialRead`
+when the key is overflow and `ObjectLogExtent.ValueInitialRead` otherwise; the page read-ahead (section 6.5) and
+Pass 2's size estimate (section 7.2) use it. `ObjectLogReader.ReadTopExtent` decodes the same hint itself: it reads
+exactly `hint` bytes for an exact extent, and clamps a page-count read to the page and the tail. While recovery
+establishes the main object log's tail, one that would pass the checkpoint's recorded tail is clamped instead to the
+extent's exact end (section 6.1). A reader captures the reference before it materializes any component, because
+assigning a component unstamps the record.
 
 `LogRecord.GetObjectLogRecordStartPositionAndLengths` serves the version 7 paths: when the checkpoint version selects
 the version 7 decode (`HybridLogRecoveryInfo.UsesDownlevelObjectLog`), it returns the record's position and exact split
@@ -461,8 +470,8 @@ component has no bytes, and its exact hint of zero says so.
 ### 4.2 Directory record
 
 A record with more than one chunk, or with both an overflow key and an out-of-line value, gets a directory, and its
-position addresses its top directory record with `HasDirectory` set. The top record is framed like any addressed
-extent: exact when it is at most 511 bytes, length-prefixed otherwise.
+position addresses its top directory record with `HasDirectory` set. The top record is the record's top extent
+(section 1), framed like a single extent: exact when it is at most 511 bytes, length-prefixed otherwise.
 
 ```text
 [int32 length, when longer than 511 bytes]
@@ -811,8 +820,8 @@ cutoff cohort, captures stable `snapshotFileLogicalStartAddress`, and enters `Fl
 The cutoff drain does not hold the allocator installation lock, so an included ReadOnly worker can issue the IO being
 awaited. Snapshot does not advance `ReadOnlyAddress`.
 
-During `Flushing`, a fixed-size ring tracks only the bounded set of concurrently issued Snapshot pages. Its size is
-`SnapshotFlushCoordinationWindowSize`: for the object allocator, 64 pages capped at its buffer size (section 9.7).
+During `Flushing`, a fixed-size ring tracks only the bounded set of concurrently issued Snapshot pages, at most
+`SnapshotFlushCoordinationWindowSize` of them, 64 for the object allocator unless its buffer holds fewer (section 9.7).
 Callbacks may complete out of order, but `readOnlyFlushPageLimit` advances only across the contiguous completed prefix:
 completing the lowest unfinished page releases it, and every later page already completed, to ReadOnly and eviction;
 completing any other page releases nothing yet. ReadOnly page `P` may serialize only while `P < readOnlyFlushPageLimit`,
@@ -881,9 +890,10 @@ The pending read and the page walk share `ObjectAllocatorImpl.ReadRecordObjects(
 
 ### 6.1 Top extent
 
-`BeginRecord` refuses an unstamped record and one with no out-of-line component, and treats a record with both an
-overflow key and an out-of-line value but no directory as corrupt. It reads the extent the position addresses, sized by
-the key's slot when the key is overflow and by the value's slot otherwise:
+The top extent is the extent the record's position addresses: its single extent, or its top directory record with any
+combined final data (section 1). `BeginRecord` refuses an unstamped record and one with no out-of-line component, and
+treats a record with both an overflow key and an out-of-line value but no directory as corrupt. It reads the top
+extent, sized by the key's slot when the key is overflow and by the value's slot otherwise:
 
 - Exact: one read of exactly `hint` bytes, or none for a zero-length component.
 - Length-prefixed: one read of the decoded first read (section 3.3), clamped to the bytes left on the extent's page and
@@ -895,8 +905,8 @@ the key's slot when the key is overflow and by the value's slot otherwise:
   exceed `ExactCutoff` (511) and fit within those bytes. When the extent is longer than the first read, a second read on
   the same page fetches the rest.
 
-The extent stays in the reader's `topBuffer`. Without a directory, its payload is the record's one component; with one,
-`ParseDirectory` follows.
+The top extent stays in the reader's `topBuffer`, prefix included. Without a directory, its payload is the record's one
+component; with one, `ParseDirectory` follows.
 
 ### 6.2 Directory parse and validation
 
@@ -1366,8 +1376,8 @@ are the addresses section 13.1 defines.
 
 - Allocator configuration
   - `AllocatorBase.SnapshotFlushWindowSize` defaults to zero
-  - `ObjectAllocatorImpl` sets it in its constructor to `DefaultSnapshotFlushWindowSize` (64 pages), capped by the
-    allocator's page ring size (`BufferSize`)
+  - `ObjectAllocatorImpl` sets it in its constructor to `DefaultSnapshotFlushWindowSize` (64), capped by the number
+    of pages in the allocator's page ring (`BufferSize`)
   - `SnapshotFlushCoordinationWindowSize` uses that value for ObjectAllocator, one for a non-object
     `NullDevice` that needs Head/page-residency protection, or zero for a real-device non-object allocator
 - `ObjectAllocatorImpl.OnPagesMarkedReadOnlyWorker()`
@@ -1875,7 +1885,7 @@ The spare bits in both words read back as zero, so a later format can claim them
 `ObjectLogWriter` writes a record's out-of-line components to an `ObjectLog`, and `ObjectLogReader` reads them
 back.
 
-**Framing.** The extent a position addresses — a single component, or a top directory record — is exact or
+**Framing.** A record's top extent (section 1), which is a single component or a top directory record, is exact or
 length-prefixed:
 
 - **Exact:** a payload of at most 511 bytes is stored headerless. The record's hint is its exact length, and the
@@ -1905,7 +1915,7 @@ than a chunk is emitted straight from the source. Each emitted chunk is one allo
 - A directory record holds at most `MaxDirectoryRecordSize` (1 MB), or a page, if smaller; past that, its entries are
   written out as a spine record.
 
-**Reading.** One IO reads the extent the position addresses; a second, on the same page, finishes a value-sized extent
+**Reading.** One IO reads the record's top extent; a second, on the same page, finishes a value-sized extent
 longer than `LargeInitialRead`; while recovery establishes the main object log's tail, a length-prefixed extent whose
 first read would pass the checkpoint's recorded tail first costs a read of its prefix (section 12.4). A directory's
 spine is walked backward, one read per spine record, and every entry is validated before any data is read. Component

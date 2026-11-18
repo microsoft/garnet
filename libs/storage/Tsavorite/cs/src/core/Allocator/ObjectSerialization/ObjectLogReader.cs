@@ -15,7 +15,9 @@ namespace Tsavorite.core
     /// <see cref="ObjectLog"/>.
     /// </summary>
     /// <remarks>
-    /// <para><see cref="BeginRecord"/> reads the extent the record's position addresses, in one IO sized by the record's hint. For a
+    /// <para><see cref="BeginRecord"/> first reads the record's top extent, the extent its position addresses (see <see cref="ObjectLogExtent"/>),
+    /// in one IO sized by the record's hint. It takes a second for a value-sized extent longer than <see cref="ObjectLogExtent.LargeInitialRead"/>,
+    /// and for one that recovery reads near the checkpoint's recorded tail (see <see cref="ReadTopExtent"/>). For a
     /// single extent that is the component itself. For a directory it is the top directory record, including any final data
     /// combined with it; a spine is walked backward from there, and every entry is validated before any data is read. Component
     /// lengths are then exact, so an overflow array is allocated once at its final size and an object's deserializer is bounded by
@@ -35,10 +37,18 @@ namespace Tsavorite.core
         bool inRecord;
         bool hasDirectory;
 
-        /// <summary>The top extent as read, prefix included.</summary>
+        /// <summary>The record's top extent as read, length prefix included (see <see cref="ObjectLogExtent"/>); the byte at
+        /// <c>topAddress + i</c> is <c>topBuffer[i]</c>. Rented from <see cref="ArrayPool{T}.Shared"/> and kept across records.</summary>
         byte[] topBuffer;
+
+        /// <summary>The top extent's object-log address: the address bits of the record's position word.</summary>
         long topAddress;
+
+        /// <summary>Where the top extent's payload starts in <see cref="topBuffer"/>: past the length prefix, or 0 for an exact extent.</summary>
         int topPayloadOffset;
+
+        /// <summary>The top extent's exact payload length: the single extent's component, or the top directory record's header and entries
+        /// plus any combined final data.</summary>
         int topPayloadLength;
 
         /// <summary>The log range of the final data combined with the top directory record; empty when there is none.</summary>
@@ -91,8 +101,8 @@ namespace Tsavorite.core
         internal long ValueLength => valueLength;
 
         /// <summary>
-        /// Read the extent <paramref name="record"/>'s position addresses, and for a directory its spine, so its components' lengths
-        /// and locations are known.
+        /// Read <paramref name="record"/>'s top extent, the extent its position addresses, and for a directory its spine, so its
+        /// components' lengths and locations are known.
         /// </summary>
         /// <remarks>The record must be stamped; an unstamped record has no object-log bytes and is materialized without reading.</remarks>
         internal void BeginRecord(in ObjectLogRecordRef record)
@@ -136,6 +146,13 @@ namespace Tsavorite.core
             ParseDirectory();
         }
 
+        /// <summary>Read the record's top extent into <see cref="topBuffer"/>, and set <see cref="topPayloadOffset"/> and
+        /// <see cref="topPayloadLength"/>. An exact extent takes one read of exactly the hint's length. A length-prefixed one is read for the
+        /// hint's first-read length, clamped to the extent's page and <see cref="ObjectLog.ReadEndAddress"/>, and finished with a second read
+        /// on the same page when the prefix says it is longer. While recovery establishes the log's tail, a first read that would pass the
+        /// recorded tail is cut at the extent's end, which a read of the prefix finds first.</summary>
+        /// <param name="sizedByKey">Whether the key slot's hint sizes the extent, which it does whenever the key is overflow.</param>
+        /// <param name="isExact">Whether that slot's hint is the extent's exact length.</param>
         void ReadTopExtent(bool sizedByKey, bool isExact)
         {
             if (isExact)
@@ -497,9 +514,9 @@ namespace Tsavorite.core
         /// <summary>Finish the record begun by <see cref="BeginRecord"/>.</summary>
         internal void EndRecord()
         {
-            // If this record is in the read-ahead's range, the range's later records lie at or above the end of its top extent, so the
-            // read-ahead can let go of the bytes below it. It ignores a release beyond its range or within its hole, which comes from a
-            // record outside the range.
+            // The top extent is this record's highest. If the record is in the read-ahead's range, the range's later records lie at or above
+            // the end of its top extent, so the read-ahead can let go of the bytes below it. It ignores a release beyond its range or within
+            // its hole, which comes from a record outside the range.
             if (inRecord)
                 ReadAhead?.Release(topAddress + topPayloadOffset + topPayloadLength);
             inRecord = false;

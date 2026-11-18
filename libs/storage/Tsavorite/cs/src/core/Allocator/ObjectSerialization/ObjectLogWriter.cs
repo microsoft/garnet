@@ -43,7 +43,8 @@ namespace Tsavorite.core
     /// <see cref="ObjectLogExtent.ExactCutoff"/> bytes, otherwise length-prefixed. Anything else -- more than one chunk, or both an
     /// overflow key and an out-of-line value -- gets a directory: an entry per component portion of each chunk, and a top directory
     /// record that also carries the final data when they fit one allocation together. The position addresses that single extent or
-    /// that top record.</para>
+    /// that top record, the record's top extent (see <see cref="ObjectLogExtent"/>). It is written last, so the record's other extents lie
+    /// below it.</para>
     /// <para>No epoch is held while staging or serializing; each chunk's allocation and copy happen inside one <see cref="ObjectLog"/>
     /// scope. The writer is used by one thread at a time.</para>
     /// </remarks>
@@ -414,7 +415,8 @@ namespace Tsavorite.core
             stagedKeyLength = Math.Max(0, stagedKeyLength - count);
         }
 
-        /// <summary>Write the top directory record, combined with the staged final data when they fit one allocation together.</summary>
+        /// <summary>Write the top directory record, the record's top extent, combined with the staged final data when they fit one allocation
+        /// together. It is allocated after the record's data chunks and spine records, including any chunk this method writes first.</summary>
         void WriteTopDirectoryRecord(out long address, out long payloadLength)
         {
             while (true)
