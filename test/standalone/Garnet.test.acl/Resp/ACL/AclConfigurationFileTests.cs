@@ -148,7 +148,8 @@ namespace Garnet.test.Resp.ACL
 
             // Update the configuration file and reload
             File.WriteAllText(configurationFile, modifiedConfigurationFile);
-            c.Execute("ACL", "LOAD");
+            ClassicAssert.AreEqual("OK", await c.ExecuteAsync("ACL", "LOAD").ConfigureAwait(false));
+            ClassicAssert.AreEqual("OK", await c.ExecuteAsync("AUTH", "default", DummyPassword).ConfigureAwait(false));
 
             // Check the integrity of the list
             users = await c.ExecuteForArrayAsync("ACL", "USERS").ConfigureAwait(false);
@@ -195,6 +196,11 @@ namespace Garnet.test.Resp.ACL
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
 
+            using var authenticatedUser = TestUtils.GetGarnetClientSession();
+            authenticatedUser.Connect();
+            ClassicAssert.AreEqual("OK", await authenticatedUser.ExecuteAsync("AUTH", "testA", "password123").ConfigureAwait(false));
+            Assert.That(await authenticatedUser.ExecuteForArrayAsync("ACL", "USERS").ConfigureAwait(false), Does.Contain("testA"));
+
             // Ensure Garnet started up 2 users: testA and default
             string[] users = await c.ExecuteForArrayAsync("ACL", "USERS").ConfigureAwait(false);
             ClassicAssert.IsTrue(2 == users.Length);
@@ -215,6 +221,7 @@ namespace Garnet.test.Resp.ACL
                 ClassicAssert.IsTrue(exception.Message.StartsWith("ERR"));
             }
 
+            Assert.That(await authenticatedUser.ExecuteForArrayAsync("ACL", "USERS").ConfigureAwait(false), Does.Contain("testA"));
             users = await c.ExecuteForArrayAsync("ACL", "USERS").ConfigureAwait(false);
 
             // Check that we still only know testA and default
@@ -232,6 +239,91 @@ namespace Garnet.test.Resp.ACL
                     ClassicAssert.IsFalse(user.Contains(DummyPasswordHash));
                 }
             }
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task AclLoadInvalidatesExistingSessionAsync(bool removeUser)
+        {
+            var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
+            var defaultRule = $"user default on >{DummyPasswordB} +@all\r\n";
+            File.WriteAllText(configurationFile, defaultRule + $"user {TestUserA} on >{DummyPassword} +@all");
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile);
+            server.Start();
+
+            using var admin = TestUtils.GetGarnetClientSession();
+            admin.Connect();
+            ClassicAssert.AreEqual("OK", await admin.ExecuteAsync("AUTH", "default", DummyPasswordB).ConfigureAwait(false));
+            ClassicAssert.AreEqual("OK", await admin.ExecuteAsync("SET", "marker", "value").ConfigureAwait(false));
+
+            using var user = TestUtils.GetGarnetClientSession();
+            user.Connect();
+            ClassicAssert.AreEqual("OK", await user.ExecuteAsync("AUTH", TestUserA, DummyPassword).ConfigureAwait(false));
+            ClassicAssert.AreEqual("value", await user.ExecuteAsync("GET", "marker").ConfigureAwait(false));
+
+            File.WriteAllText(configurationFile,
+                defaultRule + (removeUser ? "" : $"user {TestUserA} on >{DummyPasswordB} +get"));
+            ClassicAssert.AreEqual("OK", await admin.ExecuteAsync("ACL", "LOAD").ConfigureAwait(false));
+
+            var error = Assert.ThrowsAsync<Exception>(
+                async () => await user.ExecuteAsync("GET", "marker").ConfigureAwait(false));
+            ClassicAssert.AreEqual("NOAUTH Authentication required.", error.Message);
+            error = Assert.ThrowsAsync<Exception>(
+                async () => await user.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", "nopass", "+@all").ConfigureAwait(false));
+            ClassicAssert.AreEqual("NOAUTH Authentication required.", error.Message);
+
+            using var fresh = TestUtils.GetGarnetClientSession();
+            fresh.Connect();
+            error = Assert.ThrowsAsync<Exception>(
+                async () => await fresh.ExecuteAsync("AUTH", TestUserA, DummyPassword).ConfigureAwait(false));
+            Assert.That(error.Message, Does.StartWith("WRONGPASS"));
+
+            if (!removeUser)
+            {
+                ClassicAssert.AreEqual("OK", await user.ExecuteAsync("AUTH", TestUserA, DummyPasswordB).ConfigureAwait(false));
+                ClassicAssert.AreEqual("value", await user.ExecuteAsync("GET", "marker").ConfigureAwait(false));
+                error = Assert.ThrowsAsync<Exception>(
+                    async () => await user.ExecuteAsync("SET", "marker", "changed").ConfigureAwait(false));
+                Assert.That(error.Message, Does.StartWith("NOPERM"));
+            }
+        }
+
+        [Test]
+        public async Task AclLoadInvalidatesPasswordlessDefaultSessionAsync()
+        {
+            var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
+            File.WriteAllText(configurationFile, "user default on nopass +@all");
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile);
+            server.Start();
+
+            using var user = TestUtils.GetGarnetClientSession();
+            user.Connect();
+            ClassicAssert.AreEqual("OK", await user.ExecuteAsync("SET", "marker", "value").ConfigureAwait(false));
+
+            File.WriteAllText(configurationFile, $"user default on resetpass >{DummyPassword} +get");
+            ClassicAssert.AreEqual("OK", await user.ExecuteAsync("ACL", "LOAD").ConfigureAwait(false));
+
+            var error = Assert.ThrowsAsync<Exception>(
+                async () => await user.ExecuteAsync("GET", "marker").ConfigureAwait(false));
+            ClassicAssert.AreEqual("NOAUTH Authentication required.", error.Message);
+            error = Assert.ThrowsAsync<Exception>(
+                async () => await user.ExecuteAsync("ACL", "SETUSER", "default", "nopass", "+@all").ConfigureAwait(false));
+            ClassicAssert.AreEqual("NOAUTH Authentication required.", error.Message);
+            error = Assert.ThrowsAsync<Exception>(
+                async () => await user.ExecuteAsync("ACL", "SAVE").ConfigureAwait(false));
+            ClassicAssert.AreEqual("NOAUTH Authentication required.", error.Message);
+
+            using var fresh = TestUtils.GetGarnetClientSession();
+            fresh.Connect();
+            error = Assert.ThrowsAsync<Exception>(
+                async () => await fresh.ExecuteAsync("GET", "marker").ConfigureAwait(false));
+            ClassicAssert.AreEqual("NOAUTH Authentication required.", error.Message);
+
+            ClassicAssert.AreEqual("OK", await user.ExecuteAsync("AUTH", "default", DummyPassword).ConfigureAwait(false));
+            ClassicAssert.AreEqual("value", await user.ExecuteAsync("GET", "marker").ConfigureAwait(false));
+            error = Assert.ThrowsAsync<Exception>(
+                async () => await user.ExecuteAsync("SET", "marker", "changed").ConfigureAwait(false));
+            Assert.That(error.Message, Does.StartWith("NOPERM"));
         }
 
         /// <summary>
@@ -361,6 +453,7 @@ namespace Garnet.test.Resp.ACL
             // Reload acl config
             resp = (string)db.Execute("ACL", "LOAD");
             ClassicAssert.AreEqual("OK", resp);
+            ClassicAssert.AreEqual("OK", (string)db.Execute("AUTH", "default", ""));
 
             // Retrieve users after reload and ensure user does not exist
             users = (string[])db.Execute("ACL", "USERS");
@@ -377,6 +470,7 @@ namespace Garnet.test.Resp.ACL
             // Reload acl config
             resp = (string)db.Execute("ACL", "LOAD");
             ClassicAssert.AreEqual("OK", resp);
+            ClassicAssert.AreEqual("OK", (string)db.Execute("AUTH", "default", ""));
 
             // Retrieve users after save and ensure user does exist
             users = (string[])db.Execute("ACL", "USERS");
