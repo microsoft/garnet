@@ -3964,6 +3964,23 @@ namespace Garnet.test
         #endregion
 
         [Test]
+        public async Task RenameValidationAsync()
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            ClassicAssert.IsTrue(await db.StringSetAsync("foo", "bar").ConfigureAwait(false));
+
+            var exc0 = ClassicAssert.ThrowsAsync<RedisSerializationException>(() => db.ExecuteAsync("RENAME", "fizz", "fizz"));
+            ClassicAssert.AreEqual("ERR no such key", exc0.Message);
+
+            ClassicAssert.IsFalse(await db.KeyRenameAsync("foo", "foo", When.NotExists).ConfigureAwait(false));
+
+            var exc1 = ClassicAssert.ThrowsAsync<RedisSerializationException>(() => db.ExecuteAsync("RENAMENX", "fizz", "foo"));
+            ClassicAssert.AreEqual("ERR no such key", exc1.Message);
+        }
+
+        [Test]
         public void CanSelectCommand()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
