@@ -1701,6 +1701,22 @@ namespace Garnet.test
 
         #endregion
 
+        [Test]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("ZRANDMEMBER")]
+        public async Task WrongTypeOnZeroCountValidationAsync(string cmd)
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            ClassicAssert.IsTrue(await db.StringSetAsync("foo", "bar").ConfigureAwait(false));
+
+            var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync(cmd, ["foo", "0"]));
+            ClassicAssert.IsTrue(exc.Message.StartsWith("WRONGTYPE "));
+        }
+
 
         #region commonmethods
 
