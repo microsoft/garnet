@@ -417,7 +417,13 @@ namespace Tsavorite.test
                 gatedLog = new GatedCompletionDevice(log);
 
             tracker = new ObjDisposeTracker();
-            store = new(new()
+            CreateStore();
+        }
+
+        /// <summary>Create the store on the fixture's devices, with every key out of line if <paramref name="overflowKeys"/>, and with
+        /// <paramref name="revivificationSettings"/>, which are off by default.</summary>
+        private void CreateStore(bool overflowKeys = false, RevivificationSettings revivificationSettings = null)
+            => store = new(new()
             {
                 IndexSize = 1L << 13,
                 LogDevice = (IDevice)gatedLog ?? log,
@@ -425,11 +431,12 @@ namespace Tsavorite.test
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 15,
                 PageSize = MinKvLogPageSize,
-                CheckpointDir = MethodTestDir
+                CheckpointDir = MethodTestDir,
+                MaxInlineKeySize = overflowKeys ? 0 : KVSettings.DefaultMaxInlineKeySize,
+                RevivificationSettings = revivificationSettings
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(),
                     new ObjTrackingRecordTriggers(tracker))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
-        }
 
         [TearDown]
         public void TearDown()
@@ -1445,6 +1452,83 @@ namespace Tsavorite.test
             {
                 copy.Return();
             }
+        }
+
+        #endregion
+
+        #region An elided record keeps its key
+
+        /// <summary>How a record alone in its hash chain, with an out-of-line key, is elided.</summary>
+        public enum ElisionPath
+        {
+            /// <summary>An in-place Delete of the mutable record.</summary>
+            InPlaceDelete,
+
+            /// <summary>An in-place expiration of the mutable record: InPlaceUpdater returns <see cref="RMWAction.ExpireAndStop"/>.</summary>
+            InPlaceExpiration,
+
+            /// <summary>An expiration of the durable record with no new record: NeedCopyUpdate returns <see cref="RMWAction.ExpireAndStop"/>.</summary>
+            ImmutableExpiration,
+
+            /// <summary>A Delete of the durable record, whose tombstone bypasses it.</summary>
+            BypassedByDelete,
+
+            /// <summary>An in-place Delete with the free-record pool, of a mutable record below the revivifiable range, which the pool does not
+            /// take and does not restore to the chain.</summary>
+            InPlaceDeleteBelowTheRevivifiableRange,
+        }
+
+        /// <summary>
+        /// An elided record keeps its overflow key: a scan, or a lookup that read the record's address before the elision, still reads the key.
+        /// The key was charged to the size tracker when the record was inserted, and the eviction walk skips invalid records, so each elision
+        /// credits the key; the tracker returns to zero once every record is evicted.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjElidedRecordKeepsItsOverflowKeyAndCreditsItTest([Values] ElisionPath path)
+        {
+            RevivificationSettings revivificationSettings = null;
+            if (path == ElisionPath.InPlaceDeleteBelowTheRevivifiableRange)
+            {
+                // Only the top of the mutable region is revivifiable, and the pool does not put back a record it does not take.
+                revivificationSettings = RevivificationSettings.PowerOf2Bins.Clone();
+                revivificationSettings.RevivifiableFraction = 0.05;
+                revivificationSettings.RestoreDeletedRecordsIfBinIsFull = false;
+            }
+            store.Dispose();
+            CreateStore(overflowKeys: true, revivificationSettings);
+            const long TargetSize = 1L << 20;
+            var sizeTracker = new LogSizeTracker<ObjTrackingStoreFunctions, ObjTrackingAllocator>(store.Log, TargetSize, TargetSize / 8, TargetSize / 16, logger: null);
+            store.Log.SetLogSizeTracker(sizeTracker);
+
+            var address = NextRecordAddress();
+            UpsertObj(1, 100);
+            Assert.That(store.hlogBase._wrapper.CreateLogRecord(address).DataHeader.KeyIsOverflow, Is.True, "Precondition: the key is out of line");
+            if (path is ElisionPath.ImmutableExpiration or ElisionPath.BypassedByDelete)
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            if (path == ElisionPath.InPlaceDeleteBelowTheRevivifiableRange)
+                Assert.That(address, Is.LessThan(store.GetMinRevivifiableAddress()), "Precondition: the record is below the revivifiable range");
+
+            if (path is ElisionPath.InPlaceExpiration or ElisionPath.ImmutableExpiration)
+            {
+                var fn = new ObjExpirableFunctions { expireAction = RMWAction.ExpireAndStop };
+                using var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, ObjExpirableFunctions>(fn);
+                var input = new TestObjectInput { value = 0 };
+                _ = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, 0);
+            }
+            else
+            {
+                using var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
+                _ = s.BasicContext.Delete(new TestObjectKey { key = 1 });
+            }
+
+            var record = store.hlogBase._wrapper.CreateLogRecord(address);
+            Assert.That(record.Info.Valid, Is.False, $"Precondition: the record was elided: {record.Info}");
+            Assert.That(record.DataHeader.KeyIsOverflow, Is.True, "The elision released the record's key");
+            Assert.That(BitConverter.ToInt32(record.Key), Is.EqualTo(1), "The elided record's key does not resolve to its key");
+
+            store.Log.FlushAndEvict(wait: true);
+            Assert.That(sizeTracker.LogHeapSizeBytes, Is.Zero, "Eviction must leave nothing counted: the elision must credit the key it keeps");
         }
 
         #endregion

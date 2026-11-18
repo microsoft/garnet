@@ -264,8 +264,8 @@ namespace Tsavorite.core
                     // The CAS above replaced the source in the HashBucketEntry with a tombstone that carries the source's
                     // PreviousAddress, so the source is now detached from the tag chain. Release it as deleted first so triggers
                     // keyed on deletion (e.g. range-index file cleanup and Vector Set deletion) still run; that releases and
-                    // un-accounts the value, or marks that for later if the source is frozen. Then elide it, which releases the key,
-                    // or seal it if it must stay valid.
+                    // un-accounts the value, or marks that for later if the source is frozen. Then elide it, which credits the key, or
+                    // seal it if it must stay valid.
                     var disposalDeferred = ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord, deleted: true);
                     DetachBypassedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord, disposalDeferred);
                 }

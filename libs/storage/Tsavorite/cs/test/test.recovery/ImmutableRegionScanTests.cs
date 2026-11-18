@@ -264,9 +264,9 @@ namespace Tsavorite.test.recovery
         }
 
         /// <summary>
-        /// A copy taken without a lock is retaken if the record was closed or its header was published while it was copied: an elision closes the record
-        /// before it releases the key and value, and each release publishes a new header. Other changes to a record's info, such as its snapshot marker,
-        /// do not affect what the copy reports, so they do not cause a retry.
+        /// A copy taken without a lock is retaken if the record was closed or its header changed while it was copied: an elision closes the record
+        /// before it releases its value, and a flush stamps an overflow key's size hint into the header. Other changes to a record's info, such as
+        /// its snapshot marker, do not affect what the copy reports, so they do not cause a retry.
         /// </summary>
         [Test]
         [Category("TsavoriteKV")]
@@ -306,7 +306,8 @@ namespace Tsavorite.test.recovery
 
         /// <summary>
         /// Scans run while CopyUpdates supersede records on pages entirely below SafeReadOnlyAddress, releasing each source's value and eliding
-        /// single-version sources, which also releases an overflow key. Every record a scan reports holds a valid value or nothing.
+        /// single-version sources, which keep their keys. Every record a scan reports holds a valid value or nothing. The bounded push scan reports
+        /// closed records too, and looks up each record's key, reading the keys of the records in its chain.
         /// </summary>
         [Test]
         [Category("TsavoriteKV")]
@@ -330,14 +331,10 @@ namespace Tsavorite.test.recovery
                         foreach (var record in PullScan())
                             ValidateScannedRecord(record, keyCount);
 
-                        // A lookup's traceback reads the keys of records in the chain, which an elision may be releasing, so only inline keys are looked up.
-                        if (!overflowKeys)
-                        {
-                            ReportingScan scan = new();
-                            PushScan(scan, bounded: true);
-                            foreach (var record in scan.Records)
-                                ValidateScannedRecord(record, keyCount);
-                        }
+                        ReportingScan scan = new();
+                        PushScan(scan, bounded: true);
+                        foreach (var record in scan.Records)
+                            ValidateScannedRecord(record, keyCount);
                         ++scans;
                     }
                 }

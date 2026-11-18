@@ -333,10 +333,16 @@ namespace Tsavorite.core
             }
 
             source.InfoRef.SealAndInvalidate();
-            if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
-                _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, stackCtx.recSrc.LogicalAddress, ref source);
+
+            // Decide once whether the source is reused, so that it is always either reset for reuse or released. A source at or above the
+            // revivifiable range is reset, which frees its fields, and put on the free list if the pool takes it. One below it is released in place
+            // (ReleaseInPlace), because a scan may still copy it without a lock or resolve a copy's ids: only its value's slot changes, and its key
+            // stays. The release credits the key and any value the source still holds, because eviction skips invalid records.
+            var address = stackCtx.recSrc.LogicalAddress;
+            if (address >= GetMinRevivifiableAddress())
+                _ = TransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, address, ref source);
             else
-                OnDispose(ref source, DisposeReason.Elided);
+                ReleaseInPlace(ref source, DisposeReason.Elided);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -360,9 +366,20 @@ namespace Tsavorite.core
             // The record has been CAS'd out of the hashtable or elided from the chain, so add it to the free list.
             Debug.Assert(logRecord.Info.IsClosed, "Expected a Closed record in TryTransferToFreeList");
 
-            // If its address is not revivifiable, just leave it orphaned and invalid.
+            // If its address is not revivifiable, leave it orphaned and invalid, and untouched: the caller releases it, or credits what it holds.
             if (logicalAddress < GetMinRevivifiableAddress())
                 return false;
+            return TransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, logicalAddress, ref logRecord);
+        }
+
+        /// <summary>Reset the closed record at <paramref name="logicalAddress"/> for reuse, freeing its out-of-line fields, and add it to the free
+        /// list if the pool takes it.</summary>
+        /// <returns>Whether the free list took the record. If it did not, the record stays invalid, with its fields freed and its heap credited.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool TransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, long logicalAddress, ref LogRecord logRecord)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            Debug.Assert(logRecord.Info.IsClosed, "Expected a Closed record in TransferToFreeList");
 
             // Application-level dispose (storeFunctions.OnDispose) was already called at the delete site. Call hlog.OnDispose with
             // RevivificationFreeList to free the record's out-of-line fields for freelist reuse: a deletion leaves the key, and a deletion
@@ -370,6 +387,15 @@ namespace Tsavorite.core
             OnDispose(ref logRecord, DisposeReason.RevivificationFreeList);
 
             return RevivificationManager.TryAdd(logicalAddress, ref logRecord, ref sessionFunctions.Ctx.RevivificationStats);
+        }
+
+        /// <summary>Credit the size tracker with the overflow key of an elided record that keeps it. An insert charged the key, and eviction skips
+        /// invalid records, so the key would otherwise stay counted after its page is freed.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CreditElidedKey(ref LogRecord logRecord)
+        {
+            if (logRecord.DataHeader.KeyIsOverflow)
+                hlogBase.logSizeTracker?.IncrementSize(-logRecord.KeyOverflow.HeapMemorySize);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]      // Do not try to inline this, to keep TryAllocateRecord lean
@@ -490,15 +516,19 @@ namespace Tsavorite.core
             TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord srcLogRecord)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            // Record was already disposed at the delete site (OnDispose with DisposeReason.Deleted).
-            // Heap fields and optionals are already cleared. This method only handles chain management.
+            // The record was released where it was deleted: disposed (OnDispose with DisposeReason.Deleted) in the mutable region, or released in
+            // place (ReleaseInPlace) below ReadOnlyAddress. Either way it keeps its key. This method only handles chain management, and credits the
+            // overflow key of a record it leaves invalid, because eviction skips invalid records.
 
             if (!RevivificationManager.IsEnabled)
             {
                 // We are not doing revivification, so we just want to remove the record from the tag chain so we don't potentially do an IO later for key 
                 // traceback. If we succeed, we need to SealAndInvalidate. It's fine if we don't succeed here; this is just tidying up the HashBucket. 
                 if (stackCtx.hei.TryElide())
+                {
                     srcLogRecord.InfoRef.SealAndInvalidate();
+                    CreditElidedKey(ref srcLogRecord);
+                }
                 return;
             }
 
@@ -520,8 +550,14 @@ namespace Tsavorite.core
                 {
                     // Leave this in the chain as a normal Tombstone; we aren't going to add a new record so we can't leave this one sealed.
                     srcLogRecord.InfoRef.UnsealAndValidate();
+                    return;
                 }
-                else if (!isAdded && RevivificationManager.restoreDeletedRecordsIfBinIsFull)
+
+                // The free list has the record, and another thread may already be reusing it.
+                if (isAdded)
+                    return;
+
+                if (RevivificationManager.restoreDeletedRecordsIfBinIsFull)
                 {
                     // The record was not added to the freelist, but was elided. See if we can put it back in as a normal Tombstone. Since we just
                     // elided it and the elision criteria is that it is the only above-BeginAddress record in the chain, and elision sets the
@@ -532,8 +568,15 @@ namespace Tsavorite.core
                     FindOrCreateTag(ref stackCtx.hei, hlogBase.BeginAddress);
 
                     if (stackCtx.hei.entry.Address <= kTempInvalidAddress && stackCtx.hei.TryCAS(stackCtx.recSrc.LogicalAddress))
+                    {
                         srcLogRecord.InfoRef.UnsealAndValidate();
+                        return;
+                    }
                 }
+
+                // The record stays out of the chain and off the free list, invalid. If the pool refused it, its transfer has already freed and
+                // credited the key; if it is below the revivifiable range, it was not transferred and still holds the key.
+                CreditElidedKey(ref srcLogRecord);
             }
         }
     }

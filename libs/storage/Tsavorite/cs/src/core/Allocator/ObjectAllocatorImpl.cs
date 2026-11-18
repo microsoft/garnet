@@ -1923,9 +1923,10 @@ namespace Tsavorite.core
                                     // RecordInfo is exactly where a concurrent elision can land, so a test runs its racing operation here.
                                     ObjectFlushInjection.At(ObjectFlushPhase.AfterCapture, logicalAddress);
 
-                                    // Re-read the LIVE RecordInfo after the capture. Elision CASes the record out of its tag chain, then
-                                    // SealAndInvalidate()s it, and only then frees its heap through OnDispose(Elided) -- so a capture that lost
-                                    // its heap surfaces here as an Invalid live record. Skipping such a record is equivalent to it having been
+                                    // Re-read the LIVE RecordInfo after the capture. An elision CASes the record out of its tag chain, then
+                                    // SealAndInvalidate()s it, and only then releases it: in place below the revivifiable range, or by freeing its
+                                    // heap through OnDispose(RevivificationFreeList) for reuse -- so a capture that lost its heap surfaces here as an
+                                    // Invalid live record. Skipping such a record is equivalent to it having been
                                     // Invalid at the Info.Valid test above: the live page already carries the Invalid bit that this flush
                                     // persists, recovery skips the image, and the superseding record (already CAS'd into the chain) wins.
                                     if (captureIsComplete && logRecord.Info.Valid)
@@ -1955,11 +1956,11 @@ namespace Tsavorite.core
                                     }
                                     else
                                     {
-                                        // A still-Valid record must keep its heap. The paths that free an overflow key or value
-                                        // (OnDispose with Elided or RevivificationFreeList) are preceded by SealAndInvalidate, the Deleted path
-                                        // is declined for this flush range by IsFrozenForFlush, which defers it to the drain or eviction, and a
-                                        // CopyUpdate's release of its source value replaces the value's slot rather than freeing it. So a lost
-                                        // capture means the live record is Invalid (elided).
+                                        // A still-Valid record keeps its heap. A CopyUpdate's release of its source, a deleted record's disposal and
+                                        // an elision below the revivifiable range point the value's slot at a placeholder rather than freeing it. The
+                                        // paths that free an overflow key or value are a reset for reuse (OnDispose with RevivificationFreeList), which
+                                        // SealAndInvalidate precedes, and an in-place Delete or expiration, which reaches only a record at or above
+                                        // ReadOnlyAddress, and so one this flush cannot be walking. So a lost capture means the live record is Invalid.
                                         Debug.Assert(!logRecord.Info.Valid,
                                             "A Valid record lost its captured heap during object-log flush; expected the live record to be Invalid (elided).");
                                     }

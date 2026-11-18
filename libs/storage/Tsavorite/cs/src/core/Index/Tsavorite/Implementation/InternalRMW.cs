@@ -425,9 +425,14 @@ namespace Tsavorite.core
                         if (allocOptions.elideSourceRecord && !IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info))
                         {
                             // Dispose rather than release through ReleaseSupersededSource, which would mark the disposal of a source frozen since the
-                            // check: the elision below invalidates the source, and the drain and eviction skip invalid records.
+                            // check: the elision below invalidates the source, and the drain and eviction skip invalid records. Below ReadOnlyAddress a
+                            // scan may copy the source without a lock, so its value is released in place. At or above it the source is converted: if
+                            // the elision fails, the tombstone left in the chain may be revivified there, which needs an inline value.
                             ref var inMemoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
-                            OnDispose(ref inMemoryLogRecord, DisposeReason.Deleted);
+                            if (stackCtx.recSrc.LogicalAddress < hlogBase.ReadOnlyAddress)
+                                ReleaseInPlace(ref inMemoryLogRecord, DisposeReason.Deleted);
+                            else
+                                OnDispose(ref inMemoryLogRecord, DisposeReason.Deleted);
                             srcLogRecord.InfoRef.SetTombstone();
                             srcLogRecord.InfoRef.SetModified();
 

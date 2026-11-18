@@ -238,11 +238,12 @@ namespace Tsavorite.core
                         try
                         {
                             // Lock the key's bucket to ensure no value tearing while copying to temp storage, but only where a record can be updated in place.
-                            // - On a page entirely below SafeReadOnlyAddress nothing updates a record in place. The only changes are releases of a superseded
-                            //   record's fields, so no lock is taken, and the copy is checked instead (see ChangedWhileCopied).
-                            // - A record below SafeReadOnlyAddress on the page that holds it is locked. The page's ObjectIdMap also serves the page's mutable
-                            //   records, so a slot an unlocked release frees there can be reallocated to one of them before this copy's slots are resolved.
-                            //   Nothing allocates on a page entirely below SafeReadOnlyAddress, so a slot freed there resolves as nothing.
+                            // - On a page entirely below SafeReadOnlyAddress nothing updates a record in place. A superseded record's release changes only its
+                            //   value's slot, and an elision closes the record first, so no lock is taken, and the copy is checked instead (see ChangedWhileCopied).
+                            // - On any other page a record is locked, so that an in-place update of a mutable record does not tear the copy. A record below
+                            //   SafeReadOnlyAddress there is locked too, because the test is per page, although nothing frees its slots: a release below
+                            //   ReadOnlyAddress changes only the value's slot, so none of its slots is reallocated to the page's mutable records before this
+                            //   copy's slots are resolved.
                             // - A Sealed and Invalid record is locked: it may be a new record whose operation has not yet CAS'd it, or one an elision is disposing.
                             // - An Invalid record that is not Sealed came from recovery, which clears the Sealed bit of every image it reads. Nothing writes it,
                             //   and its key may be empty, so it is not locked.

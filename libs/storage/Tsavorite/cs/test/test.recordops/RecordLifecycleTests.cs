@@ -262,8 +262,8 @@ namespace Tsavorite.test
             _ = s.BasicContext.RMW(new TestObjectKey { key = key }, ref input, ref output, 0);
         }
 
-        /// <summary>Whether the record at <paramref name="logicalAddress"/> still holds its value object. A CopyUpdate's release leaves a
-        /// placeholder in the slot, which reads as no object; an elision converts the value to inline.</summary>
+        /// <summary>Whether the record at <paramref name="logicalAddress"/> still holds its value object. A release leaves a placeholder in the
+        /// slot, which reads as no object; a reset for reuse converts the value to inline.</summary>
         private bool SourceHoldsObject(long logicalAddress)
         {
             var logRecord = store.hlogBase._wrapper.CreateLogRecord(logicalAddress);

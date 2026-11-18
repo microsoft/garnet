@@ -71,15 +71,13 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>
         /// <para>The iterators copy without a lock where nothing updates a record in place: below SafeReadOnlyAddress, and for records with
-        /// ObjectIdMap slots only on a page entirely below it (see <see cref="LogRecord.TryRemapOverPinnedTransientMemory"/>). An RMW whose
-        /// expiration elides its source in place, with no new record, may still release the source's out-of-line fields and optionals, and that
-        /// release publishes a new header after it frees the fields' slots. A CopyUpdate's release of its source, and the disposal of a deleted
-        /// record, by its Delete or expiration or by the deferred-disposal drain, change only the value's slot, to a placeholder that reads as no
-        /// value, so they need no retry. An elision first seals and invalidates the record, so it is closed before its key and value are
-        /// released.</para>
-        /// <para>So a copy whose header or closed state differs from the record's afterward straddled one of these changes, and it is taken again.
-        /// A record changes only a few times, so the retries end. A release whose header is not yet published when the copy is checked has only
-        /// freed slots, which the remap resolves as nothing; see <see cref="LogRecord.TryRemapOverPinnedTransientMemory"/>.</para>
+        /// ObjectIdMap slots only on a page entirely below it (see <see cref="LogRecord.TryRemapOverPinnedTransientMemory"/>). A release there
+        /// changes only the value's slot, to a placeholder that reads as no value, so it needs no retry: a CopyUpdate's release of its source, the
+        /// disposal of a deleted record, by its Delete or expiration or by the deferred-disposal drain, and an elision, which first seals and
+        /// invalidates the record, so the record is closed before its value is released. A header there changes only when a flush stamps an
+        /// overflow key's size hint, which does not change what the copy reports.</para>
+        /// <para>So a copy whose closed state differs from the record's afterward straddled an elision, and it is taken again, as is one whose
+        /// header differs, which straddled a flush's stamp. A record changes only a few times, so the retries end.</para>
         /// </remarks>
         /// <param name="physicalAddress">The record in the log</param>
         /// <param name="copyAddress">The copy of the record</param>

@@ -133,14 +133,13 @@ namespace Tsavorite.core
         /// <para>A scan copies a record on a page entirely below SafeReadOnlyAddress without a lock, so the copy can be taken while the operation that
         /// superseded the record, or the deferred-disposal drain, releases its out-of-line fields. A release takes one of two forms:</para>
         /// <list type="bullet">
-        /// <item>A CopyUpdate's release of its source, and the disposal of a deleted record, change none of the record's bytes. The value's slot
-        /// keeps its id and gets a placeholder (<see cref="SupersededObjectValue"/>), which <see cref="ValueObject"/> reads as null, or an
-        /// overflow sentinel, which reads as an empty value. The slot is not freed, so no other record is given it while the page is
-        /// resident.</item>
-        /// <item>The disposal of a sealed and invalidated record (an elision, a free-listing, or an abandoned insert) frees each field's slot,
-        /// then writes <see cref="ObjectIdMap.InvalidObjectId"/> into the field, then publishes an inline header. A value released this way
-        /// resolves to nothing: a null value object, or an empty overflow value. A released overflow key cannot be reported, so the remap
-        /// fails.</item>
+        /// <item>A CopyUpdate's release of its source, the disposal of a deleted record, and an elision below the revivifiable range change none
+        /// of the record's bytes, and an elided record keeps its key. The value's slot keeps its id and gets a placeholder
+        /// (<see cref="SupersededObjectValue"/>), which <see cref="ValueObject"/> reads as null, or an overflow sentinel, which reads as an
+        /// empty value. The slot is not freed, so no other record is given it while the page is resident.</item>
+        /// <item>The reset of a sealed and invalidated record for reuse (a free-listing, or an abandoned insert) frees each field's slot, then
+        /// writes <see cref="ObjectIdMap.InvalidObjectId"/> into the field, then publishes an inline header. A value released this way resolves
+        /// to nothing: a null value object, or an empty overflow value. A released overflow key cannot be reported, so the remap fails.</item>
         /// </list>
         /// <para>A slot that still holds a component holds this record's when the record's page lies entirely below SafeReadOnlyAddress: nothing
         /// allocates on that page's map, so a freed slot is not reused while the page is resident. On any other page, a scan that has the store
