@@ -221,6 +221,71 @@ namespace Garnet.test
             }
         }
 
+        [Test, CancelAfter(60_000)]
+        public void ParallelRecoveryOwnsEpochForCommittedPrefixWithMutableSuffix(
+            [Values(2, 3)] int replayTaskCount)
+        {
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true,
+                commitFrequencyMs: -1, replayTaskCount: replayTaskCount, memorySize: "1m",
+                pageSize: "16k", aofMemorySize: "128k", aofPageSize: "32k");
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            Assert.That(db.StringSet("recovery-first", "one"), Is.True);
+            _ = db.Execute("COMMITAOF");
+            Assert.That(db.StringSet("recovery-second", "two"), Is.True);
+            _ = db.Execute("COMMITAOF");
+            var storeWrapper = server.Provider.StoreWrapper;
+            var committedPrefix = storeWrapper.TailAddress;
+
+            // A mutable suffix makes replayed commit metadata advance the read-only boundary.
+            Assert.That(db.KeyDelete(["recovery-first", "recovery-second"]), Is.EqualTo(2));
+            Assert.That(storeWrapper.TailAddress[0], Is.GreaterThan(committedPrefix[0]));
+            Assert.That(db.KeyExists("recovery-first"), Is.False);
+            Assert.That(db.KeyExists("recovery-second"), Is.False);
+
+            var replayedUntil = storeWrapper.ReplayAOF(committedPrefix);
+            Assert.That(replayedUntil[0], Is.EqualTo(committedPrefix[0]));
+            Assert.That(db.StringGet("recovery-first"), Is.EqualTo((RedisValue)"one"));
+            Assert.That(db.StringGet("recovery-second"), Is.EqualTo((RedisValue)"two"));
+        }
+
+        [Test]
+        public async Task AofSetConditionalOnNonStringKeysRecoverTestAsync()
+        {
+            DateTime? expireTime;
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                _ = db.ListRightPush("list", ["a", "b"]);
+                _ = db.HashSet("hash", "f", "v");
+                _ = db.SetAdd("set", "m");
+                ClassicAssert.IsTrue(db.KeyExpire("set", TimeSpan.FromSeconds(100)));
+                expireTime = db.KeyExpireTime("set");
+
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "list", "v1", "XX"));
+                ClassicAssert.IsTrue(db.Execute("SET", "hash", "v2", "NX").IsNull);
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "set", "v3", "KEEPTTL", "XX"));
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.AreEqual("v1", (string)db.StringGet("list"));
+                ClassicAssert.AreEqual(RedisType.Hash, db.KeyType("hash"));
+                ClassicAssert.AreEqual("v", (string)db.HashGet("hash", "f"));
+                ClassicAssert.AreEqual("v3", (string)db.StringGet("set"));
+                ClassicAssert.AreEqual(expireTime, db.KeyExpireTime("set"));
+            }
+        }
+
         [Test]
         public async Task AofUpsertStoreAutoCommitRecoverTestAsync()
         {

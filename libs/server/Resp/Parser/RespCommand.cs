@@ -1393,7 +1393,7 @@ namespace Garnet.server
             // Single probe returns both the command and whether it has subcommands.
             fixed (byte* namePtr = command)
             {
-                var cmd = RespCommandHashLookup.Lookup(namePtr, command.Length, out var hasSubcommands);
+                var cmd = RespCommandHashLookup.Lookup(namePtr, command.Length, out var hasSubcommands, out var exactArgCount);
 
                 if (cmd == RespCommand.NONE)
                 {
@@ -1407,6 +1407,13 @@ namespace Garnet.server
                     var commandName = Encoding.UTF8.GetString(command[..Math.Min(command.Length, 128)])
                         .Replace('\r', ' ').Replace('\n', ' ');
                     specificErrorMessage = Encoding.UTF8.GetBytes(string.Format(CmdStrings.GenericErrUnknownCommand, commandName));
+                    return RespCommand.INVALID;
+                }
+
+                // If the command has a known, constant, arity validate it here
+                if (exactArgCount != 255 && count != exactArgCount)
+                {
+                    specificErrorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs, cmd.ToString()));
                     return RespCommand.INVALID;
                 }
 

@@ -512,6 +512,7 @@ namespace Garnet.test
             bool copyReadsToTail = false,
             int replayTaskCount = 1,
             bool failOnRecoveryError = false,
+            bool aofReplayClearAboveTail = true,
             bool fastAofTruncate = false,
             bool useAofNullDevice = false,
             LogCompactionType compactionType = LogCompactionType.None,
@@ -633,6 +634,7 @@ namespace Garnet.test
                 ReplicaDiskBasedSyncWriteBuffersConcurrently = replicaDiskBasedSyncWriteBuffersConcurrently,
                 CopyReadsToTail = copyReadsToTail,
                 FailOnRecoveryError = failOnRecoveryError,
+                AofReplayClearAboveTail = aofReplayClearAboveTail,
                 FastAofTruncate = fastAofTruncate,
                 UseAofNullDevice = useAofNullDevice,
                 CompactionType = compactionType,
@@ -833,7 +835,9 @@ namespace Garnet.test
             string replicaDiskBasedSyncChunkSize = "16m",
             int replicaDiskBasedSyncPipelineDepth = 4,
             int replicaDiskBasedSyncWriteBuffers = 1,
-            bool replicaDiskBasedSyncWriteBuffersConcurrently = false)
+            bool replicaDiskBasedSyncWriteBuffersConcurrently = false,
+            string migrationSendBufferSize = null,
+            int migrationPipelineDepth = 1)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -909,6 +913,9 @@ namespace Garnet.test
                     replicaDiskBasedSyncPipelineDepth: replicaDiskBasedSyncPipelineDepth,
                     replicaDiskBasedSyncWriteBuffers: replicaDiskBasedSyncWriteBuffers,
                     replicaDiskBasedSyncWriteBuffersConcurrently: replicaDiskBasedSyncWriteBuffersConcurrently);
+
+                opts[i].MigrationSendBufferSize = migrationSendBufferSize;
+                opts[i].MigrationPipelineDepth = migrationPipelineDepth;
 
                 ClassicAssert.IsNotNull(opts);
 

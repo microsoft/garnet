@@ -169,12 +169,28 @@ namespace Garnet
         public bool? CleanClusterConfig { get; set; }
 
         [IntRangeValidation(0, 16384)]
-        [Option("pmt", Required = false, HelpText = "Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used.")]
+        [Option("parallel-migrate-task-count", Required = false, HelpText = "Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used.")]
         public int ParallelMigrateTaskCount { get; set; }
 
+        [IntRangeValidation(1024, 262143)]
+        [Option("migrate-key-send-batch-size", Required = false, HelpText = "Maximum keys collected per slot migration batch (1024-262143). Network buffers may split a batch into smaller sends.")]
+        public int MigrateKeySendBatchSize { get; set; }
+
         [OptionValidation]
-        [Option("fast-migrate", Required = false, HelpText = "When migrating slots 1. write directly to network buffer to avoid unnecessary copies, 2. do not wait for ack from target before sending next batch of keys.")]
-        public bool? FastMigrate { get; set; }
+        [Option("use-scan-ahead-migration", Required = false, HelpText = "Gather the next slot-migration key batch while the active batch is shipped (default: false). When false, scan only after shipping and deletion complete.")]
+        public bool? UseScanAheadMigration { get; set; }
+
+        [MemorySizeValidation(isRequired: false)]
+        [Option("migrate-send-buffer-size", Required = false, HelpText = "Migration client send-buffer size, independent of log page size (rounds down to a power of 2; at least 1k and below 2g). Defaults to log page size. Larger records are chunked.")]
+        public string MigrationSendBufferSize { get; set; }
+
+        [IntRangeValidation(1, 64)]
+        [Option("migrate-pipeline-depth", Required = false, HelpText = "Maximum unacknowledged migration batches per worker, from 1 to 64 (1 disables pipelining). Batches are processed synchronously before acknowledgment.")]
+        public int MigrationPipelineDepth { get; set; }
+
+        [IntRangeValidation(1, int.MaxValue)]
+        [Option("migrate-delete-batch-size", Required = false, HelpText = "Maximum eligible source keys deleted per epoch-protected migration scope (positive integer, default: 256). Larger values hold epoch protection longer.")]
+        public int MigrationDeleteBatchSize { get; set; }
 
         [Option("auth", Required = false, HelpText = "Authentication mode of Garnet. This impacts how AUTH command is processed and how clients are authenticated against Garnet. Value options: NoAuth, Password, Aad, ACL")]
         public GarnetAuthenticationMode AuthenticationMode { get; set; }
@@ -260,6 +276,10 @@ namespace Garnet
         [OptionValidation]
         [Option("aof-commit-wait", Required = false, HelpText = "Wait for AOF to flush the commit before returning results to client. Warning: will greatly increase operation latency.")]
         public bool? WaitForCommit { get; set; }
+
+        [OptionValidation]
+        [Option("aof-replay-clear-above-tail", Required = false, HelpText = "If true (default), when the AOF is recovered or a replica sync moves its tail, clear everything the AOF device holds above the tail before appending: remove or empty segment files above the tail's segment, zero data above the tail in that segment, and remove commit metadata for commits above the tail. This keeps a later recovery from adopting stale commits left there. Cleared data cannot be salvaged; see the configuration docs for risks.")]
+        public bool? AofReplayClearAboveTail { get; set; }
 
         [MemorySizeValidation(false)]
         [Option("aof-size-limit", Required = false, HelpText = "Maximum size of AOF (rounds down to power of 2) after which unsafe truncation will be applied. Left empty AOF will grow without bound unless a checkpoint is taken")]
@@ -974,7 +994,11 @@ namespace Garnet
                 EnableCluster = EnableCluster.GetValueOrDefault(),
                 CleanClusterConfig = CleanClusterConfig.GetValueOrDefault(),
                 ParallelMigrateTaskCount = ParallelMigrateTaskCount,
-                FastMigrate = FastMigrate.GetValueOrDefault(),
+                MigrateKeySendBatchSize = MigrateKeySendBatchSize,
+                UseScanAheadMigration = UseScanAheadMigration.GetValueOrDefault(),
+                MigrationSendBufferSize = MigrationSendBufferSize,
+                MigrationPipelineDepth = MigrationPipelineDepth,
+                MigrationDeleteBatchSize = MigrationDeleteBatchSize,
                 AuthSettings = GetAuthenticationSettings(logger),
                 AclStrictCustomCommands = AclStrictCustomCommands.GetValueOrDefault(true),
                 EnableAOF = EnableAOF.GetValueOrDefault(),
@@ -991,6 +1015,7 @@ namespace Garnet
                 AofTailWitnessFreqMs = AofTailWitnessFreqMs,
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
+                AofReplayClearAboveTail = AofReplayClearAboveTail.GetValueOrDefault(true),
                 AofSizeLimit = AofSizeLimit,
                 AofSizeLimitEnforceFrequencySecs = AofSizeLimitEnforceFrequencySecs,
                 CompactionFrequencySecs = CompactionFrequencySecs,

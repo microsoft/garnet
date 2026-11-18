@@ -54,6 +54,8 @@ namespace Garnet.server
 
         /// <summary>Flag indicating the command has subcommands that require a second lookup.</summary>
         internal const byte FlagHasSubcommands = 1;
+        /// <summary>Flag indicating that top bits of <see cref="CommandEntry.Flags"/> contains the expected argument count for the command.</summary>
+        internal const byte FlagHasExactArgCount = 2;
 
         // Primary command table: 512 entries = 16KB, fits in L1 cache
         private const int PrimaryTableBits = 9;
@@ -243,9 +245,10 @@ namespace Garnet.server
         /// Look up a primary command name and return whether it has subcommands, in a single probe.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static RespCommand Lookup(byte* name, int length, out bool hasSubcommands)
+        public static RespCommand Lookup(byte* name, int length, out bool hasSubcommands, out byte exactArgCount)
         {
             hasSubcommands = false;
+            exactArgCount = 255;
             if ((uint)length - 1 > 23)
                 return RespCommand.NONE;
 
@@ -259,6 +262,7 @@ namespace Garnet.server
                 if (entry.NameLength == (byte)length && MatchName(ref entry, name, length))
                 {
                     hasSubcommands = (entry.Flags & FlagHasSubcommands) != 0;
+                    exactArgCount = (entry.Flags & FlagHasExactArgCount) != 0 ? (byte)(entry.Flags >> 2) : (byte)255;
                     return entry.Command;
                 }
                 idx = (idx + 1) & PrimaryTableMask;
