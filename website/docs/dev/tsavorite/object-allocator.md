@@ -271,3 +271,17 @@ Such a release is marked `DeferredDispose` on the record and run by the drain or
 [The same shape, without a checkpoint](state-machine.md#the-same-shape-without-a-checkpoint). An elision is declined
 for such a record, because it invalidates the record. A CopyUpdate's release never waits: its new record holds the key's
 value, and no trigger runs.
+
+### What a scan sees
+
+A scan reports a superseded record whose value was released as having no value: an object value reads as null, and an
+overflow value as empty. A copy of such a record is released too: `LogRecord.TryCopyFrom` gives it the released
+placeholder, or an empty value. Scan compaction and `Iterate` copy every record they scan into a temporary store, so they
+make such copies.
+
+A scan that reports only each key's latest version (`ScanCursor`, `IterateLookup`) copies a record before it looks for a
+newer version of the key. A value is released only once the record that supersedes it is in the chain, so an unbounded
+scan that copied a released value finds the newer version and skips the record. A bounded scan (one with a `maxAddress`,
+such as `IterateLookupSnapshot`, or `Iterate`, which ends at the tail it started from) looks only below its bound. So it
+can report a key's last version within its bound after an operation above the bound superseded that version and released
+its value: the key, with no value. Only a streaming snapshot's scan holds such releases back (see [Timing](#timing)).

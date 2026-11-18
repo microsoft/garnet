@@ -1052,6 +1052,37 @@ namespace Tsavorite.test
             Assert.That(found, Is.True, "The scan did not report the superseded source");
         }
 
+        /// <summary>
+        /// A copy of a record whose value was released, as scan compaction and Iterate make of every record they scan, is a released record: its
+        /// value's slot holds the released placeholder, which reads as no value, and never null, which would read as a freed slot.
+        /// </summary>
+        [Test, Category("TsavoriteKV")]
+        public void ACopyOfARecordWhoseValueWasReleasedHoldsTheReleasedPlaceholder()
+        {
+            // An earlier record for the key keeps the source in a chain, so the CopyUpdate does not elide it.
+            Upsert(1, 50);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            var releasedAddress = store.Log.TailAddress;
+            Upsert(1, 100);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            RmwAdd(1, 7);
+            Assert.That(SourceHoldsObject(releasedAddress), Is.False, "Precondition: the CopyUpdate released its source's value");
+
+            using var session = NewSession();
+            using (var iter = store.Log.Scan(releasedAddress, store.Log.TailAddress))
+            {
+                Assert.That(iter.GetNext() && iter.CurrentAddress == releasedAddress, Is.True, "The scan did not report the released record");
+                var source = iter as ISourceLogRecord;
+                Assert.That(source.ValueObject, Is.Null, "Precondition: the scan reports the released record with no value");
+                _ = session.BasicContext.Upsert(in source);
+            }
+
+            Assert.That(session.BasicContext.ContainsKeyInMemory(new TestObjectKey { key = 1 }, out var copyAddress).Found, Is.True, "The key is not in memory");
+            var copy = store.hlogBase._wrapper.CreateLogRecord(copyAddress);
+            Assert.That(copy.TryGetOutOfLineComponents(out _, out _, out var slotObject), Is.True, "The copy's value slot reads as freed");
+            Assert.That(slotObject, Is.SameAs(SupersededObjectValue.Released), "The copy's value slot does not hold the released placeholder");
+        }
+
         #endregion
 
         #region Terminal release

@@ -303,6 +303,56 @@ namespace Tsavorite.test.recovery
             }
         }
 
+        /// <summary>
+        /// Scan compaction copies every record in its range into a temporary store, whose inline limit is the default, far above this store's,
+        /// so the copies of overflow values are inline there; and it copies a record whose value a CopyUpdate released, whose sentinel reads as
+        /// empty, as an empty value. Compaction then moves each key's latest record to the tail with its value.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("Compaction")]
+        public void ScanCompactionCopiesOverflowValuesThatItsTemporaryStoreHoldsInline([Values] bool overflowKeys)
+        {
+            var store = CreateOverflowStore(overflowKeys);
+            try
+            {
+                // An earlier record for the key keeps the CopyUpdate's source in a chain, so the CopyUpdate does not elide it.
+                _ = UpsertOverflow(store, 2, LaterFill);
+                _ = UpsertOverflow(store, 1, InitialFill);
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                var releasedAddress = UpsertOverflow(store, 1, CapturedFill);
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                FillRmw(store, 1, LaterFill);
+                Assert.That(GetValueOverflow(store, releasedAddress).IsSentinel, Is.True, "Precondition: the CopyUpdate released its source's value");
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+                long compactedUntil;
+                using (var session = store.NewSession<TestObjectKey, FillInput, FillOutput, Empty, FillFunctions>(new FillFunctions()))
+                    compactedUntil = session.Compact(store.Log.SafeReadOnlyAddress, CompactionType.Scan);
+                Assert.That(store.Log.BeginAddress, Is.EqualTo(compactedUntil), "Compaction did not advance BeginAddress");
+
+                foreach (var key in new[] { 1, 2 })
+                {
+                    using var session = store.NewSession<TestObjectKey, FillInput, FillOutput, Empty, FillFunctions>(new FillFunctions());
+                    FillInput input = new();
+                    FillOutput output = new();
+                    var status = session.BasicContext.Read(new TestObjectKey { key = key }, ref input, ref output);
+                    if (status.IsPending)
+                    {
+                        Assert.That(session.BasicContext.CompletePendingWithOutputs(out var completed, wait: true), Is.True);
+                        (status, output) = GetSinglePendingResult(completed);
+                    }
+                    Assert.That(status.Found, Is.True, $"Compaction lost key {key}");
+                    Assert.That(output.address, Is.GreaterThanOrEqualTo(compactedUntil), $"Key {key} was not moved above the compacted range");
+                    Assert.That(output.value, Has.Length.EqualTo(OverflowValueLength), $"Key {key}'s compacted value has the wrong length");
+                    Assert.That(output.value, Has.All.EqualTo(LaterFill), $"Key {key}'s compacted value holds the wrong version");
+                }
+            }
+            finally
+            {
+                store.Dispose();
+            }
+        }
+
         static void ReadOverflowVersion(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, int key, long expectedAddress, byte expectedFill, string when)
         {
             using var session = store.NewSession<TestObjectKey, FillInput, FillOutput, Empty, FillFunctions>(new FillFunctions());

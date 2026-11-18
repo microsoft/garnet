@@ -1352,52 +1352,60 @@ namespace Tsavorite.core
         /// Copy the entire record values: Value and optionals (ETag, Expiration). Key is not copied as it has already been set into 'this'.
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.
-        /// <para>An overflow value whose length is unchanged shares the source's array, so writes through this record's value span are
-        /// visible through the source. An overflow value whose length changes is copied into this record's own array.</para></remarks>
+        /// <para>This record's value takes the layout <paramref name="sizeInfo"/> gives it, which need not be the source's: a store with
+        /// another inline limit, or an in-place write that finds the value inline or of another length, sizes it differently. When both
+        /// values are overflow, this record shares the source's array if the length is unchanged, so writes through this record's value span
+        /// are visible through the source; if the caller changed the length, the value is copied into this record's own array. An object is
+        /// shared. Any other value is copied as bytes.</para>
+        /// <para>A source whose value was released is copied as released: its object placeholder becomes
+        /// <see cref="SupersededObjectValue.Released"/> here, never a null slot, which would read as freed; and its overflow sentinel, which
+        /// reads as empty, is copied as an empty value, never shared. A scan reports such a record for a superseded record, so a copy of
+        /// every scanned record, as scan compaction and <c>Iterate</c> make into their temporary stores, has such sources.</para></remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool TryCopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, in RecordSizeInfo sizeInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            if (srcLogRecord.DataHeader.ValueIsInline)
+            var srcDataHeader = srcLogRecord.DataHeader;
+            if (srcDataHeader.ValueIsObject)
+            {
+                // TODO: Clone the value object here so source and destination have independent
+                // HeapMemorySize fields. Currently both records share the same IHeapObject instance,
+                // which means mutations on the destination affect the source's reported heap size
+                // at eviction time, causing accounting drift in logSizeTracker. A naive Clone()
+                // here causes CanDoHashExpireLTM to crash — needs investigation in a follow-up.
+                if (!TrySetValueObjectAndPrepareOptionals(srcLogRecord.ValueObject ?? SupersededObjectValue.Released, in sizeInfo))
+                    return false;
+            }
+            else if (srcDataHeader.ValueIsOverflow && sizeInfo.ValueIsOverflow && !srcLogRecord.ValueOverflow.IsSentinel)
+            {
+                // A new record was initialized with its own array, sized for the new value. Size the value first if an in-place write found it
+                // inline or of another length.
+                var (_, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
+                OverflowByteArray dstOverflow = default;
+                if ((!DataHeader.ValueIsOverflow || !objectIdMap.TryGetOverflowByteArray(*(int*)valueAddress, out dstOverflow)
+                        || dstOverflow.Length != sizeInfo.FieldInfo.ValueSize)
+                    && (!TrySetContentLengths(in sizeInfo) || !objectIdMap.TryGetOverflowByteArray(*(int*)valueAddress, out dstOverflow)))
+                    return false;
+
+                // When the caller changes the value's length the source's array cannot hold the result, so copy into this record's array and
+                // zero any growth, as LogField.ReallocateValueOverflow does. Otherwise share the source's array.
+                var srcOverflow = srcLogRecord.ValueOverflow;
+                if (dstOverflow.Length != srcOverflow.Length)
+                {
+                    var srcSpan = srcOverflow.ReadOnlySpan;
+                    var dstSpan = dstOverflow.Span;
+                    var copyLength = srcSpan.Length < dstSpan.Length ? srcSpan.Length : dstSpan.Length;
+                    srcSpan[..copyLength].CopyTo(dstSpan);
+                    dstSpan[copyLength..].Clear();
+                }
+                else
+                    ValueOverflow = srcOverflow;
+            }
+            else
             {
                 if (!TrySetContentLengths(in sizeInfo))
                     return false;
                 srcLogRecord.ValueSpan.CopyTo(ValueSpan);
-            }
-            else
-            {
-                if (srcLogRecord.DataHeader.ValueIsOverflow)
-                {
-                    Debug.Assert(DataHeader.ValueIsOverflow, "Expected this.DataHeader.ValueIsOverflow to be set already");
-                    var srcOverflow = srcLogRecord.ValueOverflow;
-                    Debug.Assert(!srcOverflow.IsSentinel, "Expected srcLogRecord's overflow value to be set; a released source holds a sentinel");
-
-                    // Initialization gave this record its own array, sized for the new value. When the caller changes the value's length
-                    // the source's array cannot hold the result, so copy into this record's array and zero any growth, as
-                    // LogField.ReallocateValueOverflow does. Otherwise share the source's array.
-                    var (_, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
-                    if (objectIdMap.TryGetOverflowByteArray(*(int*)valueAddress, out var dstOverflow) && dstOverflow.Length != srcOverflow.Length)
-                    {
-                        var srcSpan = srcOverflow.ReadOnlySpan;
-                        var dstSpan = dstOverflow.Span;
-                        var copyLength = srcSpan.Length < dstSpan.Length ? srcSpan.Length : dstSpan.Length;
-                        srcSpan[..copyLength].CopyTo(dstSpan);
-                        dstSpan[copyLength..].Clear();
-                    }
-                    else
-                        ValueOverflow = srcOverflow;
-                }
-                else
-                {
-                    // TODO: Clone the value object here so source and destination have independent
-                    // HeapMemorySize fields. Currently both records share the same IHeapObject instance,
-                    // which means mutations on the destination affect the source's reported heap size
-                    // at eviction time, causing accounting drift in logSizeTracker. A naive Clone()
-                    // here causes CanDoHashExpireLTM to crash — needs investigation in a follow-up.
-                    Debug.Assert(srcLogRecord.ValueObject is not null, "Expected srcLogRecord.ValueObject to be set (or deserialized) already");
-                    if (!TrySetValueObjectAndPrepareOptionals(srcLogRecord.ValueObject, in sizeInfo))
-                        return false;
-                }
             }
 
             return TryCopyOptionals(in srcLogRecord, in sizeInfo);
