@@ -563,6 +563,19 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task HINCRBYFLOATNormalizeFloatAsync()
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            ClassicAssert.AreEqual("10", (string)await db.ExecuteAsync("HINCRBYFLOAT", ["foo", "bar", "1e1"]).ConfigureAwait(false));
+            ClassicAssert.AreEqual("10", (string)await db.HashGetAsync("foo", "bar").ConfigureAwait(false));
+
+            ClassicAssert.AreEqual("110", (string)await db.ExecuteAsync("HINCRBYFLOAT", ["foo", "bar", "1e2"]).ConfigureAwait(false));
+            ClassicAssert.AreEqual("110", (string)await db.HashGetAsync("foo", "bar").ConfigureAwait(false));
+        }
+
+        [Test]
         public void CanDoHashDecrement()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
