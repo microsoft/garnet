@@ -314,17 +314,9 @@ namespace Garnet.server
 
                         nint newlyAllocatedIndex;
                         bool requestQuantization;
-                        try
+                        unsafe
                         {
-                            unsafe
-                            {
-                                newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, ReadStartPointId(indexSpan), out requestQuantization);
-                            }
-                        }
-                        catch
-                        {
-                            vectorSetLocks.ReleaseLock(lockToken);
-                            throw;
+                            newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, ReadStartPointId(indexSpan), out requestQuantization);
                         }
 
                         input.header.cmd = RespCommand.VADD;
@@ -561,17 +553,9 @@ namespace Garnet.server
 
                             input.arg1 = RecreateIndexArg;
 
-                            try
+                            unsafe
                             {
-                                unsafe
-                                {
-                                    newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, ReadStartPointId(indexSpan), out requestQuantization);
-                                }
-                            }
-                            catch
-                            {
-                                vectorSetLocks.ReleaseLock(lockToken);
-                                throw;
+                                newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, ReadStartPointId(indexSpan), out requestQuantization);
                             }
 
                             input.parseState.EnsureCapacity(12);
@@ -585,9 +569,6 @@ namespace Garnet.server
                             // Create a new index, grab a new context
                             input.arg1 = CreateIndexArg;
 
-                            var quantizer = MemoryMarshal.Read<VectorQuantType>(input.parseState.GetArgSliceByRef(5).Span);
-                            var distanceMetric = MemoryMarshal.Read<VectorDistanceMetricType>(input.parseState.GetArgSliceByRef(9).Span);
-
                             // We must associate the index with a hash slot at creation time to enable future migrations
                             var slot = HashSlotUtils.HashSlot(key);
 
@@ -598,21 +579,15 @@ namespace Garnet.server
                             // ValueType is here, skipping during index creation
                             // Values is here, skipping during index creation
                             // Element is here, skipping during index creation
+                            var quantizer = MemoryMarshal.Read<VectorQuantType>(input.parseState.GetArgSliceByRef(5).Span);
                             var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(6).Span);
                             // Attributes is here, skipping during index creation
                             var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
+                            var distanceMetric = MemoryMarshal.Read<VectorDistanceMetricType>(input.parseState.GetArgSliceByRef(9).Span);
 
-                            try
+                            unsafe
                             {
-                                unsafe
-                                {
-                                    newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, startPointId, out requestQuantization);
-                                }
-                            }
-                            catch
-                            {
-                                vectorSetLocks.ReleaseLock(lockToken);
-                                throw;
+                                newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, startPointId, out requestQuantization);
                             }
 
                             expirationTicks = input.parseState.Count >= 13 ? MemoryMarshal.Read<long>(input.parseState.GetArgSliceByRef(12).Span) : 0;
