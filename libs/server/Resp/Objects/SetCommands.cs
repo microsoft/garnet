@@ -530,13 +530,6 @@ namespace Garnet.server
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
-
-                if (countParameter == 0)
-                {
-                    WriteEmptySet();
-
-                    return true;
-                }
             }
 
             // Prepare input
@@ -645,14 +638,6 @@ namespace Garnet.server
                 if (!parseState.TryGetInt(1, out countParameter) || countParameter == int.MinValue)
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-                }
-
-                if (countParameter == 0)
-                {
-                    while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                        SendAndReset();
-
-                    return true;
                 }
             }
 

@@ -271,13 +271,9 @@ namespace Garnet.server
 
             var status = GarnetStatus.NOTFOUND;
 
-            // This prevents going to the backend if HRANDFIELD is called with a count of 0
-            if (paramCount != 0)
-            {
-                // Prepare output
-                output = GetObjectOutput();
-                status = storageApi.HashRandomField(key, ref input, ref output);
-            }
+            // Prepare output
+            output = GetObjectOutput();
+            status = storageApi.HashRandomField(key, ref input, ref output);
 
             switch (status)
             {
