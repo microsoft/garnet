@@ -519,7 +519,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Validate range
-            if (!parseState.TryGetInt(1, out _) || !parseState.TryGetInt(2, out _))
+            if (!parseState.TryGetLong(1, out _) || !parseState.TryGetLong(2, out _))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }

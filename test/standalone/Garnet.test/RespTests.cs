@@ -5457,7 +5457,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("123", await db.StringGetRangeAsync("foo", 0, 1 + (long)int.MaxValue).ConfigureAwait(false));
 
             var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("GETRANGE", "foo", "0", "9223372036854775808"));
-            ClassicAssert.AreEqual("ERR value is not an integer or out of range", exc.Message);
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", exc.Message);
         }
 
         [Test]
