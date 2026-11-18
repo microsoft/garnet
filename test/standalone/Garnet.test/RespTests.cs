@@ -5447,6 +5447,20 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task GETRANGEIntOverflowClampAsync()
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            ClassicAssert.IsTrue(await db.StringSetAsync("foo", "123").ConfigureAwait(false));
+
+            ClassicAssert.AreEqual("123", await db.StringGetRangeAsync("foo", 0, 1 + (long)int.MaxValue).ConfigureAwait(false));
+
+            var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("GETRANGE", "foo", "0", "9223372036854775808"));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range", exc.Message);
+        }
+
+        [Test]
         public void SetRangeTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
