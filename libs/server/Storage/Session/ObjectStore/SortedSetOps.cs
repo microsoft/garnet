@@ -1361,8 +1361,6 @@ namespace Garnet.server
                 // Try popping from each key until we find one with members
                 foreach (var key in keys)
                 {
-                    if (key.Length == 0) continue;
-
                     var status = SortedSetPop(key, count, lowScoresFirst, out pairs, ref transactionalContext);
                     if (status == GarnetStatus.OK && pairs != null && pairs.Length > 0)
                     {
