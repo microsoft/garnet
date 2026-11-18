@@ -84,6 +84,7 @@ namespace Garnet.server
                         // Ignore empty records if we're in a COW context and data length is zero - this implies we've written a "cenotaph" to fake a deletion
                         if (input.CopyOnWrite == VectorInput.CopyOnWriteOperation.ReadWithCenotaph && dataLen == 0)
                         {
+                            readInfo.Action = ReadAction.CancelOperation;
                             return false;
                         }
 
@@ -262,6 +263,13 @@ namespace Garnet.server
 
             if (input.Callback == 0)
             {
+                if (input.CopyOnWrite == VectorInput.CopyOnWriteOperation.DisallowOverwrite)
+                {
+                    // We're making a copy before a RMW
+                    output.SpanByteAndMemory.Span.CopyTo(alignedValue);
+                    return logRecord.TrySetContentLengths(logRecord.ValueSpan.Length, in sizeInfo);
+                }
+
                 Debug.Assert(logRecord.NamespaceBytes.Length == 1 && logRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
                 Debug.Assert(key.Length == sizeof(int), "Should have int sized key for ContextMetadata");
 

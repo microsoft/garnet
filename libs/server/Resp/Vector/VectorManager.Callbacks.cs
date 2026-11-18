@@ -529,7 +529,7 @@ namespace Garnet.server
             {
                 Debug.Assert(publicIndex >= 0 && publicIndex < Count, "Trying to advance out of bounds");
 
-                if (status.Found)
+                if (status.Found || status.IsCanceled)
                 {
                     MarkPublicFound(publicIndex);
                 }
@@ -552,7 +552,7 @@ namespace Garnet.server
                         while (outputs.Next())
                         {
                             var status = outputs.Current.Status;
-                            if (status.Found)
+                            if (status.Found || status.IsCanceled)
                             {
                                 // Index provided as part of VectorInput is the internal index
                                 MarkInternalFound(outputs.Current.Input.Index);
@@ -795,14 +795,11 @@ namespace Garnet.server
                 var output = SpanByteAndMemory.FromPinnedSpan(outputTempSpace);
                 try
                 {
-                    var inLatest = ReadSizeUnknown(context, keyWithoutNamespace, ref output, allowContextTraveral: false);
-                    output.Dispose();
-                    output = SpanByteAndMemory.FromPinnedSpan(outputTempSpace);
-
+                    // This read won't race because any COW'd Vector Set is immutable
                     var inOlder = ReadSizeUnknown(context, keyWithoutNamespace, ref output, allowContextTraveral: true, skipContextsInChain: 1);
 
-                    var canDelete = inLatest && !inOlder;
-                    if (!canDelete)
+                    var needCenotaph = inOlder;
+                    if (needCenotaph)
                     {
                         // Need to write a cenotaph - which is just an empty value
                         var cenotaphStatus = ctx.Upsert(keyWithNamespace, default(ReadOnlySpan<byte>));
@@ -821,7 +818,7 @@ namespace Garnet.server
                         return 0;
                     }
 
-                    // Otherwise we can delete like usual
+                    // Otherwise delete like usual
                 }
                 catch
                 {
@@ -851,8 +848,6 @@ namespace Garnet.server
 
             Debug.Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
 
-            var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
-
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
 
             VectorInput input = default;
@@ -864,6 +859,7 @@ namespace Garnet.server
             input.CopyOnWrite = !ActiveThreadShallowCopyBackReferences.IsEmpty ? VectorInput.CopyOnWriteOperation.DisallowCreate : default;
 
         retryInitialRMW:
+            var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
             var status = ctx.RMW(keyWithNamespace, ref input);
             if (status.IsPending)
             {
@@ -875,7 +871,7 @@ namespace Garnet.server
             // If we cancelled the RMW because of being a shallow copy, look through older contexts for the record (if any) to copy
             if (!ActiveThreadShallowCopyBackReferences.IsEmpty && status.IsCanceled)
             {
-                Span<byte> copyDataSpan = writeLength <= MaximumOnStackAllocationBytes ? stackalloc byte[MaximumOnStackAllocationBytes] : default;
+                var copyDataSpan = writeLength <= MaximumOnStackAllocationBytes ? stackalloc byte[MaximumOnStackAllocationBytes] : default;
 
                 var remainingContexts = ActiveThreadShallowCopyBackReferences.Span;
 
@@ -914,15 +910,16 @@ namespace Garnet.server
 
                             VectorInput copyWriteInput = default;
                             copyWriteInput.CopyOnWrite = VectorInput.CopyOnWriteOperation.DisallowOverwrite;
+                            copyWriteInput.WriteDesiredSize = copyOutput.SpanByteAndMemory.Length;
 
                             VectorOutput ignored = default;
 
-                            var copyWriteRes = ctx.RMW(keyWithNamespace, ref copyWriteInput, ref copyOutput);
+                            var writeCopyToKeyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
+                            var copyWriteRes = ctx.RMW(writeCopyToKeyWithNamespace, ref copyWriteInput, ref copyOutput);
                             if (copyWriteRes.IsPending)
                             {
                                 CompletePending(ref copyWriteRes, ref ignored, ref ctx);
                             }
-
 
                             if (copyWriteRes.IsCompletedSuccessfully || copyWriteRes.IsCanceled)
                             {
