@@ -823,7 +823,8 @@ namespace Tsavorite.core
                 if (offset == 0 || offset + allocatedSize > PageSize)
                     break;
 
-                // Skip null and invalid records (elided/disposed, heap already cleaned up).
+                // Skip null and invalid records: an invalid record's charged heap was credited when it was invalidated, and an insert that never
+                // succeeded was never charged. An elided record still references its key, which FreePage releases when the whole page closes.
                 if (logRecord.Info.IsNull || logRecord.Info.Invalid)
                 {
                     address += allocatedSize;
