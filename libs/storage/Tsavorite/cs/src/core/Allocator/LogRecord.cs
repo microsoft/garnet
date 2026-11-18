@@ -348,11 +348,16 @@ namespace Tsavorite.core
         /// <summary>
         /// Set a value object deserialized from the object log, and unstamp the record's ObjectLogPosition.
         /// </summary>
-        /// <param name="heapObject">The deserialized object</param>
+        /// <param name="heapObject">The deserialized object, or null for a value with no bytes in the object log</param>
         /// <remarks>
         /// The object is now in memory, so the position it was read from describes nothing the record still needs; leaving it
         /// stamped would let a later flush that skips this record persist a position for object bytes it did not write. The flush
         /// restamps when it writes the record.
+        /// <para>A value with no bytes is one a flush wrote empty, for a superseded record whose value had been released, or one a flush
+        /// skipped, for an invalid record. Its slot gets <see cref="SupersededObjectValue.Released"/>, not null: <see cref="ValueObject"/>
+        /// reads either as null, but a null slot reads as freed, so a later flush of a record that is still valid would find its components
+        /// gone and write it unstamped. With the placeholder, the flush writes it as released again. So a resident record's object slot
+        /// never holds null.</para>
         /// <para>Also restores <see cref="RecordDataHeader.ValueLength"/> to <see cref="ObjectIdMap.ObjectIdSize"/> if the raw stored
         /// length is not already ObjectIdSize (deserialization-time invariant restoration; atomic via local + <see cref="SetDataHeader"/>).</para>
         /// </remarks>
@@ -364,7 +369,7 @@ namespace Tsavorite.core
                 ThrowTsavoriteException("SetDeserializedValueObject should only be called by Deserialization with ValueIsObject==true");
             Debug.Assert(valueLength == ObjectIdMap.ObjectIdSize, $"valueLength {valueLength} should be ObjectIdSize {ObjectIdMap.ObjectIdSize}");
 
-            *(int*)valueAddress = objectIdMap.AllocateAndSet(heapObject);
+            *(int*)valueAddress = objectIdMap.AllocateAndSet(heapObject ?? SupersededObjectValue.Released);
 
             // Adding valueAddress and length is the same as GetOptionalStartAddress() but faster
             ObjectLogPositionInfo.Unstamp((ulong*)GetObjectLogPositionAddress(valueAddress + valueLength));
@@ -1792,8 +1797,9 @@ namespace Tsavorite.core
         /// is zero length. Reading its position would consume bytes belonging to a different record, but simply skipping it would leave its
         /// components unmaterialized.
         /// <para>Overflow components are materialized as empty byte arrays. An object value is recorded as absent and no deserializer is invoked:
-        /// zero bytes carry no type information, so there is nothing a deserializer could reconstruct. The value slot is still allocated, holding
-        /// null, rather than left unset, because <see cref="ValueObject"/> resolves an unset id through <c>objectArray.Get(-1)</c>.</para>
+        /// zero bytes carry no type information, so there is nothing a deserializer could reconstruct. The value slot is still allocated rather
+        /// than left unset, because <see cref="ValueObject"/> resolves an unset id through <c>objectArray.Get(-1)</c>; it holds the released
+        /// placeholder, which <see cref="ValueObject"/> reads as null (see <see cref="SetDeserializedValueObject"/>).</para>
         /// </remarks>
         internal readonly void MaterializeObjectsWithoutReading()
         {

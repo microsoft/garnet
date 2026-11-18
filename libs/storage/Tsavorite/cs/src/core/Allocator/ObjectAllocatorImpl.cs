@@ -2437,7 +2437,7 @@ namespace Tsavorite.core
                 else if (recordRef.ValueIsObject)
                 {
                     // An object that serialized to no bytes carries no type information, so the reader records it as absent (null) rather than
-                    // invoking the deserializer on an empty stream.
+                    // invoking the deserializer on an empty stream; the record's slot then holds the released placeholder.
                     logRecord.SetDeserializedValueObject(reader.ReadValueObject());
                 }
 

@@ -800,6 +800,95 @@ namespace Tsavorite.test.recovery
             }
         }
 
+        /// <summary>
+        /// A CopyUpdate releases its source's value, so a Snapshot checkpoint's flush writes the source with an empty value, which recovery loads
+        /// as no value. The recovered source's value slot must hold the released placeholder: a null slot reads as a freed one, so the ReadOnly flush
+        /// that later writes the recovered snapshot region to the main log would find a valid record whose components are gone, and write it
+        /// without the object-log position that a read of its image needs.
+        /// </summary>
+        /// <remarks>A source that is alone in its hash chain is elided, which converts its fields, so the source here has an older record below
+        /// it: an Upsert of a key whose record is in the read-only region writes a new record above that record and leaves it in the chain.</remarks>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoveryLoadsAnEmptyObjectValueAsTheReleasedPlaceholder([Values] bool overflowKeys)
+        {
+            var key = new TestObjectKey { key = 1 };
+            Guid token;
+            long sourceAddress, newAddress;
+            var store = CreateStore(overflowKeys);
+            try
+            {
+                _ = UpsertSource(store, key);
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                sourceAddress = UpsertSource(store, key);
+
+                // No checkpoint is active, so the CopyUpdate of the mutable source releases the source's value at once.
+                newAddress = store.Log.TailAddress;
+                using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, CopyUpdatingListFunctions>(new CopyUpdatingListFunctions()))
+                {
+                    TestObjectInput input = new() { value = RmwValue };
+                    TestObjectOutput output = new();
+                    _ = session.BasicContext.RMW(key, ref input, ref output);
+                }
+                var released = store.hlogBase._wrapper.CreateLogRecord(sourceAddress);
+                Assert.That(released.Info.Valid, Is.True, "The CopyUpdate elided its source");
+                Assert.That(released.TryGetOutOfLineComponents(out _, out _, out var releasedValue), Is.True);
+                Assert.That(releasedValue, Is.SameAs(SupersededObjectValue.Released), "The CopyUpdate did not release the source's value");
+
+                // No ReadOnly flush has written the source, so the checkpoint's Snapshot flush writes it, with an empty value.
+                Assert.That(store.Log.FlushedUntilAddress, Is.LessThanOrEqualTo(sourceAddress), "A ReadOnly flush wrote the source");
+                Assert.That(store.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot), Is.True);
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                store.Dispose();
+            }
+
+            store = CreateStore(overflowKeys);
+            try
+            {
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+                var source = store.hlogBase._wrapper.CreateLogRecord(sourceAddress);
+                Assert.That(source.Info.Valid, Is.True, "Recovery invalidated the superseded source");
+                Assert.That(source.TryGetOutOfLineComponents(out _, out _, out var loadedValue), Is.True,
+                    "The recovered source's value slot reads as freed, so a flush would find its components gone");
+                Assert.That(loadedValue, Is.SameAs(SupersededObjectValue.Released), "The recovered source's value slot does not hold the released placeholder");
+                Assert.That(source.ValueObject, Is.Null, "The recovered source's empty value must read as no value");
+
+                // Recovery leaves the snapshot region above FlushedUntilAddress; this ReadOnly flush writes the source to the main log.
+                Assert.That(store.Log.FlushedUntilAddress, Is.LessThanOrEqualTo(sourceAddress), "Recovery wrote the source's page to the main log");
+                store.Log.FlushAndEvict(wait: true);
+
+                var functions = new SharedListFunctions();
+                using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(functions);
+                TestObjectInput input = default;
+                TestObjectOutput output = new();
+                ReadOptions readOptions = default;
+                var status = session.BasicContext.ReadAtAddress(sourceAddress, key, ref input, ref output, ref readOptions, out _);
+                if (status.IsPending)
+                {
+                    Assert.That(session.BasicContext.CompletePendingWithOutputs(out var outputs, wait: true), Is.True);
+                    (status, _) = GetSinglePendingResult(outputs);
+                }
+                Assert.That(status.Found, Is.True, "The source's main-log image could not be read");
+                Assert.That(functions.LastReadAddress, Is.EqualTo(sourceAddress));
+                Assert.That(functions.LastRead, Is.Null, "The source's main-log image must hold no value");
+
+                ReadSourceVersion(store, key, newAddress, "after the source's flush", expectedCount: InitialCount + 1);
+            }
+            finally
+            {
+                store.Dispose();
+            }
+        }
+
+        /// <summary>Copy-updates every record, a mutable one included, by declining every in-place update.</summary>
+        sealed class CopyUpdatingListFunctions : SharedListFunctions
+        {
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo) => false;
+        }
+
         /// <summary>Collects the address and item count of each record a scan reports; an invalid record's count is -1.</summary>
         sealed class ReportedRecordScan : IScanIteratorFunctions
         {
