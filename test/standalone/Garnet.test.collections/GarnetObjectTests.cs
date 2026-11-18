@@ -58,6 +58,26 @@ namespace Garnet.test
         const int keyNum = 0;
 
         [Test]
+        public void SortedSetRandomMemberZeroCountWritesEmptyArray(
+            [Values((byte)2, (byte)3)] byte respProtocolVersion, [Values] bool withScores)
+        {
+            var obj = new SortedSetObject();
+            obj.Add("member"u8.ToArray(), 1);
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANDMEMBER };
+            var input = new ObjectInput(header, 2 | (withScores ? 1 : 0), 0);
+            var output = new ObjectOutput();
+            try
+            {
+                ClassicAssert.IsTrue(obj.Operate(ref input, ref output, respProtocolVersion));
+                ClassicAssert.AreEqual("*0\r\n", Encoding.ASCII.GetString(output.SpanByteAndMemory.ReadOnlySpan));
+            }
+            finally
+            {
+                output.SpanByteAndMemory.Dispose();
+            }
+        }
+
+        [Test]
         public async Task WriteCheckpointRead()
         {
             var obj = new SortedSetObject();

@@ -688,7 +688,7 @@ namespace Garnet.server
 
             // The count parameter can have a negative value, but the array length can't
             var arrayLength = Math.Abs((withScores && respProtocolVersion == 2) ? count * 2 : count);
-            if (arrayLength > 1 || (arrayLength == 1 && includedCount))
+            if (arrayLength > 1 || includedCount)
             {
                 writer.WriteArrayLength(arrayLength);
             }
