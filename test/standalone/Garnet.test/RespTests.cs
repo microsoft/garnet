@@ -5895,6 +5895,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, response);
             response = await c.ExecuteAsync("ZSCORE", "nx", "foo").ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedResponse, response);
+            response = await c.ExecuteAsync("MGET", "nx").ConfigureAwait(false);
+            ClassicAssert.AreEqual("*1\r\n" + expectedResponse, response);
 
             response = await c.ExecuteAsync("BITFIELD", "bf", "OVERFLOW", "FAIL", "INCRBY", "u1", "1", "1").ConfigureAwait(false);
             ClassicAssert.AreEqual("*1\r\n:1\r\n", response);
