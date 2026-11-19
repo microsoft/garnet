@@ -878,7 +878,7 @@ namespace Tsavorite.test.Objects
 
         long WriteRaw(SpanAction write, int length = 64)
         {
-            var scope = objectLog.BeginScope();
+            var epochTaken = objectLog.epoch.ResumeIfNotProtected();
             try
             {
                 var address = objectLog.Allocate(length);
@@ -889,7 +889,8 @@ namespace Tsavorite.test.Objects
             }
             finally
             {
-                objectLog.EndScope(scope);
+                if (epochTaken)
+                    objectLog.epoch.Suspend();
             }
         }
 
@@ -973,14 +974,15 @@ namespace Tsavorite.test.Objects
             var filler = remaining == 0 ? current : current - remaining;
             if (filler <= 0)
                 return;
-            var scope = objectLog.BeginScope();
+            var epochTaken = objectLog.epoch.ResumeIfNotProtected();
             try
             {
                 _ = objectLog.Allocate(filler);
             }
             finally
             {
-                objectLog.EndScope(scope);
+                if (epochTaken)
+                    objectLog.epoch.Suspend();
             }
         }
     }

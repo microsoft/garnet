@@ -68,7 +68,7 @@ namespace Tsavorite.test.Objects
         /// <summary>Allocate and fill <paramref name="length"/> bytes with a pattern derived from <paramref name="seed"/>.</summary>
         static long Write(ObjectLog log, int length, byte seed)
         {
-            var scope = log.BeginScope();
+            var epochTaken = log.epoch.ResumeIfNotProtected();
             try
             {
                 var logicalAddress = log.Allocate(length);
@@ -77,7 +77,8 @@ namespace Tsavorite.test.Objects
             }
             finally
             {
-                log.EndScope(scope);
+                if (epochTaken)
+                    log.epoch.Suspend();
             }
         }
 
@@ -171,14 +172,15 @@ namespace Tsavorite.test.Objects
         public void AllocateRejectsSizesOutsideAPage([Values(0, -1, PageSize + 1)] int length)
         {
             var log = CreateLog();
-            var scope = log.BeginScope();
+            var epochTaken = log.epoch.ResumeIfNotProtected();
             try
             {
                 _ = Assert.Throws<TsavoriteException>(() => _ = log.Allocate(length));
             }
             finally
             {
-                log.EndScope(scope);
+                if (epochTaken)
+                    log.epoch.Suspend();
             }
         }
 
@@ -192,7 +194,7 @@ namespace Tsavorite.test.Objects
             var log = CreateLog();
             var random = new Random(1234);
 
-            var scope = log.BeginScope();
+            var epochTaken = log.epoch.ResumeIfNotProtected();
             try
             {
                 for (var ii = 0; ii < 2000; ++ii)
@@ -206,7 +208,8 @@ namespace Tsavorite.test.Objects
             }
             finally
             {
-                log.EndScope(scope);
+                if (epochTaken)
+                    log.epoch.Suspend();
             }
         }
 
@@ -221,7 +224,7 @@ namespace Tsavorite.test.Objects
             const int MinPartial = 64;
             const int Remaining = 500;
 
-            var scope = log.BeginScope();
+            var epochTaken = log.epoch.ResumeIfNotProtected();
             try
             {
                 // Fill the page up to exactly Remaining bytes before its end.
@@ -245,7 +248,8 @@ namespace Tsavorite.test.Objects
             }
             finally
             {
-                log.EndScope(scope);
+                if (epochTaken)
+                    log.epoch.Suspend();
             }
         }
 
@@ -263,7 +267,7 @@ namespace Tsavorite.test.Objects
             var remaining = remainderTooSmall ? MinPartial - 1 : MinPartial * 2;
             var requested = remainderTooSmall ? MinPartial * 2 : remaining + MinPartial - 1;
 
-            var scope = log.BeginScope();
+            var epochTaken = log.epoch.ResumeIfNotProtected();
             try
             {
                 var filler = log.RemainingOnPage(log.TailAddress) - remaining;
@@ -277,7 +281,8 @@ namespace Tsavorite.test.Objects
             }
             finally
             {
-                log.EndScope(scope);
+                if (epochTaken)
+                    log.epoch.Suspend();
             }
         }
         #endregion
@@ -494,7 +499,7 @@ namespace Tsavorite.test.Objects
         public void ReadRejectsARangeThatSpansAPage()
         {
             var log = CreateLog();
-            var scope = log.BeginScope();
+            var epochTaken = log.epoch.ResumeIfNotProtected();
             long nearPageEnd;
             try
             {
@@ -504,11 +509,32 @@ namespace Tsavorite.test.Objects
             }
             finally
             {
-                log.EndScope(scope);
+                if (epochTaken)
+                    log.epoch.Suspend();
             }
 
             var buffer = new byte[32];
             _ = Assert.Throws<TsavoriteException>(() => log.Read(nearPageEnd, 32, buffer));
+        }
+
+        /// <summary>A range read's copy is bounded by the read: a destination that starts before the read or runs past its end throws,
+        /// rather than copying bytes the read does not hold.</summary>
+        [Test, Category(ObjectLogCategory)]
+        public void RangeReadCopyRejectsADestinationOutsideTheRead()
+        {
+            const int Length = 256;
+            var log = CreateLog();
+            var logicalAddress = Write(log, Length, seed: 3);
+
+            using var read = log.TryBeginRangeRead(logicalAddress, Length);
+            Assert.That(read, Is.Not.Null);
+
+            var copy = new byte[Length];
+            Assert.That(read.TryCopyTo(logicalAddress, copy), Is.True);
+            VerifyPattern(copy, seed: 3, "range read copy");
+
+            _ = Assert.Throws<ArgumentOutOfRangeException>(() => read.TryCopyTo(logicalAddress + 1, new byte[Length]), "Past the read's end");
+            _ = Assert.Throws<ArgumentOutOfRangeException>(() => read.TryCopyTo(logicalAddress - 1, new byte[1]), "Before the read's start");
         }
         #endregion
 
@@ -633,7 +659,7 @@ namespace Tsavorite.test.Objects
             var log = CreateLog(settings => settings.MaxExclusiveAddressOverride = ceiling);
             Assert.That(log.MaxExclusiveAddress, Is.EqualTo(ceiling));
 
-            var scope = log.BeginScope();
+            var epochTaken = log.epoch.ResumeIfNotProtected();
             try
             {
                 // Walk up to the ceiling; the allocation that ends exactly on it must succeed.
@@ -648,7 +674,8 @@ namespace Tsavorite.test.Objects
             }
             finally
             {
-                log.EndScope(scope);
+                if (epochTaken)
+                    log.epoch.Suspend();
             }
         }
 
@@ -697,7 +724,7 @@ namespace Tsavorite.test.Objects
             var ceiling = (3L << PageSizeBits) + Length;
 
             var log = CreateLog(settings => settings.MaxExclusiveAddressOverride = ceiling);
-            var scope = log.BeginScope();
+            var epochTaken = log.epoch.ResumeIfNotProtected();
             try
             {
                 while (log.TailAddress + Length < ceiling)
@@ -711,7 +738,8 @@ namespace Tsavorite.test.Objects
             }
             finally
             {
-                log.EndScope(scope);
+                if (epochTaken)
+                    log.epoch.Suspend();
             }
         }
         #endregion

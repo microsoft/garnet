@@ -166,7 +166,7 @@ namespace Tsavorite.test.recovery.objects
                 // without flushing.
                 var mainObjectLog = store.hlogBase.RecoveryFlushObjectLog;
                 var durableEnd = mainObjectLog.FlushedUntilAddress;
-                var scope = mainObjectLog.BeginScope();
+                var epochTaken = mainObjectLog.epoch.ResumeIfNotProtected();
                 try
                 {
                     var restOfPage = (int)(mainObjectLog.PageSize - (mainObjectLog.TailAddress & (mainObjectLog.PageSize - 1)));
@@ -175,7 +175,8 @@ namespace Tsavorite.test.recovery.objects
                 }
                 finally
                 {
-                    mainObjectLog.EndScope(scope);
+                    if (epochTaken)
+                        mainObjectLog.epoch.Suspend();
                 }
                 Assert.That(mainObjectLog.TailAddress, Is.GreaterThan(durableEnd));
 

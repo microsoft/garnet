@@ -685,7 +685,7 @@ of their own (section 5.5):
   page.
 - `WriteSpine` writes the entry list out as a spine record before it exceeds `MaxDirectoryRecordSize` (1 MB), or the
   object-log page size if smaller.
-- Each allocation and the copy into it happen in one `ObjectLog.BeginScope` / `EndScope` (section 12.3). No epoch is
+- Each allocation and the copy into it happen under one hold of the object log's epoch (section 12.3). No epoch is
   held while a flush stages or serializes. A capture runs on its CopyUpdate's thread, which holds the store's epoch and
   the key's bucket lock.
 
@@ -737,7 +737,7 @@ record loses its object bytes. The first two main-log pages and an unstamped flo
   capture (`ReturnBuffers`) and keeps its serializer; `CloseAndDrain` disposes the kept writers at
   `PERSISTENCE_CALLBACK`, and a writer whose write threw is disposed at once. Recovery's reference repair uses one
   writer for all its pages.
-- Each allocation's bytes are copied into the `ObjectLog`'s page ring within its scope, so the writer keeps no reference
+- Each allocation's bytes are copied into the `ObjectLog`'s page ring under that hold, so the writer keeps no reference
   into the ring after `FinishRecord`; the ring's own flush writes those pages.
 - A composed first sector (section 5.6) is a pooled sector buffer held by the flush result (`freeBuffer1`) and returned
   when the result is released.
@@ -865,8 +865,8 @@ checkpoint's object log (section 13.1), which only recovery reads. For a marked 
 overflow key from, and the reference repair copies its components out of, the checkpoint's object log that recovery
 opened (section 9.10); a record read from the snapshot file is read by the Snapshot-region copy and Pass 2 as the file's
 other records are. A pending read skips a marked image read from the main log (section 9.2), and a page walk over the
-main object log invalidates one (section 9.4). No epoch is held while deserializing; `ObjectLog.Read` takes its own
-scope for each read. The reader's callers are:
+main object log invalidates one (section 9.4). No epoch is held while deserializing; `ObjectLog.Read` takes the
+epoch itself for each read. The reader's callers are:
 
 | Caller | Read-ahead | Sequence |
 |---|---|---|
@@ -1659,13 +1659,14 @@ on disk in steady state; up-converting a version 7 checkpoint also writes an upg
 Device-level segmentation does not disappear; it simply stops being part of an address. `ObjectLogSettings.SegmentSizeBits`
 is file segmentation for the device, and an object-log position becomes a flat logical address.
 
-### 12.3 Scope discipline
+### 12.3 Epoch protection
 
 Every object log a store opens shares one `LightEpoch`, separate from the main log's; "the epoch" in this section is
-that one. Allocation and the fill that follows it must happen inside one `BeginScope` / `EndScope` pair, because a
-physical address is stable only while the epoch is held.
+that one (`ObjectLog.epoch`). Allocation and the fill that follows it must happen under one hold of it, because a
+physical address is stable only while the epoch is held. A caller takes it with `ResumeIfNotProtected` and, if that
+call took it, releases it with `Suspend`.
 
-A physical address must not be retained across a later `Allocate` on the same scope. An allocation that cannot be
+A physical address must not be retained across a later `Allocate` under the same hold. An allocation that cannot be
 satisfied has to wait for a flush, and it drops the epoch to let that flush and the page close make progress; after it
 resumes, an earlier page may have been closed. Bytes already written there are safe - they are on the device by the
 time the page is freed - but a pointer into them is not.

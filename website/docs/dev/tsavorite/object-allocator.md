@@ -244,7 +244,7 @@ value or to nothing.
 
 A placeholder counts as no heap: `CalculateHeapMemorySize` and `GetValueHeapMemorySize` skip it, since an object
 placeholder reports a size of 0 and an overflow one is recognized by `IsSentinel`. So every release credits the full
-size of what it drops (`CreditDisposedHeap`):
+size of what it drops (`CreditDisposedHeapSpace`):
 
 - a deletion credits the value; the key stays, and is credited at eviction;
 - an elision or a free-list transfer credits the key and the value, or only the key of a tombstone, whose value was

@@ -45,8 +45,8 @@ namespace Tsavorite.core
     /// record that also carries the final data when they fit one allocation together. The position addresses that single extent or
     /// that top record, the record's top extent (see <see cref="ObjectLogExtent"/>). It is written last, so the record's other extents lie
     /// below it.</para>
-    /// <para>No epoch is held while staging or serializing; each chunk's allocation and copy happen inside one <see cref="ObjectLog"/>
-    /// scope. The writer is used by one thread at a time.</para>
+    /// <para>No epoch is held while staging or serializing; each chunk's allocation and copy happen under one hold of the log's epoch
+    /// (<see cref="ObjectLog.epoch"/>). The writer is used by one thread at a time.</para>
     /// </remarks>
     internal sealed unsafe class ObjectLogWriter<TStoreFunctions> : IStreamBuffer
         where TStoreFunctions : IStoreFunctions
@@ -293,7 +293,7 @@ namespace Tsavorite.core
                 var wanted = data.Length - offset;
                 long address;
                 int allocated;
-                var scopeAcquiredEpoch = log.BeginScope();
+                var epochTaken = log.epoch.ResumeIfNotProtected();
                 try
                 {
                     // A chunk's cut point is arbitrary, so fill a page tail exactly when it is large enough to be worth a chunk.
@@ -305,7 +305,8 @@ namespace Tsavorite.core
                 }
                 finally
                 {
-                    log.EndScope(scopeAcquiredEpoch);
+                    if (epochTaken)
+                        log.epoch.Suspend();
                 }
                 AddChunkEntries(address, allocated, Math.Clamp(keyBytes - offset, 0, allocated));
                 offset += allocated;
@@ -338,7 +339,7 @@ namespace Tsavorite.core
         {
             var size = ObjectLogDirectory.RecordSize(entryCount);
             long address;
-            var scopeAcquiredEpoch = log.BeginScope();
+            var epochTaken = log.epoch.ResumeIfNotProtected();
             try
             {
                 address = log.Allocate(size);
@@ -346,7 +347,8 @@ namespace Tsavorite.core
             }
             finally
             {
-                log.EndScope(scopeAcquiredEpoch);
+                if (epochTaken)
+                    log.epoch.Suspend();
             }
             entryCount = 0;
             entries[entryCount++] = new DirectoryEntry(address, size, isDirectory: true);
@@ -376,7 +378,7 @@ namespace Tsavorite.core
             var isExact = ObjectLogExtent.IsExact(stagedLength);
             var extentLength = (int)ObjectLogExtent.ExtentLength(stagedLength);
             int allocated;
-            var scopeAcquiredEpoch = log.BeginScope();
+            var epochTaken = log.epoch.ResumeIfNotProtected();
             try
             {
                 // An exact extent is never cut: it is small, and a cut would turn a one-IO read into a directory.
@@ -398,7 +400,8 @@ namespace Tsavorite.core
             }
             finally
             {
-                log.EndScope(scopeAcquiredEpoch);
+                if (epochTaken)
+                    log.epoch.Suspend();
             }
 
             chunksEmitted = true;
@@ -444,7 +447,7 @@ namespace Tsavorite.core
                 }
 
                 int allocated;
-                var scopeAcquiredEpoch = log.BeginScope();
+                var epochTaken = log.epoch.ResumeIfNotProtected();
                 try
                 {
                     // Cutting is worthwhile only when there is final data to put in the page tail.
@@ -484,7 +487,8 @@ namespace Tsavorite.core
                 }
                 finally
                 {
-                    log.EndScope(scopeAcquiredEpoch);
+                    if (epochTaken)
+                        log.epoch.Suspend();
                 }
 
                 chunksEmitted = true;

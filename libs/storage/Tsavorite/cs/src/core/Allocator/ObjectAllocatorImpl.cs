@@ -485,7 +485,7 @@ namespace Tsavorite.core
         {
             if (logRecord.IsSet)
             {
-                CreditDisposedHeap(ref logRecord, disposeReason);
+                CreditDisposedHeapSpace(ref logRecord, disposeReason);
                 storeFunctions.OnDispose(ref logRecord, disposeReason);
 
                 logRecord.ClearHeapFields(disposeReason != DisposeReason.Deleted);
@@ -505,7 +505,7 @@ namespace Tsavorite.core
         /// <see cref="ObjectIdMap"/> changes:</para>
         /// <list type="number">
         /// <item>The size tracker is credited as <see cref="OnDispose"/> credits it for <paramref name="disposeReason"/>; see
-        /// <see cref="CreditDisposedHeap"/>.</item>
+        /// <see cref="CreditDisposedHeapSpace"/>.</item>
         /// <item>The delete trigger runs, and sees the value.</item>
         /// <item>The value's slot gets <see cref="SupersededObjectValue.Released"/> or <see cref="OverflowByteArray.Released"/>, which read as
         /// no value. A slot that already holds a placeholder keeps it. The object is not disposed: Tsavorite disposes only a CopyUpdate's
@@ -529,7 +529,7 @@ namespace Tsavorite.core
             if (!logRecord.IsSet)
                 return;
 
-            CreditDisposedHeap(ref logRecord, disposeReason);
+            CreditDisposedHeapSpace(ref logRecord, disposeReason);
             storeFunctions.OnDispose(ref logRecord, disposeReason);
 #if DEBUG
             var bytesBefore = new ReadOnlySpan<byte>((byte*)logRecord.physicalAddress + RecordInfo.Size, logRecord.AllocatedSize - RecordInfo.Size).ToArray();
@@ -562,7 +562,7 @@ namespace Tsavorite.core
         /// <para>A placeholder counts as no heap, so a value released twice is credited once.</para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void CreditDisposedHeap(ref LogRecord logRecord, DisposeReason disposeReason)
+        private void CreditDisposedHeapSpace(ref LogRecord logRecord, DisposeReason disposeReason)
         {
             if (logSizeTracker is null)
                 return;

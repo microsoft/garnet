@@ -342,7 +342,7 @@ namespace Tsavorite.core
             // stays. The release credits the key and any value the source still holds, because eviction skips invalid records.
             var address = stackCtx.recSrc.LogicalAddress;
             if (address >= GetMinRevivifiableAddress())
-                _ = TransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, address, ref source);
+                _ = TryAddToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, address, ref source);
             else
                 ReleaseInPlace(ref source, DisposeReason.Elided);
             return false;
@@ -447,17 +447,17 @@ namespace Tsavorite.core
             // If its address is not revivifiable, leave it orphaned and invalid, and untouched: the caller releases it, or credits what it holds.
             if (logicalAddress < GetMinRevivifiableAddress())
                 return false;
-            return TransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, logicalAddress, ref logRecord);
+            return TryAddToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, logicalAddress, ref logRecord);
         }
 
         /// <summary>Reset the closed record at <paramref name="logicalAddress"/> for reuse, freeing its out-of-line fields, and add it to the free
         /// list if the pool takes it.</summary>
         /// <returns>Whether the free list took the record. If it did not, the record stays invalid, with its fields freed and its heap credited.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, long logicalAddress, ref LogRecord logRecord)
+        private bool TryAddToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, long logicalAddress, ref LogRecord logRecord)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            Debug.Assert(logRecord.Info.IsClosed, "Expected a Closed record in TransferToFreeList");
+            Debug.Assert(logRecord.Info.IsClosed, "Expected a Closed record in TryAddToFreeList");
 
             // Application-level dispose (storeFunctions.OnDispose) was already called at the delete site. Call hlog.OnDispose with
             // RevivificationFreeList to free the record's out-of-line fields for freelist reuse: a deletion leaves the key, and a deletion
@@ -470,7 +470,7 @@ namespace Tsavorite.core
         /// <summary>Credit the size tracker with the overflow key of an elided record that keeps it. An insert charged the key, and eviction skips
         /// invalid records, so the key would otherwise stay counted after its page is freed.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void CreditElidedKey(ref LogRecord logRecord)
+        private void CreditElidedKeyHeapSpace(ref LogRecord logRecord)
         {
             if (logRecord.DataHeader.KeyIsOverflow)
                 hlogBase.logSizeTracker?.IncrementSize(-logRecord.KeyOverflow.HeapMemorySize);
@@ -605,7 +605,7 @@ namespace Tsavorite.core
                 if (stackCtx.hei.TryElide())
                 {
                     srcLogRecord.InfoRef.SealAndInvalidate();
-                    CreditElidedKey(ref srcLogRecord);
+                    CreditElidedKeyHeapSpace(ref srcLogRecord);
                 }
                 return;
             }
@@ -654,7 +654,7 @@ namespace Tsavorite.core
 
                 // The record stays out of the chain and off the free list, invalid. If the pool refused it, its transfer has already freed and
                 // credited the key; if it is below the revivifiable range, it was not transferred and still holds the key.
-                CreditElidedKey(ref srcLogRecord);
+                CreditElidedKeyHeapSpace(ref srcLogRecord);
             }
         }
     }

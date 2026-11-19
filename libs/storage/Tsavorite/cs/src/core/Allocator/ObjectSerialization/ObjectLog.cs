@@ -53,11 +53,11 @@ namespace Tsavorite.core
     /// <para><b>No commit protocol.</b> Unlike <see cref="TsavoriteLog"/> there is no commit file, no commit record and no recovery of a
     /// "latest commit": the checkpoint's <c>info.dat</c> remains the sole authority on object-log tails, and recovery positions this log
     /// with <see cref="RestoreTail"/>. Durability is a wait on <see cref="FlushedUntilAddress"/>.</para>
-    /// <para><b>Scope discipline.</b> Allocation and the fill that follows it must happen inside one <see cref="BeginScope"/> /
-    /// <see cref="EndScope"/> pair, because a physical address is only stable while the epoch is held. A physical address must not be
-    /// retained across a later <see cref="Allocate(int)"/> call on the same scope: an allocation that has to wait for a flush suspends
-    /// the epoch, after which the earlier page may be closed. Bytes already written there are safe -- they are on disk by then -- but the
-    /// pointer is not.</para>
+    /// <para><b>Epoch protection.</b> Allocation and the fill that follows it must happen under one hold of <see cref="epoch"/>, because a
+    /// physical address is only stable while the epoch is held. A caller takes the epoch with <c>ResumeIfNotProtected</c> and, if that call
+    /// took it, releases it with <c>Suspend</c>. A physical address must not be retained across a later <see cref="Allocate(int)"/> call
+    /// under the same hold: an allocation that has to wait for a flush suspends the epoch, after which the earlier page may be closed.
+    /// Bytes already written there are safe -- they are on disk by then -- but the pointer is not.</para>
     /// </remarks>
     internal sealed unsafe class ObjectLog : IDisposable
     {
@@ -106,7 +106,9 @@ namespace Tsavorite.core
         internal readonly long MaxExclusiveAddress;
 
         private readonly TsavoriteLogAllocatorImpl allocator;
-        private readonly LightEpoch epoch;
+        /// <summary>The epoch that protects this log's pages: this log's own, or the one given in <see cref="ObjectLogSettings.Epoch"/>. A caller
+        /// that allocates and fills, or uses a physical address, holds it throughout; see the class remarks.</summary>
+        internal readonly LightEpoch epoch;
         private readonly bool isEpochOwned;
         private readonly IDevice device;
         private readonly ILogger logger;
@@ -221,31 +223,13 @@ namespace Tsavorite.core
         internal int RemainingOnPage(long logicalAddress) => PageSize - (int)GetOffsetOnPage(logicalAddress);
         #endregion
 
-        #region Scope
-        /// <summary>
-        /// Enter an allocate-and-fill scope, acquiring epoch protection if this thread does not already hold it on this log's epoch.
-        /// </summary>
-        /// <returns>Whether this call acquired protection, to be passed to <see cref="EndScope"/>.</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool BeginScope() => epoch.ResumeIfNotProtected();
-
-        /// <summary>Leave a scope entered by <see cref="BeginScope"/>.</summary>
-        /// <param name="scopeAcquiredEpoch">The value returned by the matching <see cref="BeginScope"/>.</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void EndScope(bool scopeAcquiredEpoch)
-        {
-            if (scopeAcquiredEpoch)
-                epoch.Suspend();
-        }
-        #endregion
-
         #region Allocation
         /// <summary>
         /// Allocate <paramref name="numBytes"/> contiguous bytes, waiting for a flush if the page ring is full.
         /// </summary>
         /// <param name="numBytes">Bytes to allocate; must not exceed <see cref="PageSize"/>.</param>
         /// <returns>The logical address of the allocation.</returns>
-        /// <remarks>Must be called inside a <see cref="BeginScope"/> scope.</remarks>
+        /// <remarks>The caller must hold <see cref="epoch"/>.</remarks>
         internal long Allocate(int numBytes)
         {
             var logicalAddress = AllocateCore(numBytes, minPartialBytes: 0, out var allocatedLength);
@@ -262,7 +246,7 @@ namespace Tsavorite.core
         ///     allocates the remainder separately.</param>
         /// <param name="allocatedLength">Bytes actually allocated, which is <paramref name="numBytes"/> unless the allocation was split.</param>
         /// <returns>The logical address of the allocation.</returns>
-        /// <remarks>Must be called inside a <see cref="BeginScope"/> scope.</remarks>
+        /// <remarks>The caller must hold <see cref="epoch"/>.</remarks>
         internal long Allocate(int numBytes, int minPartialBytes, out int allocatedLength)
             => AllocateCore(numBytes, minPartialBytes, out allocatedLength);
 
@@ -270,7 +254,7 @@ namespace Tsavorite.core
         {
             if (RecoveryReadOnly)
                 throw new TsavoriteException("Cannot append before recovery establishes the object-log tail");
-            Debug.Assert(epoch.ThisInstanceProtected(), $"{nameof(Allocate)} must be called inside a {nameof(BeginScope)} scope");
+            Debug.Assert(epoch.ThisInstanceProtected(), $"{nameof(Allocate)} must be called while holding the epoch");
             if (numBytes <= 0 || numBytes > PageSize)
                 ThrowAllocationSize(numBytes);
 
@@ -318,12 +302,12 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>The physical address of <paramref name="logicalAddress"/>, valid only while the current scope holds the epoch and
+        /// <summary>The physical address of <paramref name="logicalAddress"/>, valid only while the caller holds <see cref="epoch"/>, and
         /// only until the next <see cref="Allocate(int)"/> on this thread.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal byte* GetPhysicalAddress(long logicalAddress)
         {
-            Debug.Assert(epoch.ThisInstanceProtected(), $"{nameof(GetPhysicalAddress)} must be called inside a {nameof(BeginScope)} scope");
+            Debug.Assert(epoch.ThisInstanceProtected(), $"{nameof(GetPhysicalAddress)} must be called while holding the epoch");
             return (byte*)allocator.GetPhysicalAddress(logicalAddress);
         }
 
@@ -413,7 +397,7 @@ namespace Tsavorite.core
             // Validate, choose the path, and submit all under one epoch acquisition. Validation reads BeginAddress and TailAddress,
             // and the device read resolves a segment handle, so letting protection lapse between any of those steps would allow a
             // concurrent Truncate to retire the segment the read is about to resolve.
-            var scopeAcquiredEpoch = BeginScope();
+            var epochTaken = epoch.ResumeIfNotProtected();
             SectorAlignedMemory memory = null;
             ReadContext context = null;
             var validOffset = 0;
@@ -421,7 +405,7 @@ namespace Tsavorite.core
             {
                 ValidateReadRange(logicalAddress, numBytes, destination.Length);
 
-                // An address at or above HeadAddress cannot be evicted while this scope holds the epoch, so the copy is safe.
+                // An address at or above HeadAddress cannot be evicted while this call holds the epoch, so the copy is safe.
                 if (!RecoveryReadOnly && logicalAddress >= allocator.HeadAddress)
                 {
                     new ReadOnlySpan<byte>(GetPhysicalAddress(logicalAddress), numBytes).CopyTo(destination);
@@ -435,7 +419,8 @@ namespace Tsavorite.core
             {
                 // Released before awaiting completion so a blocking wait cannot stall the drain list. The buffer and its in-flight
                 // read are owned by this call, not by the page ring, so they do not depend on continued protection.
-                EndScope(scopeAcquiredEpoch);
+                if (epochTaken)
+                    epoch.Suspend();
             }
 
             try
@@ -531,7 +516,7 @@ namespace Tsavorite.core
         internal RangeRead TryBeginRangeRead(long logicalAddress, int numBytes)
         {
             // One epoch acquisition covers validation, the choice of path, and the submission, as for Read.
-            var scopeAcquiredEpoch = BeginScope();
+            var epochTaken = epoch.ResumeIfNotProtected();
             try
             {
                 if (numBytes <= 0 || logicalAddress < allocator.BeginAddress || logicalAddress + numBytes > TailAddress
@@ -541,7 +526,7 @@ namespace Tsavorite.core
                 var headAddress = allocator.HeadAddress;
                 if (logicalAddress >= headAddress)
                 {
-                    // An address at or above HeadAddress cannot be evicted while this scope holds the epoch, so the copy is safe.
+                    // An address at or above HeadAddress cannot be evicted while this call holds the epoch, so the copy is safe.
                     var copy = allocator.bufferPool.Get(numBytes, clearOnReturn: false);
                     new ReadOnlySpan<byte>(GetPhysicalAddress(logicalAddress), numBytes).CopyTo(new Span<byte>(copy.aligned_pointer, numBytes));
                     return new RangeRead(logicalAddress, numBytes, copy, validOffset: 0, context: null);
@@ -554,7 +539,8 @@ namespace Tsavorite.core
             }
             finally
             {
-                EndScope(scopeAcquiredEpoch);
+                if (epochTaken)
+                    epoch.Suspend();
             }
         }
 
@@ -586,12 +572,17 @@ namespace Tsavorite.core
                 this.context = context;
             }
 
-            /// <summary>Copy the bytes at <paramref name="logicalAddress"/>, which must lie within this read, to <paramref name="destination"/>,
-            /// waiting for the device read if it is still in flight.</summary>
+            /// <summary>Copy the bytes at <paramref name="logicalAddress"/> to <paramref name="destination"/>, waiting for the device read if
+            /// it is still in flight.</summary>
+            /// <remarks>The caller bounds the copy by this read: [<paramref name="logicalAddress"/>, <paramref name="logicalAddress"/> + the
+            /// destination's length) must lie within [<see cref="StartAddress"/>, <see cref="EndAddress"/>). The read-ahead, the only caller,
+            /// clamps each copy to its window. A copy outside the read throws <see cref="ArgumentOutOfRangeException"/> rather than being
+            /// clamped: the source span is built from the read's buffer pointer, which nothing else bounds.</remarks>
             /// <returns>False if the device read failed or fell short, so the bytes are not available here.</returns>
             internal bool TryCopyTo(long logicalAddress, Span<byte> destination)
             {
-                Debug.Assert(logicalAddress >= StartAddress && logicalAddress + destination.Length <= EndAddress, "The bytes must lie within the read");
+                if (logicalAddress < StartAddress || logicalAddress + destination.Length > EndAddress)
+                    ThrowOutsideRead(logicalAddress, destination.Length);
                 if (context is not null)
                 {
                     if (succeeded is null)
@@ -605,6 +596,11 @@ namespace Tsavorite.core
                 new ReadOnlySpan<byte>(memory.aligned_pointer + validOffset + (logicalAddress - StartAddress), destination.Length).CopyTo(destination);
                 return true;
             }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private void ThrowOutsideRead(long logicalAddress, int length)
+                => throw new ArgumentOutOfRangeException(nameof(logicalAddress),
+                    $"The copy [{logicalAddress}, {logicalAddress + length}) is not within the read [{StartAddress}, {EndAddress})");
 
             /// <summary>Wait for the device read, if any, and return the buffer.</summary>
             public void Dispose()
@@ -759,14 +755,15 @@ namespace Tsavorite.core
         /// run the page-close and device-truncate work behind that barrier.</remarks>
         internal void Truncate(long newBeginAddress)
         {
-            var scopeAcquiredEpoch = BeginScope();
+            var epochTaken = epoch.ResumeIfNotProtected();
             try
             {
                 allocator.ShiftBeginAddress(newBeginAddress, truncateLog: true);
             }
             finally
             {
-                EndScope(scopeAcquiredEpoch);
+                if (epochTaken)
+                    epoch.Suspend();
             }
         }
 

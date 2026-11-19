@@ -64,7 +64,7 @@ namespace Tsavorite.core
 
         /// <summary>Page reads and flushes issued for this recovery whose completion callbacks have not yet run. A failed or cancelled recovery can
         /// leave some in flight, and their callbacks use this instance; reads also use its devices and write into log pages.</summary>
-        private int outstandingIO;
+        private int outstandingIOCount;
 
         public RecoveryStatus(int bufferSize)
         {
@@ -152,18 +152,18 @@ namespace Tsavorite.core
         }
 
         /// <summary>Count a page read or flush about to be submitted.</summary>
-        internal void BeginIO() => Interlocked.Increment(ref outstandingIO);
+        internal void BeginIO() => Interlocked.Increment(ref outstandingIOCount);
 
         /// <summary>Retire a page read or flush: from its completion callback, as the last thing it does with this instance, or from its issuer when
         /// the submit threw and no callback will run. Each request is retired once; see <see cref="PageAsyncReadResult{TContext}.TryClaimRecoveryIORetirement"/>.</summary>
-        internal void EndIO() => Interlocked.Decrement(ref outstandingIO);
+        internal void EndIO() => Interlocked.Decrement(ref outstandingIOCount);
 
         /// <summary>Wait until every page read and flush issued for this recovery has called back. Cancellation abandons waits, not the IO they
         /// wait for, so a recovery that fails or is cancelled must call this before its caller can free the pages or devices that IO uses.</summary>
         internal void WaitForOutstandingIO()
         {
             var spinner = new SpinWait();
-            while (Volatile.Read(ref outstandingIO) > 0)
+            while (Volatile.Read(ref outstandingIOCount) > 0)
                 spinner.SpinOnce();
         }
     }

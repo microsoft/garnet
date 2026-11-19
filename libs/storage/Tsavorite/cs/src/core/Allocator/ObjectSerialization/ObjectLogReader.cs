@@ -23,7 +23,7 @@ namespace Tsavorite.core
     /// lengths are then exact, so an overflow array is allocated once at its final size and an object's deserializer is bounded by
     /// its own byte count.</para>
     /// <para>Entries sharing an address belong to one chunk: each after the first starts where the previous one ended.</para>
-    /// <para>No epoch is held while deserializing; <see cref="ObjectLog.Read"/> takes its own scope per read. A walk over a page's records
+    /// <para>No epoch is held while deserializing; <see cref="ObjectLog.Read"/> takes the epoch itself for each read. A walk over a page's records
     /// may attach an <see cref="ObjectLogReadAhead"/> through <see cref="ReadAhead"/>, which serves the reads it holds from a few large
     /// windows; the rest go to <see cref="ObjectLog.Read"/>. The reader is used by one thread at a time.</para>
     /// </remarks>
