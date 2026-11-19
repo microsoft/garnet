@@ -106,33 +106,37 @@ namespace Garnet.cluster
         /// <param name="recoveredSafeAofAddress"></param>
         /// <param name="recoveredReplicationId"></param>
         /// <exception cref="Exception"></exception>
-        public unsafe void GetCheckpointCookieMetadata(Guid logToken, ref AofAddress recoveredSafeAofAddress, out string recoveredReplicationId)
+        public void GetCheckpointCookieMetadata(Guid logToken, ref AofAddress recoveredSafeAofAddress, out string recoveredReplicationId)
         {
             var metadata = GetLogCheckpointMetadata(logToken);
             var hlri = ConvertMetadata(metadata);
+            GetCheckpointCookieMetadata(hlri.cookie, ref recoveredSafeAofAddress, out recoveredReplicationId);
+        }
 
+        internal unsafe void GetCheckpointCookieMetadata(byte[] cookie, ref AofAddress recoveredSafeAofAddress, out string recoveredReplicationId)
+        {
             recoveredReplicationId = null;
             if (RecoveredSafeAofAddress.Length == 1)
             {
                 // Legacy single log deserialization for backward compatibility
                 var bytesRead = sizeof(int);
-                fixed (byte* ptr = hlri.cookie)
+                fixed (byte* ptr = cookie)
                 {
-                    if (hlri.cookie.Length < 4) throw new Exception($"invalid metadata length: {hlri.cookie.Length} < 4");
+                    if (cookie.Length < 4) throw new Exception($"invalid metadata length: {cookie.Length} < 4");
                     var cookieSize = *(int*)ptr;
                     bytesRead += cookieSize;
 
-                    if (hlri.cookie.Length < 12) throw new Exception($"invalid metadata length: {hlri.cookie.Length} < 12");
+                    if (cookie.Length < 12) throw new Exception($"invalid metadata length: {cookie.Length} < 12");
                     recoveredSafeAofAddress[0] = *(long*)(ptr + 4);
 
-                    if (hlri.cookie.Length < 52) throw new Exception($"invalid metadata length: {hlri.cookie.Length} < 52");
+                    if (cookie.Length < 52) throw new Exception($"invalid metadata length: {cookie.Length} < 52");
                     recoveredReplicationId = Encoding.ASCII.GetString(ptr + 12, 40);
                 }
             }
             else
             {
                 // Multi-log cookie
-                using var ms = new MemoryStream(hlri.cookie);
+                using var ms = new MemoryStream(cookie);
                 using var reader = new BinaryReader(ms, Encoding.ASCII);
                 recoveredReplicationId = reader.ReadInt32() > 0 ? reader.ReadString() : null;
                 recoveredSafeAofAddress = AofAddress.Deserialize(reader);

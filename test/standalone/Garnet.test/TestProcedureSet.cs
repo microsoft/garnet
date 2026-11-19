@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Linq;
 using Garnet.common;
 using Garnet.server;
@@ -80,7 +81,8 @@ namespace Garnet
             if (status != GarnetStatus.OK || members.Length != 5)
                 return false;
 
-            status = api.SetIsMember(setA, elements[0..5], out var result);
+            Span<int> result = [];
+            status = api.SetIsMember(setA, elements[0..5], ref result);
             if (status != GarnetStatus.OK || result.Length != 5)
                 return false;
 

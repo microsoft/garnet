@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.IO.Hashing;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -17,6 +18,34 @@ namespace Garnet.server
     /// </summary>
     public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, StringOutput, long>
     {
+        const int StringDigestLength = 16;
+
+        private static void ComputeStringDigest(ReadOnlySpan<byte> value, Span<byte> digest)
+        {
+            var hash = XxHash3.HashToUInt64(value);
+            for (var i = StringDigestLength - 1; i >= 0; i--)
+            {
+                var digit = (byte)(hash & 0xf);
+                digest[i] = (byte)(digit < 10 ? '0' + digit : 'a' + digit - 10);
+                hash >>= 4;
+            }
+        }
+
+        private bool TryMatchStringDigest(ReadOnlySpan<byte> value, ReadOnlySpan<byte> expected, ref StringOutput output, out bool matches)
+        {
+            matches = false;
+            if (expected.Length != StringDigestLength)
+            {
+                functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_INVALID_DIGEST, ref output.SpanByteAndMemory);
+                return false;
+            }
+
+            Span<byte> digest = stackalloc byte[StringDigestLength];
+            ComputeStringDigest(value, digest);
+            matches = expected.EqualsLowerCaseSpanIgnoringCase(digest, allowNonAlphabeticChars: true);
+            return true;
+        }
+
         static void CopyTo(ReadOnlySpan<byte> src, ref StringOutput dst, MemoryPool<byte> memoryPool)
         {
             int srcLength = src.Length;
@@ -92,6 +121,11 @@ namespace Garnet.server
 
             switch (input.header.cmd)
             {
+                case RespCommand.DIGEST:
+                    Span<byte> digest = stackalloc byte[StringDigestLength];
+                    ComputeStringDigest(value, digest);
+                    CopyRespTo(digest, ref output);
+                    break;
                 case RespCommand.ASYNC:
                     // If the GET is expected to complete continuations asynchronously, we should not write anything
                     // to the network buffer in case the operation does go pending (latter is indicated by isFromPending)
@@ -113,6 +147,7 @@ namespace Garnet.server
                 case RespCommand.VISMEMBER:
                 case RespCommand.VLINKS:
                 case RespCommand.VRANDMEMBER:
+                case RespCommand.XVIMPORT:
                 case RespCommand.GET:
                 case RespCommand.RIGET:
                 case RespCommand.RISET:
@@ -365,32 +400,27 @@ namespace Garnet.server
             return isSuccessful;
         }
 
+        /// <summary>
+        /// Converts inclusive GETRANGE offsets, which count back from the end when negative, into an exclusive range of a
+        /// value of length <paramref name="len"/>. Offsets are clamped to the value, never wrapped.
+        /// </summary>
+        /// <returns>The start and exclusive end of the range; (0, 0) when the range is empty</returns>
         static (int, int) NormalizeRange(int start, int end, int len)
         {
-            // len == 0 has no valid range regardless of start/end; returning early also avoids
-            // a division/modulo by zero below when start < 0.
-            if (len == 0)
+            // A range counted from the end whose end precedes its start is empty
+            if (start < 0 && end < 0 && start > end)
                 return (0, 0);
 
-            if (start >= 0 && start <= len)//start in [0,len]
-            {
-                if (end < 0 && (len + end) > 0)
-                    return (start, len + end + 1);
-                else if (end >= start)
-                    return (start, end < len ? end + 1 : len);
-            }
-            else if (start < 0)
-            {
-                if (start > end) return (0, 0);
-                start %= len;
-                start = start >= 0 ? start : len + start;
-                end = end > len ? len : (end % len);
-                if (end < 0 && (len + end) > 0)
-                    return (start, len + end + 1);
-                else if (end >= start)
-                    return (start, end < len ? (start == end ? end + 1 : end) : len);
-            }
-            return (0, 0);
+            // len is non-negative, so len + offset cannot overflow for a negative offset
+            if (start < 0)
+                start = Math.Max(len + start, 0);
+            if (end < 0)
+                end = Math.Max(len + end, 0);
+            if (end >= len)
+                end = len - 1;
+
+            // An empty value leaves end at -1, below any start
+            return start > end ? (0, 0) : (start, end + 1);
         }
 
         static bool TryInPlaceUpdateNumber(ref LogRecord logRecord, ref StringOutput output, ref RMWInfo rmwInfo, long input)
@@ -485,7 +515,7 @@ namespace Garnet.server
                 val += input;
                 if (!double.IsFinite(val))
                 {
-                    output.OutputFlags |= StringOutputFlags.InvalidTypeError;
+                    output.OutputFlags |= StringOutputFlags.NaNOrInfinityError;
                     return true;
                 }
                 var ndigits = NumUtils.CountCharsInDouble(val, out var _, out var _, out var _);
@@ -516,7 +546,7 @@ namespace Garnet.server
                     val += input;
                     if (!double.IsFinite(val))
                     {
-                        output.OutputFlags |= StringOutputFlags.InvalidTypeError;
+                        output.OutputFlags |= StringOutputFlags.NaNOrInfinityError;
                         return true;
                     }
                     var ndigits = NumUtils.CountCharsInDouble(val, out var _, out var _, out var _);
@@ -652,7 +682,7 @@ namespace Garnet.server
             val += input;
             if (!double.IsFinite(val))
             {
-                output.OutputFlags |= StringOutputFlags.InvalidTypeError;
+                output.OutputFlags |= StringOutputFlags.NaNOrInfinityError;
                 return false;
             }
 
@@ -697,6 +727,19 @@ namespace Garnet.server
                 return false;
             }
 
+            return true;
+        }
+
+        /// <summary>
+        /// Flags an APPEND whose result would exceed the maximum string size.
+        /// </summary>
+        /// <returns>True if the append is rejected</returns>
+        static bool AppendExceedsMaxSize(int originalLength, int appendLength, ref StringOutput output)
+        {
+            if ((long)originalLength + appendLength <= BitmapManager.MaxBitmapPayloadBytes)
+                return false;
+
+            output.OutputFlags |= StringOutputFlags.ValueTooLargeError;
             return true;
         }
 

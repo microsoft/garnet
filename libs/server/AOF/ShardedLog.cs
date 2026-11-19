@@ -167,10 +167,16 @@ namespace Garnet.server
             }
         }
 
-        public async ValueTask RecoverAsync()
+        public async ValueTask RecoverAsync(bool clearAboveTail)
         {
             foreach (var log in sublog)
-                await log.RecoverAsync().ConfigureAwait(false);
+                await log.RecoverAsync(-1, clearAboveTail).ConfigureAwait(false);
+        }
+
+        public void PrepareToAppend()
+        {
+            foreach (var log in sublog)
+                log.PrepareToAppend();
         }
 
         public void Reset()

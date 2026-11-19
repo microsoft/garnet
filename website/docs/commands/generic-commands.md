@@ -149,6 +149,27 @@ Integer reply: the number of keys that exist from those specified as arguments.
 
 ---
 
+### TOUCH
+
+#### Syntax
+
+```bash
+    TOUCH key [key ...]
+```
+
+Accesses the specified keys without returning their values. Missing and expired keys are ignored.
+Each occurrence of an existing key is counted, including duplicates. Works with strings and collection values
+without changing their values or expiration times.
+
+Garnet does not track per-key last-access times or implement access-based LRU/LFU eviction. TOUCH uses the
+normal read path, but does not update an idle-time or access-frequency counter.
+
+#### Resp Reply
+
+Integer reply: the number of specified keys that exist.
+
+---
+
 ### EXPIRE
 
 #### Syntax
@@ -246,6 +267,11 @@ Examples of supported patterns:
 * h[a-b]llo matches hallo and hbllo
 
 Use \ to escape special characters if you want to match them verbatim.
+
+The `*` wildcard matches zero or more bytes, and `?` matches exactly one byte.
+Glob matching uses constant auxiliary space and has worst-case `O(P * N)` work
+per comparison, where `P` is the pattern length and `N` is the key or member length.
+Long patterns can therefore make scans expensive even when few matches are returned.
 
 #### Resp Reply
 
@@ -518,7 +544,6 @@ If ttl is 0 the key is created without any expire, otherwise the specified expir
 Simple string reply: OK.
 
 ---
-
 
 
 

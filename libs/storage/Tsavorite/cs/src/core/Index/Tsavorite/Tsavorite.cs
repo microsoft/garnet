@@ -30,7 +30,6 @@ namespace Tsavorite.core
 
         internal readonly bool UseReadCache;
         private readonly ReadCopyOptions ReadCopyOptions;
-        internal readonly int sectorSize;
         /// <summary>Initial IO record size from <see cref="KVSettings"/>; <see cref="KVSettings.UseDefaultInitialIORecordSize"/> means unset.</summary>
         internal readonly int InitialIORecordSize;
         internal readonly StateMachineDriver stateMachineDriver;
@@ -67,23 +66,93 @@ namespace Tsavorite.core
         public long IndexBucketSizeBytes => Constants.kCacheLineBytes;
 
         /// <summary>
-        /// Number of overflow buckets in use (64 bytes each)
+        /// Number of overflow buckets in use (64 bytes each), across every live generation: during an index resize the
+        /// superseded generation is still allocated until the split completes, so both are counted.
         /// </summary>
-        public long OverflowBucketCount => overflowBucketsAllocator.GetMaxValidAddress();
+        public long OverflowBucketCount
+        {
+            get
+            {
+                // The resize generation is nulled concurrently once the split completes, so read it once.
+                // GetMaxValidAddress reads a counter field and stays valid on an allocator that was just disposed.
+                var resizeAllocator = overflowBucketsAllocatorResize;
+                return (long)overflowBucketsAllocator.GetMaxValidAddress() + (resizeAllocator?.GetMaxValidAddress() ?? 0);
+            }
+        }
 
         /// <summary>
-        /// Size of the in-use overflow buckets in bytes (#overflow buckets * <see cref="IndexBucketSizeBytes"/>).
+        /// Ceiling on overflow-bucket memory for the live generation, in bytes, derived from
+        /// <see cref="KVSettings.IndexOverflowThreshold"/> and that generation's main bucket count. Allocation beyond
+        /// it throws. Read from the allocator rather than recomputed, so the installed ceiling is what is reported.
         /// </summary>
-        public long IndexOverflowSizeBytes => OverflowBucketCount * Constants.kCacheLineBytes;
+        public long IndexOverflowMaxSizeBytes => overflowBucketsAllocator.MaxMemorySize;
 
         /// <summary>
-        /// Total index memory in bytes: the main hash table (<see cref="IndexSizeBytes"/>) plus the in-use
-        /// overflow buckets (<see cref="IndexOverflowSizeBytes"/>).
+        /// Ceiling on overflow buckets as a percentage of the main bucket count, applied to every index generation.
         /// </summary>
-        public long IndexTotalSizeBytes => IndexSizeBytes + IndexOverflowSizeBytes;
+        public int IndexOverflowThreshold => overflowThreshold;
+
+        /// <summary>
+        /// Memory committed by the overflow-bucket allocators, including the resize generation while a grow is in
+        /// progress. The allocator commits whole pages ahead of the buckets it hands out, so this exceeds
+        /// <see cref="OverflowBucketCount"/> * <see cref="IndexBucketSizeBytes"/> and is what the process pays.
+        /// </summary>
+        public long IndexOverflowSizeBytes
+        {
+            get
+            {
+                // The resize generation is nulled concurrently once the split completes, so read it once.
+                var resizeAllocator = overflowBucketsAllocatorResize;
+                return overflowBucketsAllocator.AllocatedSizeBytes + (resizeAllocator?.AllocatedSizeBytes ?? 0);
+            }
+        }
+
+        /// <summary>
+        /// Memory an overflow-bucket generation of this store commits as soon as it exists, before it hands out a bucket:
+        /// whole pages, each over-allocated by a sector so it can be aligned to the sector size of the store's devices.
+        /// This much is inherent to having an index, so a budget for index memory includes it.
+        /// </summary>
+        public long IndexOverflowFloorSizeBytes => MallocFixedPageSize<HashBucket>.GetMinCommittedMemorySize(sectorSize);
+
+        /// <summary>
+        /// Total index memory in bytes: the main hash table (<see cref="IndexSizeBytes"/>) plus the memory committed
+        /// by the overflow-bucket allocators (<see cref="IndexOverflowSizeBytes"/>). During an index resize this also
+        /// includes the superseded hash table, which stays allocated until the split completes and makes the resize the
+        /// peak of index memory use.
+        /// </summary>
+        public long IndexTotalSizeBytes
+        {
+            get
+            {
+                var version = resizeInfo.version;
+                var tableSize = state[version].size + state[1 - version].size;
+                return (tableSize * Constants.kCacheLineBytes) + IndexOverflowSizeBytes;
+            }
+        }
+
+        /// <summary>
+        /// Index memory in bytes excluding the generation an index resize is replacing: the main hash table
+        /// (<see cref="IndexSizeBytes"/>) plus the memory committed by the current overflow-bucket generation. Equal to
+        /// <see cref="IndexTotalSizeBytes"/> except during an index resize, when it omits the superseded hash table and
+        /// overflow buckets, which the resize frees when its split completes.
+        /// </summary>
+        public long IndexSettledSizeBytes => IndexSizeBytes + overflowBucketsAllocator.AllocatedSizeBytes;
 
         /// <summary>Number of allocations performed</summary>
         public long OverflowBucketAllocations => overflowBucketsAllocator.NumAllocations;
+
+        /// <summary>
+        /// Resample the log size tracker's external memory (see
+        /// <see cref="LogSizeTracker{TStoreFunctions, TAllocator}.ExternalMemorySizeProvider"/>), waking the resizer if it grew.
+        /// Called where index memory steps by a whole generation at once, so the log is not left over budget until the
+        /// resizer's next periodic sample.
+        /// </summary>
+        internal void RefreshIndexMemoryCharge()
+        {
+            var sizeTracker = hlogBase.logSizeTracker;
+            if (sizeTracker is not null && sizeTracker.RefreshExternalMemorySize())
+                sizeTracker.Signal();
+        }
 
         /// <summary>
         /// Hybrid log used by this Tsavorite instance
@@ -155,7 +224,7 @@ namespace Tsavorite.core
         /// <param name="storeFunctions">Store-level user function implementations</param>
         /// <param name="allocatorFactory">Func to call to create the allocator(s, if doing readcache)</param>
         public TsavoriteKV(KVSettings kvSettings, TStoreFunctions storeFunctions, Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory)
-            : base(kvSettings.Epoch, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger("TsavoriteKV Index Overflow buckets"))
+            : base(kvSettings.Epoch, kvSettings.GetIndexSizeCacheLines(), kvSettings.GetOverflowThreshold(), kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger("TsavoriteKV Index Overflow buckets"))
         {
             try
             {
@@ -183,6 +252,10 @@ namespace Tsavorite.core
 
                 var logSettings = kvSettings.GetLogSettings();
 
+                // Size the log pages, hash index and overflow buckets for the checkpoint devices as well as the log
+                // devices, since checkpoints write from and recovery reads into them directly.
+                logSettings.CheckpointSectorSize = (int)checkpointManager.GetCheckpointDeviceSectorSize();
+
                 UseReadCache = kvSettings.ReadCacheEnabled;
 
                 ReadCopyOptions = logSettings.ReadCopyOptions;
@@ -209,6 +282,7 @@ namespace Tsavorite.core
                         ObjectLogDevice = hlog.HasObjectLog ? new NullDevice() : null,
                         MemorySize = logSettings.ReadCacheSettings.MemorySize,
                         PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
+                        PageCount = logSettings.ReadCacheSettings.PageCount,
                         SegmentSizeBits = logSettings.ReadCacheSettings.PageSizeBits + 1,   // Not used by readcache but make sure it passes validation
                         MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                     };
@@ -221,9 +295,8 @@ namespace Tsavorite.core
                     ReadCache = new(this, readcache);
                 }
 
-                sectorSize = (int)logSettings.LogDevice.SectorSize;
                 InitialIORecordSize = kvSettings.InitialIORecordSize;
-                Initialize(kvSettings.GetIndexSizeCacheLines(), sectorSize);
+                Initialize(kvSettings.GetIndexSizeCacheLines(), hlogBase.GetDeviceSectorSize());
 
                 LockTable = new OverflowBucketLockTable<TStoreFunctions, TAllocator>(this);
                 RevivificationManager = new(this, kvSettings.RevivificationSettings, logSettings);
@@ -265,10 +338,7 @@ namespace Tsavorite.core
 
         /// <summary>Get the hashcode for a key.</summary>
         public long GetKeyHash<TKey>(TKey key)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             => storeFunctions.GetKeyHashCode64(key);
 
         /// <summary>
@@ -494,10 +564,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRead<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, ref TInput input, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Keep OperationState on the stack: the overwhelmingly common in-memory read never goes pending,
@@ -518,15 +585,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         [SkipLocalsInit] // Span<long> in here can be sizeable, so 0-init'ing isn't free
         internal unsafe void ContextReadWithPrefetch<TKey, TBatch, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TBatch batch, TContext context, TSessionFunctionsWrapper sessionFunctions)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TBatch : IReadArgBatch<TKey, TInput, TOutput>
-#if NET9_0_OR_GREATER
-            , allows ref struct
-#endif
+            where TBatch : IReadArgBatch<TKey, TInput, TOutput>, allows ref struct
         {
             // Per-batch read-copy options, with each Inherit field resolved against the session/store default so a
             // batch can override CopyFrom and/or CopyTo independently (e.g. copy small, frequently-read vector-index
@@ -653,10 +714,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRead<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context,
                 TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var operationState = new OperationState<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
@@ -673,10 +731,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextReadAtAddress<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var operationState = new OperationState<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
@@ -686,10 +741,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextReadAtAddress<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var operationState = new OperationState<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
@@ -699,10 +751,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status ContextReadAtAddress<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
                 TContext context, ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             OperationStatus internalStatus;
@@ -717,10 +766,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input,
                 ReadOnlySpan<byte> srcStringValue, ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var operationState = default(OperationState<TInput, TOutput, TContext>);
@@ -739,10 +785,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input,
                 IHeapObject srcObjectValue, ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var operationState = default(OperationState<TInput, TOutput, TContext>);
@@ -761,10 +804,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TKey key, long keyHash, ref TInput input,
                 in TSourceLogRecord inputLogRecord, ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
@@ -783,10 +823,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata,
                                                                           TContext context, TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var operationState = default(OperationState<TInput, TOutput, TContext>);
@@ -809,10 +846,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, int initialIORecordSize,
                                                                           out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var operationState = default(OperationState<TInput, TOutput, TContext>);
@@ -829,10 +863,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextDelete<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, TContext context, TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var operationState = default(OperationState<TInput, TOutput, TContext>);

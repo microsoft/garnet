@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
@@ -19,11 +20,15 @@ namespace Tsavorite.core
         private readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
         private readonly AllocatorBase<TStoreFunctions, TAllocator> hlogBase;
         private readonly BlittableFrame frame;
+        private readonly ObjectScanFrame[] objectFrames;
+        private ObjectIdMap scanObjectIdMap;
 
         private SectorAlignedMemory recordBuffer;
         private readonly bool assumeInMemory;
+        private readonly bool includeValues = true;
 
         private DiskLogRecord diskLogRecord;
+        private bool currentRecordFromDisk;
 
         /// <summary>
         /// Constructor
@@ -38,18 +43,23 @@ namespace Tsavorite.core
         /// <param name="epoch">Epoch to use for protection; may be null if <paramref name="assumeInMemory"/> is true.</param>
         /// <param name="assumeInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
+        /// <param name="includeValues">Whether in-memory snapshots must retain values.</param>
         internal ObjectScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
                 long beginAddress, long endAddress, LightEpoch epoch, DiskScanBufferingMode diskScanBufferingMode,
                 InMemoryScanBufferingMode memScanBufferingMode = InMemoryScanBufferingMode.NoBuffering,
-                bool includeClosedRecords = false, bool assumeInMemory = false, ILogger logger = null)
+                bool includeClosedRecords = false, bool assumeInMemory = false, ILogger logger = null, bool includeValues = true)
             : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, endAddress, diskScanBufferingMode, memScanBufferingMode,
                   includeClosedRecords, epoch, hlogBase.LogPageSizeBits, hlogBase._wrapper, logger: logger)
         {
             this.store = store;
             this.hlogBase = hlogBase;
             this.assumeInMemory = assumeInMemory;
+            this.includeValues = includeValues;
             if (frameSize > 0)
+            {
                 frame = new BlittableFrame(frameSize, hlogBase.PageSize, hlogBase.GetDeviceSectorSize());
+                objectFrames = new ObjectScanFrame[frameSize];
+            }
         }
 
         /// <summary>
@@ -64,7 +74,10 @@ namespace Tsavorite.core
             this.hlogBase = hlogBase;
             assumeInMemory = false;
             if (frameSize > 0)
+            {
                 frame = new BlittableFrame(frameSize, hlogBase.PageSize, hlogBase.GetDeviceSectorSize());
+                objectFrames = new ObjectScanFrame[frameSize];
+            }
         }
 
         #region TODO Unify with SpanByteScanIterator
@@ -91,12 +104,7 @@ namespace Tsavorite.core
 
         private bool InitializeGetNextAndAcquireEpoch(out long stopAddress)
         {
-            if (diskLogRecord.IsSet)
-            {
-                hlogBase._wrapper.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
-                diskLogRecord.Dispose();
-            }
-            diskLogRecord = default;
+            DisposeCurrentRecord();
             currentAddress = nextAddress;
 
             // Acquire the epoch BEFORE sampling Initializing / TailAddress / HeadAddress /
@@ -144,7 +152,11 @@ namespace Tsavorite.core
 
             currentPage = hlogBase.GetPage(currentAddress);
             if (currentAddress < headAddress && !assumeInMemory)
+            {
+                // Iterator operations are serialized. Publish the shared map before scheduling loads on other threads.
+                scanObjectIdMap ??= new();
                 _ = BufferAndLoad(currentAddress, currentPage, currentPage % frameSize, headAddress, stopAddress);
+            }
 
             // Success; keep the epoch held for GetNext (SnapCursorToLogicalAddress will Suspend()).
             return true;
@@ -232,8 +244,7 @@ namespace Tsavorite.core
 
                     if (currentAddress >= headAddress || assumeInMemory)
                     {
-                        // TODO: for this PR we always buffer the in-memory records; pull iterators require it, and currently push iterators are implemented on top of pull.
-                        // Copy the entire record into bufferPool memory so we don't have a ref to log data outside epoch protection.
+                        // Snapshot under epoch protection so callbacks do not retain references to log pages.
                         OperationStackContext<TStoreFunctions, TAllocator> stackCtx = default;
                         try
                         {
@@ -263,36 +274,48 @@ namespace Tsavorite.core
                                 }
                             }
 
-                            if (recordBuffer == null)
-                                recordBuffer = hlogBase.bufferPool.Get((int)allocatedSize);
-                            else if (recordBuffer.AlignedTotalCapacity < (int)allocatedSize)
+                            // Copy the record, or for a key-only scan just its key and metadata. Then check the copy, and remap its objectIds to the
+                            // transient map.
+                            long copyAddress;
+                            if (!includeValues)
                             {
-                                recordBuffer.Return();
-                                recordBuffer = hlogBase.bufferPool.Get((int)allocatedSize);
+                                var source = hlogBase._wrapper.CreateLogRecord(currentAddress, physicalAddress);
+                                copyAddress = DiskLogRecord.CopyKeyForScan(in source, hlogBase.bufferPool, ref recordBuffer);
                             }
+                            else
+                            {
+                                if (recordBuffer == null)
+                                    recordBuffer = hlogBase.bufferPool.Get((int)allocatedSize);
+                                else if (recordBuffer.AlignedTotalCapacity < (int)allocatedSize)
+                                {
+                                    recordBuffer.Return();
+                                    recordBuffer = hlogBase.bufferPool.Get((int)allocatedSize);
+                                }
 
-                            // These objects are still alive in the log, so do not dispose the value object if any.
-                            // Don't pass the recordBuffer to diskLogRecord; we reuse that here.
-                            var remapPtr = recordBuffer.GetValidPointer();
-                            Buffer.MemoryCopy((byte*)physicalAddress, remapPtr, allocatedSize, allocatedSize);
+                                // These objects are still alive in the log, so do not dispose the value object if any.
+                                // Don't pass the recordBuffer to diskLogRecord; we reuse that here.
+                                copyAddress = (long)recordBuffer.GetValidPointer();
+                                Buffer.MemoryCopy((byte*)physicalAddress, (byte*)copyAddress, allocatedSize, allocatedSize);
+                            }
 
                             if (immutable)
                             {
-                                if (ClosedWhileCopied(physicalAddress, (long)remapPtr))
+                                if (ClosedWhileCopied(physicalAddress, copyAddress))
                                 {
                                     nextAddress = currentAddress;
                                     continue;
                                 }
 
                                 // The record was closed after it was sampled, so skip it as if it had been closed then.
-                                if (!includeClosedRecords && LogRecord.GetInfo((long)remapPtr).SkipOnScan)
+                                if (!includeClosedRecords && LogRecord.GetInfo(copyAddress).SkipOnScan)
                                     continue;
                             }
 
                             // A disposal released the record's overflow key while it was copied, so the record cannot be reported.
-                            if (!hlogBase._wrapper.TryCreateRemappedLogRecordOverPinnedTransientMemory(currentAddress, (long)remapPtr, out var memoryLogRecord))
+                            if (!hlogBase._wrapper.TryCreateRemappedLogRecordOverPinnedTransientMemory(currentAddress, copyAddress, out var memoryLogRecord))
                                 continue;
                             diskLogRecord = new DiskLogRecord(in memoryLogRecord);
+                            currentRecordFromDisk = false;
                         }
                         finally
                         {
@@ -302,11 +325,16 @@ namespace Tsavorite.core
                     }
                     else
                     {
+                        // The frame is loaded to the end of the page's valid data, so a record read from it must lie entirely below
+                        // FlushedUntilAddress; otherwise its tail is the cleared frame rather than log data.
+                        Debug.Assert(currentAddress + allocatedSize <= hlogBase.FlushedUntilAddress,
+                            $"Record at {currentAddress} of size {allocatedSize} extends past FlushedUntilAddress {hlogBase.FlushedUntilAddress}");
+
                         // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
-                        // DiskLogRecord.Dispose() invokes IHeapObject.Dispose on any deserialized value object for all callers
-                        // (pending-op ctx, scan iteration, cluster streaming), unless the object is transferred out (e.g. via CopyToTail).
-                        var logRecord = new LogRecord(physicalAddress, hlogBase._wrapper.TransientObjectIdMap);
+                        // The frame owns every deserialized record, including ones skipped by this iterator.
+                        var logRecord = new LogRecord(physicalAddress, objectFrames[currentPage % frameSize].objectIdMap);
                         diskLogRecord = new(logRecord);
+                        currentRecordFromDisk = true;
                         // Fire OnDiskRead so app can invalidate stale TreeHandles, etc., on records loaded from disk.
                         if (hlogBase.storeFunctions.CallOnDiskRead)
                             hlogBase.storeFunctions.OnDiskRead(ref diskLogRecord.logRecord);
@@ -471,16 +499,68 @@ namespace Tsavorite.core
         public override void Dispose()
         {
             base.Dispose();
-            if (diskLogRecord.IsSet)
-                hlogBase._wrapper.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
-            recordBuffer?.Return();
-            recordBuffer = null;
-            //TODOobjDispose("Dispose objects in frame");
-            frame?.Dispose();
+            ExceptionDispatchInfo disposalError = null;
+            try
+            {
+                try
+                {
+                    DisposeCurrentRecord();
+                }
+                catch (Exception ex)
+                {
+                    disposalError = ExceptionDispatchInfo.Capture(ex);
+                }
+                if (objectFrames is not null)
+                {
+                    foreach (var objectFrame in objectFrames)
+                    {
+                        try
+                        {
+                            objectFrame?.Clear(hlogBase.storeFunctions);
+                        }
+                        catch (Exception ex)
+                        {
+                            disposalError ??= ExceptionDispatchInfo.Capture(ex);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                // All reads and frame cleanup have finished; no frame can still allocate or reference slots.
+                scanObjectIdMap?.Clear();
+                recordBuffer?.Return();
+                recordBuffer = null;
+                frame?.Dispose();
+            }
+            disposalError?.Throw();
+        }
+
+        private void DisposeCurrentRecord()
+        {
+            if (!diskLogRecord.IsSet)
+                return;
+            try
+            {
+                // Buffered resident records own only remapped slots, not the heap objects they reference.
+                if (currentRecordFromDisk)
+                    hlogBase._wrapper.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+            }
+            finally
+            {
+                diskLogRecord.Dispose();
+                diskLogRecord = default;
+            }
         }
 
         internal override void AsyncReadPageFromDeviceToFrame<TContext>(long readPage, long untilAddress, TContext context, ref CountdownEvent completed,
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
-            => hlogBase.AsyncReadPageFromDeviceToFrame(readPage, untilAddress, AsyncReadPageFromDeviceToFrameCallback, context, frame, ref completed, devicePageOffset, device, objectLogDevice, cts);
+        {
+            var objectFrame = objectFrames[readPage % frameSize] ??= new(scanObjectIdMap);
+            // ScanIteratorBase has drained the prior load before claiming this frame for another page.
+            objectFrame.Clear(hlogBase.storeFunctions);
+            hlogBase.AsyncReadPageFromDeviceToFrame(readPage, untilAddress, AsyncReadPageFromDeviceToFrameCallback, context, frame,
+                ref completed, devicePageOffset, device, objectLogDevice, cts, objectFrame);
+        }
     }
 }

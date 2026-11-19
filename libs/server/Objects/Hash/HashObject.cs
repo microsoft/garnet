@@ -11,11 +11,7 @@ using System.Runtime.InteropServices;
 using Garnet.common;
 using Tsavorite.core;
 
-#if NET9_0_OR_GREATER
 using ByteSpan = System.ReadOnlySpan<byte>;
-#else
-using ByteSpan = byte[];
-#endif
 
 namespace Garnet.server
 {
@@ -74,13 +70,11 @@ namespace Garnet.server
         // now carries a different expiration.
         PriorityQueue<byte[], long> expirationQueue;
 
-#if NET9_0_OR_GREATER
         private readonly Dictionary<byte[], byte[]>.AlternateLookup<ReadOnlySpan<byte>> hashSpanLookup;
 
         // View of expirationTimes keyed by ReadOnlySpan<byte>, so a lookup does not have to allocate a byte[]. Follows
         // the lifetime of expirationTimes and is recreated and cleared alongside it.
         Dictionary<byte[], long>.AlternateLookup<ReadOnlySpan<byte>> expirationTimeSpanLookup;
-#endif
 
         // Byte #31 is used to denote if key has expiration (1) or not (0) 
         private const int ExpirationBitMask = 1 << 31;
@@ -98,9 +92,7 @@ namespace Garnet.server
             : base(MemoryUtils.DictionaryOverhead)
         {
             hash = new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance);
-#if NET9_0_OR_GREATER
             hashSpanLookup = hash.GetAlternateLookup<ReadOnlySpan<byte>>();
-#endif
         }
 
         /// <summary>
@@ -111,9 +103,7 @@ namespace Garnet.server
         {
             var count = reader.ReadInt32();
             hash = new Dictionary<byte[], byte[]>(count, ByteArrayComparer.Instance);
-#if NET9_0_OR_GREATER
             hashSpanLookup = hash.GetAlternateLookup<ReadOnlySpan<byte>>();
-#endif
             for (var i = 0; i < count; i++)
             {
                 var keyLength = reader.ReadInt32();
@@ -154,11 +144,9 @@ namespace Garnet.server
             this.hash = hash;
             this.expirationTimes = expirationTimes;
             this.expirationQueue = expirationQueue;
-#if NET9_0_OR_GREATER
             hashSpanLookup = hash.GetAlternateLookup<ReadOnlySpan<byte>>();
             if (expirationTimes is not null)
                 expirationTimeSpanLookup = expirationTimes.GetAlternateLookup<ReadOnlySpan<byte>>();
-#endif
         }
 
         /// <inheritdoc />
@@ -327,9 +315,7 @@ namespace Garnet.server
             {
                 expirationTimes = new Dictionary<byte[], long>(ByteArrayComparer.Instance);
                 expirationQueue = new PriorityQueue<byte[], long>();
-#if NET9_0_OR_GREATER
                 expirationTimeSpanLookup = expirationTimes.GetAlternateLookup<ReadOnlySpan<byte>>();
-#endif
                 HeapMemorySize += MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
             }
         }
@@ -360,9 +346,7 @@ namespace Garnet.server
                 HeapMemorySize -= MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
                 expirationTimes = null;
                 expirationQueue = null;
-#if NET9_0_OR_GREATER
                 expirationTimeSpanLookup = default;
-#endif
             }
         }
 
@@ -426,13 +410,8 @@ namespace Garnet.server
                 cursor = 0;
         }
 
-#if NET9_0_OR_GREATER
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsExpired(ReadOnlySpan<byte> key) => HasExpirableItems && expirationTimeSpanLookup.TryGetValue(key, out var expiration) && expiration < DateTimeOffset.UtcNow.Ticks;
-#else
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool IsExpired(byte[] key) => HasExpirableItems && expirationTimes.TryGetValue(key, out var expiration) && expiration < DateTimeOffset.UtcNow.Ticks;
-#endif
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void DeleteExpiredItems()
@@ -477,31 +456,19 @@ namespace Garnet.server
             if (IsExpired(key))
                 return false;
 
-#if NET9_0_OR_GREATER
             return hashSpanLookup.TryGetValue(key, out value);
-#else
-            return hash.TryGetValue(key, out value);
-#endif
         }
 
         private bool Remove(ByteSpan key, out byte[] value)
         {
             DeleteExpiredItems();
-#if NET9_0_OR_GREATER
             var result = hashSpanLookup.Remove(key, out _, out value);
-#else
-            var result = hash.Remove(key, out value);
-#endif
             if (result)
             {
                 if (HasExpirableItems)
                 {
                     // We cannot remove from the PQ so just remove from expirationTimes, let the next call to DeleteExpiredItems() clean it up, and don't adjust PQ sizes.
-#if NET9_0_OR_GREATER
                     _ = expirationTimeSpanLookup.Remove(key);
-#else
-                    _ = expirationTimes.Remove(key);
-#endif
                     UpdateExpirationSize(add: false, includePQ: false);
                 }
                 UpdateSize(key, value, add: false);
@@ -525,17 +492,12 @@ namespace Garnet.server
 
         private bool ContainsKey(ByteSpan key)
         {
-#if NET9_0_OR_GREATER
             var result = hashSpanLookup.ContainsKey(key);
-#else
-            var result = hash.ContainsKey(key);
-#endif
             if (result && IsExpired(key))
                 return false;
             return result;
         }
 
-#if NET9_0_OR_GREATER
         private bool ContainsKey(ByteSpan key, out byte[] keyArray)
         {
             var result = hashSpanLookup.TryGetValue(key, out keyArray, out _);
@@ -544,18 +506,13 @@ namespace Garnet.server
 
             return result;
         }
-#endif
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Add(ByteSpan key, byte[] value)
         {
             // Called only when we have verified the key exists
             DeleteExpiredItems();
-#if NET9_0_OR_GREATER
             var success = hashSpanLookup.TryAdd(key, value);
-#else
-            var success = hash.TryAdd(key, value);
-#endif
             Debug.Assert(success);
 
             UpdateSize(key, value, add: true);
@@ -563,11 +520,7 @@ namespace Garnet.server
 
         private ExpireResult SetExpiration(ByteSpan key, long expiration, ExpireOption expireOption)
         {
-#if NET9_0_OR_GREATER
             if (!ContainsKey(key, out var keyArray))
-#else
-            if (!ContainsKey(key))
-#endif
                 return ExpireResult.KeyNotFound;
 
             if (expiration <= DateTimeOffset.UtcNow.Ticks)
@@ -581,11 +534,7 @@ namespace Garnet.server
             // Avoid multiple hash calculations by acquiring ref to the dictionary value.
             // The ref is unsafe to read/write to if the expiration dictionary is mutated.
             ref var expirationTimeRef =
-#if NET9_0_OR_GREATER
                 ref CollectionsMarshal.GetValueRefOrAddDefault(expirationTimeSpanLookup, key, out var exists);
-#else
-                ref CollectionsMarshal.GetValueRefOrAddDefault(expirationTimes, key, out var exists);
-#endif
             if (exists)
             {
                 if ((expireOption & ExpireOption.NX) == ExpireOption.NX ||
@@ -596,11 +545,7 @@ namespace Garnet.server
                 }
 
                 expirationTimeRef = expiration;
-#if NET9_0_OR_GREATER
                 expirationQueue.Enqueue(keyArray, expiration);
-#else
-                expirationQueue.Enqueue(key, expiration);
-#endif
 
                 // LogMemorySize of dictionary entry already accounted for as the key already exists.
                 // SerializedSize of expiration is already accounted for as the key already exists in expirationTimes.
@@ -612,11 +557,7 @@ namespace Garnet.server
                     return ExpireResult.ExpireConditionNotMet;
 
                 expirationTimeRef = expiration;
-#if NET9_0_OR_GREATER
                 expirationQueue.Enqueue(keyArray, expiration);
-#else
-                expirationQueue.Enqueue(key, expiration);
-#endif
                 UpdateExpirationSize(add: true, includePQ: true);
             }
 
@@ -630,11 +571,7 @@ namespace Garnet.server
                 return (int)ExpireResult.KeyNotFound;
             }
 
-#if NET9_0_OR_GREATER
             if (HasExpirableItems && expirationTimeSpanLookup.Remove(key))
-#else
-            if (HasExpirableItems && expirationTimes.Remove(key, out var currentExpiration))
-#endif
             {
                 HeapMemorySize -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
                 CleanupExpirationStructuresIfEmpty();
@@ -649,11 +586,7 @@ namespace Garnet.server
             if (!ContainsKey(key))
                 return (long)ExpireResult.KeyNotFound;
 
-#if NET9_0_OR_GREATER
             if (HasExpirableItems && expirationTimeSpanLookup.TryGetValue(key, out var expiration))
-#else
-            if (HasExpirableItems && expirationTimes.TryGetValue(key, out var expiration))
-#endif
                 return expiration;
             return -1;
         }

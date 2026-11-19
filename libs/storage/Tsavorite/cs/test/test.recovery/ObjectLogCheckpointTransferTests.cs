@@ -95,6 +95,10 @@ namespace Tsavorite.test.recovery.objects
                 Destroy(log, objlog, store);
             }
 
+            // Recovery may read any page of the snapshot file, whatever the concurrent flush wrote to the main log, so the whole file is
+            // transferred.
+            ClassicAssert.AreEqual(0, logFileInfo.snapshotFileStartAddress, "The whole snapshot file must be transferred");
+
             TransferCheckpoint(token, logFileInfo);
             await RecoverTargetAndVerifyAllObjects(token).ConfigureAwait(false);
         }
@@ -482,18 +486,21 @@ namespace Tsavorite.test.recovery.objects
             {
                 CopyRange(Path.Combine(sourceDir, LogBaseName), Path.Combine(targetDir, LogBaseName),
                     logFileInfo.hybridLogFileStartAddress, logFileInfo.hybridLogFileEndAddress, MainLogSegmentSize);
-                if (logFileInfo.hasSnapshotObjects)
+                if (logFileInfo.hasHybridLogObjects)
                     CopyRange(Path.Combine(sourceDir, ObjectLogBaseName), Path.Combine(targetDir, ObjectLogBaseName),
                         logFileInfo.hybridLogObjectFileStartAddress, logFileInfo.hybridLogObjectFileEndAddress, ObjectLogSegmentSize);
             }
 
-            if (logFileInfo.snapshotFileEndAddress > PageHeader.Size)
+            if (logFileInfo.snapshotFileStartAddress < logFileInfo.snapshotFileEndAddress)
             {
                 CopyRange(Path.Combine(sourceCheckpointDir, "snapshot.dat"), Path.Combine(targetCheckpointDir, "snapshot.dat"),
-                    0, logFileInfo.snapshotFileEndAddress, MainLogSegmentSize);
-                if (logFileInfo.hasSnapshotObjects)
-                    CopyRange(Path.Combine(sourceCheckpointDir, "snapshot.obj.dat"), Path.Combine(targetCheckpointDir, "snapshot.obj.dat"),
-                        0, logFileInfo.snapshotObjectFileEndAddress, ObjectLogSegmentSize);
+                    logFileInfo.snapshotFileStartAddress, logFileInfo.snapshotFileEndAddress, MainLogSegmentSize);
+            }
+
+            if (logFileInfo.hasSnapshotObjects)
+            {
+                CopyRange(Path.Combine(sourceCheckpointDir, "snapshot.obj.dat"), Path.Combine(targetCheckpointDir, "snapshot.obj.dat"),
+                    0, logFileInfo.snapshotObjectFileEndAddress, ObjectLogSegmentSize);
             }
         }
 

@@ -20,22 +20,13 @@ namespace Tsavorite.test
         internal HashModuloKeyStructComparer(HashModulo mod) => modRange = mod;
 
         public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
-            where TFirstKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSecondKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TFirstKey : IKey, allows ref struct
+            where TSecondKey : IKey, allows ref struct
             => k1.KeyBytes.AsRef<KeyStruct>().kfield1 == k2.KeyBytes.AsRef<KeyStruct>().kfield1;
 
         // Force collisions to create a chain
         public readonly long GetHashCode64<TKey>(TKey k)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
         {
             var value = Utility.GetHashCode(k.KeyBytes.AsRef<KeyStruct>().kfield1);
             return modRange != HashModulo.NoMod ? value % (long)modRange : value;

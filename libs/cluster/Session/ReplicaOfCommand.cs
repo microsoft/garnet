@@ -48,13 +48,13 @@ namespace Garnet.cluster
                     AsyncUtils.BlockingWait(UnsafeBumpAndWaitForEpochTransitionAsync());
 
                     AsyncUtils.BlockingWait(clusterProvider.storeWrapper.SuspendReplicaOnlyTasksAsync());
-                    clusterProvider.storeWrapper.StartPrimaryTasks();
                 }
                 finally
                 {
                     if (acquiredLock)
                         clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
                 }
+                clusterProvider.storeWrapper.StartPrimaryTasks();
             }
             else
             {
@@ -68,7 +68,8 @@ namespace Garnet.cluster
                 }
 
                 var addressStr = Encoding.ASCII.GetString(addressSpan);
-                var primaryId = clusterProvider.clusterManager.CurrentConfig.GetWorkerNodeIdFromAddress(addressStr, port);
+                var primaryId = clusterProvider.clusterManager.CurrentConfig.GetWorkerNodeIdFromAddress(addressStr, port) ??
+                    clusterProvider.clusterManager.CurrentConfig.GetWorkerNodeIdFromAddressOrHostname(addressStr, port);
                 if (primaryId == null)
                 {
                     while (!RespWriteUtils.TryWriteError($"ERR I don't know about node {addressStr}:{port}.", ref dcurr, dend))
@@ -93,7 +94,8 @@ namespace Garnet.cluster
                             clusterProvider.replicationManager.TryReplicateDiskbasedSyncAsync(this, syncOpts)
                     );
 
-                clusterProvider.storeWrapper.StartReplicaTasks();
+                if (clusterProvider.clusterManager.CurrentConfig.IsReplica)
+                    clusterProvider.storeWrapper.StartReplicaTasks();
 
                 if (!success)
                 {

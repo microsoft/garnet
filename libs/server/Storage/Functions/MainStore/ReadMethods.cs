@@ -28,14 +28,16 @@ namespace Garnet.server
                 return true;
             }
 
+            // Expired data is logically absent, so check this before the ValueIsObject check below; otherwise an
+            // expired object-typed key would incorrectly report WrongType instead of being treated as missing.
+            if (LogRecordUtils.CheckExpiry(in srcLogRecord))
+                return false;
+
             if (dataHeader.ValueIsObject)
             {
                 readInfo.Action = ReadAction.WrongType;
                 return false;
             }
-
-            if (LogRecordUtils.CheckExpiry(in srcLogRecord))
-                return false;
 
             var cmd = input.header.cmd;
 

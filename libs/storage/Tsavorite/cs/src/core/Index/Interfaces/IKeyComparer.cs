@@ -15,10 +15,7 @@ namespace Tsavorite.core
         /// Get 64-bit hash code
         /// </summary>
         long GetHashCode64<TKey>(TKey key)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             ;
 
         /// <summary>
@@ -27,14 +24,8 @@ namespace Tsavorite.core
         /// <param name="k1">Left side</param>
         /// <param name="k2">Right side</param>
         bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
-            where TFirstKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSecondKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TFirstKey : IKey, allows ref struct
+            where TSecondKey : IKey, allows ref struct
             ;
     }
 }

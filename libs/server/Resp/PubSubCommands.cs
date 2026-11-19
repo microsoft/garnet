@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Runtime.ExceptionServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -25,6 +26,9 @@ namespace Garnet.server
             // that reentrant case, write into the current output buffer and let the outer call own the lock
             // and flush; the sender lock is not reentrant.
             var reentrant = publishingThreadId == Environment.CurrentManagedThreadId;
+            if (reentrant && reentrantPublishFailure != null)
+                return;
+
             try
             {
                 if (!reentrant)
@@ -43,6 +47,12 @@ namespace Garnet.server
                 if (!reentrant && dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
             }
+            catch (Exception ex) when (reentrant)
+            {
+                // A failed send may have released the outer command's response buffer, so nothing more can be
+                // written to it. The outer command rethrows once the broadcast to other subscribers completes.
+                reentrantPublishFailure = ExceptionDispatchInfo.Capture(ex);
+            }
             catch
             {
                 // Ignore exceptions
@@ -60,6 +70,9 @@ namespace Garnet.server
             // See Publish(): in the reentrant self-publish case, write into the existing buffer rather than
             // re-acquiring the non-reentrant network sender lock.
             var reentrant = publishingThreadId == Environment.CurrentManagedThreadId;
+            if (reentrant && reentrantPublishFailure != null)
+                return;
+
             try
             {
                 if (!reentrant)
@@ -77,6 +90,12 @@ namespace Garnet.server
 
                 if (!reentrant && dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
+            }
+            catch (Exception ex) when (reentrant)
+            {
+                // A failed send may have released the outer command's response buffer, so nothing more can be
+                // written to it. The outer command rethrows once the broadcast to other subscribers completes.
+                reentrantPublishFailure = ExceptionDispatchInfo.Capture(ex);
             }
             catch
             {
@@ -137,6 +156,10 @@ namespace Garnet.server
             {
                 publishingThreadId = 0;
             }
+
+            var selfDeliveryFailure = reentrantPublishFailure;
+            reentrantPublishFailure = null;
+
             if (storeWrapper.serverOptions.EnableCluster)
             {
                 var _key = parseState.GetArgSliceByRef(0).Span;
@@ -145,6 +168,10 @@ namespace Garnet.server
                 // No choice but to block here as we're on the network thread
                 AsyncUtils.BlockingWait(storeWrapper.clusterProvider.ClusterPublishAsync(cmd, _key, _val));
             }
+
+            // A failed delivery to this session ends it, after the message is forwarded to the other nodes and
+            // before the reply is written into the response buffer the failed send released
+            selfDeliveryFailure?.Throw();
 
             while (!RespWriteUtils.TryWriteInt32(numClients, ref dcurr, dend))
                 SendAndReset();

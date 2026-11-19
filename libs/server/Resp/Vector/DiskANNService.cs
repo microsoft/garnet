@@ -27,6 +27,21 @@ namespace Garnet.server
         internal const byte InternalIdMap = 5;
         internal const byte ExternalIdMap = 6;
 
+        /// <summary>
+        /// Redis allows a gigantic EF, but we map this to DiskANN's l_build where such huge values are counter-production.
+        /// 
+        /// We still accept the large EF values for Redis compatibility, but we cap them at an "excessively high" 8K to avoid
+        /// degenerate behavior around allocations and insert performance.
+        /// </summary>
+        private const uint MaxEffectiveBuildExplorationFactor = 8_192;
+
+        /// <summary>
+        /// Similar to <see cref="MaxEffectiveBuildExplorationFactor"/>, Redis allows a quite large M that we map to DiskANN's num_links where such large values are counter-productive.
+        /// 
+        /// We still accept the large M values for compatibility, but we cap to 512 to avoid degenerate behavior.
+        /// </summary>
+        private const uint MaxEffectiveNumLinks = 512;
+
 #if DEBUG
         /// <summary>
         /// For testing purposes, in DEBUG builds the count of calls to <see cref="CreateIndex"/> or <see cref="RecreateIndex"/> on this instance.
@@ -53,6 +68,7 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> filterCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, void> logCallback,
+            uint startPointId,
             out bool quantizationRequested
         )
         {
@@ -61,7 +77,10 @@ namespace Garnet.server
 #endif
             unsafe
             {
-                var ret = NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, distanceMetric, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback, (nint)filterCallback, (nint)logCallback, out quantizationRequested);
+                buildExplorationFactor = Math.Min(buildExplorationFactor, MaxEffectiveBuildExplorationFactor);
+                numLinks = Math.Min(numLinks, MaxEffectiveNumLinks);
+
+                var ret = NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, distanceMetric, buildExplorationFactor, numLinks, startPointId, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback, (nint)filterCallback, (nint)logCallback, out quantizationRequested);
 
                 Debug.Assert(ret != 0, "create_index failed, returning a null pointer - this shouldn't be possible");
 
@@ -83,9 +102,10 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> filterCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, void> logCallback,
+            uint startPointId,
             out bool quantizationRequested
         )
-        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetricType, readCallback, writeCallback, deleteCallback, readModifyWriteCallback, filterCallback, logCallback, out quantizationRequested);
+        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetricType, readCallback, writeCallback, deleteCallback, readModifyWriteCallback, filterCallback, logCallback, startPointId, out quantizationRequested);
 
         public void DropIndex(ulong context, nint index)
         {
@@ -94,6 +114,55 @@ namespace Garnet.server
 #endif
 
             NativeDiskANNMethods.drop_index(context, index);
+        }
+
+        public bool SetQuantState(ulong context, nint index, ReadOnlySpan<byte> state)
+        {
+            fixed (byte* stateData = state)
+            {
+                return NativeDiskANNMethods.set_quant_state(context, index, (nint)stateData, (nuint)state.Length) == 1;
+            }
+        }
+
+        /// <summary>
+        /// Returns whether import is enabled in the index.
+        /// </summary>
+        /// <param name="context">Vector set context.</param>
+        /// <param name="index">Native index handle.</param>
+        public bool CanImport(ulong context, nint index)
+            => NativeDiskANNMethods.can_import(context, index) == 1;
+
+        public bool ImportTerm(ulong context, nint index, uint termType, ReadOnlySpan<byte> id, ReadOnlySpan<byte> value)
+        {
+            fixed (byte* idData = id)
+            fixed (byte* valueData = value)
+            {
+                return NativeDiskANNMethods.import_term(context, index, termType, (nint)idData, (nuint)id.Length, (nint)valueData, (nuint)value.Length) == 1;
+            }
+        }
+
+        /// <summary>
+        /// Verifies one import partition and finalizes the index when all partitions succeed.
+        /// </summary>
+        /// <param name="context">Vector set context.</param>
+        /// <param name="index">Native index handle.</param>
+        /// <param name="taskIndex">Zero-based partition index.</param>
+        /// <param name="taskCount">Total number of partitions.</param>
+        /// <returns>Success or failure</returns>
+        public bool VerifyImport(ulong context, nint index, int taskIndex, int taskCount)
+        {
+            return NativeDiskANNMethods.verify_import(context, index, (nuint)taskIndex, (nuint)taskCount) == 1;
+        }
+
+        /// <summary>
+        /// Completes importing an index, allowing it to be used for normal operations.
+        /// </summary>
+        /// <param name="context">Vector set context.</param>
+        /// <param name="index">Native index handle.</param>
+        /// <returns>Success or failure</returns>
+        public bool FinishImport(ulong context, nint index)
+        {
+            return NativeDiskANNMethods.finish_import(context, index) == 1;
         }
 
         public InsertResult Insert(ulong context, nint index, ReadOnlySpan<byte> id, ReadOnlySpan<byte> vector, int vectorElementCount, ReadOnlySpan<byte> attributes, out bool needsQuantization)
@@ -479,6 +548,7 @@ namespace Garnet.server
             VectorDistanceMetricType metricType,
             uint buildExplorationFactor,
             uint numLinks,
+            uint startPointId,
             nint readCallback,
             nint writeCallback,
             nint deleteCallback,
@@ -490,6 +560,45 @@ namespace Garnet.server
 
         [LibraryImport(DISKANN_GARNET)]
         public static partial void drop_index(
+            ulong context,
+            nint index
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial byte set_quant_state(
+            ulong context,
+            nint index,
+            nint state,
+            nuint state_len
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial byte can_import(
+            ulong context,
+            nint index
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial byte import_term(
+            ulong context,
+            nint index,
+            uint term_type,
+            nint id_data,
+            nuint id_data_len,
+            nint value_data,
+            nuint value_len
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial byte verify_import(
+            ulong context,
+            nint index,
+            nuint task_index,
+            nuint task_count
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial byte finish_import(
             ulong context,
             nint index
         );

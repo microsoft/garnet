@@ -5,9 +5,6 @@ using System;
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-#if !NET9_0_OR_GREATER
-using System.Runtime.InteropServices;
-#endif
 using Tsavorite.core;
 
 namespace Garnet.common
@@ -19,21 +16,8 @@ namespace Garnet.common
     /// 
     /// Always has a namespace.
     /// </summary>
-    public readonly
-#if NET9_0_OR_GREATER
-        ref
-#endif
-        struct VectorElementKey : IKey
+    public readonly ref struct VectorElementKey : IKey
     {
-#if !NET9_0_OR_GREATER
-        private readonly unsafe void* ptr;
-        private readonly int len;
-
-        private readonly unsafe void* nsPtr;
-        private readonly int nsLen;
-#endif
-
-
         /// <inheritdoc/>
         public readonly bool IsPinned
         {
@@ -52,17 +36,7 @@ namespace Garnet.common
         public readonly ReadOnlySpan<byte> KeyBytes
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#if NET9_0_OR_GREATER
-            get; 
-#else
-            get
-            {
-                unsafe
-                {
-                    return new(ptr, len);
-                }
-            }
-#endif
+            get;
         }
 
         /// <inheritdoc/>
@@ -75,17 +49,7 @@ namespace Garnet.common
         public readonly ReadOnlySpan<byte> NamespaceBytes
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#if NET9_0_OR_GREATER
-            get; 
-#else
-            get
-            {
-                unsafe
-                {
-                    return new(nsPtr, nsLen);
-                }
-            }
-#endif
+            get;
         }
 
         /// <summary>
@@ -99,18 +63,8 @@ namespace Garnet.common
             Debug.Assert(namespaceBytes.Length == 1 || (namespaceBytes.Length % 4) == 0, "Namespace must be either 1-byte or a multiple of 4-bytes long");
             Debug.Assert(namespaceBytes.Length != 4 || BinaryPrimitives.ReadUInt32LittleEndian(namespaceBytes) > RecordNamespace.MaximumSingleByteNamespaceValue, $"A context of {RecordNamespace.MaximumSingleByteNamespaceValue} or less must be stored in a single byte");
 
-#if NET9_0_OR_GREATER
             KeyBytes = key;
             NamespaceBytes = namespaceBytes;
-#else
-            unsafe
-            {
-                nsPtr = Unsafe.AsPointer(ref MemoryMarshal.GetReference(namespaceBytes));
-                ptr = Unsafe.AsPointer(ref MemoryMarshal.GetReference(key));
-            }
-            len = key.Length;
-            nsLen = namespaceBytes.Length;
-#endif
         }
 
         /// <inheritdoc/>

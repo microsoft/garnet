@@ -25,6 +25,220 @@ namespace Garnet.test
     public class GarnetServerConfigTests : TestBase
     {
         [Test]
+        public void DefaultDiskBasedSyncChunkSize()
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(16 << 20));
+            Assert.That(new GarnetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(16 << 20));
+            Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncPipelineDepth(), Is.EqualTo(4));
+            Assert.That(new GarnetServerOptions().GetReplicaDiskBasedSyncPipelineDepth(), Is.EqualTo(4));
+            Assert.That(options.GetServerOptions().ReplicaDiskBasedSyncWriteBuffers, Is.EqualTo(1));
+            Assert.That(new GarnetServerOptions().ReplicaDiskBasedSyncWriteBuffers, Is.EqualTo(1));
+            Assert.That(options.GetServerOptions().ReplicaDiskBasedSyncWriteBuffersConcurrently, Is.False);
+            Assert.That(new GarnetServerOptions().ReplicaDiskBasedSyncWriteBuffersConcurrently, Is.False);
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void BenchmarkTimingConfiguration(bool enabled)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments([], out var defaults, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(defaults.GetServerOptions().ReplicaEnableBenchmarkTiming, Is.False);
+            Assert.That(new GarnetServerOptions().ReplicaEnableBenchmarkTiming, Is.False);
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-enable-benchmark-timing", enabled.ToString()],
+                out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.GetServerOptions().ReplicaEnableBenchmarkTiming, Is.EqualTo(enabled));
+            var json = JsonSerializer.Serialize(new { ReplicaEnableBenchmarkTiming = enabled });
+            Assert.That(TryParseGarnetConfOptions(json, out var configured, out _, out _), Is.True);
+            Assert.That(configured.GetServerOptions().ReplicaEnableBenchmarkTiming, Is.EqualTo(enabled));
+        }
+
+        [Test]
+        public void InvalidBenchmarkTimingFlagIsRejected()
+            => Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-enable-benchmark-timing", "invalid"],
+                out _, out _, out _, out _, silentMode: true), Is.False);
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void DiskBasedSyncConcurrentWriteConfiguration(bool concurrently)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-disk-based-sync-write-buffers-concurrently", concurrently.ToString()],
+                out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.GetServerOptions().ReplicaDiskBasedSyncWriteBuffersConcurrently, Is.EqualTo(concurrently));
+            var json = JsonSerializer.Serialize(new { ReplicaDiskBasedSyncWriteBuffersConcurrently = concurrently });
+            Assert.That(TryParseGarnetConfOptions(json, out var configured, out _, out _), Is.True);
+            Assert.That(configured.GetServerOptions().ReplicaDiskBasedSyncWriteBuffersConcurrently, Is.EqualTo(concurrently));
+        }
+
+        [Test]
+        public void InvalidConcurrentWriteFlagIsRejected()
+            => Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-disk-based-sync-write-buffers-concurrently", "invalid"],
+                out _, out _, out _, out _, silentMode: true), Is.False);
+
+        [TestCase(0, true)]
+        [TestCase(1, true)]
+        [TestCase(8, true)]
+        [TestCase(-1, false)]
+        [TestCase(9, false)]
+        public void DiskBasedSyncWriteBuffersConfiguration(int writeBuffers, bool valid)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-disk-based-sync-write-buffers", writeBuffers.ToString()], out var options, out _, out _, out _, silentMode: true), Is.EqualTo(valid));
+            if (valid)
+                Assert.That(options.GetServerOptions().ReplicaDiskBasedSyncWriteBuffers, Is.EqualTo(writeBuffers));
+            var json = JsonSerializer.Serialize(new { ReplicaDiskBasedSyncWriteBuffers = writeBuffers });
+            Assert.That(TryParseGarnetConfOptions(json, out _, out _, out _), Is.EqualTo(valid));
+        }
+
+        [TestCase("512", false)]
+        [TestCase("4096", true)]
+        public void CheckpointChunkSectorCompatibilityIsValidatedBeforeOpeningDevices(string chunkSize, bool valid)
+        {
+            var factory = new SectorProbeFactory();
+            var options = new GarnetServerOptions
+            {
+                EnableCluster = true,
+                ReplicaDiskBasedSyncChunkSize = chunkSize,
+                DeviceFactoryCreator = factory,
+            };
+            if (valid)
+            {
+                var settings = options.GetSettings(null, null, null, out _);
+                settings.LogDevice.Dispose();
+            }
+            else
+            {
+                var exception = Assert.Throws<ArgumentException>(() => options.GetSettings(null, null, null, out _));
+                Assert.That(exception.Message, Does.Contain("4096"));
+            }
+            Assert.That(factory.ProbeCount, Is.GreaterThanOrEqualTo(3));
+            Assert.That(factory.OpenCount, Is.Zero, "Validation must not open checkpoint files");
+        }
+
+        sealed class SectorProbeFactory : INamedDeviceFactoryCreator, INamedDeviceFactory
+        {
+            internal int ProbeCount;
+            internal int OpenCount;
+            public INamedDeviceFactory Create(string baseName) => this;
+            public uint GetSectorSize(FileDescriptor fileInfo)
+            {
+                ProbeCount++;
+                return 4096;
+            }
+            public IDevice Get(FileDescriptor fileInfo)
+            {
+                OpenCount++;
+                throw new InvalidOperationException("Device opening is not expected during the sector probe.");
+            }
+            public void Delete(FileDescriptor fileInfo) => throw new NotSupportedException();
+            public IEnumerable<FileDescriptor> ListContents(string path) => [];
+        }
+
+        [TestCase(1, "512m", true)]
+        [TestCase(3, "16m", true)]
+        [TestCase(64, "128k", true)]
+        [TestCase(64, "8m", true)]
+        [TestCase(64, "16m", false)]
+        [TestCase(2, "512m", false)]
+        [TestCase(0, "128k", false)]
+        [TestCase(-1, "128k", false)]
+        [TestCase(65, "128k", false)]
+        [TestCase(int.MaxValue, "512m", false)]
+        public void DiskBasedSyncPipelineConfiguration(int depth, string chunkSize, bool valid)
+        {
+            string[] args = ["--repl-disk-based-sync-pipeline-depth", depth.ToString(),
+                "--repl-disk-based-sync-chunk-size", chunkSize];
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true), Is.EqualTo(valid));
+            var json = JsonSerializer.Serialize(new { ReplicaDiskBasedSyncPipelineDepth = depth, ReplicaDiskBasedSyncChunkSize = chunkSize });
+            Assert.That(TryParseGarnetConfOptions(json, out _, out _, out _), Is.EqualTo(valid));
+            var serverOptions = new GarnetServerOptions { ReplicaDiskBasedSyncChunkSize = chunkSize, ReplicaDiskBasedSyncPipelineDepth = depth };
+            if (valid)
+            {
+                Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncPipelineDepth(), Is.EqualTo(depth));
+                Assert.That(serverOptions.GetReplicaDiskBasedSyncPipelineDepth(), Is.EqualTo(depth));
+            }
+            else
+            {
+                Assert.Throws<ArgumentException>(() => serverOptions.GetReplicaDiskBasedSyncPipelineDepth());
+                Assert.Throws<ArgumentException>(() => new GarnetServer(serverOptions));
+            }
+        }
+
+        [TestCase("512", 512)]
+        [TestCase("128k", 128 << 10)]
+        [TestCase("4MB", 4 << 20)]
+        [TestCase("17m", 16 << 20)]
+        [TestCase("64m", 64 << 20)]
+        [TestCase("512m", 512 << 20)]
+        public void DiskBasedSyncChunkSizeConfiguration(string size, int expected)
+        {
+            // Depth 1 keeps every size within the outstanding-payload budget, isolating chunk-size parsing.
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-disk-based-sync-chunk-size", size, "--repl-disk-based-sync-pipeline-depth", "1"], out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.ReplicaDiskBasedSyncChunkSize, Is.EqualTo(size));
+            Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(expected));
+            Assert.That(new GarnetServerOptions { ReplicaDiskBasedSyncChunkSize = size }.GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(expected));
+
+            var json = JsonSerializer.Serialize(new { ReplicaDiskBasedSyncChunkSize = size, ReplicaDiskBasedSyncPipelineDepth = 1 });
+            Assert.That(TryParseGarnetConfOptions(json, out options, out _, out _), Is.True);
+            Assert.That(options.GetServerOptions().GetReplicaDiskBasedSyncChunkSizeBytes(), Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void LargeChunkSizeRequiresLowerThanDefaultDepth()
+        {
+            // 256 MiB at the default depth of 4 exceeds the 512 MiB outstanding-payload budget; depth 2 fits.
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-disk-based-sync-chunk-size", "256m"], out _, out _, out _, out _, silentMode: true), Is.False);
+            var exception = Assert.Throws<ArgumentException>(() =>
+                new GarnetServerOptions { ReplicaDiskBasedSyncChunkSize = "256m" }.GetReplicaDiskBasedSyncPipelineDepth());
+            Assert.That(exception.Message, Does.Contain("depth 4, chunk size 268435456 bytes"));
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-disk-based-sync-chunk-size", "256m", "--repl-disk-based-sync-pipeline-depth", "2"], out _, out _, out _, out _, silentMode: true), Is.True);
+        }
+
+        [Test]
+        public void DeepPipelineRequiresSmallerThanDefaultChunk()
+        {
+            // Depth 64 at the default 16 MiB chunk exceeds the 512 MiB outstanding-payload budget; an 8 MiB chunk fits.
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-disk-based-sync-pipeline-depth", "64"], out _, out _, out _, out _, silentMode: true), Is.False);
+            var exception = Assert.Throws<ArgumentException>(() =>
+                new GarnetServerOptions { ReplicaDiskBasedSyncPipelineDepth = 64 }.GetReplicaDiskBasedSyncPipelineDepth());
+            Assert.That(exception.Message, Does.Contain("depth 64, chunk size 16777216 bytes"));
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                ["--repl-disk-based-sync-pipeline-depth", "64", "--repl-disk-based-sync-chunk-size", "8m"], out _, out _, out _, out _, silentMode: true), Is.True);
+        }
+
+        [TestCase(null)]
+        [TestCase("")]
+        [TestCase("0")]
+        [TestCase("511")]
+        [TestCase("-1")]
+        [TestCase("1g")]
+        [TestCase("513m")]
+        [TestCase("4mbjunk")]
+        [TestCase("1m1")]
+        [TestCase("18446744073709682688")]
+        [TestCase("999999999999999999999999m")]
+        public void InvalidDiskBasedSyncChunkSize(string size)
+        {
+            var json = JsonSerializer.Serialize(new { ReplicaDiskBasedSyncChunkSize = size });
+            Assert.That(TryParseGarnetConfOptions(json, out _, out var invalidOptions, out _), Is.False);
+            Assert.That(invalidOptions, Does.Contain(nameof(Options.ReplicaDiskBasedSyncChunkSize)));
+            var options = new GarnetServerOptions { ReplicaDiskBasedSyncChunkSize = size };
+            Assert.Throws<ArgumentException>(() => options.GetReplicaDiskBasedSyncChunkSizeBytes());
+            Assert.Throws<ArgumentException>(() => new GarnetServer(options));
+            if (size != null)
+                Assert.That(ServerSettingsManager.TryParseCommandLineArguments(
+                    ["--repl-disk-based-sync-chunk-size", size], out _, out _, out _, out _, silentMode: true), Is.False);
+        }
+
+        [Test]
         public void DefaultConfigurationOptionsCoverage()
         {
             string json;
@@ -91,6 +305,238 @@ namespace Garnet.test
                 $"Properties in {typeof(Options)} should not use {nameof(OptionAttribute)}.{nameof(OptionAttribute.Default)}. All default values should be specified in defaults.conf.");
         }
 
+        [TestCase("32m", null, 33554432)]
+        [TestCase("1m", null, 1048576)]
+        [TestCase("32m", "16k", 16384)]
+        [TestCase("4k", "64k", 65536)]
+        [TestCase("32m", "48k", 32768)]
+        public void MigrationSendBufferSizeOptions(string pageSize, string sendBufferSize, int expectedBytes)
+        {
+            var args = new List<string> { "--page", pageSize };
+            if (sendBufferSize != null)
+                args.AddRange(["--migrate-send-buffer-size", sendBufferSize]);
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(args.ToArray(), out var options, out _, out _, out _, silentMode: true), Is.True);
+            var serverOptions = options.GetServerOptions();
+            Assert.That(serverOptions.GetMigrationSendBufferSize(), Is.EqualTo(expectedBytes));
+            Assert.That(serverOptions.PageSize, Is.EqualTo(pageSize));
+            if (sendBufferSize != null)
+            {
+                serverOptions.PageSize = "8m";
+                Assert.That(serverOptions.GetMigrationSendBufferSize(), Is.EqualTo(expectedBytes));
+            }
+        }
+
+        [TestCase("0")]
+        [TestCase("512")]
+        [TestCase("2g")]
+        public void MigrationSendBufferSizeRejectsInvalidSize(string sendBufferSize)
+        {
+            var serverOptions = new GarnetServerOptions { MigrationSendBufferSize = sendBufferSize };
+            Assert.Throws<GarnetException>(() => serverOptions.GetMigrationSendBufferSize());
+        }
+
+        [TestCase(null)]
+        [TestCase(1024)]
+        [TestCase(4096)]
+        [TestCase(262143)]
+        public void MigrateKeySendBatchSizeOptions(int? batchSize)
+        {
+            string[] args = batchSize.HasValue ? ["--migrate-key-send-batch-size", batchSize.Value.ToString()] : [];
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.GetServerOptions().MigrateKeySendBatchSize, Is.EqualTo(batchSize.GetValueOrDefault(262143)));
+        }
+
+        [TestCase(1024)]
+        [TestCase(4096)]
+        public void MigrateKeySendBatchSizeConfiguration(int batchSize)
+        {
+            var json = JsonSerializer.Serialize(new { MigrateKeySendBatchSize = batchSize });
+            Assert.That(TryParseGarnetConfOptions(json, out var options, out _, out _), Is.True);
+            Assert.That(options.GetServerOptions().MigrateKeySendBatchSize, Is.EqualTo(batchSize));
+        }
+
+        [TestCase(0)]
+        [TestCase(-1)]
+        [TestCase(1)]
+        [TestCase(1023)]
+        [TestCase(262144)]
+        public void MigrateKeySendBatchSizeRejectsInvalidSize(int batchSize)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(["--migrate-key-send-batch-size", batchSize.ToString()],
+                out _, out _, out _, out _, silentMode: true), Is.False);
+            var json = JsonSerializer.Serialize(new { MigrateKeySendBatchSize = batchSize });
+            Assert.That(TryParseGarnetConfOptions(json, out _, out _, out _), Is.False);
+            var options = new GarnetServerOptions { MigrateKeySendBatchSize = batchSize };
+            Assert.Throws<ArgumentOutOfRangeException>(() => new GarnetServer(options));
+        }
+
+        [Test]
+        public void MigrationPipelineOptions()
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments([], out var defaults, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(defaults.GetServerOptions().MigrationPipelineDepth, Is.EqualTo(1));
+            foreach (var depth in new[] { "1", "4", "64" })
+            {
+                Assert.That(ServerSettingsManager.TryParseCommandLineArguments(["--migrate-pipeline-depth", depth], out var options, out _, out _, out _, silentMode: true), Is.True);
+                Assert.That(options.GetServerOptions().MigrationPipelineDepth, Is.EqualTo(int.Parse(depth)));
+            }
+            foreach (var depth in new[] { "0", "-1", "65" })
+                Assert.That(ServerSettingsManager.TryParseCommandLineArguments(["--migrate-pipeline-depth", depth], out _, out _, out _, out _, silentMode: true), Is.False);
+        }
+
+        [TestCase(null)]
+        [TestCase(1)]
+        [TestCase(256)]
+        [TestCase(512)]
+        [TestCase(int.MaxValue)]
+        public void MigrationDeleteBatchSizeOptions(int? batchSize)
+        {
+            string[] args = batchSize.HasValue ? ["--migrate-delete-batch-size", batchSize.Value.ToString()] : [];
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.GetServerOptions().MigrationDeleteBatchSize, Is.EqualTo(batchSize.GetValueOrDefault(256)));
+        }
+
+        [TestCase(1)]
+        [TestCase(512)]
+        public void MigrationDeleteBatchSizeConfiguration(int batchSize)
+        {
+            var json = JsonSerializer.Serialize(new { MigrationDeleteBatchSize = batchSize });
+            Assert.That(TryParseGarnetConfOptions(json, out var options, out _, out _), Is.True);
+            Assert.That(options.GetServerOptions().MigrationDeleteBatchSize, Is.EqualTo(batchSize));
+        }
+
+        [TestCase(0)]
+        [TestCase(-1)]
+        public void MigrationDeleteBatchSizeRejectsInvalidSize(int batchSize)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(["--migrate-delete-batch-size", batchSize.ToString()], out _, out _, out _, out _, silentMode: true), Is.False);
+            var json = JsonSerializer.Serialize(new { MigrationDeleteBatchSize = batchSize });
+            Assert.That(TryParseGarnetConfOptions(json, out _, out _, out _), Is.False);
+            var options = new GarnetServerOptions { MigrationDeleteBatchSize = batchSize };
+            Assert.Throws<ArgumentOutOfRangeException>(() => new GarnetServer(options));
+        }
+
+        [TestCase(null)]
+        [TestCase(true)]
+        [TestCase(false)]
+        public void ScanAheadMigrationOptions(bool? enabled)
+        {
+            string[] args = enabled.HasValue ? ["--use-scan-ahead-migration", enabled.Value.ToString()] : [];
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.GetServerOptions().UseScanAheadMigration, Is.EqualTo(enabled.GetValueOrDefault()));
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void ScanAheadMigrationConfiguration(bool enabled)
+        {
+            var json = JsonSerializer.Serialize(new { UseScanAheadMigration = enabled });
+            Assert.That(TryParseGarnetConfOptions(json, out var options, out _, out _), Is.True);
+            Assert.That(options.GetServerOptions().UseScanAheadMigration, Is.EqualTo(enabled));
+        }
+
+        [TestCase(1, true)]
+        [TestCase(4, true)]
+        [TestCase(64, true)]
+        [TestCase(0, false)]
+        [TestCase(65, false)]
+        public void MigrationPipelineConfiguration(int depth, bool valid)
+        {
+            var json = JsonSerializer.Serialize(new { MigrationPipelineDepth = depth });
+            Assert.That(TryParseGarnetConfOptions(json, out var options, out _, out _), Is.EqualTo(valid));
+            if (valid)
+            {
+                var serverOptions = options.GetServerOptions();
+                Assert.That(serverOptions.MigrationPipelineDepth, Is.EqualTo(depth));
+                Assert.DoesNotThrow(serverOptions.ValidateMigrationOptions);
+            }
+        }
+
+        [TestCase(0)]
+        [TestCase(65)]
+        public void MigrationPipelineRejectsInvalidServerDepth(int depth)
+        {
+            var options = new GarnetServerOptions { MigrationPipelineDepth = depth };
+            Assert.Throws<ArgumentOutOfRangeException>(() => new GarnetServer(options));
+        }
+
+        [TestCase("0", true)]
+        [TestCase("1", true)]
+        [TestCase("16", true)]
+        [TestCase("16384", true)]
+        [TestCase("-1", false)]
+        [TestCase("16385", false)]
+        public void ParallelMigrateTaskOptions(string count, bool valid)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(["--parallel-migrate-task-count", count], out var options, out _, out _, out _, silentMode: true), Is.EqualTo(valid));
+            if (valid)
+                Assert.That(options.GetServerOptions().ParallelMigrateTaskCount, Is.EqualTo(int.Parse(count)));
+        }
+
+        [TestCase("--pmt", "16")]
+        [TestCase("--fast-migrate", "true")]
+        public void RemovedMigrationOptionsAreRejected(string option, string value)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments([option, value], out _, out _, out _, out _, silentMode: true), Is.False);
+        }
+
+        [Test]
+        public void ClusterPeerEndpointOptions()
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments([], out var defaults, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(defaults.ClusterAddress, Is.Null);
+            Assert.That(defaults.ClusterPort, Is.Null);
+            Assert.That(defaults.GetServerOptions().ClusterAddress, Is.Null);
+            Assert.That(defaults.GetServerOptions().ClusterPort, Is.Null);
+
+            string[] args = ["--bind", "127.0.0.1", "--port", "6379",
+                "--cluster-announce-ip", "203.0.113.1", "--cluster-announce-port", "17001",
+                "--cluster-announce-hostname", "public.example.com", "--cluster-address", "127.0.0.2", "--cluster-port", "7001"];
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true), Is.True);
+            var serverOptions = options.GetServerOptions();
+            Assert.That(serverOptions.EndPoints, Is.EqualTo([new IPEndPoint(IPAddress.Loopback, 6379)]));
+            Assert.That(serverOptions.ClusterAnnounceEndpoint, Is.EqualTo(new IPEndPoint(IPAddress.Parse("203.0.113.1"), 17001)));
+            Assert.That(serverOptions.ClusterAnnounceHostname, Is.EqualTo("public.example.com"));
+            Assert.That(serverOptions.ClusterAddress, Is.EqualTo("127.0.0.2"));
+            Assert.That(serverOptions.ClusterPort, Is.EqualTo(7001));
+        }
+
+        [Test]
+        public void ClusterAnnouncePortWithoutIp()
+        {
+            string[] args = ["--bind", "127.0.0.1", "--cluster-announce-port", "17001"];
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.GetServerOptions().ClusterAnnounceEndpoint, Is.EqualTo(new IPEndPoint(IPAddress.Loopback, 17001)));
+        }
+
+        [TestCase("--cluster-address", "not-an-ip")]
+        [TestCase("--cluster-address", "localhost")]
+        [TestCase("--cluster-address", "127.0.0.1,127.0.0.2")]
+        [TestCase("--cluster-address", "0.0.0.0")]
+        [TestCase("--cluster-address", "::")]
+        [TestCase("--cluster-port", "-1")]
+        [TestCase("--cluster-port", "0")]
+        [TestCase("--cluster-port", "65536")]
+        public void InvalidClusterPeerEndpointOptions(string name, string value)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments([name, value], out _, out _, out _, out _, silentMode: true), Is.False);
+        }
+
+        [TestCase("--cluster-port", "1", true)]
+        [TestCase("--cluster-port", "65535", true)]
+        [TestCase("--port", "0", true)]
+        [TestCase("--port", "65535", true)]
+        [TestCase("--port", "-1", false)]
+        [TestCase("--port", "65536", false)]
+        [TestCase("--cluster-announce-port", "0", true)]
+        [TestCase("--cluster-announce-port", "65535", true)]
+        [TestCase("--cluster-announce-port", "-1", false)]
+        [TestCase("--cluster-announce-port", "65536", false)]
+        public void PortOptionValidation(string name, string value, bool expected)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments([name, value], out _, out _, out _, out _, silentMode: true), Is.EqualTo(expected));
+        }
+
         [Test]
         public void RangeIndexPreviewRequiresMinimumAofPageSize()
         {
@@ -131,6 +577,24 @@ namespace Garnet.test
 
             ok = ServerSettingsManager.TryParseCommandLineArguments(["--latency-monitor-precision", "-1"], out _, out _, out _, out _, silentMode: true);
             ClassicAssert.IsFalse(ok, "a negative precision must be rejected");
+        }
+
+        [Test]
+        public void FailoverResetPrimaryTimeoutOptionParsing()
+        {
+            var ok = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual(60, options.GetServerOptions().FailoverResetPrimaryTimeout);
+
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--failover-reset-primary-timeout", "2"], out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual(2, options.GetServerOptions().FailoverResetPrimaryTimeout);
+
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--failover-reset-primary-timeout", "0"], out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(ok, "the reset budget must be positive");
+
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--failover-reset-primary-timeout", "2147484"], out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(ok, "the reset budget must fit a CancellationTokenSource timeout");
         }
 
         [Test]
@@ -2066,6 +2530,73 @@ namespace Garnet.test
                 // Invalid value is rejected.
                 {
                     const string JSON = @"{ ""AclStrictCustomCommands"": ""foo"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+        }
+
+        /// <summary>
+        /// --aof-replay-clear-above-tail and its configuration-file key, AofReplayClearAboveTail, default to true, accept true and
+        /// false, and reject anything else
+        /// </summary>
+        [Test]
+        public void AofReplayClearAboveTail()
+        {
+            // A host that builds GarnetServerOptions directly gets the same default as the command line
+            ClassicAssert.IsTrue(new GarnetServerOptions().AofReplayClearAboveTail);
+
+            // Command line args
+            {
+                // Option unset: clearing is on by default
+                {
+                    var args = Array.Empty<string>();
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.GetServerOptions().AofReplayClearAboveTail);
+                }
+
+                {
+                    var args = new[] { "--aof-replay-clear-above-tail", "true" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.GetServerOptions().AofReplayClearAboveTail);
+                }
+
+                {
+                    var args = new[] { "--aof-replay-clear-above-tail", "false" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.GetServerOptions().AofReplayClearAboveTail);
+                }
+            }
+
+            // JSON args
+            {
+                // Key omitted: clearing is on by default
+                {
+                    const string JSON = @"{ }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.GetServerOptions().AofReplayClearAboveTail);
+                }
+
+                {
+                    const string JSON = @"{ ""AofReplayClearAboveTail"": true }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.GetServerOptions().AofReplayClearAboveTail);
+                }
+
+                {
+                    const string JSON = @"{ ""AofReplayClearAboveTail"": false }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.GetServerOptions().AofReplayClearAboveTail);
+                }
+
+                {
+                    const string JSON = @"{ ""AofReplayClearAboveTail"": ""foo"" }";
                     var parseSuccessful = TryParseGarnetConfOptions(JSON, out _, out _, out _);
                     ClassicAssert.IsFalse(parseSuccessful);
                 }

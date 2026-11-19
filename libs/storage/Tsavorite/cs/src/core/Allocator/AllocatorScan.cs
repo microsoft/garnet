@@ -37,10 +37,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
         internal bool IterateKeyVersions<TKey, TScanFunctions>(TsavoriteKV<TStoreFunctions, TAllocator> store, TKey key, ref TScanFunctions scanFunctions)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TScanFunctions : IScanIteratorFunctions
         {
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(key));
@@ -61,10 +58,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
         internal abstract bool IterateKeyVersions<TKey, TScanFunctions>(TsavoriteKV<TStoreFunctions, TAllocator> store, TKey key, long beginAddress, ref TScanFunctions scanFunctions)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TScanFunctions : IScanIteratorFunctions;
 
         /// <summary>
@@ -104,10 +98,7 @@ namespace Tsavorite.core
         /// Implementation for push-iterating key versions
         /// </summary>
         internal bool IterateHashChain<TKey, TScanFunctions, TScanIterator>(TsavoriteKV<TStoreFunctions, TAllocator> store, TKey key, long beginAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TScanFunctions : IScanIteratorFunctions
             where TScanIterator : ITsavoriteScanIterator, IPushScanIterator
         {
@@ -167,10 +158,7 @@ namespace Tsavorite.core
 
         internal bool GetFromDiskAndPushToReader<TKey, TScanFunctions>(TKey key, ref long logicalAddress, ref TScanFunctions scanFunctions, long numRecords,
                 AsyncIOContextCompletionEvent completionEvent, out bool stop)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TScanFunctions : IScanIteratorFunctions
         {
             stop = false;
@@ -190,9 +178,9 @@ namespace Tsavorite.core
                     return false;
                 }
 
-                // The walk went below BeginAddress without finding the key, so it has no older version. The record left in the request, if
-                // any, is one the walk rejected.
-                if (request.logicalAddress < BeginAddress)
+                // The walk ended without finding another version of the key: it went below BeginAddress, leaving in the request the record it
+                // rejected, if any, or below the resolvable range, where the rejected record has been disposed.
+                if (request.logicalAddress < BeginAddress || !request.diskLogRecord.IsSet)
                     return false;
 
                 request.diskLogRecord.InfoRef.ClearBitsForDiskImages();
@@ -253,6 +241,7 @@ namespace Tsavorite.core
             scanCursorState.Initialize(scanFunctions);
 
             long numPending = 0;
+            var batchComplete = false;
             while (iter.GetNext())
             {
                 // A record that is Invalid but not Sealed came from recovery, which clears the Sealed bit of every image it reads: an image that was already
@@ -273,24 +262,28 @@ namespace Tsavorite.core
                 }
 
                 // Update the cursor to point to the next record.
-                if (scanCursorState.retryLastRecord)
-                    cursor = iter.CurrentAddress;
-                else
-                    cursor = iter.NextAddress;
+                cursor = iter.NextAddress;
 
                 // Now see if we completed the enumeration.
                 if (scanCursorState.stop)
-                    goto IterationComplete;
+                    break;
                 if (scanCursorState.acceptedCount >= count || scanCursorState.endBatch)
                 {
-                    scanFunctions.OnStop(true, scanCursorState.acceptedCount);
-                    return true;
+                    batchComplete = true;
+                    break;
                 }
             }
 
-            // Drain any pending pushes. We have ended the iteration; we know there are no more matching records, so drop through to end it and return false.
+            // Pending callbacks can reject earlier records, including after the iterator reaches its end.
             if (numPending > 0)
                 _ = bContext.CompletePending(wait: true);
+
+            if (!scanCursorState.stop && (batchComplete || scanCursorState.endBatch))
+            {
+                cursor = Math.Min(cursor, scanCursorState.retryAddress);
+                scanFunctions.OnStop(true, scanCursorState.acceptedCount);
+                return true;
+            }
 
         IterationComplete:
             if (resetCursor)
@@ -361,7 +354,7 @@ namespace Tsavorite.core
                         if ((cursorRecordResult & CursorRecordResult.EndBatch) != 0)
                             scanCursorState.endBatch = true;
                         if ((cursorRecordResult & CursorRecordResult.RetryLastRecord) != 0)
-                            scanCursorState.retryLastRecord = true;
+                            scanCursorState.retryAddress = Math.Min(scanCursorState.retryAddress, originalAddress);
                     }
                 }
                 finally

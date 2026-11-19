@@ -22,4 +22,5 @@
     <Project Path="test/test.stress/Tsavorite.test.stress.csproj" />
     <Project Path="test/stress/MLPAStress/MLPAStress.csproj" />
   </Folder>
+  <Project Path="../../../diagnostics/Garnet.Diagnostics.csproj" />
 </Solution>

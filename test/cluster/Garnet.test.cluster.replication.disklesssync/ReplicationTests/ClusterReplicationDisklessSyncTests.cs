@@ -3,13 +3,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
-#if DEBUG
 using Garnet.common;
-#endif
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {
@@ -86,6 +86,9 @@ namespace Garnet.test.cluster
         void Failover(int replicaIndex, string option = null)
         {
             _ = context.clusterTestUtils.ClusterFailover(replicaIndex, option, logger: context.logger);
+
+            // The primary role is visible before recovery finishes and slots can serve writes.
+            context.clusterTestUtils.WaitForFailoverCompleted(replicaIndex, context.logger);
             context.clusterTestUtils.WaitForPrimaryRole(replicaIndex, context.logger);
         }
 
@@ -176,6 +179,68 @@ namespace Garnet.test.cluster
 
             // Validate replica data
             Validate(primaryIndex, replicaIndex, disableObjects);
+        }
+
+        [Test]
+        [Category("REPLICATION")]
+        public void ClusterDisklessSnapshotPreservesEtag([Values] bool expiry, [Values(32, 8192)] int valueLength)
+        {
+            const int primaryIndex = 0;
+            const int replicaIndex = 1;
+            context.CreateInstances(2, enableAOF: true, useTLS: useTLS, enableDisklessSync: true,
+                timeout: timeout, sublogCount: sublogCount);
+            context.CreateConnection(useTLS: useTLS);
+            context.clusterTestUtils.MeetAndAssignSlots(primaryIndex, 2, context.logger);
+            IServer primary = context.clusterTestUtils.GetServer(primaryIndex);
+            const string key = "{etag-snapshot}key";
+            string value = new('v', valueLength);
+            primary.Execute(0, "SETWITHETAG", [key, "first"]);
+            primary.Execute(0, "SETWITHETAG", [key, "second"]);
+            primary.Execute(0, "SETWITHETAG", expiry ? [key, value, "EX", 300] : [key, value]);
+            long expiration = (long)primary.Execute(0, "PEXPIRETIME", [key]);
+
+            _ = context.clusterTestUtils.ClusterReplicate(replicaIndex, primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
+            IServer replica = context.clusterTestUtils.GetServer(replicaIndex);
+            RedisResult[] imported = (RedisResult[])replica.Execute(0, "GETWITHETAG", [key], CommandFlags.NoRedirect);
+            Assert.That((long)imported[0], Is.EqualTo(3));
+            Assert.That((string)imported[1], Is.EqualTo(value));
+            Assert.That((long)replica.Execute(0, "PEXPIRETIME", [key], CommandFlags.NoRedirect), Is.EqualTo(expiration));
+
+            Failover(replicaIndex);
+            RedisResult[] stale = (RedisResult[])replica.Execute(0, "SETIFMATCH", [key, "stale", 2]);
+            Assert.That((long)stale[0], Is.EqualTo(3));
+            Assert.That((string)stale[1], Is.EqualTo(value));
+            RedisResult[] matching = (RedisResult[])replica.Execute(0, "SETIFMATCH", [key, "updated", 3]);
+            Assert.That((long)matching[0], Is.EqualTo(4));
+            Assert.That(matching[1].IsNull, Is.True);
+        }
+
+        [Test]
+        [Category("REPLICATION")]
+        public void ClusterDisklessCheckpointDoesNotWriteToAof()
+        {
+            ClusterTestUtils.IgnoreIfExceptionInjectionDisabled();
+            const int primaryIndex = 0;
+            const int replicaIndex = 1;
+            const ExceptionInjectionType pause = ExceptionInjectionType.Replication_Pause_Before_Diskless_Snapshot_Recovery;
+            context.CreateInstances(2, disableObjects: true, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout, sublogCount: sublogCount);
+            context.CreateConnection(useTLS: useTLS);
+            context.clusterTestUtils.MeetAndAssignSlots(primaryIndex, 2, context.logger);
+            PopulatePrimary(primaryIndex, disableObjects: true, performRMW: false);
+
+            var initialTail = context.GetAofTailAddress(replicaIndex);
+            using (ExceptionInjectionHelper.EnabledScope(pause))
+            {
+                _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, async: true, logger: context.logger);
+                ExceptionInjectionHelper.WaitOnClearAsync(pause).WaitAsync(TimeSpan.FromSeconds(timeout)).GetAwaiter().GetResult();
+                ClassicAssert.AreEqual(initialTail, context.GetAofTailAddress(replicaIndex), "The entire checkpoint must arrive without appending to the replica AOF");
+
+                // ResetAndWait clears the flag on arrival; re-enabling it releases recovery.
+                ExceptionInjectionHelper.EnableException(pause);
+                context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
+                Validate(primaryIndex, replicaIndex, disableObjects: true);
+            }
         }
 
         /// <summary>
@@ -487,6 +552,51 @@ namespace Garnet.test.cluster
             // Validate all replicas
             for (var replica = 1; replica < nodes_count; replica++)
                 Validate(nOffsets[primary], nOffsets[replica], disableObjects);
+        }
+
+        /// <summary>
+        /// A replica keeps its AOF files until a sync moves its AOF tail, and diskless sync does not recover them first. The
+        /// sync must then remove or empty the AOF segment files above the new tail's segment, which a history it replaces can
+        /// leave.
+        /// </summary>
+        [Test, Order(7)]
+        [Category("REPLICATION")]
+        public void ClusterDisklessSyncRemovesAofSegmentsAboveTail()
+        {
+            var nodes_count = 2;
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+
+            // A primary that owns every slot, and a replica attached to it with its AOF in sync
+            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout, sublogCount: sublogCount);
+            context.CreateConnection(useTLS: useTLS);
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+            PopulatePrimary(primaryIndex, disableObjects: true, performRMW: false);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
+
+            // Detach the replica, and plant a segment file in each of its sublogs far above the AOF tail
+            ResetAndReAttach(replicaIndex, primaryIndex, soft: true);
+            var aofDir = context.nodeOptions[replicaIndex].GetAppendOnlyFileDirectory(0);
+            var staleSegments = Enumerable.Range(0, sublogCount).Select(i => Path.Combine(aofDir, sublogCount == 1 ? "aof.log.7" : $"aof.{i}.log.7")).ToArray();
+            foreach (var staleSegment in staleSegments)
+                File.WriteAllBytes(staleSegment, Enumerable.Repeat((byte)0x5A, 4096).ToArray());
+
+            // Write more on the primary while the replica is detached, then reattach it: a diskless sync moves its AOF tail
+            PopulatePrimary(primaryIndex, disableObjects: true, performRMW: false);
+            _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
+            Validate(primaryIndex, replicaIndex, disableObjects: true);
+
+            // Clearing deletes a segment file above the tail, or empties it if the device holds it open, as NativeStorageDevice can
+            foreach (var staleSegment in staleSegments)
+                ClassicAssert.IsFalse(File.Exists(staleSegment) && new FileInfo(staleSegment).Length > 0, $"{staleSegment} must be removed or emptied when the sync moves the AOF tail");
         }
 
 #if DEBUG

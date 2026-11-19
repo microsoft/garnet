@@ -309,6 +309,16 @@ namespace Garnet.test.cluster
         /// <param name="useClusterAnnounceHostname"></param>
         /// <param name="vectorSetReplayTaskCount"></param>
         /// <param name="threadPoolMinIOCompletionThreads"></param>
+        /// <param name="networkSendTimeout">Overrides how long a send may wait for a client to accept data.</param>
+        /// <param name="replicaDiskBasedSyncChunkSize">Maximum Tsavorite checkpoint transfer chunk.</param>
+        /// <param name="replicaDiskBasedSyncPipelineDepth">
+        /// Maximum unacknowledged disk-based Tsavorite checkpoint chunks per replica on the primary (1-64, default 4; 1 disables pipelining).
+        /// Depth times effective chunk size must not exceed 512 MiB.
+        /// </param>
+        /// <param name="replicaDiskBasedSyncWriteBuffers">
+        /// Received checkpoint chunks the replica may hold for its file writer, queued or being written (0-8, default 1; 0 writes each chunk before receiving the next).
+        /// </param>
+        /// <param name="replicaDiskBasedSyncWriteBuffersConcurrently">Issue checkpoint writes concurrently.</param>
         public void CreateInstances(
             int shards,
             bool enableCluster = true,
@@ -361,7 +371,15 @@ namespace Garnet.test.cluster
             bool useClusterAnnounceHostname = false,
             int vectorSetReplayTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
-            bool enableRangeIndexPreview = false)
+            bool enableRangeIndexPreview = false,
+            TimeSpan? networkSendTimeout = null,
+            bool enableVectorSetPreview = true,
+            string replicaDiskBasedSyncChunkSize = "16m",
+            int replicaDiskBasedSyncPipelineDepth = 4,
+            int replicaDiskBasedSyncWriteBuffers = 1,
+            bool replicaDiskBasedSyncWriteBuffersConcurrently = false,
+            string migrationSendBufferSize = null,
+            int migrationPipelineDepth = 1)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, Port);
@@ -422,7 +440,15 @@ namespace Garnet.test.cluster
                 clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null,
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                 threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
-                enableRangeIndexPreview: enableRangeIndexPreview);
+                enableRangeIndexPreview: enableRangeIndexPreview,
+                networkSendTimeout: networkSendTimeout,
+                enableVectorSetPreview: enableVectorSetPreview,
+                replicaDiskBasedSyncChunkSize: replicaDiskBasedSyncChunkSize,
+                replicaDiskBasedSyncPipelineDepth: replicaDiskBasedSyncPipelineDepth,
+                replicaDiskBasedSyncWriteBuffers: replicaDiskBasedSyncWriteBuffers,
+                replicaDiskBasedSyncWriteBuffersConcurrently: replicaDiskBasedSyncWriteBuffersConcurrently,
+                migrationSendBufferSize: migrationSendBufferSize,
+                migrationPipelineDepth: migrationPipelineDepth);
 
             foreach (var node in nodes)
                 node.Start();
@@ -928,6 +954,9 @@ namespace Garnet.test.cluster
             CreateConnection();
             clusterTestUtils.MeetAndAssignSlots(primaryIndex, nodeCount, logger);
         }
+
+        /// <summary>Returns a node's AOF tail address as reported by INFO PERSISTENCE.</summary>
+        public string GetAofTailAddress(int nodeIndex) => nodes[nodeIndex].Metrics.GetInfoMetrics(InfoMetricsType.PERSISTENCE).Single(item => item.Name == "TailAddress").Value;
 
         /// <summary>Promotes replicaIndex, waits for the demoted node to sync, and asserts the roles swapped.</summary>
         public void FailoverTo(int replicaIndex, int oldPrimaryIndex)

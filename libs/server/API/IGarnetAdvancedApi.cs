@@ -62,13 +62,15 @@ namespace Garnet.server
         GarnetStatus Read_UnifiedStore(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output);
 
         /// <summary>
+        /// Read operation on unified store with explicit read options (e.g. to override the store's read-copy options)
+        /// </summary>
+        GarnetStatus Read_UnifiedStore(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, ref ReadOptions readOptions);
+
+        /// <summary>
         /// Read batch of keys on main store.
         /// </summary>
         void ReadWithPrefetch<TBatch>(ref TBatch batch, long context = default)
-            where TBatch : IReadArgBatch<FixedSpanByteKey, StringInput, StringOutput>
-#if NET9_0_OR_GREATER
-            , allows ref struct
-#endif
+            where TBatch : IReadArgBatch<FixedSpanByteKey, StringInput, StringOutput>, allows ref struct
             ;
     }
 }

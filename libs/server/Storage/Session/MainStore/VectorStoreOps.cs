@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Tsavorite.core;
@@ -92,6 +93,39 @@ namespace Garnet.server
     }
 
     /// <summary>
+    /// Term types for XVIMPORT.
+    /// </summary>
+    public enum VectorImportTermType : uint
+    {
+        Invalid = uint.MaxValue,
+
+        /// <summary>
+        /// Full vector data.
+        /// </summary>
+        Vector = DiskANNService.FullVector,
+        /// <summary>
+        /// Neighbor list data.
+        /// </summary>
+        Neighbors = DiskANNService.NeighborList,
+        /// <summary>
+        /// Quantized vector data, for indexes that have quantizers.
+        /// </summary>
+        Quant = DiskANNService.QuantizedVector,
+        /// <summary>
+        /// Attribute data.
+        /// </summary>
+        Attrs = DiskANNService.Attributes,
+        /// <summary>
+        /// Internal id -&gt; external id data.
+        /// </summary>
+        IntMap = DiskANNService.InternalIdMap,
+        /// <summary>
+        /// External id -&gt; internal id data.
+        /// </summary>
+        ExtMap = DiskANNService.ExternalIdMap,
+    }
+
+    /// <summary>
     /// How result ids are formatted in responses from DiskANN.
     /// </summary>
     public enum VectorIdFormat : int
@@ -153,6 +187,49 @@ namespace Garnet.server
         /// A deletion of this key should not schedule cleanup for the associated data and contexts.
         /// </summary>
         SuppressCleanup = 1 << 0,
+
+        /// <summary>
+        /// Imported data is unavailable to ordinary operations until FINISH succeeds.
+        /// </summary>
+        ImportPending = 1 << 1,
+
+        /// <summary>
+        /// FINISH succeeded; repeated finalization does not require the native index.
+        /// </summary>
+        ImportCompleted = 1 << 2,
+
+        /// <summary>
+        /// FINISH failed terminally; the set must be deleted before importing again.
+        /// </summary>
+        ImportFailed = 1 << 3,
+
+        /// <summary>
+        /// Covers all legal flag options
+        /// </summary>
+        All = SuppressCleanup | ImportPending | ImportCompleted | ImportFailed,
+    }
+
+    /// <summary>
+    /// State for VINFO about importing.
+    /// </summary>
+    public enum VectorSetImportState
+    {
+        /// <summary>
+        /// Default, Vector Set is not importing.
+        /// 
+        /// Either it never was importing, or importing has finished.
+        /// </summary>
+        None = 0,
+
+        /// <summary>
+        /// Vector Set is being imported into.
+        /// </summary>
+        ImportInProgress = 1,
+
+        /// <summary>
+        /// Vector Set has importing has failed.
+        /// </summary>
+        ImportFailed = 2,
     }
 
     /// <summary>
@@ -160,6 +237,135 @@ namespace Garnet.server
     /// </summary>
     sealed partial class StorageSession : IDisposable
     {
+        /// <inheritdoc cref="IGarnetApi.VectorSetCreate"/>
+        public GarnetStatus VectorSetCreate(PinnedSpanByte key, int dimensions, int reduceDims, VectorQuantType quantizer,
+            int buildExplorationFactor, int numLinks, VectorDistanceMetricType distanceMetric, PinnedSpanByte? quantState, uint startPointId,
+            out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        {
+            result = VectorManagerResult.BadParams;
+            errorMsg = default;
+
+            if (reduceDims != 0 && quantizer is VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8 or VectorQuantType.XBin_U8 or VectorQuantType.XBin_I8)
+            {
+                errorMsg = "ERR REDUCE is not supported with this quantization"u8;
+                result = VectorManagerResult.BadParams;
+                return GarnetStatus.OK;
+            }
+            else if (quantState.HasValue && quantizer is VectorQuantType.NoQuant or VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8)
+            {
+                errorMsg = "ERR QUANT_STATE is not supported with NOQUANT"u8;
+                result = VectorManagerResult.BadParams;
+                return GarnetStatus.OK;
+            }
+
+            return vectorManager.CreateEmptyVectorSet(this, key.ReadOnlySpan, (uint)dimensions, (uint)reduceDims, quantizer,
+                (uint)buildExplorationFactor, (uint)numLinks, distanceMetric, quantState.HasValue, quantState.GetValueOrDefault().ReadOnlySpan, startPointId, out result, out errorMsg);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetImport(PinnedSpanByte key, VectorImportTermType termType, PinnedSpanByte id, PinnedSpanByte value,
+            out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        {
+            Debug.Assert(Enum.IsDefined(termType) && termType != VectorImportTermType.Invalid, "Should have validate termType before calling");
+
+            if (id.ReadOnlySpan.IsEmpty || value.ReadOnlySpan.IsEmpty)
+            {
+                errorMsg = "ERR vector set import ID and value must not be empty"u8;
+                result = VectorManagerResult.BadParams;
+                return GarnetStatus.OK;
+            }
+
+            result = VectorManagerResult.Invalid;
+            parseState.InitializeWithArgument(key);
+            var input = new StringInput(RespCommand.XVIMPORT, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out _))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    errorMsg = "ERR Vector Set not found"u8;
+                    result = VectorManagerResult.BadParams;
+                    return status;
+                }
+
+                if (vectorManager.ImportTerm(key, indexSpan, (uint)termType, id.ReadOnlySpan, value.ReadOnlySpan))
+                {
+                    errorMsg = ""u8;
+                    result = VectorManagerResult.OK;
+                    return GarnetStatus.OK;
+                }
+                else
+                {
+                    errorMsg = "ERR vector set import failed"u8;
+                    result = VectorManagerResult.BadParams;
+                    return GarnetStatus.OK;
+                }
+            }
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetVerifyImport(PinnedSpanByte key, int taskIndex, int taskCount, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        {
+            if (taskCount < 0 || taskIndex < 0 || taskIndex >= taskCount)
+            {
+                result = VectorManagerResult.BadParams;
+                errorMsg = "ERR Task configuration invalid"u8;
+                return GarnetStatus.OK;
+            }
+
+            parseState.InitializeWithArgument(key);
+            var input = new StringInput(RespCommand.XVIMPORT, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out _))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    errorMsg = "ERR Vector Set not found"u8;
+                    result = VectorManagerResult.Invalid;
+                    return status;
+                }
+
+                if (vectorManager.TryVerifyImport(key, indexSpan, taskIndex, taskCount, out errorMsg))
+                {
+                    result = VectorManagerResult.OK;
+                }
+                else
+                {
+                    result = VectorManagerResult.MissingElement;
+                }
+
+                return GarnetStatus.OK;
+            }
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetFinishImport(PinnedSpanByte key, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        {
+            parseState.InitializeWithArgument(key);
+            var input = new StringInput(RespCommand.XVIMPORT, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out _))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    errorMsg = "ERR Vector Set not found"u8;
+                    result = VectorManagerResult.Invalid;
+                    return status;
+                }
+
+                if (vectorManager.TryFinishImport(key, indexSpan, out errorMsg))
+                {
+                    result = VectorManagerResult.OK;
+                }
+                else
+                {
+                    result = VectorManagerResult.Invalid;
+                }
+
+                return GarnetStatus.OK;
+            }
+        }
+
         /// <summary>
         /// Implement Vector Set Add - this may also create a Vector Set if one does not already exist.
         /// </summary>
@@ -189,11 +395,11 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.VADD, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadOrCreateVectorIndexWithElement(this, key, element, ref input, indexSpan, out var status))
+            using (vectorManager.ReadOrCreateVectorIndexWithElement(this, key, element, ref input, indexSpan, out var status, out var importPending))
             {
                 if (status != GarnetStatus.OK)
                 {
-                    result = VectorManagerResult.Invalid;
+                    result = importPending ? VectorManagerResult.ImportingPending : VectorManagerResult.Invalid;
                     errorMsg = default;
                     return status;
                 }
@@ -216,13 +422,14 @@ namespace Garnet.server
         /// Implement Vector Set Remove - returns not found if the element is not present, or the vector set does not exist.
         /// </summary>
         [SkipLocalsInit]
-        public GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element)
+        public GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element, out bool importPending)
         {
             parseState.InitializeWithArgument(key);
 
             var input = new StringInput(RespCommand.VREM, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndexWithElement(this, key, element, ref input, indexSpan, out var status))
+
+            using (vectorManager.ReadVectorIndexWithElement(this, key, element, ref input, indexSpan, out var status, out importPending))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -253,13 +460,13 @@ namespace Garnet.server
         /// Removing an attribute is modelled as setting an empty attribute.
         /// </summary>
         [SkipLocalsInit]
-        public GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute)
+        public GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute, out bool importPending)
         {
             parseState.InitializeWithArguments([key, element, attribute]);
 
             var input = new StringInput(RespCommand.VSETATTR, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndexWithElement(this, key, element, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndexWithElement(this, key, element, ref input, indexSpan, out var status, out importPending))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -289,11 +496,11 @@ namespace Garnet.server
             // Get the index
             var input = new StringInput(RespCommand.VSIM, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out var importPending))
             {
                 if (status != GarnetStatus.OK)
                 {
-                    result = VectorManagerResult.Invalid;
+                    result = importPending ? VectorManagerResult.ImportingPending : VectorManagerResult.Invalid;
                     outputIdFormat = VectorIdFormat.Invalid;
                     errorMsg = default;
                     return status;
@@ -315,11 +522,11 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.VSIM, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out var importPending))
             {
                 if (status != GarnetStatus.OK)
                 {
-                    result = VectorManagerResult.Invalid;
+                    result = importPending ? VectorManagerResult.ImportingPending : VectorManagerResult.Invalid;
                     outputIdFormat = VectorIdFormat.Invalid;
                     return status;
                 }
@@ -333,13 +540,13 @@ namespace Garnet.server
         /// Get the vector associated with an element.
         /// </summary>
         [SkipLocalsInit]
-        public GarnetStatus VectorSetEmbedding(PinnedSpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
+        public GarnetStatus VectorSetEmbedding(PinnedSpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances, out bool importPending)
         {
             parseState.InitializeWithArgument(key);
 
             var input = new StringInput(RespCommand.VEMB, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out importPending))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -359,13 +566,13 @@ namespace Garnet.server
         /// Get a RAW view of a quantized (or full, if no quantized version is available) vector associated with an element.
         /// </summary>
         [SkipLocalsInit]
-        public GarnetStatus VectorSetRawEmbedding(PinnedSpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory quantizedValues, out VectorQuantType quantType, out double norm, out double? range)
+        public GarnetStatus VectorSetRawEmbedding(PinnedSpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory quantizedValues, out VectorQuantType quantType, out double norm, out double? range, out bool importPending)
         {
             parseState.InitializeWithArgument(key);
 
             var input = new StringInput(RespCommand.VEMB, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out importPending))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -385,13 +592,13 @@ namespace Garnet.server
         }
 
         [SkipLocalsInit]
-        internal GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions)
+        internal GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions, out bool importPending)
         {
             parseState.InitializeWithArgument(key);
 
             var input = new StringInput(RespCommand.VDIM, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out importPending))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -409,7 +616,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get debugging information about the VectorSet
+        /// Read stored metadata without accessing DiskANN while import is pending.
         /// </summary>
         [SkipLocalsInit]
         internal GarnetStatus VectorSetInfo(PinnedSpanByte key,
@@ -419,13 +626,14 @@ namespace Garnet.server
             out uint reducedDimensions,
             out uint buildExplorationFactor,
             out uint numberOfLinks,
-            out long size)
+            out long size,
+            out VectorSetImportState importPending)
         {
             parseState.InitializeWithArgument(key);
 
             var input = new StringInput(RespCommand.VINFO, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out var importPendingBool))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -436,13 +644,27 @@ namespace Garnet.server
                     buildExplorationFactor = 0;
                     numberOfLinks = 0;
                     size = 0;
+                    importPending = VectorSetImportState.None;
+
                     return status;
                 }
 
                 // After a successful read we extract metadata
-                VectorManager.ReadIndex(indexSpan, out var context, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out distanceMetricType, out _, out var indexPtr);
-                size = (long)NativeDiskANNMethods.card(context, indexPtr);
+                VectorManager.ReadIndex(indexSpan, out var context, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out distanceMetricType, out var flags, out var indexPtr);
+                if (importPendingBool)
+                {
+                    // Can't check cardinality if Vector Set is being imported
+                    size = 0;
 
+                    importPending = flags.HasFlag(VectorSetFlags.ImportFailed) ? VectorSetImportState.ImportFailed : VectorSetImportState.ImportInProgress;
+
+                    return GarnetStatus.OK;
+                }
+
+                var cardinality = NativeDiskANNMethods.card(context, indexPtr);
+                size = cardinality == ulong.MaxValue ? -1 : (long)cardinality;
+
+                importPending = VectorSetImportState.None;
                 return GarnetStatus.OK;
             }
         }
@@ -450,13 +672,13 @@ namespace Garnet.server
         /// <summary>
         /// Get number of vectors in Vector Set.
         /// </summary>
-        internal GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card)
+        internal GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card, out bool importPending)
         {
             parseState.InitializeWithArgument(key);
 
             var input = new StringInput(RespCommand.VCARD, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out importPending))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -466,7 +688,8 @@ namespace Garnet.server
 
                 // After a successful read we extract metadata
                 VectorManager.ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
-                card = (long)NativeDiskANNMethods.card(context, indexPtr);
+                var cardinality = NativeDiskANNMethods.card(context, indexPtr);
+                card = cardinality == ulong.MaxValue ? -1 : (long)cardinality;
 
                 return GarnetStatus.OK;
             }
@@ -475,13 +698,13 @@ namespace Garnet.server
         /// <summary>
         /// Determine if an element is a member of a Vector Set.
         /// </summary>
-        internal GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element)
+        internal GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element, out bool importPending)
         {
             parseState.InitializeWithArgument(key);
 
             var input = new StringInput(RespCommand.VISMEMBER, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out importPending))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -503,13 +726,13 @@ namespace Garnet.server
         /// <summary>
         /// Determine neighbors of a given element, and (optionally) the distance to each neighbor.
         /// </summary>
-        internal GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults)
+        internal GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults, out bool importPending)
         {
             parseState.InitializeWithArgument(key);
 
             var input = new StringInput(RespCommand.VLINKS, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out importPending))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -530,13 +753,13 @@ namespace Garnet.server
         /// 
         /// On success, <paramref name="idResults"/> has length prefixed element names.
         /// </summary>
-        internal GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults, out int actualCount)
+        internal GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults, out int actualCount, out bool importPending)
         {
             parseState.InitializeWithArgument(key);
 
             var input = new StringInput(RespCommand.VRANDMEMBER, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out importPending))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -553,14 +776,14 @@ namespace Garnet.server
         /// Get the attributes associated with an element in the VectorSet
         /// </summary>
         [SkipLocalsInit]
-        internal GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte elementId, ref SpanByteAndMemory outputAttributes)
+        internal GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte elementId, ref SpanByteAndMemory outputAttributes, out bool importPending)
         {
             parseState.InitializeWithArgument(key);
 
             // Get the index
             var input = new StringInput(RespCommand.VGETATTR, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out importPending))
             {
                 if (status != GarnetStatus.OK)
                 {

@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
@@ -88,6 +89,18 @@ namespace Garnet.server
         bool IsReplica();
 
         /// <summary>
+        /// Whether application writes are paused for failover.
+        /// </summary>
+        bool IsWritePaused { get; }
+
+        /// <summary>
+        /// Advances the cluster epoch and waits for active sessions to observe the transition.
+        /// </summary>
+        /// <param name="token">Cancellation token for the transition wait.</param>
+        /// <returns>True if sessions drained; false if the wait was canceled.</returns>
+        ValueTask<bool> BumpAndWaitForEpochTransitionAsync(CancellationToken token = default);
+
+        /// <summary>
         /// Returns true if the given nodeId is a replica, according to the current cluster configuration.
         /// </summary>
         bool IsReplica(string nodeId);
@@ -128,6 +141,14 @@ namespace Garnet.server
         /// Update cluster auth (atomically)
         /// </summary>
         void UpdateClusterAuth(string clusterUsername, string clusterPassword);
+
+        /// <summary>
+        /// Notifies the cluster provider that the gossip-client configuration group changed at runtime so the
+        /// live gossip clients can be swapped for new instances built from the updated configuration. The swap
+        /// is best-effort: new work observes the replacement immediately and the previous clients are retired
+        /// gracefully in the background so their in-flight requests can drain.
+        /// </summary>
+        void OnGossipClientConfigChanged();
 
         /// <summary>
         /// Get checkpoint info

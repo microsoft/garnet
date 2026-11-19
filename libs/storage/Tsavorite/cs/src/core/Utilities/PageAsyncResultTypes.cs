@@ -48,6 +48,9 @@ namespace Tsavorite.core
         /// <summary>The cancellation token source, if any, for the Read operation</summary>
         internal CancellationTokenSource cts;
 
+        /// <summary>Object ownership for a scan-frame read; null for resident recovery pages.</summary>
+        internal ObjectScanFrame objectFrame;
+
         /// <summary>Number of bytes read.</summary>
         public uint numBytesRead;
 
@@ -59,6 +62,10 @@ namespace Tsavorite.core
 
         /// <summary>The max offset on the main log page to iterate records when determining how many bytes in the ObjectLog to read.</summary>
         internal long maxAddressOffsetOnPage;
+
+        /// <summary>The length of the device read into <see cref="destinationPtr"/>. A record that starts below <see cref="maxAddressOffsetOnPage"/>
+        /// may end above it, up to here, as the last record of a scan frame does.</summary>
+        internal uint readLength;
 
         /// <summary>The recovery phase for this read. Non-<see cref="RecoveryPhase.None"/> uses the non-transient <see cref="ObjectIdMap"/>.</summary>
         internal RecoveryPhase recoveryPhase;
@@ -115,8 +122,9 @@ namespace Tsavorite.core
         /// includes FoldOver checkpoints</summary>
         ReadOnly = 0,
 
-        /// <summary>The flush is for <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AsyncFlushPagesForRecovery"/>, so the object log files have
-        /// already been written; we must reuse the deserialized object lengths to update the LogRecord's ObjectLogPosition rather than serialize again.</summary>
+        /// <summary>The flush is for <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AsyncFlushPagesForRecovery"/>, so objects are not serialized again:
+        /// records read from the main log keep their object-log positions, as their objects are already in the main object log, and records read from the
+        /// snapshot file have their objects copied from the snapshot object log to the main object log, and are repointed there.</summary>
         Recovery,
 
         /// <summary>The flush is for <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AsyncFlushPagesForSnapshot"/>, so we do not hold the epoch

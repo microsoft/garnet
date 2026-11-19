@@ -9,6 +9,9 @@ A developer tool that (re)generates Garnet's two command‑metadata resource fil
 
 The tool fills in metadata for **standard** commands by querying a live RESP‑compatible server (we use **Valkey**), and fills in metadata for **Garnet‑only** commands (and any per‑command/per‑subcommand overrides) from two JSON override files that ship with the tool.
 
+Adding a Garnet-only command with complete info and docs overrides requires no baseline server. External queries
+are only needed for missing metadata or to merge sub-command definitions. Internal commands without docs are skipped.
+
 ---
 
 ## TL;DR — full run
@@ -150,7 +153,8 @@ Add an entry for Garnet‑only command docs, **or override individual summaries*
    - **Sub‑commands:** merged **by name** — Garnet override sub‑commands are added first, the server fills in only the ones the override did not specify (`Add` then `TryAdd`).
 6. **Writes** the resource file to `--output` (unchanged commands are preserved verbatim from the existing resource).
 
-> The **docs stage only runs if the info stage returns success.** If the info stage has nothing to update (or you answer `N`), the docs stage is skipped. To regenerate docs, the info stage must also have at least one add/remove — see "Regenerating one command surgically".
+> The **docs stage only runs if the info stage returns success.** Unchanged info is a successful no-op, so a
+> docs-only addition can run independently. An info-stage failure or answering `N` still skips the docs stage.
 
 ### Overriding individual summaries (while still using the tool)
 
@@ -210,7 +214,7 @@ git diff libs/resources/
 
 - **Rebuild after editing inputs.** `SupportedCommand.cs`, `GarnetCommandsInfo.json`, and `GarnetCommandsDocs.json` are compiled/embedded into the tool assembly. If you use `--no-build`, run `dotnet build` first, otherwise your edits are not picked up.
 - **`--force` re‑queries everything.** It regenerates all ~250 commands from the baseline server, so the output reflects *that server's* exact metadata — e.g. a Valkey baseline yields Valkey wording ("primary" vs "master"), Valkey‑specific flags, and its sub‑command ordering (an internal sub‑command such as `CLUSTER|RESERVE` may move). Use it to rebuild from scratch or to intentionally re‑baseline against a server; for a focused change, prefer a targeted non‑force run.
-- **Docs stage skipped ("No commands to update").** The docs stage only runs after the info stage succeeds with at least one change. See below.
+- **Docs-only additions.** When command info is unchanged, the tool passes the existing info to the docs stage.
 - **Unrecognized flags/ACL categories are skipped with a warning.** If the baseline server reports a command flag or ACL category Garnet does not model (e.g. a newer server renamed one), the info parser logs a warning and skips it rather than aborting. Review such warnings — a genuine rename should be added as a `[Description]`/`[EnumDescriptionAlias]` on the relevant enum.
 - **Do not hand‑edit the generated files.** They carry a UTF‑8 BOM, use relaxed JSON escaping (literal `'`, `` ` ``, `+` rather than `\uXXXX`), and have no trailing newline. The tool writes them consistently; hand‑edits will drift.
 

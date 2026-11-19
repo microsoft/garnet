@@ -50,14 +50,15 @@ namespace Garnet.common
     /// </summary>
     public static class FailoverUtils
     {
-        static readonly byte[][] infoSections = [.. Enum.GetValues<FailoverOption>().Select(x => Encoding.ASCII.GetBytes($"${x.ToString().Length}\r\n{x}\r\n"))];
+        static readonly byte[][] failoverOptions = [.. Enum.GetValues<FailoverOption>().Select(x => Encoding.ASCII.GetBytes(x.ToString()))];
 
         /// <summary>
-        /// Return resp formatted failover option
+        /// Return the raw option-name bytes for a failover option. The client argument writer frames each
+        /// argument as a RESP bulk string exactly once, so the bytes returned here must be unframed.
         /// </summary>
         /// <param name="failoverOption"></param>
         /// <returns></returns>
-        public static byte[] GetRespFormattedFailoverOption(FailoverOption failoverOption)
-            => infoSections[(int)failoverOption];
+        public static byte[] GetFailoverOptionBytes(FailoverOption failoverOption)
+            => failoverOptions[(int)failoverOption];
     }
 }

@@ -194,7 +194,7 @@ namespace Tsavorite.test.recovery
             {
                 // Never leave a write captured, or the store's disposal waits for it.
                 gatedLog.Gate = false;
-                for (; released < gatedLog.CapturedCount; released++)
+                for (; released < gatedLog.PendingCount; released++)
                     gatedLog.Release(released);
                 writeStore.Dispose();
             }

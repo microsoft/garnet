@@ -183,6 +183,32 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task SortedSetAddRecreatesExpiredEvictedKey(
+            [Values(RedisProtocol.Resp2, RedisProtocol.Resp3)] RedisProtocol protocol,
+            [Values(SortedSetWhen.Always, SortedSetWhen.NotExists)] SortedSetWhen when,
+            [Values(16, 2048)] int keyLength)
+        {
+            using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig(protocol: protocol));
+            var db = redis.GetDatabase(0);
+            var clientId = (long)await db.ExecuteAsync("CLIENT", "ID");
+            var key = new string('k', keyLength);
+            Assert.That(await db.SortedSetAddAsync(key, "old", 1), Is.True);
+            Assert.That(await db.KeyExpireAsync(key, TimeSpan.FromMilliseconds(200)), Is.True);
+
+            var storeLog = server.Provider.StoreWrapper.store.Log;
+            var tailAddress = storeLog.TailAddress;
+            storeLog.FlushAndEvict(wait: true);
+            Assert.That(storeLog.HeadAddress, Is.GreaterThanOrEqualTo(tailAddress), "The expired source must be read from disk");
+            await Task.Delay(300);
+
+            Assert.That(await db.SortedSetAddAsync(key, "new", 42, when), Is.True);
+            Assert.That(await db.SortedSetRangeByRankWithScoresAsync(key), Is.EqualTo([new SortedSetEntry("new", 42)]));
+            Assert.That(await db.KeyTimeToLiveAsync(key), Is.Null, "The replacement must not inherit the old key's TTL");
+            Assert.That((string)await db.ExecuteAsync("PING"), Is.EqualTo("PONG"));
+            Assert.That((long)await db.ExecuteAsync("CLIENT", "ID"), Is.EqualTo(clientId), "The connection must not have been replaced");
+        }
+
+        [Test]
         public void AddAndLength()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -2357,6 +2383,40 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SortedSetExpireOutOfRangeIsRejectedWithoutKillingSession()
+        {
+            var faulted = false;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            redis.ConnectionFailed += delegate { faulted = true; };
+
+            var db = redis.GetDatabase(0);
+            db.SortedSetAdd("mysortedset", "member1", 1);
+
+            // milliseconds too far in the future
+            var exc0 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("ZPEXPIRE", "mysortedset", "300000000000000", "MEMBERS", "1", "member1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'zpexpire' command", exc0.Message);
+
+            // seconds too far in the future
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("ZEXPIRE", "mysortedset", "300000000000", "MEMBERS", "1", "member1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'zexpire' command", exc1.Message);
+
+            // unix time (seconds) too far in the future
+            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("ZEXPIREAT", "mysortedset", long.MaxValue.ToString(), "MEMBERS", "1", "member1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'zexpireat' command", exc2.Message);
+
+            // unix time (ms) too far in the future
+            var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("ZPEXPIREAT", "mysortedset", long.MaxValue.ToString(), "MEMBERS", "1", "member1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'zpexpireat' command", exc3.Message);
+
+            // Member TTL unchanged and member undeleted
+            ClassicAssert.IsTrue(db.SortedSetScore("mysortedset", "member1").HasValue);
+
+            // Connection never faulted during operation - previously these all closed the connection with no reply
+            ClassicAssert.IsFalse(faulted);
+        }
+
+        [Test]
         [TestCase("ZEXPIRE", "NX", Description = "Set expiry only when no expiration exists")]
         [TestCase("ZEXPIRE", "XX", Description = "Set expiry only when expiration exists")]
         [TestCase("ZEXPIRE", "GT", Description = "Set expiry only when new TTL is greater")]
@@ -3434,6 +3494,26 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase(2, Description = "RESP2 output")]
+        [TestCase(3, Description = "RESP3 output")]
+        public async Task ZMPopInfiniteScoresRespOutput(byte respVersion)
+        {
+            using var c = TestUtils.GetGarnetClientSession(raw: true);
+            c.Connect();
+
+            var response = await c.ExecuteAsync("HELLO", respVersion.ToString()).ConfigureAwait(false);
+
+            response = await c.ExecuteAsync("ZADD", "z", "-inf", "a", "1.5", "b", "+inf", "c").ConfigureAwait(false);
+            ClassicAssert.AreEqual(":3\r\n", response);
+
+            var expectedResponse = (respVersion >= 3) ?
+                        "*2\r\n$1\r\nz\r\n*3\r\n*2\r\n$1\r\na\r\n,-inf\r\n*2\r\n$1\r\nb\r\n,1.5\r\n*2\r\n$1\r\nc\r\n,inf\r\n" :
+                        "*2\r\n$1\r\nz\r\n*3\r\n*2\r\n$1\r\na\r\n$4\r\n-inf\r\n*2\r\n$1\r\nb\r\n$3\r\n1.5\r\n*2\r\n$1\r\nc\r\n$3\r\ninf\r\n";
+            response = await c.ExecuteAsync("ZMPOP", "2", "missing", "z", "MIN", "COUNT", "3").ConfigureAwait(false);
+            ClassicAssert.AreEqual(expectedResponse, response);
+        }
+
+        [Test]
         public async Task ZScanWithExpiredItems()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -4261,32 +4341,46 @@ namespace Garnet.test
         [TestCase(100)]
         public void CanManageErrorsInZCountLC(int bytesSent)
         {
-            using var lightClientRequest = TestUtils.CreateRequest();
-            var response = lightClientRequest.SendCommands("ZCOUNT nokey 12 232 4343 5454", "PING");
-            var expectedResponse = $"{FormatWrongNumOfArgsError("ZCOUNT")}+PONG\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommands("ZCOUNT nokey 12 232 4343 5454", "PING");
+                var expectedResponse = $"{FormatWrongNumOfArgsError("ZCOUNT")}+PONG\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
 
-            response = lightClientRequest.SendCommandChunks("ZCOUNT nokey 12 232 4343 5454", bytesSent);
-            expectedResponse = FormatWrongNumOfArgsError("ZCOUNT");
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommandChunks("ZCOUNT nokey 12 232 4343 5454", bytesSent);
+                var expectedResponse = FormatWrongNumOfArgsError("ZCOUNT");
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
 
             // no arguments
-            response = lightClientRequest.SendCommandChunks("ZCOUNT nokey", bytesSent);
-            expectedResponse = FormatWrongNumOfArgsError("ZCOUNT");
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommandChunks("ZCOUNT nokey", bytesSent);
+                var expectedResponse = FormatWrongNumOfArgsError("ZCOUNT");
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
 
             // not found key
-            response = lightClientRequest.SendCommandChunks("ZCOUNT nokey", bytesSent);
-            expectedResponse = FormatWrongNumOfArgsError("ZCOUNT");
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommandChunks("ZCOUNT nokey", bytesSent);
+                var expectedResponse = FormatWrongNumOfArgsError("ZCOUNT");
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
 
-            response = lightClientRequest.SendCommandChunks("ZCOUNT nokey 1 2", bytesSent);
-            expectedResponse = ":0\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommandChunks("ZCOUNT nokey 1 2", bytesSent);
+                var expectedResponse = ":0\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = lightClientRequest.SendCommands("ZCOUNT nokey 1 2", "PING");
-            expectedResponse = ":0\r\n+PONG\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+                response = lightClientRequest.SendCommands("ZCOUNT nokey 1 2", "PING");
+                expectedResponse = ":0\r\n+PONG\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
         }
 
         [Test]
@@ -4352,31 +4446,39 @@ namespace Garnet.test
         public void CanDoIncrByLC(int bytesSent)
         {
             //ZINCRBY key increment member
-            using var lightClientRequest = TestUtils.CreateRequest();
-            var response = lightClientRequest.SendCommand("ZADD board 340 Dave");
-            lightClientRequest.SendCommand("ZADD board 400 Kendra");
-            lightClientRequest.SendCommand("ZADD board 560 Tom");
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommand("ZADD board 340 Dave");
+                _ = lightClientRequest.SendCommand("ZADD board 400 Kendra");
+                _ = lightClientRequest.SendCommand("ZADD board 560 Tom");
 
-            response = lightClientRequest.SendCommandChunks("ZINCRBY board 10 Tom", bytesSent);
-            var expectedResponse = "$3\r\n570\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+                response = lightClientRequest.SendCommandChunks("ZINCRBY board 10 Tom", bytesSent);
+                var expectedResponse = "$3\r\n570\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = lightClientRequest.SendCommand("ZINCRBY board -590 Tom");
-            expectedResponse = "$3\r\n-20\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+                response = lightClientRequest.SendCommand("ZINCRBY board -590 Tom");
+                expectedResponse = "$3\r\n-20\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
 
-            response = lightClientRequest.SendCommandChunks("ZINCRBY board -590", bytesSent);
-            expectedResponse = FormatWrongNumOfArgsError("ZINCRBY");
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommandChunks("ZINCRBY board -590", bytesSent);
+                var expectedResponse = FormatWrongNumOfArgsError("ZINCRBY");
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
 
             //using key exists but non existing member
-            response = lightClientRequest.SendCommandChunks("ZINCRBY board 10 Julia", bytesSent);
-            expectedResponse = "$2\r\n10\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommandChunks("ZINCRBY board 10 Julia", bytesSent);
+                var expectedResponse = "$2\r\n10\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = lightClientRequest.SendCommandChunks("ZCARD board", bytesSent);
-            expectedResponse = ":4\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+                response = lightClientRequest.SendCommandChunks("ZCARD board", bytesSent);
+                expectedResponse = ":4\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
         }
 
         [Test]
@@ -4794,6 +4896,69 @@ namespace Garnet.test
             response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 2 WITHSCORES", "PING", 5, 1);
             expectedResponse = "*4\r\n"; // 2 member/score pairs
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void CanUseZRandMemberWithUnrepresentableNegativeCount()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("ZADD randzset 1 m1 2 m2 3 m3");
+            TestUtils.AssertEqualUpToExpectedLength(":3\r\n", response);
+
+            // A negative count asks for that many members with repeats, so unlike a positive count it cannot be reduced
+            // to the size of the sorted set; a count below what the packed count field represents is rejected
+            const string expectedResponse = "-ERR value is not an integer or out of range.\r\n+PONG\r\n";
+            foreach (var count in new[] { "-536870913", "-2147483648" })
+            {
+                response = lightClientRequest.SendCommands($"ZRANDMEMBER randzset {count}", "PING", 1, 1);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+                response = lightClientRequest.SendCommands($"ZRANDMEMBER randzset {count} WITHSCORES", "PING", 1, 1);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
+        }
+
+        [Test]
+        public void SortedSetRejectsNaN([Values("nan", "NaN", "-NaN")] string nan)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "nanzset";
+            ClassicAssert.IsTrue(db.SortedSetAdd(key, "a", 1));
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("ZADD", key, nan, "b"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT), ex.Message);
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("ZINCRBY", key, nan, "b"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT), ex.Message);
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("ZINCRBY", key, nan, "a"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT), ex.Message);
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("ZRANGEBYSCORE", key, nan, "+inf"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT), ex.Message);
+
+            CollectionAssert.AreEqual(new RedisValue[] { "a" }, db.SortedSetRangeByRank(key));
+            ClassicAssert.AreEqual(1, db.SortedSetScore(key, "a"));
+        }
+
+        /// <summary>
+        /// Ranks are integers: ZRANGE by rank rejects any other bound, and ranks past the int range select as the nearest int rank would.
+        /// </summary>
+        [Test]
+        public void ZRangeByRankRequiresIntegerRanks([Values("0.5", "(1", "inf", "-inf", "1e1")] string rank)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "rankzset";
+            ClassicAssert.AreEqual(3, db.SortedSetAdd(key, [new SortedSetEntry("a", 1), new SortedSetEntry("b", 2), new SortedSetEntry("c", 3)]));
+
+            foreach (var (command, start, stop) in new[] { ("ZRANGE", rank, "-1"), ("ZRANGE", "0", rank), ("ZREVRANGE", rank, "-1") })
+            {
+                var ex = Assert.Throws<RedisServerException>(() => db.Execute(command, key, start, stop));
+                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER), ex.Message, $"{command} {start} {stop}");
+            }
+
+            var all = (RedisValue[])db.Execute("ZRANGE", key, long.MinValue, long.MaxValue);
+            CollectionAssert.AreEqual(new RedisValue[] { "a", "b", "c" }, all);
+            ClassicAssert.AreEqual(0, ((RedisValue[])db.Execute("ZRANGE", key, long.MaxValue, long.MaxValue)).Length);
         }
 
         [Test]

@@ -353,6 +353,7 @@ REPLICAOF <host port | NO ONE>
 ```
 
 The REPLICAOF command can change the replication settings of a replica on the fly.
+Accepts a known node's client or peer endpoint. Replication uses its peer endpoint.
 
 #### Resp Reply
 
@@ -438,21 +439,5 @@ The TIME command returns the current server time as a two items lists: a Unix ti
 #### Resp Reply
 
 Array reply: specifically, a two-element array consisting of the Unix timestamp in seconds and the microseconds' count.
-
----
-
-### MONITOR
-
-#### Syntax
-
-```bash
-MONITOR
-```
-
-MONITOR is a debugging command that streams back every command processed by the Redis server. It can help in understanding what is happening to the database.
-
-#### Resp Reply
-
-Non-standard return value. Dumps the received commands in an infinite flow.
 
 ---

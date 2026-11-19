@@ -142,7 +142,9 @@ namespace Tsavorite.core
         /// Constructs a new ShardedStorageDevice with the given partition scheme
         /// </summary>
         /// <param name="partitions"> The parition scheme to use </param>
-        public ShardedStorageDevice(IPartitionScheme partitions) : base("", 512, -1)
+        /// <remarks>Each request is split across the shards at chunk boundaries, which the partition scheme requires to be
+        /// whole sectors of every shard, so this device reports the largest of the shards' sector sizes.</remarks>
+        public ShardedStorageDevice(IPartitionScheme partitions) : base("", GetLargestSectorSize(partitions.Devices), -1)
         {
             this.partitions = partitions;
         }
@@ -153,6 +155,16 @@ namespace Tsavorite.core
             foreach (IDevice device in partitions.Devices)
             {
                 device.Dispose();
+            }
+        }
+
+        /// <inheritdoc />
+        public override void Reset()
+        {
+            base.Reset();
+            foreach (IDevice device in partitions.Devices)
+            {
+                device.Reset();
             }
         }
 
@@ -193,6 +205,11 @@ namespace Tsavorite.core
                 }, result);
             }
         }
+
+        /// <inheritdoc/>
+        /// <remarks>Each shard stores its part of a segment as the segment of the same number, so each removes its segments above
+        /// <paramref name="segment"/>.</remarks>
+        public override bool TryRemoveSegmentsAbove(int segment, out int removed) => TryRemoveSegmentsAboveOnEach(partitions.Devices, segment, out removed);
 
         /// <summary>
         /// <see cref="IDevice.WriteAsync(IntPtr, int, ulong, uint, DeviceIOCompletionCallback, object)"/>

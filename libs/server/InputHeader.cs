@@ -20,6 +20,11 @@ namespace Garnet.server
     public enum RespInputFlags : byte
     {
         /// <summary>
+        /// An explicit ETag, including zero to clear it, is supplied in StringInput.arg2 or UnifiedInput.arg2.
+        /// </summary>
+        HasEtag = 16,
+
+        /// <summary>
         /// Flag indicating a SET operation that returns the previous value (for strings).
         /// </summary>
         SetGet = 32,
@@ -319,6 +324,16 @@ namespace Garnet.server
         public long arg1;
 
         /// <summary>
+        /// Explicit ETag, serialized only when HasEtag is set.
+        /// </summary>
+        public long arg2;
+
+        /// <summary>
+        /// Whether an explicit ETag is supplied, including zero to clear it.
+        /// </summary>
+        public readonly bool HasEtag => (header.flags & RespInputFlags.HasEtag) != 0;
+
+        /// <summary>
         /// Session parse state
         /// </summary>
         public SessionParseState parseState;
@@ -380,6 +395,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public int SerializedLength => header.SpanByte.TotalSize
                                        + sizeof(long) // arg1
+                                       + (HasEtag ? sizeof(long) : 0)
                                        + parseState.GetSerializedLength();
 
         /// <inheritdoc />
@@ -396,6 +412,12 @@ namespace Garnet.server
             // Serialize arg1
             *(long*)curr = arg1;
             curr += sizeof(long);
+
+            if (HasEtag)
+            {
+                *(long*)curr = arg2;
+                curr += sizeof(long);
+            }
 
             // Serialize parse state
             var remainingLength = length - (int)(curr - dest);
@@ -421,6 +443,13 @@ namespace Garnet.server
             arg1 = *(long*)curr;
             curr += sizeof(long);
 
+            arg2 = 0;
+            if (HasEtag)
+            {
+                arg2 = *(long*)curr;
+                curr += sizeof(long);
+            }
+
             // Deserialize parse state
             var len = parseState.DeserializeFrom(curr);
             curr += len;
@@ -443,6 +472,16 @@ namespace Garnet.server
         /// Argument for generic usage by command implementation
         /// </summary>
         public long arg1;
+
+        /// <summary>
+        /// Explicit ETag, serialized only when HasEtag is set.
+        /// </summary>
+        public long arg2;
+
+        /// <summary>
+        /// Whether an explicit ETag is supplied, including zero to clear it.
+        /// </summary>
+        public readonly bool HasEtag => (header.flags & RespInputFlags.HasEtag) != 0;
 
         /// <summary>
         /// Session parse state
@@ -501,6 +540,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public int SerializedLength => header.SpanByte.TotalSize
                                        + sizeof(long) // arg1
+                                       + (HasEtag ? sizeof(long) : 0)
                                        + parseState.GetSerializedLength();
 
         /// <inheritdoc />
@@ -517,6 +557,12 @@ namespace Garnet.server
             // Serialize arg1
             *(long*)curr = arg1;
             curr += sizeof(long);
+
+            if (HasEtag)
+            {
+                *(long*)curr = arg2;
+                curr += sizeof(long);
+            }
 
             // Serialize parse state
             var remainingLength = length - (int)(curr - dest);
@@ -541,6 +587,13 @@ namespace Garnet.server
             // Deserialize arg1
             arg1 = *(long*)curr;
             curr += sizeof(long);
+
+            arg2 = 0;
+            if (HasEtag)
+            {
+                arg2 = *(long*)curr;
+                curr += sizeof(long);
+            }
 
             // Deserialize parse state
             var len = parseState.DeserializeFrom(curr);

@@ -24,7 +24,7 @@ const sidebars = {
 		{type: 'category', label: 'Server Extensions', items: ["extensions/overview", "extensions/raw-strings", "extensions/objects", "extensions/transactions", "extensions/procedure", "extensions/module"]},
 		{type: 'category', label: 'Cluster Mode', items: ["cluster/overview", "cluster/replication", "cluster/key-migration"]},
 		{type: 'category', label: 'Developer Guide', items: ["dev/onboarding", "dev/code-structure", "dev/configuration", "dev/network", "dev/processing", "dev/garnet-api",
-		{type: 'category', label: 'Tsavorite - Storage Layer', collapsed: true, items: ["dev/tsavorite/intro", "dev/tsavorite/reviv", "dev/tsavorite/locking", "dev/tsavorite/readcache", "dev/tsavorite/storefunctions", "dev/tsavorite/epochprotection", "dev/tsavorite/state-machine", "dev/tsavorite/logrecord", "dev/tsavorite/object-allocator", "dev/tsavorite/objectlog-serialization", "dev/tsavorite/buffer-pool", "dev/tsavorite/checkpoint-recovery"]},
+		{type: 'category', label: 'Tsavorite - Storage Layer', collapsed: true, items: ["dev/tsavorite/intro", "dev/tsavorite/reviv", "dev/tsavorite/locking", "dev/tsavorite/readcache", "dev/tsavorite/storefunctions", "dev/tsavorite/epochprotection", "dev/tsavorite/state-machine", "dev/tsavorite/logrecord", "dev/tsavorite/object-allocator", "dev/tsavorite/objectlog-serialization", "dev/tsavorite/buffer-pool", "dev/tsavorite/checkpoint-recovery", "dev/tsavorite/tsavoritelog-commits", "dev/tsavorite/composite-devices"]},
 		{type: 'category', label: 'Chunked Record Layouts', collapsed: true, items: ["dev/aof-record-layout", "dev/migration-replication-record-layout"]},
 		  "dev/device-tuning",
 		  "dev/transactions",
@@ -48,7 +48,7 @@ const sidebars = {
 		{type: 'category', label: 'Other Links', items: [
 			{type: 'link', label: 'Releases', href: 'https://github.com/microsoft/garnet/releases'},
                         {type: 'link', label: 'License', href: 'https://github.com/microsoft/garnet/blob/main/LICENSE'},
-                        {type: 'link', label: 'Privacy', href: 'https://privacy.microsoft.com/en-us/privacystatement'},
+                        {type: 'link', label: 'Privacy', href: 'https://go.microsoft.com/fwlink/?LinkId=521839'},
 			]}
 	],
 

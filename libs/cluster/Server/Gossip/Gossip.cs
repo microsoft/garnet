@@ -62,6 +62,159 @@ namespace Garnet.cluster
             => clusterConnectionStore.GetConnectionInfo(nodeId, out info);
 
         /// <summary>
+        /// Grace period applied once to the whole gossip client collection after a swap before the previous
+        /// clients begin graceful retirement. Read live so a CONFIG SET is observed by the next swap.
+        /// Widening this window lets callers that selected a previous client just before the swap finish
+        /// issuing their requests against it rather than observing retirement.
+        /// </summary>
+        TimeSpan GossipClientSwapGrace
+            => TimeSpan.FromSeconds(clusterProvider.storeWrapper.runtimeConfig.GetSeconds(ServerConfigType.GOSSIP_CLIENT_SWAP_GRACE));
+
+        readonly object retireSync = new();
+        readonly List<GarnetServerNode> pendingRetired = [];
+        bool retireTaskActive;
+        bool retireClosed;
+
+        /// <summary>
+        /// Swaps every live gossip client for a new instance built from the current runtime configuration and
+        /// queues the previous clients for graceful retirement by <see cref="TaskType.GossipClientRetireTask"/>.
+        /// Invoked when the GOSSIP_CLIENT configuration group changes via CONFIG SET. No-op once gossip is
+        /// shutting down.
+        /// </summary>
+        public void SwapGossipClients()
+        {
+            if (ctsGossip.IsCancellationRequested)
+                return;
+
+            GarnetServerNode[] retired;
+            try
+            {
+                retired = clusterConnectionStore.SwapAllConnections();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Failed to swap gossip clients after configuration change");
+                return;
+            }
+
+            if (retired.Length == 0)
+                return;
+
+            lock (retireSync)
+            {
+                if (!retireClosed)
+                {
+                    pendingRetired.AddRange(retired);
+                    if (retireTaskActive)
+                        return;
+
+                    retireTaskActive = clusterProvider.storeWrapper.TaskManager.RegisterAndRun(
+                        TaskType.GossipClientRetireTask,
+                        token => Task.Run(() => RetireGossipClientsAsync(token)));
+                    if (retireTaskActive)
+                        return;
+
+                    // Registration fails only when the task manager is disposed; nothing else owns these nodes.
+                    pendingRetired.Clear();
+                }
+            }
+
+            foreach (var node in retired)
+                DisposeRetiredNode(node);
+        }
+
+        /// <summary>
+        /// Retires queued gossip clients in batches until none remain. Each batch waits for the swap grace window
+        /// and then drains gracefully, bounded by the cluster node timeout. Cancellation ends the grace window
+        /// early and forces each drain to dispose its client without waiting for outstanding replies.
+        /// </summary>
+        async Task RetireGossipClientsAsync(CancellationToken token)
+        {
+            while (true)
+            {
+                var grace = GossipClientSwapGrace;
+                if (grace > TimeSpan.Zero && !token.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await Task.Delay(grace, token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                    }
+                }
+
+                GarnetServerNode[] batch;
+                lock (retireSync)
+                {
+                    if (pendingRetired.Count == 0)
+                    {
+                        retireTaskActive = false;
+                        _ = clusterProvider.storeWrapper.TaskManager.TryUnregister(TaskType.GossipClientRetireTask);
+                        return;
+                    }
+
+                    batch = [.. pendingRetired];
+                    pendingRetired.Clear();
+                }
+
+                using var drainCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+                drainCts.CancelAfter(clusterTimeout);
+                var retirements = new Task[batch.Length];
+                for (var i = 0; i < batch.Length; i++)
+                    retirements[i] = RetireNodeAsync(batch[i], drainCts.Token);
+                await Task.WhenAll(retirements).ConfigureAwait(false);
+            }
+        }
+
+        async Task RetireNodeAsync(GarnetServerNode node, CancellationToken token)
+        {
+            try
+            {
+                await node.DisposeGracefullyAsync(token).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Error retiring gossip connection during configuration swap");
+            }
+        }
+
+        void DisposeRetiredNode(GarnetServerNode node)
+        {
+            try
+            {
+                node.Dispose();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Error disposing retired gossip connection");
+            }
+        }
+
+        /// <summary>
+        /// Stops accepting retired gossip clients, cancels <see cref="TaskType.GossipClientRetireTask"/> (forcing
+        /// in-progress drains to dispose their clients) and disposes any clients still queued.
+        /// </summary>
+        void StopGossipClientRetirement()
+        {
+            lock (retireSync)
+                retireClosed = true;
+
+            AsyncUtils.BlockingWait(clusterProvider.storeWrapper.TaskManager.CancelAsync(TaskType.GossipClientRetireTask));
+
+            GarnetServerNode[] leftover;
+            lock (retireSync)
+            {
+                retireTaskActive = false;
+                leftover = [.. pendingRetired];
+                pendingRetired.Clear();
+            }
+
+            foreach (var node in leftover)
+                DisposeRetiredNode(node);
+        }
+
+        /// <summary>
         /// Get link status info for primary of this node.
         /// </summary>
         /// <param name="config">Snapshot of config to use for retrieving that information.</param>
@@ -163,7 +316,6 @@ namespace Garnet.cluster
             GarnetServerNode gsn = null;
             var conf = CurrentConfig;
             var nodeId = conf.GetWorkerNodeIdFromAddress(address, port);
-            MemoryResult<byte> resp = default;
             var created = false;
 
             gossipStats.UpdateMeetRequestsRecv();
@@ -175,60 +327,47 @@ namespace Garnet.cluster
                 if (gsn == null)
                 {
                     var endpoints = await Format.TryCreateEndpointAsync(address, port, tryConnect: true, logger: logger).ConfigureAwait(false);
-                    if (endpoints == null)
+                    if (endpoints == null || endpoints.Length == 0)
                     {
                         logger?.LogError("Invalid CLUSTER MEET endpoint!");
+                        gossipStats.UpdateMeetRequestsFailed();
+                        return;
                     }
                     gsn = new GarnetServerNode(clusterProvider, endpoints[0], tlsOptions?.TlsClientOptions, clusterConnectionStore.Epoch, logger: logger);
                     created = true;
                 }
 
-                // Initialize GarnetServerNode
-                // Thread-Safe initialization executes only once
-                await gsn.InitializeAsync().ConfigureAwait(false);
+                // Initialize or reconnect the GarnetServerNode.
+                if (!await gsn.TryInitializeAsync().ConfigureAwait(false))
+                {
+                    if (created) gsn.Dispose();
+                    gossipStats.UpdateMeetRequestsFailed();
+                    return;
+                }
 
                 // Send full config in Gossip
-                resp = await gsn.TryMeetAsync(conf.ToByteArray(ClusterConfig.OutboundGossipVersion)).ConfigureAwait(false);
-                if (resp.Length > 0)
-                {
-                    var respArray = resp.Span.ToArray();
+                ClusterConfig other = await gsn.TryMeetAsync(conf).ConfigureAwait(false);
+                nodeId = other.LocalNodeId;
+                gsn.NodeId = nodeId;
 
-                    // Validate config version before full deserialization
-                    if (!ClusterConfig.TryPeekVersion(respArray, out var version) || !ClusterConfig.IsSupportedVersion(version))
-                    {
-                        logger?.LogWarning("MEET response has incompatible config version: {version}", version);
-                        if (created) gsn?.Dispose();
-                        gossipStats.UpdateMeetRequestsFailed();
-                    }
-                    else
-                    {
-                        var other = ClusterConfig.FromByteArray(respArray);
-                        nodeId = other.LocalNodeId;
-                        gsn.NodeId = nodeId;
+                logger?.LogInformation("MEET {nodeId} {address} {port}", nodeId, address, port);
+                // Merge without a check because node is trusted as meet was issued by admin
+                _ = TryMerge(other, acquireLock);
 
-                        logger?.LogInformation("MEET {nodeId} {address} {port}", nodeId, address, port);
-                        // Merge without a check because node is trusted as meet was issued by admin
-                        _ = TryMerge(other, acquireLock);
+                gossipStats.UpdateMeetRequestsSucceed();
+                gsn.RecordConnectionSuccess();
 
-                        gossipStats.UpdateMeetRequestsSucceed();
-
-                        // If failed to add newly created connection dispose of it to reclaim resources
-                        // Dispose only connections that this meet task has created to avoid conflicts with existing connections from gossip main thread
-                        // After connection is added we are no longer the owner. Background gossip task will be owner
-                        if (created && !await clusterConnectionStore.AddConnectionAsync(gsn).ConfigureAwait(false))
-                            gsn.Dispose();
-                    }
-                }
+                // If failed to add newly created connection dispose of it to reclaim resources
+                // Dispose only connections that this meet task has created to avoid conflicts with existing connections from gossip main thread
+                // After connection is added we are no longer the owner. Background gossip task will be owner
+                if (created && !await clusterConnectionStore.AddConnectionAsync(gsn).ConfigureAwait(false))
+                    gsn.Dispose();
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Meet terminated with error");
                 if (created) gsn?.Dispose();
                 gossipStats.UpdateMeetRequestsFailed();
-            }
-            finally
-            {
-                resp.Dispose();
             }
         }
 
@@ -272,12 +411,13 @@ namespace Garnet.cluster
                 if (gsn == null)
                     continue;
 
-                // Initialize GarnetServerNode
-                // Thread-Safe initialization executes only once
-                var initTask = gsn.InitializeAsync();
+                // Initialize or reconnect the GarnetServerNode.
+                var initTask = gsn.TryInitializeAsync();
                 if (initTask.IsCompletedSuccessfully)
                 {
-                    // Can stay sync, so proceed
+                    // Initialization is best-effort for publish forwarding. A live connection may still be
+                    // available while gossip initialization is held back by reconnect backoff.
+                    _ = AsyncUtils.BlockingWait(initTask);
                     gsn.TryClusterPublish(cmd, channel, message);
                 }
                 else
@@ -290,7 +430,7 @@ namespace Garnet.cluster
             // Completed synchronously
             return default;
 
-            async Task GoAsyncHelperAsync(ValueTask<(bool Success, GarnetServerNode Node)> getOrAddTask, ValueTask initTask, int lastEntryIx, GarnetServerNode lastGsn, RespCommand cmd, Memory<byte> channel, Memory<byte> message)
+            async Task GoAsyncHelperAsync(ValueTask<(bool Success, GarnetServerNode Node)> getOrAddTask, ValueTask<bool> initTask, int lastEntryIx, GarnetServerNode lastGsn, RespCommand cmd, Memory<byte> channel, Memory<byte> message)
             {
                 // Finish the task which caused us to go async
                 if (lastGsn == null)
@@ -298,13 +438,11 @@ namespace Garnet.cluster
                     (_, lastGsn) = await getOrAddTask.ConfigureAwait(false);
 
                     if (lastGsn != null)
-                    {
-                        await lastGsn.InitializeAsync().ConfigureAwait(false);
-                    }
+                        _ = await lastGsn.TryInitializeAsync().ConfigureAwait(false);
                 }
                 else
                 {
-                    await initTask.ConfigureAwait(false);
+                    _ = await initTask.ConfigureAwait(false);
                 }
 
                 if (lastGsn != null)
@@ -322,9 +460,8 @@ namespace Garnet.cluster
                     if (gsn == null)
                         continue;
 
-                    // Initialize GarnetServerNode
-                    // Thread-Safe initialization executes only once
-                    await gsn.InitializeAsync().ConfigureAwait(false);
+                    // Initialization is best-effort; TryClusterPublish verifies the connection is live.
+                    _ = await gsn.TryInitializeAsync().ConfigureAwait(false);
 
                     // Publish to remote nodes
                     gsn.TryClusterPublish(cmd, channel.Span, message.Span);
@@ -392,7 +529,7 @@ namespace Garnet.cluster
                 _ = Interlocked.Decrement(ref numActiveTasks);
             }
 
-            // Initialize connections for nodes that have either been dispose due to banlist (after expiry) or timeout
+            // Initialize new connections and reconnect failed nodes when their per-node backoff permits.
             async Task InitConnectionsAsync()
             {
                 await DisposeBannedWorkerConnectionsAsync().ConfigureAwait(false);
@@ -410,34 +547,25 @@ namespace Garnet.cluster
                     if (workerBanList.ContainsKey(nodeId))
                         continue;
 
-                    try
+                    var endpoint = new IPEndPoint(IPAddress.Parse(address), port);
+                    if (clusterConnectionStore.GetConnection(nodeId, out var existing) && !endpoint.Equals(existing.EndPoint))
                     {
-                        var endpoint = new IPEndPoint(IPAddress.Parse(address), port);
-                        if (clusterConnectionStore.GetConnection(nodeId, out var existing))
-                        {
-                            if (endpoint.Equals(existing.EndPoint))
-                                continue;
-                            _ = await clusterConnectionStore.TryRemoveConnectionAsync(nodeId).ConfigureAwait(false);
-                        }
-
-                        var (success, gsn) = await clusterConnectionStore.GetOrAddAsync(clusterProvider, endpoint, tlsOptions, nodeId, logger: logger).ConfigureAwait(false);
-
-                        if (gsn == null)
-                        {
-                            logger?.LogWarning("InitConnections: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
-
-                            _ = await clusterConnectionStore.TryRemoveConnectionAsync(nodeId).ConfigureAwait(false);
-
-                            continue;
-                        }
-
-                        await gsn.InitializeAsync().ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        logger?.LogWarning(ex, "InitConnections: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
+                        // Endpoint changed; drop the stale connection before recreating it.
                         _ = await clusterConnectionStore.TryRemoveConnectionAsync(nodeId).ConfigureAwait(false);
                     }
+
+                    var (_, gsn) = await clusterConnectionStore.GetOrAddAsync(clusterProvider, endpoint, tlsOptions, nodeId, logger: logger).ConfigureAwait(false);
+
+                    if (gsn == null)
+                    {
+                        logger?.LogWarning("InitConnections: Could not create connection to remote node [{nodeId} {address}:{port}]",
+                            nodeId, address, port);
+                        continue;
+                    }
+
+                    // Reconnection is governed by each node's exponential backoff; TryInitializeAsync is a no-op
+                    // when the node is already initialized or its backoff window has not elapsed.
+                    _ = await gsn.TryInitializeAsync().ConfigureAwait(false);
                 }
 
                 async Task DisposeBannedWorkerConnectionsAsync()
@@ -473,6 +601,12 @@ namespace Garnet.cluster
                     {
                         ctsGossip.Token.ThrowIfCancellationRequested();
 
+                        if (!currNode.IsInitialized)
+                        {
+                            offset++;
+                            continue;
+                        }
+
                         // Issue gossip message to node and truck success metrics
                         if (currNode.TryGossip())
                         {
@@ -482,14 +616,18 @@ namespace Garnet.cluster
                         }
 
                         gossipStats.gossip_timeout_count++;
-                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {endpoint}] timeout!", currNode.NodeId, currNode.EndPoint);
-                        _ = await clusterConnectionStore.TryRemoveConnectionAsync(currNode.NodeId).ConfigureAwait(false);
+                        var retryDelay = currNode.RecordConnectionFailure();
+                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {endpoint}] timeout; retrying in {retryDelay}",
+                            currNode.NodeId, currNode.EndPoint, retryDelay);
+                        offset++;
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogWarning(ex, "GOSSIP to remote node [{nodeId} {endpoint}] failed!", currNode.NodeId, currNode.EndPoint);
-                        _ = await clusterConnectionStore.TryRemoveConnectionAsync(currNode.NodeId).ConfigureAwait(false);
+                        var retryDelay = currNode.RecordConnectionFailure();
+                        logger?.LogWarning(ex, "GOSSIP to remote node [{nodeId} {endpoint}] failed; retrying in {retryDelay}",
+                            currNode.NodeId, currNode.EndPoint, retryDelay);
                         gossipStats.gossip_failed_count++;
+                        offset++;
                     }
                 }
             }
@@ -510,7 +648,7 @@ namespace Garnet.cluster
                     for (var i = 0; i < maxRandomNodesToPoll; i++)
                     {
                         // Pick the node with earliest send timestamp
-                        if (clusterConnectionStore.GetRandomConnection(out var c) && c.GossipSend < minSend)
+                        if (clusterConnectionStore.GetRandomConnection(out var c) && c.IsInitialized && c.GossipSend < minSend)
                         {
                             minSend = c.GossipSend;
                             currNode = c;
@@ -527,17 +665,20 @@ namespace Garnet.cluster
                         if (currNode.TryGossip())
                         {
                             gossipStats.gossip_success_count++;
+                            count--;
                             continue;
                         }
 
                         gossipStats.gossip_timeout_count++;
-                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {endpoint}] timeout!", currNode.NodeId, currNode.EndPoint);
-                        _ = await clusterConnectionStore.TryRemoveConnectionAsync(currNode.NodeId).ConfigureAwait(false);
+                        var retryDelay = currNode.RecordConnectionFailure();
+                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {endpoint}] timeout; retrying in {retryDelay}",
+                            currNode.NodeId, currNode.EndPoint, retryDelay);
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogError(ex, "GOSSIP to remote node [{nodeId} {endpoint}] failed!", currNode.NodeId, currNode.EndPoint);
-                        _ = await clusterConnectionStore.TryRemoveConnectionAsync(currNode.NodeId).ConfigureAwait(false);
+                        var retryDelay = currNode.RecordConnectionFailure();
+                        logger?.LogError(ex, "GOSSIP to remote node [{nodeId} {endpoint}] failed; retrying in {retryDelay}",
+                            currNode.NodeId, currNode.EndPoint, retryDelay);
                         gossipStats.gossip_failed_count++;
                     }
 

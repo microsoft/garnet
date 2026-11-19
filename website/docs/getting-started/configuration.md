@@ -74,15 +74,35 @@ Any setting in Garnet can be also configured by specifying a command line argume
 If the setting is also specified in the configuration file, it will be overridden by the value specified in the command line. 
 For all available command line settings, run `GarnetServer.exe -h` or `GarnetServer.exe -help`, or refer to the complete Garnet settings [list](#configurable-settings).
 
+## Migration pipelining
+
+Set `MigrationPipelineDepth` in `garnet.conf`, or use `--migrate-pipeline-depth`, to control the maximum number of unacknowledged migration batches per worker. The default is `1` (no pipelining); valid values are `1` through `64`.
+
+Migration batches are processed synchronously before acknowledgment. Pipelining overlaps sending with processing without changing acknowledgment semantics. For example:
+
+```json
+{
+  "MigrationPipelineDepth": 4
+}
+```
+
+Pipelining uses the existing `CLUSTER MIGRATE` wire format without additional arguments.
+
+Slot migration finishes shipping, acknowledgments, and deletion before scanning the next batch by default. Set `UseScanAheadMigration` to `true` in `garnet.conf`, or pass `--use-scan-ahead-migration true`, to overlap discovery of the next key batch with shipping the current batch. This setting is independent of `ParallelMigrateTaskCount` and `MigrationPipelineDepth` and does not affect explicit-key migration.
+
+Set `MigrationDeleteBatchSize` in `garnet.conf`, or use `--migrate-delete-batch-size`, to control the maximum eligible source keys deleted per epoch-protected scope for slot and explicit-key migration. The default is `256`; any positive integer is accepted, and `1` uses a separate scope per key. Larger values reduce epoch entry/exit overhead but can delay memory reclamation. Batches are limited to the available keys, and partial batches are flushed after iteration. Deletion still follows target acknowledgments, and COPY does not delete source keys.
+
 ## Configurable Settings
 
 | `garnet.conf`<br/>keyword | Command line keyword(s) | Type | Valid Values | Description |
 | ----------- | ----------- | ----------- | ----------- | ----------- |
 | **Port** | ```--port``` | ```int``` | Integer in range:<br/>[0, 65535] | Port to run server on |
 | **Address** | ```--bind``` | ```string``` | IP Address in v4/v6 format | Whitespace or comma separated string of IP addresses to bind server to (default: any) |
-| **ClusterAnnouncePort** | ```--cluster-announce-port``` | ```int``` | Integer in range:<br/>[0, 65535] | Port that this node advertises to other nodes to connect to for gossiping. |
-| **ClusterAnnounceIp** | ```--cluster-announce-ip``` | ```string``` | IP Address in v4/v6 format | IP address that this node advertises to other nodes to connect to for gossiping. |
-| **ClusterAnnounceHostname** | ```--cluster-announce-hostname``` | ```string``` |  | Hostname that this node advertises to other nodes to connect to for gossiping. |
+| **ClusterAnnouncePort** | ```--cluster-announce-port``` | ```int``` | Integer in range:<br/>[0, 65535] | Client port. Zero uses the listening port. Nodes use this unless ClusterPort is set. |
+| **ClusterAnnounceIp** | ```--cluster-announce-ip``` | ```string``` | IP Address in v4/v6 format | Client address. Nodes use this unless ClusterAddress is set. |
+| **ClusterAnnounceHostname** | ```--cluster-announce-hostname``` | ```string``` |  | Client hostname. |
+| **ClusterAddress** | ```--cluster-address``` | ```string``` | IPv4 or IPv6 address, except ```0.0.0.0``` and ```::``` | Peer address. Defaults to the client address. Does not change the listening address. |
+| **ClusterPort** | ```--cluster-port``` | ```int``` | Integer in range:<br/>[1, 65535] | Peer port. Defaults to the client port. Does not change the listening port. |
 | **ClusterPreferredEndpointType** | ```--cluster-preferred-endpoint-type``` | ```ClusterPreferredEndpointType``` | ip, hostname, unknown | Determines the endpoint type to be advertised to other nodes. (value options: ip, hostname, unknown) |
 | **LogMemorySize** | ```-m```<br/>```--memory``` | ```string``` | Memory size | Total main-log memory (inline and heap) to use, in bytes. Does not need to be a power of 2 |
 | **PageSize** | ```-p```<br/>```--page``` | ```string``` | Memory size | Size of each main-log page in bytes (rounds down to power of 2; minimum 512). |
@@ -112,8 +132,10 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **DisableObjects** | ```--no-obj``` | ```bool``` |  | Disable support for data structure objects. |
 | **EnableCluster** | ```--cluster``` | ```bool``` |  | Enable cluster. |
 | **CleanClusterConfig** | ```--clean-cluster-config``` | ```bool``` |  | Start with clean cluster config. |
-| **ParallelMigrateTaskCount** | ```--pmt``` | ```int``` | Integer in range:<br/>[0, 16384] | Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used. |
-| **FastMigrate** | ```--fast-migrate``` | ```bool``` |  | When migrating slots 1. write directly to network buffer to avoid unnecessary copies, 2. do not wait for ack from target before sending next batch of keys. |
+| **ParallelMigrateTaskCount** | ```--parallel-migrate-task-count``` | ```int``` | Integer in range:<br/>[0, 16384] | Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used. |
+| **UseScanAheadMigration** | ```--use-scan-ahead-migration``` | ```bool``` | true, false | Gather the next slot-migration key batch while shipping the active batch (default: false). When false, scan only after shipping and deletion complete. |
+| **MigrationPipelineDepth** | ```--migrate-pipeline-depth``` | ```int``` | Integer in range:<br/>[1, 64] | Maximum unacknowledged migration batches per worker (default: 1). Batches are processed synchronously before acknowledgment. |
+| **MigrationDeleteBatchSize** | ```--migrate-delete-batch-size``` | ```int``` | Integer in range:<br/>[1, 2147483647] | Maximum eligible source keys deleted per epoch-protected migration scope (default: 256). Larger values hold epoch protection longer. |
 | **AuthenticationMode** | ```--auth``` | ```GarnetAuthenticationMode``` | NoAuth, Password, Aad, ACL, AclWithAad | Authentication mode of Garnet. This impacts how AUTH command is processed and how clients are authenticated against Garnet. Value options: NoAuth, Password, Aad, ACL |
 | **Password** | ```--password``` | ```string``` |  | Authentication string for password authentication. |
 | **ClusterUsername** | ```--cluster-username``` | ```string``` |  | Username to authenticate intra-cluster communication with. |
@@ -137,6 +159,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **AofTailWitnessFreqMs** | ```--aof-tail-witness-freq``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1). |
 | **CommitFrequencyMs** | ```--aof-commit-freq``` | ```int``` | Integer in range:<br/>[-1, MaxValue] | Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command |
 | **WaitForCommit** | ```--aof-commit-wait``` | ```bool``` |  | Wait for AOF to flush the commit before returning results to client. Warning: will greatly increase operation latency. |
+| **AofReplayClearAboveTail** | ```--aof-replay-clear-above-tail``` | ```bool``` |  | If true (default), when the AOF is recovered or a replica sync moves its tail, clear everything the AOF device holds above the tail before appending: remove or empty segment files above the tail's segment, zero data above the tail in that segment, and remove commit metadata for commits above the tail. This keeps a later recovery from adopting stale commits left there. Cleared data cannot be salvaged; see [Clearing the AOF above its tail](#clearing-the-aof-above-its-tail) for risks. |
 | **AofSizeLimit** | ```--aof-size-limit``` | ```string``` | Memory size | Maximum size of AOF (rounds down to power of 2) after which unsafe truncation will be applied. Left empty AOF will grow without bound unless a checkpoint is taken |
 | **AofSizeLimitEnforceFrequencySecs** | ```--aof-size-limit-enforce-frequency``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Frequency (in secs) of execution of the AutoCheckpointBasedOnAofSizeLimit background task. |
 | **CompactionFrequencySecs** | ```--compaction-freq``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Background hybrid log compaction frequency in seconds. 0 = disabled (compaction performed before checkpointing instead) |
@@ -150,6 +173,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **GossipSamplePercent** | ```--gossip-sp``` | ```int``` | Integer in range:<br/>[0, 100] | Percent of cluster nodes to gossip with at each gossip iteration. |
 | **GossipDelay** | ```--gossip-delay``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Cluster mode gossip protocol per node sleep (in seconds) delay to send updated config. |
 | **ClusterTimeout** | ```--cluster-timeout``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Cluster node timeout is the amount of seconds a node must be unreachable. |
+| **FailoverResetPrimaryTimeout** | ```--failover-reset-primary-timeout``` | ```int``` | Integer in range:<br/>[1, 2147483] | Maximum time in seconds a replica spends retrying to restore the old primary after a failed CLUSTER FAILOVER that the primary had already accepted. |
 | **ClusterConfigFlushFrequencyMs** | ```--cluster-config-flush-frequency``` | ```int``` | Integer in range:<br/>[-1, MaxValue] | How frequently to flush cluster config unto disk to persist updates. =-1: never (memory only), =0: immediately (every update performs flush), >0: frequency in ms |
 | **ClusterTlsClientTargetHost** | ```--cluster-tls-client-target-host``` | ```string``` |  | Name for the client target host when using TLS connections in cluster mode. |
 | **ServerCertificateRequired** | ```--server-certificate-required``` | ```bool``` |  | Whether server TLS certificate is required by clients established on the server side, e.g., for cluster gossip and replication. |
@@ -160,6 +184,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **CertificateRefreshFrequency** | ```--cert-refresh-freq``` | ```int``` | Integer in range:<br/>[0, MaxValue] | TLS certificate refresh frequency in seconds (0 to disable). |
 | **ClientCertificateRequired** | ```--client-certificate-required``` | ```bool``` |  | Whether client TLS certificate is required by the server. |
 | **CertificateRevocationCheckMode** | ```--certificate-revocation-check-mode``` | ```X509RevocationMode``` | NoCheck, Online, Offline | Certificate revocation check mode for certificate validation (NoCheck, Online, Offline). |
+| **TlsHandshakeTimeout** | ```--tls-handshake-timeout``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Seconds an accepted connection may take to complete its TLS handshake before the server closes it (0 to disable). |
 | **IssuerCertificatePath** | ```--issuer-certificate-path``` | ```string``` |  | Full path of file with issuer certificate for validation. If empty or null, validation against issuer will not be performed. |
 | **LatencyMonitor** | ```--latency-monitor``` | ```bool``` |  | Track latency of various events. |
 | **LatencyMonitorPrecision** | ```--latency-monitor-precision``` | ```int``` | Integer in range:<br/>[0, 5] | Resolution kept by the latency histograms, in significant decimal digits (0-5). This is relative accuracy at every magnitude: percentiles are reported to within 1 part in 10^N of the value, whether that value is microseconds or seconds. 2 (default) reports to ~1% at ~32KB per histogram, 1 to ~10% at ~5KB, 3 to ~0.1% at ~225KB. |
@@ -184,6 +209,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **CheckpointThrottleFlushDelayMs** | ```--checkpoint-throttle-delay``` | ```int``` | Integer in range:<br/>[-1, MaxValue] | Whether and by how much should we throttle the disk IO for checkpoints: -1 - disable throttling; >= 0 - run checkpoint flush in separate task, sleep for specified time after each WriteAsync |
 | **FastCommitThrottleFreq** | ```--fast-commit-throttle``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Throttle FastCommit to write metadata once every K commits. |
 | **NetworkSendThrottleMax** | ```--network-send-throttle``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Throttle the maximum outstanding network sends per session. |
+| **NetworkSendTimeout** | ```--network-send-timeout``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Seconds a client with network-send-throttle responses outstanding may go without accepting any data before the server closes its connection (0 to disable). |
 | **NetworkBufferMemoryBudget** | ```--network-buffer-memory-budget``` | ```string``` | Memory size | Process-wide budget for the network buffers held by live client connections, shared across all listeners. While connections are few this is slack and each connection gets the full 128k send and receive buffers; once the budget divided by the live buffer count falls below that, the base size for new buffers adapts down toward a 16k floor so the total stays near the budget. Buffers still grow on demand beyond their base size, so large requests are unaffected. Set to 0 to disable adaptation, leaving per-connection buffers unbounded. |
 | **EnableScatterGatherGet** | ```--sg-get``` | ```bool``` |  | Whether to use scatter-gather IO for a run of contiguous GET operations - useful to saturate disk random read IO. MGET always uses scatter-gather. |
 | **ReplicaSyncDelayMs** | ```--replica-sync-delay``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Whether and by how much (milliseconds) should we throttle the replica sync: 0 - disable throttling |
@@ -193,6 +219,11 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **FastAofTruncate** | ```--fast-aof-truncate``` | ```bool``` |  | Use fast-aof-truncate replication model. |
 | **OnDemandCheckpoint** | ```--on-demand-checkpoint``` | ```bool``` |  | Used with fast-aof-truncate replication model. Take on demand checkpoint to avoid missing data when attaching |
 | **ReplicaDisklessSync** | ```--repl-diskless-sync``` | ```bool``` |  | Whether diskless replication is enabled or not. |
+| **ReplicaDiskBasedSyncChunkSize** | ```--repl-disk-based-sync-chunk-size``` | ```string``` | Memory size from 512 bytes through 512 MiB, subject to device-sector alignment | Maximum Tsavorite checkpoint transfer chunk on the primary; default `16m`, rounded down to a power of two. Settable with `CONFIG SET repl-disk-based-sync-chunk-size` for new transfers; `CONFIG GET` returns effective bytes. Excludes diskless sync, AOF streaming and RangeIndex files. |
+| **ReplicaDiskBasedSyncPipelineDepth** | ```--repl-disk-based-sync-pipeline-depth``` | ```int``` | 1 through 64; depth times effective chunk size at most 512 MiB | Maximum unacknowledged disk-based Tsavorite checkpoint chunks per replica on the primary; default `4`; `1` disables pipelining (stop-and-wait). Settable with `CONFIG SET repl-disk-based-sync-pipeline-depth` for new transfers. Same scope as chunk size; independent of replica write policy. |
+| **ReplicaDiskBasedSyncWriteBuffers** | ```--repl-disk-based-sync-write-buffers``` | ```int``` | Integer in range:<br/>[0, 8] | Received disk-based Tsavorite checkpoint chunks the replica may hold, queued or being written; default `1`; `0` writes each chunk before receiving the next. Each uses one chunk-sized buffer. Set on the replica; requires restart. Read-only through `CONFIG GET`. |
+| **ReplicaDiskBasedSyncWriteBuffersConcurrently** | ```--repl-disk-based-sync-write-buffers-concurrently``` | ```bool``` | | Issue disk-based Tsavorite checkpoint writes concurrently when more than one write buffer is configured; default `false`. Does not change buffer limits or EOF completion. Set on the replica; requires restart. Read-only through `CONFIG GET`. |
+| **ReplicaEnableBenchmarkTiming** | ```--repl-enable-benchmark-timing``` | ```bool``` | | Experimental whole disk-based checkpoint shipment/recovery metrics on cluster nodes; default `false` leaves the recorder null. Captured once per replication manager, with no per-chunk counters; independent of DEBUG authorization. Requires restart; read-only through `CONFIG GET` and `CONFIG GET *`. |
 | **ReplicaDisklessSyncDelay** | ```--repl-diskless-sync-delay``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync. |
 | **ReplicaAttachTimeout** | ```--repl-attach-timeout``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Timeout in seconds for replication attach operation. |
 | **ReplicaSyncTimeout** | ```--repl-sync-timeout``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Timeout in seconds for replication sync operations. |
@@ -230,6 +261,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **ExtensionAllowUnsignedAssemblies** | ```--extension-allow-unsigned``` | ```bool``` |  | Allow loading custom commands from digitally unsigned assemblies (not recommended) |
 | **IndexResizeFrequencySecs** | ```--index-resize-freq``` | ```int``` | Integer in range:<br/>[1, MaxValue] | Hash-index resize check frequency in seconds |
 | **IndexResizeThreshold** | ```--index-resize-threshold``` | ```int``` | Integer in range:<br/>[1, 100] | Hash-index Overflow bucket count over total index size in percentage to trigger index resize |
+| **IndexOverflowThreshold** | ```--index-overflow-threshold``` | ```int``` | Integer in range:<br/>[1, 10000] | Hash-index overflow bucket count over total index size in percentage at which allocation fails. Same unit as --index-resize-threshold and must exceed it. Overflow buckets hold hash entries that do not fit the main bucket array, so they grow with the number of distinct keys rather than with the size of the data, and no index size setting bounds them. They also chain linearly and are scanned by reads and upserts, so this is the average chain length allowed: 300 permits three overflow buckets per main bucket. Exceeding it fails the write with a clear error instead of growing until the process is OOM-killed. |
 | **MaxInlineKeySize** | ```--max-inline-key-size``` | ```string``` | Memory size | Maximum size of a key stored inline in the in-memory portion of the main log. Accepts a memory size (e.g. "1k", "128"). Must be in range [0, 1022] bytes; default is 1022. |
 | **MaxInlineValueSize** | ```--max-inline-value-size``` | ```string``` | Memory size | Maximum size of a value stored inline in the in-memory portion of the main log. Accepts a memory size (e.g. "4k", "15m"). Must be in range [0, 16777214] bytes; default is min (1m, PageSize / 2). |
 | **InitialIORecordSize** | ```--initial-io-record-size``` | ```string``` | Memory size | Initial IO read size for records on disk. Accepts a memory size (e.g. 4k, 8k). Default is 128 bytes. |
@@ -336,13 +368,101 @@ Notes:
 
 ---
 
-## Cluster configuration compatibility
+## Clearing the AOF above its tail
 
-:::warning Breaking change
+Recovery restores the AOF to its last readable commit, and a replica sync can move the AOF tail to a position
+its primary chooses. Neither changes the AOF files, so whatever was written above the new tail stays on disk:
+the rest of a write that a crash interrupted, commits after a corrupted record at which recovery stopped, or a
+history that a replica sync replaced. Once new records are appended at the tail, a later recovery can read past
+them into that older data and adopt its commits, replaying records that are not part of the current history.
 
-Garnet 2.2.0 writes persisted cluster configuration in format version two. After `nodes.conf`
-has been rewritten, the node cannot be rolled back to a Garnet version earlier than 2.2.0
-that only supports format version one. Back up the cluster configuration before upgrading.
+With `--aof-replay-clear-above-tail` (on by default), Garnet clears that data before anything is appended:
+
+* when it recovers the AOF, at startup or at the start of a disk-based replica attach;
+* when a replica sync moves the AOF tail;
+* when a cluster startup moves the AOF tail up to the checkpoint it recovered.
+
+Clearing deletes the AOF segment files above the tail's segment (a file the device still holds open is emptied
+instead), zeroes data above the tail in the tail's segment, removes the commit-metadata files of commits above
+the tail or of a replaced history, and writes commit metadata for the tail. A `--fast-aof-truncate` replica does
+not clear when it moves its tail while streaming from its primary, because that mode discards AOF history by
+design.
+
+Recovery never replays data above the tail, so clearing does not change what is recovered. Its risks are:
+
+* **Cleared data cannot be salvaged.** If recovery stops short of the end of the AOF, for example at a
+  corrupted record, everything after that point is erased at once, instead of staying on disk until new
+  records overwrite it. To keep an AOF for inspection, copy its directory before starting Garnet, or start with
+  clearing turned off.
+* **A device error while clearing fails startup or the replica sync**, as a read error during recovery does,
+  whatever `--fail-on-recovery-error` is set to.
+* **IO.** After a clean shutdown, clearing lists the AOF directory and probes past the end of the data; reads
+  past the end of a file return immediately. A page of zeros inside a file is read in full, and the search for
+  data stops after `--aof-memory` / `--aof-page-size` such pages in a row. When it finds data, it writes zeros
+  from the tail to the end of the last page that holds data: at most one `--aof-segment-size`, when a replica
+  sync moves the tail to the start of a full segment.
+
+With clearing turned off, nothing is removed, and instead:
+
+* **A later recovery can adopt stale commits above the tail.** Recovery stops at stale data later on the page
+  where the log ends, but when the rest of that page is empty, as when the log's last records fill their page, it
+  reads on into stale records on the next page and adopts their commits.
+* **A replica keeps the AOF segment files of a history it replaced**, until new records overwrite them.
+* **In a cluster, recovery soon after the AOF tail moves can miss every commit since.** A replica sync, or a
+  cluster startup that moves the AOF tail up to its recovered checkpoint, restarts commit numbering, so
+  recovery starts from the replaced history's commit metadata until Garnet next writes commit metadata, up to
+  `--fast-commit-throttle` commits later.
+
+---
+
+## Separate peer and client endpoints
+
+`--cluster-announce-ip`, `--cluster-announce-port`, and `--cluster-announce-hostname`
+set the addresses and ports returned to clients, including `MOVED` and `ASK` responses.
+`--cluster-preferred-endpoint-type` controls the addresses in `MOVED` and `ASK` responses.
+
+`--cluster-address` and `--cluster-port` set the peer address and port used between nodes.
+Omitted settings use the corresponding client values.
+The port must be between 1 and 65535.
+
+`CLUSTER NODES`, `CLUSTER ENDPOINT`, `INFO replication`, and `ROLE` return client addresses and ports.
+Errors from `CLUSTER FAILOVER` also report client addresses and ports.
+Get peer addresses and ports from the server configuration.
+`REPLICAOF`, `FAILOVER TO`, and `MIGRATE` accept known client or peer endpoints but connect
+through the peer endpoint.
+
+`CLUSTER MEET` connects to the supplied address and port.
+The target must be reachable from the node executing the command, not necessarily from the client.
+Use peer addresses when client addresses are unreachable between nodes.
+
+Example with separate client and peer addresses:
+
+```text
+--bind 10.0.0.4 --port 6379
+--cluster-announce-ip 203.0.113.4 --cluster-announce-port 17004
+--cluster-announce-hostname cache.example.com --cluster-preferred-endpoint-type hostname
+--cluster-address 10.0.0.4 --cluster-port 6379
+```
+
+Configure listening ports, networking, and certificates separately.
+On startup, configured addresses and ports replace those saved in `nodes.conf`.
+
+### Upgrade compatibility
+
+Gossip starts with the sender's highest supported format. A receiver that cannot read that format replies
+with a full configuration in its own highest supported format. The sender retries in that format if it is
+supported locally. A successful exchange selects the format for that connection; reconnecting starts negotiation
+again. Older releases retain their existing response behavior.
+
+Clusters with identical client and peer endpoints can upgrade directly to 2.2.2 without
+first upgrading every node to 2.2.0.
+Keep existing addresses and ports throughout the rolling upgrade.
+Configure separate client and peer endpoints only after every node runs 2.2.2 or later.
+
+:::warning Downgrade compatibility
+
+Back up `nodes.conf` before upgrading to 2.2.0 or later. Versions older than 2.2.0 cannot
+read this file once it has been rewritten by 2.2.0 or later.
 
 :::
 

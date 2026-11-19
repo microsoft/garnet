@@ -155,7 +155,7 @@ namespace Garnet.server
                 if (status == GarnetStatus.NOTFOUND)
                 {
                     // Expire/Delete the destination key if the source key is not found
-                    _ = EXPIRE(destination, TimeSpan.Zero, out _, ExpireOption.None, ref geoUnifiedTransactionalContext);
+                    _ = EXPIRE(destination, TimeSpan.Zero, out _, out _, ExpireOption.None, ref geoUnifiedTransactionalContext);
                     writer.WriteInt32(0);
                     return GarnetStatus.OK;
                 }

@@ -215,6 +215,7 @@ namespace Garnet.server
                     ref var delCtx = ref cleanupSession.storageSession.vectorBasicContext;
 
                     var needsUpdate = false;
+
                     lock (this)
                     {
                         // Read all pending requests so we can do one update
@@ -240,7 +241,11 @@ namespace Garnet.server
                     ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_3);
 
                     // Pump the cleanup task once we're done
-                    _ = cleanupTaskChannel.TryPublish();
+                    if (!cleanupTaskChannel.TryPublish())
+                    {
+                        logger?.LogCritical("VectorManager cleanup channel rejected a cleanup request");
+                        Debug.Fail("VectorManager cleanup channel should never drop a request");
+                    }
                 }
                 catch (Exception e)
                 {
@@ -400,6 +405,7 @@ namespace Garnet.server
                 var hasPendingReconciliation = !potentiallyDeleted.IsEmpty;
                 var hasPendingVaddsAwaitingReplay = !replicationBlockEvent.Wait(0);
                 var hasPendingPostCheckpointTask = Interlocked.CompareExchange(ref postCheckpointTasksRunning, 0, 0) != 0;
+                var hasPendingQuantizationOrImport = quantizationChannel.HasPending;
 
                 // We don't remove from the channel until setting requestCleanupTaskRunning
                 var hasPendingCleanupRequests = Volatile.Read(ref requestCleanupTaskRunning) || requestCleanupTaskChannel.HasPending;
@@ -419,7 +425,7 @@ namespace Garnet.server
                     }
                 }
 
-                var quiescent = !hasPendingDrops && !hasPendingReconciliation && !hasPendingVaddsAwaitingReplay && !hasPendingPostCheckpointTask && !hasPendingCleanupRequests && !hasPendingCleanup;
+                var quiescent = !hasPendingDrops && !hasPendingReconciliation && !hasPendingVaddsAwaitingReplay && !hasPendingPostCheckpointTask && !hasPendingCleanupRequests && !hasPendingCleanup && !hasPendingQuantizationOrImport;
                 if (quiescent)
                 {
                     return;
@@ -508,7 +514,8 @@ namespace Garnet.server
                                     // No need to wait for marking, since the record is already "deleted"
                                     if (!self.requestCleanupTaskChannel.TryPublish(context))
                                     {
-                                        self.logger?.LogWarning("Could not request delete of abandoned Vector Set {key}", SpanByte.ToShortString(key));
+                                        self.logger?.LogCritical("Could not request delete of abandoned Vector Set {key}", SpanByte.ToShortString(key));
+                                        Debug.Assert(false, "VectorManager request cleanup channel should never drop a request");
                                     }
                                 }
 

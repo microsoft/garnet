@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
@@ -21,22 +22,13 @@ namespace Tsavorite.test.spanbyte
         internal SpanByteComparerModulo(long mod) => this.mod = mod;
 
         public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
-            where TFirstKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSecondKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TFirstKey : IKey, allows ref struct
+            where TSecondKey : IKey, allows ref struct
             => SpanByteComparer.StaticEquals(k1.KeyBytes, k2.KeyBytes);
 
         // Force collisions to create a chain
         public readonly long GetHashCode64<TKey>(TKey k)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
         {
             long hash = SpanByteComparer.StaticGetHashCode64(k.KeyBytes);
             return mod > 0 ? hash % mod : hash;
@@ -102,6 +94,175 @@ namespace Tsavorite.test.spanbyte
                 insertedAddress = upsertInfo.Address;
                 return base.InitialWriter(ref dstLogRecord, in sizeInfo, ref input, src, ref output, ref upsertInfo);
             }
+        }
+
+        sealed class KeySnapshotScanFunctions(long[] addresses, bool includeValues, bool evicted, bool retry, Action evictDuringScan = null) : IScanIteratorFunctions
+        {
+            internal readonly HashSet<int> seen = [];
+            bool retried;
+            bool evictedDuringScan;
+
+            public bool IncludeValues => includeValues;
+            public bool OnStart(long beginAddress, long endAddress) => true;
+            public void OnStop(bool completed, long numberOfRecords) { }
+            public void OnException(Exception exception, long numberOfRecords) { }
+
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord record, RecordMetadata metadata, long numberOfRecords, out CursorRecordResult result)
+                where TSourceLogRecord : ISourceLogRecord
+            {
+                var index = BitConverter.ToInt32(record.Key);
+                Assert.That(metadata.Address, Is.EqualTo(addresses[index]));
+                if (retry && index == 17 && !retried)
+                {
+                    retried = true;
+                    result = CursorRecordResult.EndBatch | CursorRecordResult.RetryLastRecord;
+                    return true;
+                }
+                result = CursorRecordResult.Accept;
+                Assert.That(seen.Add(index), Is.True, "Each key must be discovered once");
+                var expectedLength = includeValues || evicted || evictedDuringScan ? 1000 + index % 5 * 37 : 0;
+                Assert.That(record.ValueSpan.Length, Is.EqualTo(expectedLength));
+                if (expectedLength == 0)
+                    Assert.That(record.AllocatedSize, Is.LessThan(64));
+                else
+                    Assert.That(record.ValueSpan.ToArray(), Is.All.EqualTo((byte)index));
+                if (evictDuringScan != null && !evictedDuringScan)
+                {
+                    evictDuringScan();
+                    evictedDuringScan = true;
+                    Assert.That(BitConverter.ToInt32(record.Key), Is.EqualTo(index));
+                    Assert.That(record.ValueSpan.Length, Is.EqualTo(expectedLength));
+                }
+                return true;
+            }
+        }
+
+        [Test]
+        public unsafe void ScanKeySnapshotsPreserveCursorAndDiskFallback([Values] bool includeValues, [Values(0, 1, 2)] int eviction, [Values] bool cursorScan)
+        {
+            const int count = 128;
+            var functions = new ScanFunctions();
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, ScanFunctions>(functions);
+            var basic = session.BasicContext;
+            var addresses = new long[count];
+            for (var i = 0; i < count; i++)
+            {
+                var key = BitConverter.GetBytes(i);
+                var value = new byte[1000 + i % 5 * 37];
+                value.AsSpan().Fill((byte)i);
+                fixed (byte* keyPtr = key)
+                    Assert.That(basic.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), value).IsPending, Is.False);
+                addresses[i] = functions.insertedAddress;
+            }
+            if (eviction == 1)
+                store.Log.FlushAndEvict(wait: true);
+            var scanner = new KeySnapshotScanFunctions(addresses, includeValues, eviction == 1, retry: cursorScan,
+                evictDuringScan: eviction == 2 ? () => store.Log.FlushAndEvict(wait: true) : null);
+            if (cursorScan)
+            {
+                long cursor = 0;
+                while (session.ScanCursor(ref cursor, 7, scanner, store.Log.TailAddress))
+                    Assert.That(scanner.seen.Count, Is.LessThanOrEqualTo(count));
+                Assert.That(cursor, Is.Zero);
+            }
+            else
+                Assert.That(store.Log.Scan(ref scanner, store.Log.BeginAddress, store.Log.TailAddress), Is.True);
+            Assert.That(scanner.seen.Count, Is.EqualTo(count));
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        [Category("Smoke")]
+        public void ScanCursorRetriesEarliestPendingRecord(
+            [Values(HashModulo.Hundred)] HashModulo hashMod,
+            [Values(3, 128, 600)] int keyCount,
+            [Values] bool namespaced,
+            [Values] bool resetCursor)
+        {
+            var functions = new ScanFunctions();
+            using var session = store.NewSession<KeyWithNamespaceStruct, PinnedSpanByte, SpanByteAndMemory, Empty, ScanFunctions>(functions);
+            var addresses = new long[keyCount];
+            for (var i = 0; i < keyCount; i++)
+            {
+                var key = new KeyWithNamespaceStruct { kfield1 = i, namespaceArr = namespaced ? [1] : null };
+                // A short, fully colliding chain reaches the final pending drain before filling the batch.
+                if (keyCount == 3)
+                {
+                    var comparer = new SpanByteComparerModulo((int)hashMod);
+                    while (comparer.GetHashCode64(key) != 0)
+                        key.kfield2++;
+                }
+                Assert.That(session.BasicContext.Upsert(key, "value"u8).IsPending, Is.False);
+                addresses[i] = functions.insertedAddress;
+            }
+            var endAddress = store.Log.TailAddress;
+            store.Log.FlushAndEvict(wait: true);
+
+            var scanner = new BatchLimitedScanFunctions(addresses, namespaced, capacity: keyCount == 3 ? 1 : 7);
+            long cursor = 0;
+            var batches = 0;
+            var multipleRejections = false;
+            while (true)
+            {
+                Assert.That(++batches, Is.LessThanOrEqualTo(keyCount + 1), "Retry batches must make progress.");
+                var more = session.ScanCursor(ref cursor, long.MaxValue, scanner, endAddress,
+                    maxAddress: endAddress, resetCursor: resetCursor);
+                if (scanner.rejectedCount > 0)
+                {
+                    multipleRejections |= scanner.rejectedCount > 1;
+                    Assert.That(more, Is.True, "Pending rejections must preserve a resumable batch even at the end of the scan.");
+                    Assert.That(cursor, Is.EqualTo(scanner.earliestRejectedAddress));
+                }
+                if (!more)
+                    break;
+            }
+            Assert.That(multipleRejections, Is.True, "The batch limit must reject multiple pending disk lookups.");
+            Assert.That(scanner.seen.Count, Is.EqualTo(keyCount), "No rejected key may be skipped.");
+            Assert.That(cursor, resetCursor ? Is.Zero : Is.GreaterThanOrEqualTo(endAddress));
+        }
+
+        sealed class BatchLimitedScanFunctions(long[] addresses, bool namespaced, int capacity) : IScanIteratorFunctions
+        {
+            internal readonly HashSet<int> seen = [];
+            internal long earliestRejectedAddress;
+            internal int rejectedCount;
+            int batchCount;
+
+            public bool IncludeValues => false;
+
+            public bool OnStart(long beginAddress, long endAddress)
+            {
+                earliestRejectedAddress = long.MaxValue;
+                rejectedCount = 0;
+                batchCount = 0;
+                return true;
+            }
+
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord record, RecordMetadata metadata, long numberOfRecords, out CursorRecordResult result)
+                where TSourceLogRecord : ISourceLogRecord
+            {
+                var index = (int)BitConverter.ToInt64(record.Key);
+                Assert.That(metadata.Address, Is.EqualTo(addresses[index]));
+                Assert.That(record.HasNamespace, Is.EqualTo(namespaced));
+                if (seen.Contains(index))
+                    result = CursorRecordResult.Skip;
+                else if (batchCount == capacity)
+                {
+                    earliestRejectedAddress = Math.Min(earliestRejectedAddress, metadata.Address);
+                    rejectedCount++;
+                    result = CursorRecordResult.EndBatch | CursorRecordResult.RetryLastRecord;
+                }
+                else
+                {
+                    seen.Add(index);
+                    batchCount++;
+                    result = CursorRecordResult.Accept;
+                }
+                return true;
+            }
+
+            public void OnStop(bool completed, long numberOfRecords) { }
+            public void OnException(Exception exception, long numberOfRecords) => Assert.Fail(exception.ToString());
         }
 
         [Test]
@@ -484,6 +645,156 @@ namespace Tsavorite.test.spanbyte
             // of 256, which is the CompletePending block size). If this returns true, it means the CompletePending block fired on the last valid record.
             ClassicAssert.IsFalse(session.ScanCursor(ref cursor, totalRecords, scanIteratorFunctions), $"ScanCursor returned true even though all {scanIteratorFunctions.keys.Count} records were returned");
             ClassicAssert.AreEqual(totalRecords, scanIteratorFunctions.keys.Count);
+        }
+
+        // Values are large enough that a record spans several device sectors, so the boundary a scan end is aimed at
+        // falls well inside the value rather than in a record header or trailing alignment padding.
+        const int ScanEndTestRecords = 500;
+        const int ScanEndTestValueLength = 2000;
+
+        /// <summary>Value bytes are all nonzero and derived from the ordinal, so a record truncated at a sector boundary is visible as a run of zeros.</summary>
+        static byte[] CreateScanEndTestValue(int ordinal)
+        {
+            var value = new byte[ScanEndTestValueLength];
+            for (var ii = 0; ii < value.Length; ++ii)
+                value[ii] = (byte)(1 + ((ordinal + ii) % 251));
+            return value;
+        }
+
+        static ReadOnlySpan<byte> ScanEndTestKey(int ordinal) => MemoryMarshal.Cast<char, byte>($"key_{ordinal}".AsSpan());
+
+        unsafe void PopulateForScanEndTest(BasicContext<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, ScanFunctions,
+                SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext)
+        {
+            for (var ii = 0; ii < ScanEndTestRecords; ++ii)
+            {
+                var key = ScanEndTestKey(ii);
+                fixed (byte* keyPtr = key)
+                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), CreateScanEndTestValue(ii));
+            }
+        }
+
+        /// <summary>
+        /// Find a record that a device-sector boundary runs through, so that ending a scan just inside the record makes the
+        /// frame load stop in the middle of it. Scans to the tail, which never ends inside a record, so the key and value
+        /// returned are the record's true content.
+        /// </summary>
+        /// <returns>The address of the record, or 0 if no such record was found</returns>
+        long FindRecordStraddlingSectorBoundary(out byte[] key, out byte[] value, out long nextAddress)
+        {
+            var sectorSize = store.hlogBase.GetDeviceSectorSize();
+            using var iter = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress);
+            while (iter.GetNext())
+            {
+                // The first sector boundary at or after the scan end we will use (CurrentAddress + 8).
+                var sectorBoundary = (iter.CurrentAddress + 8 + sectorSize - 1) / sectorSize * sectorSize;
+
+                // Require the boundary to fall before the end of the value, not in any trailing alignment padding, so that
+                // truncating there necessarily damages the record. The record header is at least RecordInfo-sized, so
+                // CurrentAddress + sizeof(RecordInfo) + key + value is a lower bound on where the value ends.
+                if (sectorBoundary < iter.CurrentAddress + 8 + iter.Key.Length + iter.ValueSpan.Length)
+                {
+                    key = iter.Key.ToArray();
+                    value = iter.ValueSpan.ToArray();
+                    nextAddress = iter.NextAddress;
+                    return iter.CurrentAddress;
+                }
+            }
+
+            key = value = null;
+            nextAddress = 0;
+            return 0;
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(IteratorCategory)]
+        [Category(SmokeTestCategory)]
+        public void SpanByteScanEndInsideRecordTest()
+        {
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, ScanFunctions>(new ScanFunctions());
+            PopulateForScanEndTest(session.BasicContext);
+
+            var victimAddress = FindRecordStraddlingSectorBoundary(out var victimKey, out var victimValue, out var victimNextAddress);
+            ClassicAssert.Greater(victimAddress, 0, "Did not find a record straddling a sector boundary");
+
+            // End the scan inside the victim record. The record still starts below the end address, so the scan must return it whole.
+            var scanEnd = victimAddress + 8;
+
+            (byte[] key, byte[] value, long nextAddress) ScanToLastRecord()
+            {
+                byte[] lastKey = null, lastValue = null;
+                long lastNextAddress = 0;
+                using var iter = store.Log.Scan(store.Log.BeginAddress, scanEnd);
+                while (iter.GetNext())
+                {
+                    lastKey = iter.Key.ToArray();
+                    lastValue = iter.ValueSpan.ToArray();
+                    lastNextAddress = iter.NextAddress;
+                }
+                return (lastKey, lastValue, lastNextAddress);
+            }
+
+            var inMemory = ScanToLastRecord();
+            Assert.That(inMemory.key, Is.EqualTo(victimKey), "In-memory scan returned the wrong record");
+            Assert.That(inMemory.value, Is.EqualTo(victimValue), "In-memory scan truncated the record");
+            Assert.That(inMemory.nextAddress, Is.EqualTo(victimNextAddress), "In-memory scan did not advance past the whole record");
+
+            store.Log.FlushAndEvict(wait: true);
+            ClassicAssert.Greater(store.Log.HeadAddress, victimNextAddress, "Expected the victim record to be on disk");
+
+            // The same call must return the same record now that it is read into a frame rather than read in place.
+            var onDisk = ScanToLastRecord();
+            Assert.That(onDisk.key, Is.EqualTo(victimKey), "On-disk scan returned the wrong record");
+            Assert.That(onDisk.value, Is.EqualTo(victimValue), "On-disk scan truncated the record");
+            Assert.That(onDisk.nextAddress, Is.EqualTo(victimNextAddress), "On-disk scan did not advance past the whole record");
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(IteratorCategory)]
+        [Category("Compaction")]
+        public unsafe void SpanByteCompactionEndInsideRecordTest([Values] CompactionType compactionType)
+        {
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, ScanFunctions>(new ScanFunctions());
+            var bContext = session.BasicContext;
+            PopulateForScanEndTest(bContext);
+
+            var victimAddress = FindRecordStraddlingSectorBoundary(out _, out _, out _);
+            ClassicAssert.Greater(victimAddress, 0, "Did not find a record straddling a sector boundary");
+
+            store.Log.FlushAndEvict(wait: true);
+
+            // Compaction takes its own record boundary from the scan's NextAddress, so an untilAddress inside a record is
+            // expected. If the scan hands back that record truncated, the truncated copy goes to the tail and
+            // ShiftBeginAddress drops the intact original.
+            _ = session.Compact(victimAddress + 8, compactionType);
+            store.Log.Truncate();
+
+            for (var ii = 0; ii < ScanEndTestRecords; ++ii)
+            {
+                var key = ScanEndTestKey(ii);
+                SpanByteAndMemory output = default;
+                Status status;
+                fixed (byte* keyPtr = key)
+                    status = bContext.Read(TestSpanByteKey.FromPointer(keyPtr, key.Length), ref output);
+                if (status.IsPending)
+                {
+                    _ = bContext.CompletePendingWithOutputs(out var completed, wait: true);
+                    using (completed)
+                    {
+                        while (completed.Next())
+                        {
+                            status = completed.Current.Status;
+                            output = completed.Current.Output;
+                        }
+                    }
+                }
+
+                ClassicAssert.IsTrue(status.Found, $"key_{ii} was not found after compaction");
+                Assert.That(output.ReadOnlySpan.ToArray(), Is.EqualTo(CreateScanEndTestValue(ii)), $"key_{ii} has a damaged value after compaction");
+                output.Memory?.Dispose();
+            }
         }
     }
 }

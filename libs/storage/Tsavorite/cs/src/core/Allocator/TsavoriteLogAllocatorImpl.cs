@@ -36,6 +36,10 @@ namespace Tsavorite.core
         /// <summary>
         /// Allocate memory page, pinned in memory
         /// </summary>
+        /// <remarks>
+        /// The page is left all zeros. TsavoriteLog pages have no <see cref="PageHeader"/> (pageHeaderSize is 0): above page 0,
+        /// entries start at the page's first byte, and the scan reads the zeros after a page's last entry as padding to its end.
+        /// </remarks>
         /// <param name="index"></param>
         internal void AllocatePage(int index)
         {
@@ -51,7 +55,6 @@ namespace Tsavorite.core
                 // No free pages are available so allocate new
                 AllocatePinnedPageArray(index);
             }
-            PageHeader.Initialize(pagePointers[index]);
         }
 
         void ReturnPage(int index)
@@ -98,6 +101,9 @@ namespace Tsavorite.core
         }
 
         internal int OverflowPageCount => freePagePool.Count;
+
+        /// <summary>The device the log is stored on</summary>
+        internal IDevice Device => device;
 
         /// <inheritdoc/>
         protected override void WriteAsync<TContext>(int flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
@@ -195,8 +201,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Read pages from specified device
         /// </summary>
-        /// <remarks>Hides the base implementation, which bounds an object allocator's record walk; a TsavoriteLog page has no records to walk.</remarks>
-        internal new void AsyncReadPageFromDeviceToFrame<TContext>(
+        /// <remarks>Callers through this type get this overload rather than the base implementation, which bounds an object allocator's record walk
+        /// and takes its scan frame; a TsavoriteLog page has no records to walk.</remarks>
+        internal void AsyncReadPageFromDeviceToFrame<TContext>(
                                         long readPage,
                                         long untilAddress,
                                         DeviceIOCompletionCallback callback,
@@ -226,19 +233,10 @@ namespace Tsavorite.core
                 cts = cts
             };
 
-            ulong offsetInFile = (ulong)GetFileOffsetOfPage(readPage);
+            // The read length covers whole entries; an entry that starts below untilAddress may end above it, and the scan returns it.
+            var readLength = GetFrameReadLength(readPage, untilAddress, out _);
 
-            uint readLength = (uint)AlignedPageSizeBytes;
-            long adjustedUntilAddress = GetFileOffsetOfPage(GetPage(untilAddress)) + GetOffsetOnPage(untilAddress);
-
-            if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
-            {
-                readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
-                readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
-            }
-
-            if (device != null)
-                offsetInFile = (ulong)GetFileOffsetOfPage(readPage - devicePageOffset);
+            var offsetInFile = (ulong)GetFileOffsetOfPage(device != null ? readPage - devicePageOffset : readPage);
 
             usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, callback, asyncResult);
         }

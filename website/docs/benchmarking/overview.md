@@ -15,6 +15,8 @@ We have incorporated BDN ([BenchmarkDotNet](https://benchmarkdotnet.org/)) to tr
 
 The BDN CI first looks at the "Allocated" bytes from that specific run and compares it to what is expected. If that found "Allocated" value is 10% more than the expected "Allocated" value, the BDN CI will fail. If that part of the CI passes, then the "Mean" value is compared to the "Mean" value of the previous run. At this point, the CI also logs the "Mean" value so it can be charted [here](https://microsoft.github.io/garnet/charts/).
 
+The charts page is `website/static/charts/index.html`. The CI appends its results to `website/static/charts/data.js` on the `continuousbenchmark` branch, and the website deployment publishes that file next to the page. The page charts only the frameworks in its `SUPPORTED_FRAMEWORKS` list, so update that list and the page's Framework filter whenever the `framework` matrix in `ci-bdnbenchmark.yml` changes.
+
 **To add your BDN to Garnet BDN CI**
 1) The GitHub action yml: \.github\workflows\ci-bdnbenchmark.yml
 
@@ -37,7 +39,7 @@ test/BDNPerfTests/run_bdnperftest.ps1
 
 1) First parameter (optional) is the BDN test. For example, Operations.BasicOperations (default), Operations.ObjectOperations, Cluster.ClusterMigrate, Lua.LuaScripts etc
 
-1a) Second parameter (optional) is the framework to run, net8.0 (default) or net10.0. Only that framework is benchmarked and gated.
+1a) Second parameter (optional) is the framework to run, net10.0 (default). Only that framework is benchmarked and gated.
      
 2) It will verify found Allocated vs expected Allocated (giving it 10% tolerance) and show results in the output.
      

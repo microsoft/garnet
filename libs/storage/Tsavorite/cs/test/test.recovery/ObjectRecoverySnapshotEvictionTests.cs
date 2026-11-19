@@ -18,7 +18,7 @@ namespace Tsavorite.test.recovery.objects
     /// the hybrid-log phase reads its pages without loading their objects, then after the snapshot pages have also been
     /// read (without their objects), objects are loaded once over the full recovered range honoring the final headAddress.
     /// The recovered range spans both the hybrid-log region (objects in the main object-log) and the snapshot region
-    /// (objects in the snapshot object-log), with the device boundary at the page that contains FlushedUntilAddress.
+    /// (objects in the snapshot object-log), with the device boundary at the checkpoint's FlushedUntilAddress.
     /// A <see cref="LogSizeTracker{TStoreFunctions, TAllocator}"/> is optionally attached to the recovery store to force
     /// eviction during the deferred load, covering: no eviction (both region loads run over resident pages), partial
     /// eviction (headAddress stays in the hybrid-log region so both loads run), and heavy eviction (headAddress is pushed
@@ -172,6 +172,87 @@ namespace Tsavorite.test.recovery.objects
                         ClassicAssert.AreEqual(i, output.value.value, $"key {i} wrong value after compact/truncate");
                     }
                 }
+            }
+            finally
+            {
+                Destroy(log, objlog, store);
+            }
+        }
+
+        // A flush that ends mid-page and leaves the page resident (here ShiftReadOnlyAddress to the tail; a FoldOver checkpoint or its recovery does the same)
+        // makes the next snapshot checkpoint's flushedLogicalAddress mid-page. The records below it on that page are on the main log, with their objects in the
+        // main object-log, while the snapshot file's copy of the page holds only the records from that address on. With no records written after the flush the
+        // snapshot holds no page; with 20 it holds the rest of that page; with 1000 it also holds enough later pages that a small recovery budget evicts the
+        // flushed page, flushing its snapshot records to the main log first. With 512-byte sectors, NumRecords records end the flush on a sector boundary
+        // (offset 2,560 on its page); one more ends it mid-sector (offset 2,592), so the main log's bytes before it in that sector must also be kept, both when
+        // reading the snapshot's copy of the page and when flushing the page.
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task SnapshotRecoveryAfterMidPageFlush(
+            [Values(NumRecords, NumRecords + 1)] int recordsBeforeFlush,
+            [Values(0, 20, 1000)] int recordsAfterFlush,
+            [Values(0, 4)] int recoveryTargetPageCount)
+        {
+            var logMemorySize = 32L * MinKvLogPageSize;
+            var totalRecords = recordsBeforeFlush + recordsAfterFlush;
+
+            Prepare(logMemorySize, out var log, out var objlog, out var store);
+            try
+            {
+                long flushedUntilAddress;
+                using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions()))
+                {
+                    var bContext = session.BasicContext;
+                    for (var i = 0; i < recordsBeforeFlush; i++)
+                        _ = bContext.Upsert(new TestObjectKey { key = i }, new TestObjectValue { value = i });
+
+                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                    flushedUntilAddress = store.Log.FlushedUntilAddress;
+                    ClassicAssert.Greater(flushedUntilAddress % MinKvLogPageSize, PageHeader.Size, "the flush must end past the first record on its page");
+                    ClassicAssert.Less(store.Log.HeadAddress, flushedUntilAddress, "the flushed page must stay resident");
+
+                    for (var i = recordsBeforeFlush; i < totalRecords; i++)
+                        _ = bContext.Upsert(new TestObjectKey { key = i }, new TestObjectValue { value = i });
+                }
+
+                _ = store.TryInitiateHybridLogCheckpoint(out var token, CheckpointType.Snapshot);
+                await store.CompleteCheckpointAsync().AsTask().ConfigureAwait(false);
+                ClassicAssert.AreEqual(flushedUntilAddress, store.GetLogFileSize(token).hybridLogFileEndAddress, "the checkpoint's flushedLogicalAddress must be the mid-page flush point");
+                Destroy(log, objlog, store);
+
+                Prepare(logMemorySize, out log, out objlog, out store);
+                if (recoveryTargetPageCount > 0)
+                {
+                    var targetSize = (long)recoveryTargetPageCount * MinKvLogPageSize;
+                    var tracker = new LogSizeTracker<ClassStoreFunctions, ClassAllocator>(store.Log, targetSize, targetSize / 8, targetSize / 16, logger: null);
+                    store.Log.SetLogSizeTracker(tracker);
+                }
+
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+
+                using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions()))
+                {
+                    var bContext = session.BasicContext;
+                    for (var i = 0; i < totalRecords; i++)
+                    {
+                        var key = new TestObjectKey { key = i };
+                        TestObjectInput input = default;
+                        TestObjectOutput output = new();
+                        var status = bContext.Read(key, ref input, ref output);
+                        if (status.IsPending)
+                        {
+                            Assert.That(bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                            (status, output) = GetSinglePendingResult(completedOutputs);
+                        }
+
+                        ClassicAssert.IsTrue(status.Found, $"key {i} not found (records before flush {recordsBeforeFlush}, after {recordsAfterFlush}, target pages {recoveryTargetPageCount})");
+                        ClassicAssert.AreEqual(i, output.value.value, $"key {i} wrong value");
+                    }
+                }
+
+                // Make sure the recovery flush of the flushed page from its mid-page boundary was exercised.
+                if (recoveryTargetPageCount > 0 && recordsAfterFlush >= 1000)
+                    ClassicAssert.GreaterOrEqual(store.Log.HeadAddress, flushedUntilAddress - (flushedUntilAddress % MinKvLogPageSize) + MinKvLogPageSize, "expected eviction to pass the flushed page");
             }
             finally
             {

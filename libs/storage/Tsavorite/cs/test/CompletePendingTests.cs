@@ -18,21 +18,12 @@ namespace Tsavorite.test
         internal long? forceCollisionHash;
 
         public long GetHashCode64<TKey>(TKey key)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             => forceCollisionHash ?? Utility.GetHashCode(key.KeyBytes.AsRef<KeyStruct>().kfield1);
 
         public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
-            where TFirstKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSecondKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TFirstKey : IKey, allows ref struct
+            where TSecondKey : IKey, allows ref struct
             => k1.KeyBytes.AsRef<KeyStruct>().kfield1 == k2.KeyBytes.AsRef<KeyStruct>().kfield1 && k1.KeyBytes.AsRef<KeyStruct>().kfield2 == k2.KeyBytes.AsRef<KeyStruct>().kfield2;
 
         public override string ToString() => $"forceHashCollision: {forceCollisionHash}";
@@ -372,6 +363,87 @@ namespace Tsavorite.test
             (status, var outputStruct) = bContext.GetSinglePendingResult();
             ClassicAssert.IsTrue(status.Found, $"Expected status.Found: {status}");
             ClassicAssert.AreEqual(firstValue * valueMult, outputStruct.value.vfield2, "Should have returned first value");
+        }
+
+        /// <summary>
+        /// Wraps a device to report it throttled for <see cref="throttledCallsRemaining"/> calls to <see cref="Throttle"/>,
+        /// recording how many of those calls came from a thread holding the store's epoch.
+        /// </summary>
+        sealed class ThrottlingDevice : StorageDeviceBase
+        {
+            readonly IDevice underlying;
+            internal int throttledCallsRemaining, throttledCalls, protectedThrottledCalls;
+
+            internal ThrottlingDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+                => this.underlying = underlying;
+
+            public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+            {
+                base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+                underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            }
+
+            public override bool Throttle()
+            {
+                if (throttledCallsRemaining == 0)
+                    return false;
+                throttledCallsRemaining--;
+                throttledCalls++;
+                if (epoch.ThisInstanceProtected())
+                    protectedThrottledCalls++;
+                return true;
+            }
+
+            public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+                => underlying.RemoveSegmentAsync(segment, callback, result);
+            public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
+                => underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+            public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, object context)
+                => underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
+            public override bool TryComplete() => underlying.TryComplete();
+            public override bool TryCompleteMine() => underlying.TryCompleteMine();
+            public override long GetFileSize(int segment) => underlying.GetFileSize(segment);
+            public override void Dispose() => underlying.Dispose();
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        public void ThrottledPendingReadWaitsWithoutHoldingTheEpoch()
+        {
+            // The throttle wait must not hold an epoch entry: the epoch table is sized to the core count, so waiters
+            // would keep other threads out of the store.
+            const int ThrottledCalls = 3;
+
+            store.Dispose();
+            log.Dispose();
+            var device = new ThrottlingDevice(Devices.CreateLogDevice(Path.Join(MethodTestDir, "Throttled.log"), deleteOnClose: true));
+            log = device;
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = device,
+                LogMemorySize = 1L << 29
+            }, StoreFunctions.Create(comparer, SpanByteRecordTriggers.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+                );
+
+            using var session = store.NewSession<KeyStruct, InputStruct, OutputStruct, Empty, PendingReadFunctions<ContextStruct>>(new PendingReadFunctions<ContextStruct>());
+            var bContext = session.BasicContext;
+
+            var keyStruct = new KeyStruct { kfield1 = 1, kfield2 = 2 };
+            var valueStruct = new ValueStruct { vfield1 = 1, vfield2 = 2 };
+            _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
+            store.Log.FlushAndEvict(wait: true);
+
+            device.throttledCallsRemaining = ThrottledCalls;
+            var (status, _) = bContext.Read(keyStruct);
+            ClassicAssert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
+            ClassicAssert.AreEqual(ThrottledCalls, device.throttledCalls, "the read must wait out the throttle before it is issued");
+            ClassicAssert.AreEqual(1, device.protectedThrottledCalls, "only the check that enters the wait may hold the epoch");
+
+            (status, var outputStruct) = bContext.GetSinglePendingResult();
+            ClassicAssert.IsTrue(status.Found, $"Expected status.Found: {status}");
+            ClassicAssert.AreEqual(valueStruct.vfield2, outputStruct.value.vfield2);
         }
     }
 }

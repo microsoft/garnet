@@ -43,7 +43,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="taskType"></param>
         /// <returns>True if the task was removed</returns>
-        internal bool TryUnregister(TaskType taskType)
+        public bool TryUnregister(TaskType taskType)
         {
             if (!registry.TryRemove(taskType, out var taskMetadata))
                 return false;
@@ -177,8 +177,17 @@ namespace Garnet.server
         /// <returns></returns>
         public async Task CancelAsync(TaskPlacementCategory taskPlacementCategory)
         {
+            var cancelCommit = false;
             foreach (var taskType in TaskTypeExtensions.GetTaskTypes(taskPlacementCategory))
-                await CancelAsync(taskType).ConfigureAwait(false);
+            {
+                // Mutation-producing maintenance can depend on commits while finishing its active cycle.
+                if (taskType == TaskType.CommitTask)
+                    cancelCommit = true;
+                else
+                    await CancelAsync(taskType).ConfigureAwait(false);
+            }
+            if (cancelCommit)
+                await CancelAsync(TaskType.CommitTask).ConfigureAwait(false);
         }
 
         /// <summary>

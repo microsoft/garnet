@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
@@ -50,6 +51,21 @@ namespace Garnet.server
         /// Get the command stats tracker for this session
         /// </summary>
         public CommandStats GetCommandStats => commandStats;
+
+        /// <summary>
+        /// Updates the session's command counters for a command that did not pass through the message loop,
+        /// as the loop does for each command it processes.
+        /// </summary>
+        /// <param name="cmd">The command that was executed or rejected.</param>
+        internal void CountCommandProcessed(RespCommand cmd)
+        {
+            if (sessionMetrics == null)
+                return;
+
+            sessionMetrics.total_commands_processed++;
+            sessionMetrics.total_write_commands_processed += cmd.OneIfWrite();
+            sessionMetrics.total_read_commands_processed += cmd.OneIfRead();
+        }
 
         /// <summary>
         /// Get a copy of latencyMetrics
@@ -121,6 +137,9 @@ namespace Garnet.server
         // Used by Publish/PatternPublish to detect the reentrant self-delivery that occurs when a session
         // publishes to a channel it is itself subscribed to.
         int publishingThreadId;
+
+        // Failure of a reentrant self-delivery, rethrown by the publishing command once the broadcast completes
+        ExceptionDispatchInfo reentrantPublishFailure;
 
         /// <summary>
         /// Current database session items
@@ -333,6 +352,7 @@ namespace Garnet.server
             clusterSession = cp?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, storageSession.stringBasicContext, storageSession.vectorBasicContext, networkSender, logger);
             clusterSession?.SetUserHandle(this._userHandle);
             sessionScriptCache?.SetUserHandle(this._userHandle);
+            sessionScriptCache?.SetEpochOwner(clusterSession);
 
             parseState.Initialize();
             readHead = 0;
@@ -614,9 +634,11 @@ namespace Garnet.server
                         SendAndReset();
                 }
 
-                // Send message and dispose the network sender to end the session
-                if (dcurr > networkSender.GetResponseObjectHead())
-                    Send(networkSender.GetResponseObjectHead());
+                // Send message and dispose the network sender to end the session. A failed send leaves no response
+                // buffer, and nothing further can be sent.
+                var responseHead = networkSender.GetResponseObjectHead();
+                if (responseHead != null && dcurr > responseHead)
+                    Send(responseHead);
 
                 if (ex.Panic)
                 {
@@ -694,6 +716,14 @@ namespace Garnet.server
         internal void SetTransactionMode(bool enable)
             => txnManager.state = enable ? TxnState.Running : TxnState.None;
 
+        /// <summary>
+        /// Whether a blocking command on this session may wait for an item. It may not while a transaction is running
+        /// (EXEC, or a script in transaction mode): the transaction holds its keys' locks until commit, so no other
+        /// client can add an item. Nor may it in a session that runs scripts, since a script must not wait on other
+        /// clients. A blocking command that may not wait takes an available item or replies as on timeout.
+        /// </summary>
+        internal bool CanBlock => txnManager.state != TxnState.Running && noScriptBitmap == null;
+
         private void ProcessMessages<TBasicApi, TTxnApi>(ref TBasicApi basicApi, ref TTxnApi transactionalApi)
             where TBasicApi : IGarnetApi
             where TTxnApi : IGarnetApi
@@ -728,7 +758,8 @@ namespace Garnet.server
                     {
                         // In RESP2, only a small set of commands are allowed while in subscription mode.
                         // RESP3 uses distinct push types for subscription messages, so all commands are valid.
-                        if (isSubscriptionSession && respProtocolVersion == 2 && !cmd.IsAllowedInSubscriptionMode())
+                        // Commands replayed by EXEC were queued before subscription mode began; rejecting them would skip the commit.
+                        if (isSubscriptionSession && respProtocolVersion == 2 && txnManager.state != TxnState.Running && !cmd.IsAllowedInSubscriptionMode())
                         {
                             while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericPubSubCommandNotAllowed, cmd.ToString()), ref dcurr, dend))
                                 SendAndReset();
@@ -891,6 +922,7 @@ namespace Garnet.server
             _ = cmd switch
             {
                 RespCommand.GET => NetworkGET(ref storageApi),
+                RespCommand.DIGEST => NetworkDIGEST(ref storageApi),
                 RespCommand.GETEX => NetworkGETEX(ref storageApi),
                 RespCommand.SET => NetworkSET(ref storageApi),
                 RespCommand.SETEX => NetworkSETEX(false, ref storageApi),
@@ -898,9 +930,11 @@ namespace Garnet.server
                 RespCommand.PSETEX => NetworkSETEX(true, ref storageApi),
                 RespCommand.SETEXNX => NetworkSETEXNX(ref storageApi),
                 RespCommand.DEL => NetworkDEL(ref storageApi),
+                RespCommand.DELIFEQ or RespCommand.DELEX => NetworkDELValueConditional(cmd, ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(ref storageApi),
                 RespCommand.RENAMENX => NetworkRENAMENX(ref storageApi),
-                RespCommand.EXISTS => NetworkEXISTS(ref storageApi),
+                RespCommand.EXISTS => NetworkEXISTS(RespCommand.EXISTS, ref storageApi),
+                RespCommand.TOUCH => NetworkEXISTS(RespCommand.TOUCH, ref storageApi),
                 RespCommand.EXPIRE => NetworkEXPIRE(RespCommand.EXPIRE, ref storageApi),
                 RespCommand.PEXPIRE => NetworkEXPIRE(RespCommand.PEXPIRE, ref storageApi),
                 RespCommand.EXPIRETIME => NetworkEXPIRETIME(RespCommand.EXPIRETIME, ref storageApi),
@@ -1124,6 +1158,7 @@ namespace Garnet.server
                 RespCommand.VREM => NetworkVREM(ref storageApi),
                 RespCommand.VSETATTR => NetworkVSETATTR(ref storageApi),
                 RespCommand.VSIM => NetworkVSIM(ref storageApi),
+                RespCommand.XVCREATE => NetworkXVCREATE(ref storageApi),
                 // Everything else
                 _ => ProcessOtherCommands(cmd, ref storageApi)
             };
@@ -1207,6 +1242,9 @@ namespace Garnet.server
                 RespCommand.RIEXISTS => NetworkRIEXISTS(ref storageApi),
                 RespCommand.RICONFIG => NetworkRICONFIG(ref storageApi),
                 RespCommand.RIMETRICS => NetworkRIMETRICS(ref storageApi),
+
+                // Vector Set commands
+                RespCommand.XVIMPORT => NetworkXVIMPORT(ref storageApi),
 
                 _ => Process(command, ref storageApi)
             };
@@ -1521,6 +1559,7 @@ namespace Garnet.server
             // Debug.WriteLine($"SEND: [{Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "")}]");
             // #endif
 
+            Debug.Assert(d != null, "Send requires a response buffer");
             if ((int)(dcurr - d) > 0)
             {
                 // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");

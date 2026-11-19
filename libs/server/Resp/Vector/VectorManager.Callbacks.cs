@@ -33,11 +33,7 @@ namespace Garnet.server
         /// </summary>
         private const int VectorRecordReadOverheadBytes = 64;
 
-        public unsafe
-#if NET9_0_OR_GREATER
-            ref
-#endif
-            struct VectorReadBatch : IReadArgBatch<VectorElementKey, VectorInput, VectorOutput>
+        public unsafe ref struct VectorReadBatch : IReadArgBatch<VectorElementKey, VectorInput, VectorOutput>
         {
             /// <summary>
             /// Total number of keys in batch.
@@ -74,20 +70,11 @@ namespace Garnet.server
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
                 get
                 {
-#if NET9_0_OR_GREATER
                     return namespaceBytes;
-#else
-                    return new ReadOnlySpan<byte>(namespaceBytesPtr, namespaceBytesLen);
-#endif
                 }
             }
 
-#if NET9_0_OR_GREATER
             private readonly ReadOnlySpan<byte> namespaceBytes;
-#else
-            private byte* namespaceBytesPtr;
-            private int namespaceBytesLen;
-#endif
             private readonly PinnedSpanByte lengthPrefixedKeys;
 
             public readonly delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void> callback;
@@ -102,12 +89,7 @@ namespace Garnet.server
 
             public VectorReadBatch(nint callback, nint callbackContext, uint keyCount, PinnedSpanByte lengthPrefixedKeys, ReadOnlySpan<byte> namespaceBytes, ReadCopyOptions readOpts, int initialRecordSizeHint)
             {
-#if NET9_0_OR_GREATER
                 this.namespaceBytes = namespaceBytes;
-#else
-                namespaceBytesPtr = (byte*)Unsafe.AsPointer(ref Unsafe.AsRef(in namespaceBytes[0]));
-                namespaceBytesLen = namespaceBytes.Length;
-#endif
                 this.lengthPrefixedKeys = lengthPrefixedKeys;
 
                 this.callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)callback;
@@ -353,7 +335,6 @@ namespace Garnet.server
         )
         {
             // dataCallback takes: index, dataCallbackContext, data pointer, data length, and returns nothing
-
             Span<byte> nsBytes = stackalloc byte[sizeof(uint)];
             StoreContextInNamespace(context, ref nsBytes);
 

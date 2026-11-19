@@ -14,7 +14,7 @@ namespace Garnet.server
         /// <summary>
         /// Indicates that this task can safely run on all node types.
         /// </summary>
-        All = Primary | Replica,
+        All = Primary | Replica | ControlPlane,
         /// <summary>
         /// Indicates that this task can safely run only on primary nodes.
         /// </summary>
@@ -23,5 +23,9 @@ namespace Garnet.server
         /// Indicates that this task can safely run only on replica nodes.
         /// </summary>
         Replica = 1 << 1,
+        /// <summary>
+        /// Indicates that this task survives role changes and is canceled only explicitly or at shutdown.
+        /// </summary>
+        ControlPlane = 1 << 2,
     }
 }

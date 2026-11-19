@@ -97,8 +97,16 @@ into the main object log, and the live records are restamped with their new posi
 
 ## Transient objectId remapping
 
-Single-record disk reads and iterators use a transient `ObjectIdMap`. `DiskLogRecord` remaps recovered objectIds into
-that map so the source page can be evicted and its page-local map reused without invalidating the temporary record.
+The ObjectAllocator carries a transient `ObjectIdMap` for pending IO and buffered copies of resident records. These temporary images embed a `LogRecord` in a `DiskLogRecord` and remap its object IDs, so resident pages can be evicted without invalidating the temporary slots. A buffered resident record borrows its heap objects: cleanup releases the remapped slots but does not dispose the live objects.
+
+Disk scans instead use one iterator-owned object map, shared by their `ObjectScanFrame` instances. Reading a page deserializes objects before and after the current cursor batch, including records the iterator never visits. Each frame tracks its successfully initialized extent and releases only its own objects and overflow slots before reuse and after outstanding reads drain on iterator disposal. Frame cleanup does not clear the shared map: another frame can still be reading or holding objects, and released slots are reusable by either frame. The iterator clears the map after all reads and frame cleanup finish.
+
+Visited records release their slots when iteration advances; unvisited records receive disk-read initialization and the same disk-record disposal trigger during frame cleanup. Read-ahead frames are cleaned even if the scan stops before reaching them.
+
+When a scan record is transferred to a pending operation, its inline bytes are copied and its heap references are remapped into the allocator's transient map. The original frame slots are released without disposing the transferred objects, so frame reuse cannot invalidate the pending operation.
+
+Only deserialization into resident recovery pages increases the log's heap-size tracker. Temporary scan frames do not affect resident heap accounting or `Log.CurrentHeapSizeBytes` in Garnet's `INFO STORE`.
+
 Recovery Pass 2 instead repopulates the resident page's own `ObjectIdMap`.
 
 ## Releasing a record's out-of-line value

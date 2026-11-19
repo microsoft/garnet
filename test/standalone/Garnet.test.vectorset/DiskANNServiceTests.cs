@@ -188,7 +188,15 @@ namespace Garnet.test
             var filterFuncPtr = Marshal.GetFunctionPointerForDelegate(filterDel);
             var logFuncPtr = Marshal.GetFunctionPointerForDelegate(logDel);
 
-            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
+            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, VectorManager.DefaultStartPointId, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
+            ClassicAssert.AreNotEqual(nint.Zero, rawIndex);
+            var service = new DiskANNService();
+            var startPointKey = BitConverter.GetBytes(VectorManager.DefaultStartPointId);
+            ClassicAssert.IsTrue(service.ImportTerm(Context, rawIndex, DiskANNService.FullVector, startPointKey, new byte[75]));
+            ClassicAssert.IsTrue(service.ImportTerm(Context, rawIndex, DiskANNService.NeighborList, startPointKey, new byte[11 * sizeof(uint)]));
+            ClassicAssert.IsTrue(service.VerifyImport(Context, rawIndex, 0, 1));
+            ClassicAssert.IsTrue(service.FinishImport(Context, rawIndex));
+            ClassicAssert.AreEqual(0UL, NativeDiskANNMethods.card(Context, rawIndex));
 
             Span<byte> id = [0, 1, 2, 3];
             Span<byte> elem = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
@@ -227,12 +235,15 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(0, validRes);
             }
 
+            service.DropIndex(Context, rawIndex);
+
             GC.KeepAlive(deleteDel);
             GC.KeepAlive(writeDel);
             GC.KeepAlive(readDel);
             GC.KeepAlive(rmwDel);
+            GC.KeepAlive(filterDel);
+            GC.KeepAlive(logDel);
         }
-
 
         [Test]
         public void VADD()
@@ -404,7 +415,7 @@ namespace Garnet.test
             var filterFuncPtr = Marshal.GetFunctionPointerForDelegate(filterDel);
             var logFuncPtr = Marshal.GetFunctionPointerForDelegate(logDel);
 
-            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
+            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, VectorManager.DefaultStartPointId, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
 
             Span<byte> id = [0, 1, 2, 3];
             Span<byte> elem = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
@@ -450,7 +461,7 @@ namespace Garnet.test
             {
                 NativeDiskANNMethods.drop_index(Context, rawIndex);
 
-                rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
+                rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, VectorManager.DefaultStartPointId, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
             }
 
             // Search value
@@ -538,6 +549,21 @@ namespace Garnet.test
             GC.KeepAlive(writeDel);
             GC.KeepAlive(readDel);
             GC.KeepAlive(rmwDel);
+        }
+
+        [Test]
+        public void FlagsExhaustive()
+        {
+            // Migrations will get goofy if these are out of sync
+            foreach (var flag in Enum.GetValues<VectorSetFlags>())
+            {
+                if (flag == VectorSetFlags.None)
+                {
+                    continue;
+                }
+
+                ClassicAssert.AreEqual(flag, flag & VectorSetFlags.All, $"Missing {flag} from VectorSetFlags.All");
+            }
         }
     }
 }

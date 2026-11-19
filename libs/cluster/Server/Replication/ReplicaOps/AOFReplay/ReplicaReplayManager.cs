@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.common;
 using Garnet.networking;
 
 namespace Garnet.cluster
@@ -34,6 +35,9 @@ namespace Garnet.cluster
         public void ResetReplicaReplayDriverStore()
         {
             ReplicaReplayDriverStore?.Dispose();
+            AsyncUtils.BlockingWait(clusterProvider.storeWrapper.SuspendReplicaOnlyTasksAsync());
+            if (clusterProvider.IsReplica())
+                clusterProvider.storeWrapper.StartReplicaTasks();
             ReplicaReplayDriverStore = new ReplicaReplayDriverStore(clusterProvider, logger);
         }
     }

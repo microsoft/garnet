@@ -405,14 +405,13 @@ namespace Garnet.cluster
             }
 
             var data = parseState.GetArgSliceByRef(3).ReadOnlySpan;
-
-            var fileToken = new Guid(fileTokenBytes);
             var ckptFileType = (CheckpointFileType)ckptFileTypeInt;
 
-            clusterProvider.replicationManager.recvCheckpointHandler.ProcessSnapshotData(fileToken, ckptFileType, startAddress, data);
+            clusterProvider.replicationManager.recvCheckpointHandler.ProcessSnapshotData(new Guid(fileTokenBytes), ckptFileType, startAddress, data);
+
+            // Chunks acknowledge acceptance; the empty end marker waits for all writes and closes the sink.
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
-
             return true;
         }
 
@@ -569,7 +568,7 @@ namespace Garnet.cluster
                         // Streamed records carry the primary's native handle and bypass the RMW path that maintains the context reservation
                         vectorManager?.SanitizeAndTrackIngestedRecordIfApplicable(ref diskLogRecord);
 
-                        _ = basicGarnetApi.SET(in diskLogRecord);
+                        _ = clusterProvider.replicationManager.AofProcessor.ApplySnapshotRecord(in diskLogRecord);
                         storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                         diskLogRecord.Dispose();
                         diskLogRecord = default; // prevent double-trigger in catch
@@ -601,7 +600,7 @@ namespace Garnet.cluster
                                 // Streamed records carry the primary's native handle and bypass the RMW path that maintains the context reservation
                                 vectorManager?.SanitizeAndTrackIngestedRecordIfApplicable(ref diskLogRecord);
 
-                                _ = basicGarnetApi.SET(in diskLogRecord);
+                                _ = clusterProvider.replicationManager.AofProcessor.ApplySnapshotRecord(in diskLogRecord);
                                 storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                                 diskLogRecord.Dispose();
                                 diskLogRecord = default; // prevent double-trigger in catch

@@ -22,6 +22,67 @@ namespace Tsavorite.core
         public long IndexSize = 1L << 26;
 
         /// <summary>
+        /// Ceiling on hash index overflow buckets, as a percentage of the main bucket count of the generation they
+        /// belong to. Overflow buckets hold hash entries that do not fit the main bucket array, so they grow with the
+        /// number of distinct keys, and are reclaimed only when the index grows. They chain linearly off a main bucket
+        /// and are scanned by reads and upserts, so this percentage is the average chain length allowed before
+        /// allocation throws: 300 permits three overflow buckets per main bucket. Zero selects
+        /// <see cref="DefaultIndexOverflowThreshold"/>.
+        /// </summary>
+        /// <remarks>
+        /// Expressed in the same unit as the index resize threshold so the two can be compared directly. A value at or
+        /// below the resize threshold would be reached before the resize that reclaims overflow buckets.
+        /// </remarks>
+        public int IndexOverflowThreshold = DefaultIndexOverflowThreshold;
+
+        /// <summary>
+        /// Value used when <see cref="IndexOverflowThreshold"/> is zero.
+        /// </summary>
+        public const int DefaultIndexOverflowThreshold = 300;
+
+        /// <summary>
+        /// Buckets the overflow allocator claims at construction. The allocation counter that drives index resize
+        /// excludes these, so a caller comparing a resolved ceiling against a resize trigger must discount them.
+        /// </summary>
+        public static int OverflowBucketInitialAllocation => MallocFixedPageSize<HashBucket>.AllocateChunkSize;
+
+        /// <summary>
+        /// Size of one hash bucket, main or overflow, in bytes.
+        /// </summary>
+        public static int HashBucketSizeBytes => MallocFixedPageSize<HashBucket>.RecordSize;
+
+        /// <summary>
+        /// Memory an overflow-bucket generation commits as soon as it exists, whatever the threshold resolves to, when the
+        /// index is aligned to the minimum sector size. The allocator commits whole pages and pre-allocates each page's
+        /// successor, so a generation that has handed out nothing still holds this much. Each page also carries a sector
+        /// of alignment slack, so a store whose devices need larger sectors commits slightly more; its
+        /// <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.IndexOverflowFloorSizeBytes"/> is the exact amount.
+        /// </summary>
+        public static long OverflowBucketFloorMemorySize => MallocFixedPageSize<HashBucket>.MinCommittedMemorySize;
+
+        /// <summary>
+        /// Resolve a threshold to the overflow-bucket ceiling in bytes for an index generation of a given size,
+        /// rounded down to a whole allocator page and clamped to what the page table can address.
+        /// </summary>
+        /// <param name="tableSizeBuckets">Main bucket count of the index generation.</param>
+        /// <param name="overflowThreshold">Percentage of <paramref name="tableSizeBuckets"/>; zero selects
+        /// <see cref="DefaultIndexOverflowThreshold"/>.</param>
+        public static long GetIndexOverflowMaxMemorySize(long tableSizeBuckets, int overflowThreshold)
+        {
+            if (overflowThreshold <= 0)
+                overflowThreshold = DefaultIndexOverflowThreshold;
+            if (tableSizeBuckets <= 0)
+                tableSizeBuckets = 1;
+
+            // Scale before dividing, and floor at the smallest page table the allocator builds. GetLevelCount reads a
+            // non-positive budget as "unconfigured" and substitutes its own much larger default.
+            var requested = tableSizeBuckets * overflowThreshold * MallocFixedPageSize<HashBucket>.RecordSize / 100;
+            if (requested < MallocFixedPageSize<HashBucket>.MinMemorySize)
+                requested = MallocFixedPageSize<HashBucket>.MinCommittedMemorySize;
+            return MallocFixedPageSize<HashBucket>.GetLevelCount(requested) * MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
+        }
+
+        /// <summary>
         /// Device used for main hybrid log
         /// </summary>
         public IDevice LogDevice;
@@ -132,7 +193,7 @@ namespace Tsavorite.core
         public long ReadCachePageSize = 1 << 25;
 
         /// <summary>
-        /// Main-log circular-buffer size if nonzero; rounds down to a power of 2 and errors if that does not allow ReadCachePageSize.
+        /// Read-cache circular-buffer size if nonzero; rounds down to a power of 2 and errors if that does not allow ReadCachePageSize.
         /// </summary>
         /// <remarks>
         /// If zero, calculate it from <see cref="ReadCacheMemorySize"/> and <see cref="ReadCachePageSize"/>, which is also the max if both this and <see cref="ReadCacheMemorySize"/> are nonzero.
@@ -264,7 +325,7 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public override string ToString()
         {
-            var retStr = $"index: {Utility.PrettySize(IndexSize)}; log memory: {Utility.PrettySize(LogMemorySize)}; log page: {Utility.PrettySize(PageSize)}; log segment: {Utility.PrettySize(SegmentSize)}";
+            var retStr = $"index: {Utility.PrettySize(IndexSize)}; overflow max: {GetOverflowThreshold()}% of index ({Utility.PrettySize(GetIndexOverflowMaxMemorySize(GetIndexSizeCacheLines(), IndexOverflowThreshold))}); log memory: {Utility.PrettySize(LogMemorySize)}; log page: {Utility.PrettySize(PageSize)}; log segment: {Utility.PrettySize(SegmentSize)}";
             retStr += $"; log device: {(LogDevice == null ? "null" : LogDevice.GetType().Name)}";
             retStr += $"; obj log device: {(ObjectLogDevice == null ? "null" : ObjectLogDevice.GetType().Name)}";
             if (UpgradeObjectLogDevice != null)
@@ -289,6 +350,12 @@ namespace Tsavorite.core
 
         internal static long SetIndexSizeFromCacheLines(long cacheLines)
             => cacheLines * 64;
+
+        /// <summary>
+        /// Resolve <see cref="IndexOverflowThreshold"/>, substituting the default when it is unset.
+        /// </summary>
+        internal int GetOverflowThreshold()
+            => IndexOverflowThreshold > 0 ? IndexOverflowThreshold : DefaultIndexOverflowThreshold;
 
         internal LogSettings GetLogSettings()
             => new()

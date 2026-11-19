@@ -23,6 +23,18 @@ namespace Garnet.common
         => t.GetAwaiter().GetResult();
 
         /// <summary>
+        /// Block on a given <see cref="Task"/> for at most <paramref name="millisecondsTimeout"/> milliseconds.
+        /// 
+        /// If at all possible, you should instead await your tasks, but for cases where this is not possible use this helper.
+        /// </summary>
+        /// <param name="t">The task to wait for.</param>
+        /// <param name="millisecondsTimeout">The maximum time to wait, or <see cref="System.Threading.Timeout.Infinite"/>.</param>
+        /// <returns>True if the task completed within the timeout; otherwise false, and the task keeps running.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool BlockingWait(Task t, int millisecondsTimeout)
+        => t.Wait(millisecondsTimeout);
+
+        /// <summary>
         /// Block on a given <see cref="Task{TResult}"/>.
         /// 
         /// If at all possible, you should instead await your tasks, but for cases where this is not possible use this helper.

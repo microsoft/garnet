@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -87,6 +88,234 @@ namespace Tsavorite.test.LogRecordTests
         }
 
         static int GetTotalFillerLength(in LogRecord logRecord) => logRecord.DataHeader.GetTotalFillerLength();
+
+        PinnedSpanByte CreateSerializedRecord(int length, int keyLength = 1, int valueLength = 1)
+        {
+            nativePointer = (long)NativeMemory.AlignedAlloc(256, Constants.kCacheLineBytes);
+            new Span<byte>((void*)nativePointer, 256).Fill(0xAA);
+            *(RecordInfo*)nativePointer = RecordInfo.InitialValid;
+            ref var header = ref *(RecordDataHeader*)(nativePointer + RecordInfo.Size);
+            header = default;
+            header.SetKeyAndValueInline();
+            header.KeyLength = keyLength;
+            header.ValueLength = valueLength;
+            header.RecordType = 1;
+            return PinnedSpanByte.FromPinnedPointer((byte*)nativePointer, length);
+        }
+
+        DiskLogRecord DeserializeRecord(PinnedSpanByte record) =>
+            DiskLogRecord.Deserialize(record, null, objectIdMap, default(StoreFunctions<SpanByteComparer, SpanByteRecordTriggers>));
+
+        [TestCase(false, 0, 0, false)]
+        [TestCase(true, 0, 7, true)]
+        [TestCase(false, 1, 1, true)]
+        [TestCase(true, 1, 7, true)]
+        [TestCase(false, 2, 7, true)]
+        [TestCase(true, 2, 0, true)]
+        [Category(LogRecordCategory)]
+        public void KeyScanSnapshotOwnsKeysAndMetadataWithoutValues(bool overflowKey, int valueStyle, int namespaceLength, bool tombstone)
+        {
+            _ = CreateSerializedRecord(256, keyLength: 8, valueLength: 128);
+            var source = new LogRecord(nativePointer, objectIdMap);
+            var header = source.DataHeader;
+            header.SetHasETag();
+            header.SetHasExpiration();
+            header.FillerWords = 2;
+            if (namespaceLength != 0)
+                header.SetNamespaceByteRaw(namespaceLength == 1 ? (byte)5 : (byte)(0x80 | namespaceLength));
+            if (overflowKey)
+            {
+                header.SetKeyIsOverflow();
+                header.KeyLength = ObjectIdMap.ObjectIdSize;
+            }
+            if (valueStyle != 0)
+            {
+                if (valueStyle == 1)
+                    header.SetValueIsOverflow();
+                else
+                    header.SetValueIsObject();
+                header.ValueLength = ObjectIdMap.ObjectIdSize;
+            }
+            source.SetDataHeader(header);
+            if (tombstone)
+                source.InfoRef.SetTombstone();
+            if (overflowKey)
+                source.KeyOverflow = new OverflowByteArray(2048, 0, 0, zeroInit: true);
+            if (valueStyle == 1)
+                source.ValueOverflow = new OverflowByteArray(4096, 0, 0, zeroInit: true);
+            else if (valueStyle == 2)
+            {
+                var (_, address) = header.GetValueFieldInfo(nativePointer);
+                *(int*)address = ObjectIdMap.InvalidObjectId;
+                Assert.That(source.TrySetValueObject(new TestObjectValue { value = 42 }), Is.True);
+            }
+            Assert.That(source.TrySetETag(initialETag), Is.True);
+            Assert.That(source.TrySetExpiration(initialExpiration), Is.True);
+            var expectedKey = source.Key.ToArray();
+            var expectedNamespace = source.HasNamespace ? source.NamespaceBytes.ToArray() : [];
+            var before = source.RecordSpan.ToArray();
+            var pool = new SectorAlignedBufferPool(1, 512);
+            var transientMap = new ObjectIdMap();
+            SectorAlignedMemory scanBuffer = null;
+            try
+            {
+                var copyAddress = DiskLogRecord.CopyKeyForScan(in source, pool, ref scanBuffer);
+                Assert.That(LogRecord.TryCreateRemappedOverPinnedTransientMemory(copyAddress, source.ObjectIdMap, transientMap, out var remapped), Is.True);
+                using var snapshot = DiskLogRecord.CreateFromTransientLogRecord(in remapped);
+                Assert.That(source.RecordSpan.ToArray(), Is.EqualTo(before));
+                Assert.That(snapshot.ActualSize, Is.LessThan(source.ActualSize));
+                Assert.That(snapshot.ValueSpan.Length, Is.Zero);
+                Assert.That(snapshot.DataHeader.RecordHasObjects, Is.EqualTo(overflowKey));
+                source.Dispose();
+                new Span<byte>((void*)nativePointer, 256).Fill(0xCC);
+
+                Assert.That(snapshot.Key.ToArray(), Is.EqualTo(expectedKey));
+                Assert.That(snapshot.HasNamespace, Is.EqualTo(namespaceLength != 0));
+                if (snapshot.HasNamespace)
+                    Assert.That(snapshot.NamespaceBytes.ToArray(), Is.EqualTo(expectedNamespace));
+                Assert.That(snapshot.RecordType, Is.EqualTo(1));
+                Assert.That(snapshot.Info.Tombstone, Is.EqualTo(tombstone));
+                Assert.That(snapshot.ETag, Is.EqualTo(initialETag));
+                Assert.That(snapshot.Expiration, Is.EqualTo(initialExpiration));
+            }
+            finally
+            {
+                scanBuffer?.Return();
+                transientMap.Clear();
+                pool.Free();
+            }
+        }
+
+        [Test]
+        [Category(LogRecordCategory)]
+        public void DeserializeRejectsTruncatedFixedHeaders()
+        {
+            var record = CreateSerializedRecord(Constants.FixedHeaderSize);
+            for (var length = 0; length < Constants.FixedHeaderSize; ++length)
+            {
+                record.Length = length;
+                Assert.Throws<TsavoriteException>(() => DeserializeRecord(record));
+                Assert.Throws<TsavoriteException>(() => DiskLogRecord.GetChunkedRecordInlineSize(record.ReadOnlySpan));
+                Assert.Throws<TsavoriteException>(() => DiskLogRecord.CompleteDeserializeChunkedRecord(record, default, default, null, objectIdMap));
+            }
+        }
+
+        [TestCase(1, 56, 0, false, false, 17)]
+        [TestCase(1023, 0, 0, false, false, 24)]
+        [TestCase(0, 16777215, 0, false, false, 24)]
+        [TestCase(1, 1, 127, false, false, 24)]
+        [TestCase(1, 1, 0, true, false, 24)]
+        [TestCase(1, 1, 0, false, true, 24)]
+        [TestCase(1, 1, 0, false, false, 18)]
+        [Category(LogRecordCategory)]
+        public void DeserializeRejectsTruncatedInlineComponents(int keyLength, int valueLength, int namespaceLength, bool hasETag, bool hasExpiration, int wireLength)
+        {
+            var record = CreateSerializedRecord(wireLength, keyLength, valueLength);
+            ref var header = ref *(RecordDataHeader*)(nativePointer + RecordInfo.Size);
+            if (namespaceLength != 0)
+                header.SetNamespaceByteRaw((byte)(0x80 | namespaceLength));
+            if (hasETag)
+                header.SetHasETag();
+            if (hasExpiration)
+                header.SetHasExpiration();
+            var before = new ReadOnlySpan<byte>((void*)nativePointer, 256).ToArray();
+
+            Assert.Throws<TsavoriteException>(() => DeserializeRecord(record));
+            Assert.That(new ReadOnlySpan<byte>((void*)nativePointer, 256).ToArray(), Is.EqualTo(before));
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        [Category(LogRecordCategory)]
+        public void DeserializeRejectsInvalidHeaders(bool nullInfo)
+        {
+            var record = CreateSerializedRecord(24);
+            if (nullInfo)
+                *(RecordInfo*)nativePointer = default;
+            else
+                *(byte*)(nativePointer + RecordInfo.Size) |= 4; // ValueIsObject conflicts with ValueIsInline.
+
+            Assert.Throws<TsavoriteException>(() => DeserializeRecord(record));
+            Assert.Throws<TsavoriteException>(() => DiskLogRecord.GetChunkedRecordInlineSize(record.ReadOnlySpan));
+            Assert.Throws<TsavoriteException>(() => DiskLogRecord.CompleteDeserializeChunkedRecord(record, default, default, null, objectIdMap));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        [Category(LogRecordCategory)]
+        public void DeserializeRejectsTruncatedObjectSlots(bool overflowKey)
+        {
+            var record = CreateSerializedRecord(24);
+            ref var header = ref *(RecordDataHeader*)(nativePointer + RecordInfo.Size);
+            if (overflowKey)
+                header.SetKeyIsOverflow();
+            else
+                header.SetValueIsObject();
+
+            Assert.Throws<TsavoriteException>(() => DeserializeRecord(record));
+            Assert.Throws<TsavoriteException>(() => DiskLogRecord.CompleteDeserializeChunkedRecord(record, default, default, null, objectIdMap));
+        }
+
+        [TestCase(-1, 36)]
+        [TestCase(int.MaxValue, 36)]
+        [TestCase(1, 35)]
+        [TestCase(0, 36)]
+        [TestCase(0, 40)]
+        [Category(LogRecordCategory)]
+        public void DeserializeValidatesOverflowBeforeMutatingSlots(int lengthPrefix, int wireLength)
+        {
+            var record = CreateSerializedRecord(wireLength);
+            ref var header = ref *(RecordDataHeader*)(nativePointer + RecordInfo.Size);
+            header.SetKeyIsOverflow();
+            header.SetValueIsOverflow();
+            var inlineSize = header.GetAlignedComponentSum();
+            BinaryPrimitives.WriteInt32LittleEndian(new Span<byte>((void*)(nativePointer + inlineSize), sizeof(int)), lengthPrefix);
+            var before = new ReadOnlySpan<byte>((void*)nativePointer, 256).ToArray();
+
+            Assert.Throws<TsavoriteException>(() => DeserializeRecord(record));
+            Assert.That(new ReadOnlySpan<byte>((void*)nativePointer, 256).ToArray(), Is.EqualTo(before));
+        }
+
+        [Test]
+        [Category(LogRecordCategory)]
+        public void DeserializeAcceptsCompactedInlineRecordWithExplicitFiller()
+        {
+            var record = CreateSerializedRecord(24);
+            ref var header = ref *(RecordDataHeader*)(nativePointer + RecordInfo.Size);
+            header.FillerWords = RecordDataHeader.MaxFillerWords;
+
+            using var deserialized = DeserializeRecord(record);
+            Assert.That(deserialized.Key.ToArray(), Is.EqualTo(new byte[] { 0xAA }));
+            Assert.That(deserialized.ValueSpan.ToArray(), Is.EqualTo(new byte[] { 0xAA }));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        [Category(LogRecordCategory)]
+        public void DeserializeAcceptsOverflowComponents(bool chunked)
+        {
+            var record = CreateSerializedRecord(46);
+            ref var header = ref *(RecordDataHeader*)(nativePointer + RecordInfo.Size);
+            header.SetKeyIsOverflow();
+            header.SetValueIsOverflow();
+            var inlineSize = DiskLogRecord.GetChunkedRecordInlineSize(record.ReadOnlySpan.Slice(0, Constants.FixedHeaderSize));
+            var tail = new Span<byte>((void*)(nativePointer + inlineSize), 14);
+            BinaryPrimitives.WriteInt32LittleEndian(tail, 3);
+            tail.Slice(4, 3).Fill(0xAB);
+            BinaryPrimitives.WriteInt32LittleEndian(tail.Slice(7), 3);
+            tail.Slice(11, 3).Fill(0xCD);
+            var keyOverflow = OverflowByteArray.AllocateData(3);
+            var valueOverflow = OverflowByteArray.AllocateData(3);
+            tail.Slice(4, 3).CopyTo(keyOverflow.Span);
+            tail.Slice(11, 3).CopyTo(valueOverflow.Span);
+
+            using var deserialized = chunked
+                ? DiskLogRecord.CompleteDeserializeChunkedRecord(PinnedSpanByte.FromPinnedPointer((byte*)nativePointer, inlineSize),
+                    keyOverflow, valueOverflow, null, objectIdMap)
+                : DeserializeRecord(record);
+            Assert.That(deserialized.Key.ToArray(), Is.EqualTo(new byte[] { 0xAB, 0xAB, 0xAB }));
+            Assert.That(deserialized.ValueSpan.ToArray(), Is.EqualTo(new byte[] { 0xCD, 0xCD, 0xCD }));
+        }
 
         [Test]
         [Category(LogRecordCategory), Category(SmokeTestCategory)]
@@ -565,10 +794,7 @@ namespace Tsavorite.test.LogRecordTests
         }
 
         private void InitializeRecord<TKey>(TKey key, Span<byte> value, ref RecordSizeInfo sizeInfo, out LogRecord logRecord, out long expectedFillerLength, out long eTag, out long expiration)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
         {
             sizeInfo.FieldInfo = new()
             {

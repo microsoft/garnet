@@ -85,14 +85,16 @@ namespace Garnet.common
     /// </summary>
     public static class InfoCommandUtils
     {
-        static readonly byte[][] infoSections = [.. Enum.GetValues<InfoMetricsType>().Select(x => Encoding.ASCII.GetBytes($"${x.ToString().Length}\r\n{x}\r\n"))];
+        static readonly byte[][] infoSections = [.. Enum.GetValues<InfoMetricsType>().Select(x => Encoding.ASCII.GetBytes(x.ToString()))];
 
         /// <summary>
-        /// Return resp formatted info section
+        /// Return the raw section-name bytes for an info metrics type. The client argument writer frames each
+        /// argument as a RESP bulk string exactly once, so the bytes returned here must be unframed. Returns
+        /// <see langword="null"/> for the default section so the caller omits the section argument entirely.
         /// </summary>
         /// <param name="infoMetricsType"></param>
         /// <returns></returns>
-        public static byte[] GetRespFormattedInfoSection(InfoMetricsType infoMetricsType)
+        public static byte[] GetInfoSectionBytes(InfoMetricsType infoMetricsType)
             => infoMetricsType == default ? default(byte[]) : infoSections[(int)infoMetricsType];
     }
 }

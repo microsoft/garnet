@@ -3,12 +3,15 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Net.Security;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.common.Parsing;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.networking
@@ -140,6 +143,10 @@ namespace Garnet.networking
         readonly byte[] transportSendBuffer;
         readonly unsafe byte* transportSendBufferPtr;
 
+        // Receive cleanup owns one interest. Clients retaining raw plaintext pointers acquire another
+        // before Start; the last release returns the buffer, independently of socket shutdown.
+        int transportSendBufferOwners = 1;
+
         /* Wrapper for buffer used to write directly to the network */
         readonly TNetworkSender networkSender;
 
@@ -161,13 +168,26 @@ namespace Garnet.networking
         // Number of times Dispose has been called
         int disposeCount;
 
+        // Set once a TLS write fails; a failed write can leave a partial record on the connection, so nothing
+        // further can be written to it
+        bool writeFailed;
+
+        // Longest a server-side TLS handshake may take; zero waits indefinitely
+        readonly TimeSpan tlsHandshakeTimeout;
+
+        // Longest delay a cancellation timer supports, about 49.7 days
+        static readonly TimeSpan MaxTlsHandshakeTimeout = TimeSpan.FromMilliseconds(uint.MaxValue - 1);
+
         /// <summary>
         /// Constructor
         /// </summary>
-        public unsafe NetworkHandler(TServerHook serverHook, TNetworkSender networkSender, NetworkBufferSettings networkBufferSettings, LimitedFixedBufferPool networkPool, bool useTLS, IMessageConsumer messageConsumer = null, ILogger logger = null)
+        /// <param name="tlsHandshakeTimeout">Longest a server-side TLS handshake may take before the connection is closed. Zero or negative waits indefinitely; a timeout beyond the longest a timer supports, about 49.7 days, is limited to it.</param>
+        public unsafe NetworkHandler(TServerHook serverHook, TNetworkSender networkSender, NetworkBufferSettings networkBufferSettings, LimitedFixedBufferPool networkPool, bool useTLS, IMessageConsumer messageConsumer = null, ILogger logger = null, TimeSpan tlsHandshakeTimeout = default)
             : base(networkPool.MinAllocationSize)
         {
             this.logger = logger;
+            this.tlsHandshakeTimeout = tlsHandshakeTimeout <= TimeSpan.Zero ? TimeSpan.Zero
+                : tlsHandshakeTimeout < MaxTlsHandshakeTimeout ? tlsHandshakeTimeout : MaxTlsHandshakeTimeout;
             this.serverHook = serverHook;
             this.networkSender = networkSender;
             this.session = messageConsumer;
@@ -246,9 +266,13 @@ namespace Garnet.networking
         async Task AuthenticateAsServerAsync(SslServerAuthenticationOptions tlsOptions, string remoteEndpointName, CancellationToken token = default)
         {
             Debug.Assert(readerStatus == TlsReaderStatus.Active);
+
+            // The deadline is absolute; handshake bytes that arrive before it do not extend it
+            using var handshakeDeadline = tlsHandshakeTimeout > TimeSpan.Zero ? CancellationTokenSource.CreateLinkedTokenSource(token) : null;
+            handshakeDeadline?.CancelAfter(tlsHandshakeTimeout);
             try
             {
-                await sslStream.AuthenticateAsServerAsync(tlsOptions, token).ConfigureAwait(false);
+                await sslStream.AuthenticateAsServerAsync(tlsOptions, handshakeDeadline?.Token ?? token).ConfigureAwait(false);
 
                 if (token.IsCancellationRequested) throw new TaskCanceledException("AuthenticateAsServerAsync was cancelled");
 
@@ -263,10 +287,16 @@ namespace Garnet.networking
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "An error has occurred");
+                var timedOut = handshakeDeadline?.IsCancellationRequested == true && !token.IsCancellationRequested;
+                if (timedOut)
+                    logger?.LogInformation("TLS handshake with {remoteEndpoint} did not complete within {timeout}", remoteEndpointName, tlsHandshakeTimeout);
+                else
+                    logger?.LogWarning(ex, "An error has occurred");
                 readerStatus = TlsReaderStatus.Rest;
                 if (expectingData.CurrentCount == 0) expectingData.Release();
                 Dispose();
+                if (timedOut)
+                    throw new TimeoutException($"TLS handshake did not complete within {tlsHandshakeTimeout}", ex);
                 throw;
             }
         }
@@ -546,17 +576,40 @@ namespace Garnet.networking
         /// </summary>
         public INetworkSender GetNetworkSender() => sslStream == null ? networkSender : this;
 
+        /// <summary>
+        /// Handles end-of-stream for the TLS reader. A zero-byte read from <see cref="sslStream"/> means the peer
+        /// completed a graceful TLS shutdown (close_notify) or closed the connection, so no further plaintext can
+        /// arrive. Returns the reader to Rest, wakes the receive-loop waiter, and disposes the connection instead of
+        /// re-reading zero bytes forever while a partial frame remains buffered.
+        /// </summary>
+        void HandleReaderEndOfStream()
+        {
+            readerStatus = TlsReaderStatus.Rest;
+            if (expectingData.CurrentCount == 0) expectingData.Release();
+            Dispose();
+        }
+
         void Read()
         {
             bool retry = false;
-            while (networkBytesRead > networkReadHead || retry)
+            while (networkBytesRead > networkReadHead || transportBytesRead > 0 || retry)
             {
                 retry = false;
                 var result = sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), cancellationTokenSource.Token);
                 if (result.IsCompletedSuccessfully)
                 {
                     // blocking is unavoidable here, but safe since we've checked IsCompletedSuccessfully
-                    transportBytesRead += AsyncUtils.BlockingWait(result);
+                    var count = AsyncUtils.BlockingWait(result);
+                    if (count == 0)
+                    {
+                        // Peer completed a graceful TLS shutdown (close_notify) or closed the connection: no further
+                        // plaintext can arrive. Tear down instead of re-reading zero bytes forever while a partial
+                        // frame remains buffered. No expectingData release here: the synchronous path has no waiter.
+                        readerStatus = TlsReaderStatus.Rest;
+                        Dispose();
+                        return;
+                    }
+                    transportBytesRead += count;
 
                     // Occupancy before processing is the capacity this pass needed; the residual after it is not.
                     var transportDemand = transportBytesRead;
@@ -568,16 +621,7 @@ namespace Garnet.networking
                     if (transportReadHead > 0)
                         ShiftTransportReceiveBuffer();
 
-                    // Double the transport buffer if needed
-                    if (transportBytesRead == transportReceiveBuffer.Length)
-                    {
-                        DoubleTransportReceiveBuffer();
-                        retry = true;
-                    }
-                    else
-                    {
-                        TryShrinkTransportReceiveBuffer(transportDemand);
-                    }
+                    retry = AdjustTransportReceiveBufferAfterProcess(transportDemand);
                 }
                 else
                 {
@@ -599,6 +643,15 @@ namespace Garnet.networking
 
                 Debug.Assert(readerStatus == TlsReaderStatus.Active);
 
+                if (count == 0)
+                {
+                    // Peer completed a graceful TLS shutdown (close_notify) or closed the connection: no further
+                    // plaintext can arrive. Tear down instead of re-reading zero bytes forever while a partial frame
+                    // remains buffered.
+                    HandleReaderEndOfStream();
+                    return;
+                }
+
                 transportBytesRead += count;
 
                 // Occupancy before processing is the capacity this pass needed; the residual after it is not.
@@ -612,23 +665,12 @@ namespace Garnet.networking
                 if (transportReadHead > 0)
                     ShiftTransportReceiveBuffer();
 
-                // Double the transport buffer if needed
-                if (transportBytesRead == transportReceiveBuffer.Length)
-                {
-                    DoubleTransportReceiveBuffer();
-                    retry = true;
-                }
-                else
-                {
-                    TryShrinkTransportReceiveBuffer(transportDemand);
-                }
-                // If more work, passthrough to the general SslReaderAsync, else this task is done.
-                // NOTE: we must propagate the `retry` flag (which signals "the transport buffer was just doubled,
-                // attempt another read into the freshly-enlarged buffer"). If we chained without it, the new
-                // SslReaderLoopAsync would start with retry=false and, when networkBytesRead==networkReadHead,
-                // exit its loop immediately without ever issuing the follow-up read, leaving the half-parsed
-                // payload stuck in the transport buffer until more network bytes happen to arrive.
-                if (networkBytesRead > networkReadHead || retry)
+                retry = AdjustTransportReceiveBufferAfterProcess(transportDemand);
+
+                // Continue while a reply remains partially parsed even when all ciphertext has been consumed;
+                // SslStream may still hold its remaining plaintext internally. Also propagate retry after a read
+                // that filled the transport buffer so SslStream is drained before returning to the network receive loop.
+                if (networkBytesRead > networkReadHead || transportBytesRead > 0 || retry)
                 {
                     _ = SslReaderLoopAsync(retry, token);
                 }
@@ -654,12 +696,29 @@ namespace Garnet.networking
             try
             {
                 bool retry = initialRetry;
-                while (networkBytesRead > networkReadHead || retry)
+                while (networkBytesRead > networkReadHead || transportBytesRead > 0 || retry)
                 {
                     retry = false;
+#if DEBUG
+                    // Test-only rendezvous: while a partial (not-yet-consumable) frame is buffered, pause before
+                    // the next read so a test can deliver a graceful close (close_notify/EOF) mid-frame and
+                    // exercise the end-of-stream handling below. No-op unless the injection point is enabled;
+                    // compiled out entirely in Release.
+                    if (transportBytesRead > 0)
+                        await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Tls_Pause_With_Partial_Frame).ConfigureAwait(false);
+#endif
                     Debug.Assert(readerStatus == TlsReaderStatus.Active);
                     int count = await sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), token).ConfigureAwait(false);
                     Debug.Assert(readerStatus == TlsReaderStatus.Active);
+
+                    if (count == 0)
+                    {
+                        // Peer completed a graceful TLS shutdown (close_notify) or closed the connection: no further
+                        // plaintext can arrive. Tear down instead of re-reading zero bytes forever while a partial
+                        // frame remains buffered.
+                        HandleReaderEndOfStream();
+                        return;
+                    }
 
                     transportBytesRead += count;
 
@@ -674,16 +733,7 @@ namespace Garnet.networking
                     if (transportReadHead > 0)
                         ShiftTransportReceiveBuffer();
 
-                    // Double the transport buffer if needed
-                    if (transportBytesRead == transportReceiveBuffer.Length)
-                    {
-                        DoubleTransportReceiveBuffer();
-                        retry = true;
-                    }
-                    else
-                    {
-                        TryShrinkTransportReceiveBuffer(transportDemand);
-                    }
+                    retry = AdjustTransportReceiveBufferAfterProcess(transportDemand);
                 }
 
                 // Normal exit: hand control back to OnNetworkReceiveWithTLSAsync.
@@ -724,7 +774,8 @@ namespace Garnet.networking
 
         unsafe void DoubleNetworkReceiveBuffer()
         {
-            var tmp = networkPool.Get(networkReceiveBuffer.Length * 2, PoolEntryBufferType.DoubleNetworkReceiveBuffer);
+            RespParsingException.ThrowIfReceiveBufferLimitExceeded(networkReceiveBuffer.Length);
+            var tmp = networkPool.Get(Math.Min(networkReceiveBuffer.Length * 2, RespLimits.MaxReceiveBufferBytes), PoolEntryBufferType.DoubleNetworkReceiveBuffer);
             Array.Copy(networkReceiveBuffer, tmp.entry, networkReceiveBuffer.Length);
             networkReceiveBufferEntry.Dispose();
             networkReceiveBufferEntry = tmp;
@@ -784,7 +835,8 @@ namespace Garnet.networking
         {
             if (sslStream != null)
             {
-                var tmp = networkPool.Get(transportReceiveBuffer.Length * 2, PoolEntryBufferType.DoubleTransportReceiveBuffer);
+                RespParsingException.ThrowIfReceiveBufferLimitExceeded(transportReceiveBuffer.Length);
+                var tmp = networkPool.Get(Math.Min(transportReceiveBuffer.Length * 2, RespLimits.MaxReceiveBufferBytes), PoolEntryBufferType.DoubleTransportReceiveBuffer);
                 Array.Copy(transportReceiveBuffer, tmp.entry, transportReceiveBuffer.Length);
                 transportReceiveBufferEntry.Dispose();
                 transportReceiveBufferEntry = tmp;
@@ -792,6 +844,30 @@ namespace Garnet.networking
                 transportReceiveBufferPtr = tmp.entryPtr;
                 transportShrinkCountdown = ShrinkHysteresis;
             }
+        }
+
+        /// <summary>
+        /// Resizes the transport buffer after a processed read and reports whether the reader must read again.
+        /// A read that filled the buffer may have stopped short of the end of a TLS record, leaving decrypted
+        /// plaintext inside <see cref="SslStream"/> with no further ciphertext to trigger another receive, so
+        /// the reader re-reads even when processing consumed every byte. The buffer doubles only when unparsed
+        /// bytes still fill it.
+        /// </summary>
+        /// <param name="transportDemand">Bytes the buffer held before processing.</param>
+        /// <returns>True if the reader must issue another read before resting.</returns>
+        bool AdjustTransportReceiveBufferAfterProcess(int transportDemand)
+        {
+            if (transportBytesRead == transportReceiveBuffer.Length)
+            {
+                DoubleTransportReceiveBuffer();
+                return true;
+            }
+
+            if (transportDemand == transportReceiveBuffer.Length)
+                return true;
+
+            TryShrinkTransportReceiveBuffer(transportDemand);
+            return false;
         }
 
         /// <summary>
@@ -880,8 +956,24 @@ namespace Garnet.networking
             logger?.LogTrace("SEND: [{send}]", System.Text.Encoding.UTF8.GetString(
                 new Span<byte>(transportSendBuffer).Slice(offset, size)).Replace("\n", "|").Replace("\r", ""));
 #endif
-            sslStream.Write(transportSendBuffer, offset, size);
-            sslStream.Flush();
+            if (writeFailed)
+                return false;
+
+            try
+            {
+                sslStream.Write(transportSendBuffer, offset, size);
+                sslStream.Flush();
+            }
+            catch (Exception ex)
+            {
+                writeFailed = true;
+
+                // SslStream wraps what the underlying sender throws; surface the sender's own failure, such as a send
+                // timeout, as the session would see it without TLS
+                if (ex is IOException { InnerException: GarnetException inner })
+                    ExceptionDispatchInfo.Throw(inner);
+                throw;
+            }
             return true;
         }
 
@@ -910,6 +1002,25 @@ namespace Garnet.networking
             => transportSendBufferPtr + transportSendBuffer.Length;
 
         /// <summary>
+        /// Retains the TLS plaintext send buffer for an external sender. Call before starting the handler.
+        /// </summary>
+        protected void RetainTransportSendBuffer()
+        {
+            Debug.Assert(disposeCount == 0);
+            if (transportSendBufferEntry != null)
+                Interlocked.Increment(ref transportSendBufferOwners);
+        }
+
+        /// <summary>
+        /// Disposes one TLS plaintext-buffer ownership interest; the last owner returns the buffer.
+        /// </summary>
+        protected void DisposeTransportSendBuffer()
+        {
+            if (transportSendBufferEntry != null && Interlocked.Decrement(ref transportSendBufferOwners) == 0)
+                transportSendBufferEntry.Dispose();
+        }
+
+        /// <summary>
         /// Implementation of dispose for network handler.
         /// Expected to be called exactly once, by the same thread that listens to network
         /// and calls the mono-threaded ProcessMessage.
@@ -925,20 +1036,30 @@ namespace Garnet.networking
                 return;
             }
 
-            cancellationTokenSource?.Cancel();
-            serverHook.DisposeMessageConsumer(this);
-            networkSender.Dispose();
-            sslStream?.Dispose();
-            // Release the reader so it sees the cancellation
-            receivedData?.Release();
-            receivedData?.Dispose();
-            // Release the expecter so it sees the cancellation
-            expectingData?.Release();
-            expectingData?.Dispose();
-            cancellationTokenSource?.Dispose();
-            networkReceiveBufferEntry?.Dispose();
-            transportSendBufferEntry?.Dispose();
-            transportReceiveBufferEntry?.Dispose();
+            try
+            {
+                cancellationTokenSource?.Cancel();
+                serverHook.DisposeMessageConsumer(this);
+                networkSender.Dispose();
+                sslStream?.Dispose();
+                // Release the reader so it sees the cancellation
+                receivedData?.Release();
+                receivedData?.Dispose();
+                // Release the expecter so it sees the cancellation
+                expectingData?.Release();
+                expectingData?.Dispose();
+                cancellationTokenSource?.Dispose();
+                networkReceiveBufferEntry?.Dispose();
+                transportReceiveBufferEntry?.Dispose();
+            }
+            finally
+            {
+                DisposeTransportSendBuffer();
+#if DEBUG
+                if (transportSendBufferEntry != null)
+                    _ = ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Tls_Signal_After_Handler_Dispose);
+#endif
+            }
         }
 
         /// <inheritdoc />

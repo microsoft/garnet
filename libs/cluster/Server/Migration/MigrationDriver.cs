@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading.Tasks;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -37,7 +38,7 @@ namespace Garnet.cluster
                 logger?.LogTrace("Sending CLUSTER SETSLOTRANGE {state} {nodeid} {slots}", state, nodeid ?? "null", ClusterManager.GetRange([.. _sslots]));
 
                 var result = await client.SetSlotRange(stateBytes, nodeid, _slotRanges)
-                    .WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+                    .WaitAsync(_timeout, migrationCancellationSource.Token).ConfigureAwait(false);
 
                 // Check if setslotsrange executed correctly
                 if (!result.Equals("OK", StringComparison.Ordinal))
@@ -134,9 +135,14 @@ namespace Garnet.cluster
             await Task.Yield();
 
             var configResumed = true;
+            var enteredWorkers = 0;
             try
             {
-                clusterProvider.storeWrapper.store.PauseRevivification(_timeout, _cts.Token);
+                // Each operation has one owner; child scans join before the driver releases these lifetimes.
+                for (; enteredWorkers < migrateOperation.Length; enteredWorkers++)
+                    migrateOperation[enteredWorkers].EnterWorker();
+
+                clusterProvider.storeWrapper.store.PauseRevivification(_timeout, migrationCancellationSource.Token);
 
                 // Set target node to import state
                 if (!await TrySetSlotRangesAsync(GetSourceNodeId, MigrateState.IMPORT).ConfigureAwait(false))
@@ -188,6 +194,7 @@ namespace Garnet.cluster
                 // Lock config merge to avoid a background epoch bump
                 clusterProvider.clusterManager.SuspendConfigMerge();
                 configResumed = false;
+                await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.Migration_Hold_Ownership_Transfer).ConfigureAwait(false);
                 await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false).ConfigureAwait(false);
 
                 // Change ownership of slots to target node.
@@ -221,9 +228,23 @@ namespace Garnet.cluster
             }
             finally
             {
-                if (!configResumed) clusterProvider.clusterManager.ResumeConfigMerge();
-                clusterProvider.storeWrapper.store.ResumeRevivification();
-                _ = clusterProvider.migrationManager.TryRemoveMigrationTask(this);
+                try
+                {
+                    if (!configResumed) clusterProvider.clusterManager.ResumeConfigMerge();
+                    clusterProvider.storeWrapper.store.ResumeRevivification();
+                }
+                finally
+                {
+                    try
+                    {
+                        _ = clusterProvider.migrationManager.TryRemoveMigrationTask(this);
+                    }
+                    finally
+                    {
+                        for (var i = 0; i < enteredWorkers; i++)
+                            migrateOperation[i].ExitWorker();
+                    }
+                }
             }
         }
     }

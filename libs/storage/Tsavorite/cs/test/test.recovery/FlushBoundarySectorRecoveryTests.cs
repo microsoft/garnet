@@ -210,7 +210,7 @@ namespace Tsavorite.test.recovery
 
                 // Its record walk takes microseconds, so it would have issued its writes well within this interval.
                 Thread.Sleep(500);
-                Assert.That(gatedLog.CapturedCount, Is.EqualTo(1), "the second flush wrote the sector before the first flush's write of it completed");
+                Assert.That(gatedLog.PendingCount, Is.EqualTo(1), "the second flush wrote the sector before the first flush's write of it completed");
 
                 ReleaseThrough(1);
                 gatedLog.WaitForPending(1 + secondFlushWrites, TimeSpan.FromSeconds(30));
@@ -228,7 +228,7 @@ namespace Tsavorite.test.recovery
             {
                 // Never leave a write captured, or the second flush and the store's disposal wait for it.
                 gatedLog.Gate = false;
-                ReleaseThrough(gatedLog.CapturedCount);
+                ReleaseThrough(gatedLog.PendingCount);
                 _ = secondFlush?.Wait(TimeSpan.FromSeconds(30));
                 store.Dispose();
             }

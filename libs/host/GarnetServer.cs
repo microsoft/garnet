@@ -177,6 +177,7 @@ namespace Garnet
         private void InitializeServer()
         {
             Debug.Assert(opts != null);
+            opts.ValidateMigrationOptions();
 
             if (!opts.QuietMode)
             {
@@ -193,6 +194,9 @@ namespace Garnet
                     {normal}
                     """);
             }
+
+            // Validate programmatic options before allocating stores or network buffers.
+            _ = opts.GetReplicaDiskBasedSyncPipelineDepth();
 
             var clusterFactory = opts.EnableCluster ? new ClusterFactory() : null;
 
@@ -304,7 +308,8 @@ namespace Garnet
                         File.Delete(opts.UnixSocketPath);
                     }
                     servers[i] = new GarnetServerTcp(opts.EndPoints[i], 0, opts.TlsOptions, opts.NetworkSendThrottleMax, connectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission,
-                        networkBufferSettings, opts.GetNetworkBufferPoolSize(), networkBufferBudget, logger);
+                        networkBufferSettings, opts.GetNetworkBufferPoolSize(), networkBufferBudget, logger,
+                        networkSendTimeout: opts.NetworkSendTimeout, tlsHandshakeTimeout: opts.TlsHandshakeTimeout);
                 }
             }
 
@@ -315,13 +320,18 @@ namespace Garnet
 
             if (logger != null)
             {
-                var configMemoryLimit = (storeWrapper.store.IndexSize * 64) +
-                                        storeWrapper.store.Log.MaxMemorySizeBytes +
-                                        (storeWrapper.store.ReadCache?.MaxMemorySizeBytes ?? 0) +
-                                        (storeWrapper.appendOnlyFile?.Log.MaxMemorySizeBytes.AggregateDiff(0) ?? 0) +
-                                        (storeWrapper.sizeTracker?.TargetSize ?? 0) +
-                                        (storeWrapper.sizeTracker?.ReadCacheTargetSize ?? 0);
+                // Tracker targets include both log pages and heap objects. Without a tracker, use the page-count cap.
+                var mainLogMemoryLimit = storeWrapper.store.Log.LogSizeTracker?.TargetSize ?? storeWrapper.store.Log.MaxMemorySizeBytes;
+                var readCacheMemoryLimit = storeWrapper.store.ReadCache?.LogSizeTracker?.TargetSize ?? storeWrapper.store.ReadCache?.MaxMemorySizeBytes ?? 0;
+                var indexMemoryLimit = opts.IndexMemoryBudgetBytes;
+                var configMemoryLimit = indexMemoryLimit +
+                                        mainLogMemoryLimit +
+                                        readCacheMemoryLimit +
+                                        (storeWrapper.appendOnlyFile?.Log.MaxMemorySizeBytes.AggregateDiff(0) ?? 0);
                 logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
+                logger.LogInformation("Hash index holds one entry per distinct key, including keys whose records are on disk, at ~{bytesPerKey} bytes per key;"
+                    + " the configured index budget of {indexMemoryLimit} bytes covers ~{keyCapacity} keys, beyond which index memory is taken from the log budget",
+                    64.0 / 7, indexMemoryLimit, Math.Max(storeWrapper.store.IndexSize, opts.AdjustedIndexMaxCacheLines) * 7);
             }
 
             var maxDatabases = opts.EnableCluster ? 1 : opts.MaxDatabases;
@@ -516,9 +526,12 @@ namespace Garnet
                     new GarnetRecordTriggers(cacheSizeTracker, rangeIndexManager, vectorManager))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
+            // The budget includes the store's overflow-bucket floor, which depends on the sector size of the store's devices.
+            opts.SetIndexMemoryBudget(kvSettings, store.IndexOverflowFloorSizeBytes);
+
             if (kvSettings.LogMemorySize > 0 || kvSettings.ReadCacheMemorySize > 0)
             {
-                cacheSizeTracker.Initialize(store, kvSettings.LogMemorySize, kvSettings.ReadCacheMemorySize, this.loggerFactory);
+                cacheSizeTracker.Initialize(store, kvSettings.LogMemorySize, kvSettings.ReadCacheMemorySize, this.loggerFactory, opts.IndexMemoryBudgetBytes);
                 sizeTracker = cacheSizeTracker;
             }
             return store;

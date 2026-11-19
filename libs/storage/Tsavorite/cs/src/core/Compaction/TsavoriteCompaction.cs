@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Runtime.CompilerServices;
+
 namespace Tsavorite.core
 {
     /// <summary>
@@ -14,6 +16,10 @@ namespace Tsavorite.core
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
         /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
+        /// <remarks>
+        /// <paramref name="untilAddress"/> need not be a record boundary; compaction snaps it to the end of the last record that starts below it,
+        /// which is the returned address.
+        /// </remarks>
         /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions"/>).</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
@@ -27,6 +33,48 @@ namespace Tsavorite.core
                 CompactionType.Lookup => CompactLookup<TInput, TOutput, TContext, TCompactionFunctions>(cf, untilAddress),
                 _ => throw new TsavoriteException("Invalid compaction type"),
             };
+        }
+
+        /// <summary>
+        /// Verify that a copy to the tail succeeded. Compaction drops the source records by shifting BeginAddress past them, so a copy that
+        /// failed would be permanent data loss; fail the compaction instead and leave BeginAddress where it is.
+        /// </summary>
+        private static void VerifyCompactionCopyStatus(Status status)
+        {
+            if (status.IsFaulted || status.IsCanceled)
+                ThrowCompactionCopyFailed(status);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void ThrowCompactionCopyFailed(Status status)
+            => throw new TsavoriteException($"Compaction could not copy a record to the tail: {status}");
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void ThrowPendingCompactionCopyFailed(long count)
+            => throw new TsavoriteException($"Compaction had {count} pending copy(s) to the tail end without completing successfully");
+
+        /// <summary>Drain the pending copies to the tail, verifying that each one succeeded.</summary>
+        /// <remarks>
+        /// Two checks are needed because a pending op that ends faulted leaves no trace in the outputs: the drain transfers to
+        /// <see cref="CompletedOutputIterator{TInput, TOutput, TContext}"/> only when the terminal status is successful, so
+        /// iterating the outputs alone would silently treat such a copy as done and let <c>ShiftBeginAddress</c> drop its source.
+        /// The context's faulted-completion counter covers exactly that case.
+        /// </remarks>
+        private static void CompletePendingCompactionCopies<TInput, TOutput, TContext>(
+                ClientSession<ITsavoriteScanIterator, TInput, TOutput, TContext, NoOpSessionFunctions<TInput, TOutput, TContext>, TStoreFunctions, TAllocator> session)
+        {
+            var faultedBeforeDrain = session.ctx.faultedPendingCount;
+
+            _ = session.BasicContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            using (completedOutputs)
+            {
+                while (completedOutputs.Next())
+                    VerifyCompactionCopyStatus(completedOutputs.Current.Status);
+            }
+
+            var faulted = session.ctx.faultedPendingCount - faultedBeforeDrain;
+            if (faulted != 0)
+                ThrowPendingCompactionCopyFailed(faulted);
         }
 
         private long CompactLookup<TInput, TOutput, TContext, TCompactionFunctions>(TCompactionFunctions cf, long untilAddress)
@@ -49,19 +97,32 @@ namespace Tsavorite.core
                     {
                         var iter1AsLogSource = iter1 as ISourceLogRecord;   // Can't use 'ref' on a 'using' variable
                         var status = storebContext.CompactionCopyToTail(in iter1AsLogSource, iter1.CurrentAddress, iter1.NextAddress);
-                        if (status.IsPending && ++numPending > 256)
+                        if (status.IsPending)
                         {
-                            _ = storebContext.CompletePending(wait: true);
-                            numPending = 0;
+                            if (++numPending > 256)
+                            {
+                                CompletePendingCompactionCopies(storeSession);
+                                numPending = 0;
+                            }
                         }
+                        else
+                            VerifyCompactionCopyStatus(status);
                     }
 
-                    // Ensure address is at record boundary
+                    // Ensure address is at record boundary. The scan returns the last record that starts below untilAddress whole, even
+                    // if it ends above it, so this can advance untilAddress past what the caller asked for.
                     untilAddress = iter1.NextAddress;
                 }
                 if (numPending > 0)
-                    _ = storebContext.CompletePending(wait: true);
+                    CompletePendingCompactionCopies(storeSession);
             }
+
+            // Only reached when every record in the range was copied: a failed copy throws, leaving BeginAddress unchanged so no
+            // original is dropped. The tail copies are then the live versions and the originals below them are stale, which is
+            // exactly the state an ordinary update leaves the log in. A Log.Scan walks the log physically and so returns both
+            // versions (Iterate() is the distinct-key API); consumers that need liveness filter on it, including a later
+            // compaction, whose minAddress check finds the newer tail version and skips the stale original. Retrying is
+            // therefore idempotent, and the partial work costs log space until a later compaction reclaims it.
             Log.ShiftBeginAddress(untilAddress, false);
             return untilAddress;
         }
@@ -100,7 +161,8 @@ namespace Tsavorite.core
                             _ = tempbContext.Upsert(in iterLogRecord);
                         }
                     }
-                    // Ensure address is at record boundary
+                    // Ensure address is at record boundary. The scan returns the last record that starts below untilAddress whole, even
+                    // if it ends above it, so this can advance untilAddress past what the caller asked for.
                     untilAddress = originalUntilAddress = iter1.NextAddress;
                 }
 
@@ -129,15 +191,27 @@ namespace Tsavorite.core
                     // to the tail. We don't know the actualAddress of the key in the main kv, but we it will not be below untilAddress.
                     var iter3AsLogSource = iter3 as ISourceLogRecord;   // Can't use 'ref' on a 'using' variable
                     var status = storebContext.CompactionCopyToTail(in iter3AsLogSource, iter3.CurrentAddress, untilAddress - 1);
-                    if (status.IsPending && ++numPending > 256)
+                    if (status.IsPending)
                     {
-                        _ = storebContext.CompletePending(wait: true);
-                        numPending = 0;
+                        if (++numPending > 256)
+                        {
+                            CompletePendingCompactionCopies(storeSession);
+                            numPending = 0;
+                        }
                     }
+                    else
+                        VerifyCompactionCopyStatus(status);
                 }
                 if (numPending > 0)
-                    _ = storebContext.CompletePending(wait: true);
+                    CompletePendingCompactionCopies(storeSession);
             }
+
+            // Only reached when every record in the range was copied: a failed copy throws, leaving BeginAddress unchanged so no
+            // original is dropped. The tail copies are then the live versions and the originals below them are stale, which is
+            // exactly the state an ordinary update leaves the log in. A Log.Scan walks the log physically and so returns both
+            // versions (Iterate() is the distinct-key API); consumers that need liveness filter on it, including a later
+            // compaction, whose minAddress check finds the newer tail version and skips the stale original. Retrying is
+            // therefore idempotent, and the partial work costs log space until a later compaction reclaims it.
             Log.ShiftBeginAddress(originalUntilAddress, false);
             return originalUntilAddress;
         }

@@ -19,27 +19,46 @@ namespace Garnet.server
     {
         /// <inheritdoc />
         public readonly bool NeedInitialUpdate<TKey>(TKey key, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
         {
             switch (input.header.cmd)
             {
+                case RespCommand.DELIFEQ:
+                case RespCommand.DELEX:
+                    functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
+                    return false;
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.GETDEL:
                 case RespCommand.GETEX:
                 case RespCommand.DELIFGREATER:
+                case RespCommand.SETIFEQ:
+                case RespCommand.SETKEEPTTLIFEQ:
+                case RespCommand.SETIFDEQ:
+                case RespCommand.SETKEEPTTLIFDEQ:
                     return false;
                 case RespCommand.SETEXXX:
                     return false;
-                case RespCommand.SETIFGREATER:
+                case RespCommand.APPEND:
+                    // A new value is the appended value alone
+                    return !AppendExceedsMaxSize(0, input.parseState.GetArgSliceByRef(0).Length, ref output);
                 case RespCommand.SETIFMATCH:
+                    // The new record's ETag is one past the ETag sent by the client
+                    if (input.parseState.GetLong(1) == long.MaxValue)
+                    {
+                        WriteEtagOverflowError(ref output);
+                        return false;
+                    }
+                    return true;
+                case RespCommand.SETIFGREATER:
                 case RespCommand.SETWITHETAG:
                 // add etag on first insertion, already tracked by header.CheckWithEtagFlag()
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
                 case RespCommand.SETKEEPTTL:
+                case RespCommand.SETIFNE:
+                case RespCommand.SETKEEPTTLIFNE:
+                case RespCommand.SETIFDNE:
+                case RespCommand.SETKEEPTTLIFDNE:
                     return true;
                 case RespCommand.RICREATE:
                     return true;
@@ -52,7 +71,9 @@ namespace Garnet.server
                     // DEL happened and we should not do InitialUpdate, otherwise we would ressurect a stub with garbage data.
                     return input.arg1 is VectorManager.CreateIndexArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg;
                 case RespCommand.VREM:
-                    // VREM should never create a new record in InitialUpdate, only VADD should.
+                case RespCommand.XVCREATE:
+                case RespCommand.XVIMPORT:
+                    // These operations should never create a new record in InitialUpdate, only VADD should.
                     return false;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
@@ -84,6 +105,16 @@ namespace Garnet.server
             var cmd = input.header.cmd;
             switch (cmd)
             {
+                case RespCommand.SETIFNE:
+                case RespCommand.SETKEEPTTLIFNE:
+                case RespCommand.SETIFDNE:
+                case RespCommand.SETKEEPTTLIFDNE:
+                    var updateInput = input;
+                    updateInput.header.cmd = cmd is RespCommand.SETIFNE or RespCommand.SETIFDNE ? RespCommand.SET : RespCommand.SETKEEPTTL;
+                    if (!InitialUpdater(ref logRecord, in sizeInfo, ref updateInput, ref output, ref rmwInfo))
+                        return false;
+                    functionsState.CopyDefaultResp(input.header.CheckSetGetFlag() ? functionsState.nilResp : CmdStrings.RESP_OK, ref output.SpanByteAndMemory);
+                    return true;
                 case RespCommand.PFADD:
                     RecordSizeInfo.AssertValueDataLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input), in sizeInfo);
                     if (!logRecord.TrySetContentLengths(in sizeInfo))
@@ -165,8 +196,10 @@ namespace Garnet.server
                         return false;
                     }
 
-                    // Always return 0 at initial updater because previous value was 0
+                    // A revivified record or one reinitialized from an expired record keeps its old bytes, so clear the value before setting the bit.
+                    // Always return 0 at initial updater because previous value was 0.
                     value = logRecord.ValueSpan;
+                    value.Clear();
 
                     if (logRecord.IsPinnedValue)
                         _ = BitmapManager.UpdateBitmap(logRecord.PinnedValuePointer, bOffset, bSetVal);
@@ -331,7 +364,9 @@ namespace Garnet.server
                         // because otherwise a replica might observe a Vector Set missing its expiration briefly
                         var expirationTicks = input.parseState.Count >= 13 ? MemoryMarshal.Read<long>(input.parseState.GetArgSliceByRef(12).Span) : 0;
 
-                        functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, index, logRecord.ValueSpan);
+                        var startPointId = input.parseState.Count >= 14 ? MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(13).Span) : VectorManager.DefaultStartPointId;
+
+                        functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, index, logRecord.ValueSpan, startPointId);
 
                         if (expirationTicks != 0)
                         {
@@ -396,35 +431,46 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Whether <paramref name="cmd"/> must answer WRONGTYPE instead of updating <paramref name="srcLogRecord"/>: an object value,
+        /// a RangeIndex record updated by a command not legal on one, a RangeIndex command on any other record, or a Vector Set
+        /// updated by a command not legal on one.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static bool IsWrongTypeForUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RespCommand cmd)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (srcLogRecord.DataHeader.ValueIsObject)
+                return true;
+
+            var recordType = srcLogRecord.RecordType;
+            if (recordType == RangeIndexManager.RangeIndexRecordType)
+                return !cmd.IsLegalOnRangeIndex();
+            return cmd.IsRangeIndexCommand() || (recordType == VectorManager.RecordType && !cmd.IsLegalOnVectorSet());
+        }
+
         /// <inheritdoc />
         public readonly bool InPlaceUpdater(ref LogRecord logRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
-            if (logRecord.DataHeader.ValueIsObject)
+            // Expired data is logically absent, so check this before any type-mismatch gate below; otherwise an
+            // expired record of a different type (object, RangeIndex, or Vector Set) would incorrectly block a
+            // command that should treat the key as non-existent.
+            if (logRecord.DataHeader.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
             {
-                rmwInfo.Action = RMWAction.WrongType;
+                rmwInfo.Action = RMWAction.ExpireAndResume;
+                _ = logRecord.RemoveETag();
                 return false;
             }
 
-            // RangeIndex type safety – normal string records have RecordType 0; skip all checks in that common case.
-            if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
+            if (IsWrongTypeForUpdate(in logRecord, input.header.cmd))
             {
-                // Reject non-RI commands on RI keys
-                if (!input.header.cmd.IsLegalOnRangeIndex())
+                // A live key of any type leaves NX unmet; only the GET of SET NX GET needs a string value.
+                if (input.header.cmd == RespCommand.SETEXNX && !input.header.CheckSetGetFlag())
                 {
-                    rmwInfo.Action = RMWAction.WrongType;
-                    return false;
+                    rmwInfo.RecordUnchanged = true;
+                    return true;
                 }
-            }
-            else if (input.header.cmd.IsRangeIndexCommand())
-            {
-                // Reject RI-specific commands on non-RI keys
-                rmwInfo.Action = RMWAction.WrongType;
-                return false;
-            }
 
-            // WRONGTYPE all updates on Vector Sets from non-Vector Set commands
-            if (logRecord.RecordType == VectorManager.RecordType && !input.header.cmd.IsLegalOnVectorSet())
-            {
                 rmwInfo.Action = RMWAction.WrongType;
                 return false;
             }
@@ -442,6 +488,9 @@ namespace Garnet.server
                     return true;
                 case IPUResult.NotUpdated:
                 default:
+                    // The record keeps its Modified bit: setting it without a version bump would hide the key's next
+                    // in-place update from WATCH.
+                    rmwInfo.RecordUnchanged = true;
                     return true;
             }
         }
@@ -449,13 +498,6 @@ namespace Garnet.server
         private readonly IPUResult InPlaceUpdaterWorker(ref LogRecord logRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
             var cmd = input.header.cmd;
-            // Expired data
-            if (logRecord.DataHeader.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
-            {
-                rmwInfo.Action = RMWAction.ExpireAndResume;
-                _ = logRecord.RemoveETag();
-                return IPUResult.Failed;
-            }
 
             // sizeInfo is declared lazily inside each switch case that needs it (the non-inline / growing branches).
             // INCR / DECR / INCRBY / DECRBY / INCRBYFLOAT and the inline forks of SET / SETKEEPTTL / SETBIT / BITFIELD
@@ -478,6 +520,21 @@ namespace Garnet.server
 
                     // Nothing is set because being in this block means NX was already violated
                     return IPUResult.NotUpdated;
+                case RespCommand.SETIFEQ:
+                case RespCommand.SETKEEPTTLIFEQ:
+                case RespCommand.SETIFNE:
+                case RespCommand.SETKEEPTTLIFNE:
+                case RespCommand.SETIFDEQ:
+                case RespCommand.SETKEEPTTLIFDEQ:
+                case RespCommand.SETIFDNE:
+                case RespCommand.SETKEEPTTLIFDNE:
+                    return SetValueConditionalInPlaceUpdate(ref logRecord, ref input, ref output, ref rmwInfo);
+                case RespCommand.DELIFEQ:
+                case RespCommand.DELEX:
+                    _ = DeleteValueConditional(in logRecord, ref input, ref output, ref rmwInfo);
+                    if (rmwInfo.Action == RMWAction.Default)
+                        rmwInfo.Action = RMWAction.CancelOperation;
+                    return IPUResult.Failed;
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
                     // Note: SETEXXX may or may not actually have an expiration.
@@ -816,6 +873,9 @@ namespace Garnet.server
                     {
                         // Try to grow in place.
                         var originalLength = logRecord.ValueSpan.Length;
+                        if (AppendExceedsMaxSize(originalLength, appendLength, ref output))
+                            return IPUResult.NotUpdated;
+
                         totalLength = originalLength + appendLength;
 
                         // Try to grow in place. We are not changing the presence of ETag or Expiration
@@ -843,6 +903,15 @@ namespace Garnet.server
                     }
 
                     return TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output) ? IPUResult.Succeeded : IPUResult.Failed;
+                case RespCommand.XVCREATE:
+                case RespCommand.XVIMPORT:
+                    if (logRecord.RecordType != VectorManager.RecordType)
+                    {
+                        rmwInfo.Action = RMWAction.WrongType;
+                        return IPUResult.Failed;
+                    }
+                    return IPUResult.Succeeded;
+
                 case RespCommand.VADD:
                     // If the key was concurrently deleted and re-typed (e.g. a raced String SET) the record is no longer
                     // an index; cancel so no AOF entry is emitted.
@@ -868,12 +937,13 @@ namespace Garnet.server
                         functionsState.vectorManager.RecreateIndex(newIndexPtr, logRecord.ValueSpan);
                     }
 
-                    if (input.arg1 == VectorManager.VADDSetFlagsArg)
+                    if (input.arg1 is VectorManager.VADDSetFlagsArg or VectorManager.SetImportStateArg)
                     {
                         // Update flags on the index
                         var flags = MemoryMarshal.Read<VectorSetFlags>(input.parseState.GetArgSliceByRef(0).Span);
 
-                        VectorManager.SetIndexFlags(logRecord.ValueSpan, flags);
+                        VectorManager.SetIndexFlags(logRecord.ValueSpan, flags,
+                            input.arg1 == VectorManager.SetImportStateArg ? VectorSetFlags.ImportPending | VectorSetFlags.ImportCompleted | VectorSetFlags.ImportFailed : VectorSetFlags.SuppressCleanup);
                     }
 
                     // Ignore everything else
@@ -972,10 +1042,147 @@ namespace Garnet.server
             return IPUResult.Succeeded;
         }
 
+        private readonly bool CheckSetValueCondition(ReadOnlySpan<byte> value, ref StringInput input, ref StringOutput output)
+        {
+            var cmd = input.header.cmd;
+            var expected = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
+            var notEqual = cmd is RespCommand.SETIFNE or RespCommand.SETKEEPTTLIFNE or RespCommand.SETIFDNE or RespCommand.SETKEEPTTLIFDNE;
+            bool matches;
+            if (cmd is RespCommand.SETIFDEQ or RespCommand.SETKEEPTTLIFDEQ or RespCommand.SETIFDNE or RespCommand.SETKEEPTTLIFDNE)
+            {
+                if (!TryMatchStringDigest(value, expected, ref output, out matches))
+                    return false;
+            }
+            else
+                matches = value.SequenceEqual(expected);
+            if (matches != notEqual)
+                return true;
+
+            if (input.header.CheckSetGetFlag())
+                CopyRespTo(value, ref output);
+            else
+                functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
+            return false;
+        }
+
+        private readonly IPUResult SetValueConditionalInPlaceUpdate(ref LogRecord logRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
+        {
+            if (!CheckSetValueCondition(logRecord.ValueSpan, ref input, ref output))
+            {
+                rmwInfo.Action = RMWAction.CancelOperation;
+                return IPUResult.Failed;
+            }
+
+            var updateInput = input;
+            updateInput.header.cmd = input.header.cmd is RespCommand.SETKEEPTTLIFEQ or RespCommand.SETKEEPTTLIFNE or RespCommand.SETKEEPTTLIFDEQ or RespCommand.SETKEEPTTLIFDNE
+                ? RespCommand.SETKEEPTTLXX : RespCommand.SETEXXX;
+            var originalOutput = output;
+            var result = InPlaceUpdaterWorker(ref logRecord, ref updateInput, ref output, ref rmwInfo);
+            if (result == IPUResult.Failed)
+            {
+                if (output.SpanByteAndMemory.Memory != originalOutput.SpanByteAndMemory.Memory)
+                    output.SpanByteAndMemory.Memory?.Dispose();
+                output = originalOutput;
+            }
+            else if (!input.header.CheckSetGetFlag())
+                functionsState.CopyDefaultResp(CmdStrings.RESP_OK, ref output.SpanByteAndMemory);
+            return result;
+        }
+
+        private readonly bool NeedSetValueConditionalCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+            {
+                if (input.header.cmd is RespCommand.SETIFNE or RespCommand.SETKEEPTTLIFNE or RespCommand.SETIFDNE or RespCommand.SETKEEPTTLIFDNE)
+                    rmwInfo.Action = RMWAction.ExpireAndResume;
+                else
+                {
+                    functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
+                }
+                return false;
+            }
+
+            if (srcLogRecord.DataHeader.ValueIsObject || srcLogRecord.RecordType != 0)
+            {
+                rmwInfo.Action = RMWAction.WrongType;
+                return false;
+            }
+
+            return CheckSetValueCondition(srcLogRecord.ValueSpan, ref input, ref output);
+        }
+
+        private readonly bool SetValueConditionalCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            var updateInput = input;
+            updateInput.header.cmd = input.header.cmd is RespCommand.SETKEEPTTLIFEQ or RespCommand.SETKEEPTTLIFNE or RespCommand.SETKEEPTTLIFDEQ or RespCommand.SETKEEPTTLIFDNE
+                ? RespCommand.SETKEEPTTLXX : RespCommand.SETEXXX;
+            if (!CopyUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref updateInput, ref output, ref rmwInfo))
+                return false;
+
+            if (!input.header.CheckSetGetFlag())
+                functionsState.CopyDefaultResp(CmdStrings.RESP_OK, ref output.SpanByteAndMemory);
+            return true;
+        }
+
+        private readonly bool DeleteValueConditional<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+            {
+                functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
+                return false;
+            }
+
+            if (srcLogRecord.DataHeader.ValueIsObject || srcLogRecord.RecordType != 0)
+            {
+                rmwInfo.Action = RMWAction.WrongType;
+                return false;
+            }
+
+            var condition = (ExistOptions)input.arg1;
+            var expected = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            bool matches;
+            if (condition is ExistOptions.IFDEQ or ExistOptions.IFDNE)
+            {
+                if (!TryMatchStringDigest(srcLogRecord.ValueSpan, expected, ref output, out matches))
+                    return false;
+            }
+            else
+                matches = srcLogRecord.ValueSpan.SequenceEqual(expected);
+            if (matches == (condition is ExistOptions.IFNE or ExistOptions.IFDNE))
+            {
+                functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
+                return false;
+            }
+
+            functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
+            rmwInfo.Action = RMWAction.ExpireAndStop;
+            return true;
+        }
+
         /// <inheritdoc />
         public readonly bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
+            // An expired source is logically absent whatever its type, so it is created anew, as InPlaceUpdater does in place.
+            if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+            {
+                rmwInfo.Action = RMWAction.ExpireAndResume;
+                return false;
+            }
+
+            // Checked here rather than in CopyUpdater, because sizing the new record reads the source value first.
+            if (IsWrongTypeForUpdate(in srcLogRecord, input.header.cmd))
+            {
+                // A live key of any type leaves NX unmet; only the GET of SET NX GET needs a string value.
+                if (input.header.cmd != RespCommand.SETEXNX || input.header.CheckSetGetFlag())
+                    rmwInfo.Action = RMWAction.WrongType;
+                return false;
+            }
+
             switch (input.header.cmd)
             {
                 case RespCommand.DELIFGREATER:
@@ -984,14 +1191,6 @@ namespace Garnet.server
                 case RespCommand.SETWITHETAG:
                     return HandleEtagNeedCopyUpdate(input.header.cmd, in srcLogRecord, ref input, ref output, ref rmwInfo);
                 case RespCommand.SETEXNX:
-                    // Expired data, return false immediately
-                    // ExpireAndResume ensures that we set as new value, since it does not exist
-                    if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
-                    {
-                        rmwInfo.Action = RMWAction.ExpireAndResume;
-                        return false;
-                    }
-
                     // since this case is only hit when this an update, the NX is violated and so we can return early from it without setting the value
 
                     if (input.header.CheckSetGetFlag())
@@ -1010,9 +1209,32 @@ namespace Garnet.server
                         return false;
                     }
                     return true;
+                case RespCommand.SETIFEQ:
+                case RespCommand.SETKEEPTTLIFEQ:
+                case RespCommand.SETIFNE:
+                case RespCommand.SETKEEPTTLIFNE:
+                case RespCommand.SETIFDEQ:
+                case RespCommand.SETKEEPTTLIFDEQ:
+                case RespCommand.SETIFDNE:
+                case RespCommand.SETKEEPTTLIFDNE:
+                    return NeedSetValueConditionalCopyUpdate(in srcLogRecord, ref input, ref output, ref rmwInfo);
+                case RespCommand.DELIFEQ:
+                case RespCommand.DELEX:
+                    _ = DeleteValueConditional(in srcLogRecord, ref input, ref output, ref rmwInfo);
+                    return false;
                 case RespCommand.RICREATE:
                     // Index already exists — never copy-update, reject in caller
                     return false;
+                case RespCommand.APPEND:
+                    var appendLength = input.parseState.GetArgSliceByRef(0).Length;
+
+                    // An expired value is absent: the append starts a new value, or only deletes the expired one if the new value is too long
+                    if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+                    {
+                        rmwInfo.Action = AppendExceedsMaxSize(0, appendLength, ref output) ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
+                        return false;
+                    }
+                    return !AppendExceedsMaxSize(srcLogRecord.ValueSpan.Length, appendLength, ref output);
                 case RespCommand.RIPROMOTE:
                     // Always copy to tail to promote from read-only region
                     return true;
@@ -1021,6 +1243,8 @@ namespace Garnet.server
                     return true;
                 case RespCommand.VADD:
                 case RespCommand.VREM:
+                case RespCommand.XVCREATE:
+                case RespCommand.XVIMPORT:
                     // If the key was concurrently deleted and re-typed (e.g. a raced String SET), no index remains
                     if (srcLogRecord.RecordType != VectorManager.RecordType)
                     {
@@ -1067,15 +1291,17 @@ namespace Garnet.server
 
             RespCommand cmd = input.header.cmd;
 
-            // WRONGTYPE all updates on Vector Sets from non-Vector Set commands
-            if (srcLogRecord.RecordType == VectorManager.RecordType && !cmd.IsLegalOnVectorSet())
-            {
-                rmwInfo.Action = RMWAction.WrongType;
-                return false;
-            }
-
             switch (cmd)
             {
+                case RespCommand.SETIFEQ:
+                case RespCommand.SETKEEPTTLIFEQ:
+                case RespCommand.SETIFNE:
+                case RespCommand.SETKEEPTTLIFNE:
+                case RespCommand.SETIFDEQ:
+                case RespCommand.SETKEEPTTLIFDEQ:
+                case RespCommand.SETIFDNE:
+                case RespCommand.SETKEEPTTLIFDNE:
+                    return SetValueConditionalCopyUpdate(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
                 case RespCommand.SETIFMATCH:
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETWITHETAG:
@@ -1115,6 +1341,10 @@ namespace Garnet.server
                     if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo))
                         return false;
 
+                    // Carry the existing expiration into the new record.
+                    if (sizeInfo.FieldInfo.HasExpiration && !dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
+                        return false;
+
                     break;
 
                 case RespCommand.INCR:
@@ -1141,7 +1371,8 @@ namespace Garnet.server
 
                 case RespCommand.INCRBYFLOAT:
                     var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
-                    _ = TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output, input: incrByFloat);
+                    if (!TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output, input: incrByFloat))
+                        return false;
                     break;
 
                 case RespCommand.SETBIT:
@@ -1344,6 +1575,11 @@ namespace Garnet.server
                     _ = TryCopyValueLengthToOutput(newValue, ref output);
                     break;
 
+                case RespCommand.XVCREATE:
+                case RespCommand.XVIMPORT:
+                    oldValue.CopyTo(dstLogRecord.ValueSpan);
+                    break;
+
                 case RespCommand.VADD:
                     // NeedCopyUpdate cancels when the record is no longer an index, so CopyUpdater is only reached for a genuine index record.
                     Debug.Assert(srcLogRecord.RecordType == VectorManager.RecordType, "CopyUpdater reached for VADD on a non-index record");
@@ -1357,10 +1593,11 @@ namespace Garnet.server
                         var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(11).Span);
                         functionsState.vectorManager.RecreateIndex(newIndexPtr, dstLogRecord.ValueSpan);
                     }
-                    else if (input.arg1 == VectorManager.VADDSetFlagsArg)
+                    else if (input.arg1 is VectorManager.VADDSetFlagsArg or VectorManager.SetImportStateArg)
                     {
                         var flags = MemoryMarshal.Read<VectorSetFlags>(input.parseState.GetArgSliceByRef(0).Span);
-                        VectorManager.SetIndexFlags(dstLogRecord.ValueSpan, flags);
+                        VectorManager.SetIndexFlags(dstLogRecord.ValueSpan, flags,
+                            input.arg1 == VectorManager.SetImportStateArg ? VectorSetFlags.ImportPending | VectorSetFlags.ImportCompleted | VectorSetFlags.ImportFailed : VectorSetFlags.SuppressCleanup);
                     }
 
                     break;
@@ -1387,13 +1624,11 @@ namespace Garnet.server
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
                         var functions = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd);
-                        var expirationInTicks = input.arg1;
-                        if (expirationInTicks > 0)
-                        {
-                            // We want to update to the given expiration
-                            if (!dstLogRecord.TrySetExpiration(expirationInTicks))
-                                return false;
-                        }
+
+                        // A positive expiration sets it, 0 keeps the existing one, and -1 removes it
+                        var expirationInTicks = input.arg1 == 0 && srcLogRecord.DataHeader.HasExpiration ? srcLogRecord.Expiration : input.arg1;
+                        if (expirationInTicks > 0 && !dstLogRecord.TrySetExpiration(expirationInTicks))
+                            return false;
 
                         var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
                         try
@@ -1558,7 +1793,7 @@ namespace Garnet.server
 
                 RangeIndexManager.SetTransferredFlag(srcSpan);
             }
-            else if (cmd == RespCommand.VADD)
+            else if (cmd is RespCommand.VADD or RespCommand.XVCREATE or RespCommand.XVIMPORT)
             {
                 // Similar to RIPROMOTE, after a CU we want to clear the source records index pointer so we don't drop it on eviction
                 VectorManager.ClearIndexPointer(srcLogRecord.ValueSpan);
@@ -1567,15 +1802,27 @@ namespace Garnet.server
             return true;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool IsRmwDeleteCommand(RespCommand cmd) => cmd switch
+        {
+            RespCommand.DELIFEQ or RespCommand.DELEX or RespCommand.GETDEL or RespCommand.DELIFGREATER => true,
+            _ => false
+        };
+
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref StringInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor
         {
+            if (rmwInfo.TombstonePublished && rmwInfo.Action == RMWAction.ExpireAndStop
+                && IsRmwDeleteCommand(input.header.cmd))
+            {
+                functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+                if (functionsState.appendOnlyFile != null)
+                    rmwInfo.UserData |= NeedAofLog;
+            }
+
             if ((rmwInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
                 WriteLogRMW(key.KeyBytes, ref input, rmwInfo.Version, rmwInfo.SessionID, epochAccessor);
         }

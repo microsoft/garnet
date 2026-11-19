@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Reflection;
 using System.Security;
 using System.Text;
@@ -379,6 +380,42 @@ namespace Garnet
     }
 
     /// <summary>
+    /// Validate a single concrete peer IP address without DNS resolution.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property)]
+    internal sealed class ClusterAddressValidationAttribute : OptionValidationAttribute
+    {
+        internal ClusterAddressValidationAttribute() : base(false) { }
+
+        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
+        {
+            if (TryInitialValidation<string>(value, validationContext, out var result, out var address))
+                return result;
+
+            if (IPAddress.TryParse(address, out var ip) && !ip.Equals(IPAddress.Any) && !ip.Equals(IPAddress.IPv6Any))
+                return ValidationResult.Success;
+
+            return new ValidationResult("Cluster address must be a single concrete IP address.", [validationContext.MemberName]);
+        }
+    }
+
+    /// <summary>
+    /// Validate an optional peer port.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property)]
+    internal sealed class ClusterPortValidationAttribute : OptionValidationAttribute
+    {
+        private readonly IntRangeValidationAttribute portRange = new(1, 65535, isRequired: true);
+
+        internal ClusterPortValidationAttribute() : base(false) { }
+
+        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
+        {
+            return value == null ? ValidationResult.Success : portRange.GetValidationResult(value, validationContext);
+        }
+    }
+
+    /// <summary>
     /// Validation logic for a string representing a memory size (1k, 1kb, 5M, 5Mb, 10g, 10GB etc.)
     /// </summary>
     [AttributeUsage(AttributeTargets.Property)]
@@ -409,6 +446,57 @@ namespace Garnet
             }
 
             return ValidationResult.Success;
+        }
+    }
+
+    /// <summary>
+    /// Validates checkpoint chunks with the same bounds as programmatic server options.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property)]
+    internal sealed class ReplicaDiskBasedSyncChunkSizeValidationAttribute : OptionValidationAttribute
+    {
+        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
+        {
+            if (TryInitialValidation<string>(value, validationContext, out var result, out var size))
+                return result;
+
+            try
+            {
+                _ = new GarnetServerOptions { ReplicaDiskBasedSyncChunkSize = size }.GetReplicaDiskBasedSyncChunkSizeBytes();
+                return ValidationResult.Success;
+            }
+            catch (ArgumentException ex)
+            {
+                return new ValidationResult(ex.Message, [validationContext.MemberName]);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Validates checkpoint pipeline depth and its combined payload budget.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property)]
+    internal sealed class ReplicaDiskBasedSyncPipelineDepthValidationAttribute : OptionValidationAttribute
+    {
+        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
+        {
+            if (TryInitialValidation<int>(value, validationContext, out var result, out var depth))
+                return result;
+
+            var options = (Options)validationContext.ObjectInstance;
+            try
+            {
+                _ = new GarnetServerOptions
+                {
+                    ReplicaDiskBasedSyncPipelineDepth = depth,
+                    ReplicaDiskBasedSyncChunkSize = options.ReplicaDiskBasedSyncChunkSize
+                }.GetReplicaDiskBasedSyncPipelineDepth();
+                return ValidationResult.Success;
+            }
+            catch (ArgumentException ex)
+            {
+                return new ValidationResult(ex.Message, [validationContext.MemberName]);
+            }
         }
     }
 

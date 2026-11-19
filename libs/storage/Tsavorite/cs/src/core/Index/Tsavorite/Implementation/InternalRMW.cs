@@ -51,10 +51,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, ref TContext userContext,
                                     ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
@@ -169,6 +166,7 @@ namespace Tsavorite.core
 
                         srcLogRecord.InfoRef.SetTombstone();
                         srcLogRecord.InfoRef.SetModified();
+                        rmwInfo.TombstonePublished = true;
 
                         // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
                         // Otherwise an earlier record for this key could be reachable again.
@@ -180,7 +178,10 @@ namespace Tsavorite.core
                     else if (rmwInfo.Action == RMWAction.ExpireAndResume)
                     {
                         // ExpireAndResume: for IPU, ReinitializeExpiredRecord already called OnDispose(Deleted).
-                        // If it failed and we fall through to CreateNewRecord, the record is already disposed.
+                        // If it failed and we fall through to CreateNewRecord, the record is already disposed, but the heap
+                        // fields were cleared without a tracker decrement, so apply the delta here.
+                        if (ipuDelta != 0)
+                            sizeTracker.IncrementSize(ipuDelta);
                     }
                     else if (rmwInfo.Action == RMWAction.WrongType)
                     {
@@ -252,10 +253,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void CreatePendingRMWContext<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, ref TInput input, ref TOutput output, TContext userContext,
                 ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // If a re-pend has already moved a populated pendingState onto operationState.pendingOp, reuse it; otherwise rent a
@@ -382,10 +380,7 @@ namespace Tsavorite.core
         private OperationStatus CreateNewRecordRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TKey key, in TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output,
                                                                                           ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions,
                                                                                           ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, bool doingCU, ref RMWInfo rmwInfo)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
@@ -424,20 +419,8 @@ namespace Tsavorite.core
                         // non-elidable one does, and its release waits as a frozen source's does.
                         if (allocOptions.elideSourceRecord && !IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info))
                         {
-                            // Dispose rather than release through ReleaseSupersededSource, which would mark the disposal of a source frozen since the
-                            // check: the elision below invalidates the source, and the drain and eviction skip invalid records. Below ReadOnlyAddress a
-                            // scan may copy the source without a lock, so its value is released in place. At or above it the source is converted: if
-                            // the elision fails, the tombstone left in the chain may be revivified there, which needs an inline value.
-                            ref var inMemoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
-                            if (stackCtx.recSrc.LogicalAddress < hlogBase.ReadOnlyAddress)
-                                ReleaseInPlace(ref inMemoryLogRecord, DisposeReason.Deleted);
-                            else
-                                OnDispose(ref inMemoryLogRecord, DisposeReason.Deleted);
-                            srcLogRecord.InfoRef.SetTombstone();
-                            srcLogRecord.InfoRef.SetModified();
-
-                            // Elide from hei, and try to either do in-chain tombstoning or free list transfer.
-                            HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref inMemoryLogRecord);
+                            DeleteAndElideExpiredSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
+                            rmwInfo.TombstonePublished = true;
                             // no new record created and hash entry is empty now
                             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Expired);
                         }
@@ -455,7 +438,25 @@ namespace Tsavorite.core
             if (!doingCU)
             {
                 if (!sessionFunctions.NeedInitialUpdate(key, ref input, ref output, ref rmwInfo))
-                    return rmwInfo.Action == RMWAction.CancelOperation ? OperationStatus.CANCELED : OperationStatus.NOTFOUND;
+                {
+                    if (rmwInfo.Action == RMWAction.CancelOperation)
+                        return OperationStatus.CANCELED;
+                    if (!forExpiration)
+                        return OperationStatus.NOTFOUND;
+
+                    // Nothing replaces the expired source, which has not been released, so delete it as for ExpireAndStop. CanElide was decided
+                    // before the Need* callbacks, and a freeze can begin since, so check again.
+                    if (allocOptions.elideSourceRecord && !IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info))
+                    {
+                        DeleteAndElideExpiredSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
+                        rmwInfo.TombstonePublished = true;
+                        return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired);
+                    }
+
+                    // Otherwise a tombstone record replaces the expired source, which is released as deleted once the tombstone is in the chain.
+                    allocOptions.elideSourceRecord = false;
+                    addTombstone = true;
+                }
             }
 
             // Allocate and initialize the new record
@@ -469,7 +470,7 @@ namespace Tsavorite.core
             else
             {
                 Debug.Assert(!allocOptions.elideSourceRecord, "Elidable records going down the deletion via RMW path from NCU should have already been handled." +
-                    "This block only handles NCU requested deletion for unelidable src records.");
+                    "This block only handles NCU requested deletion, or expiration without an initial update, for unelidable src records.");
                 sizeInfo = hlog.GetDeleteRecordSize(key);
             }
 
@@ -483,7 +484,7 @@ namespace Tsavorite.core
 
             rmwInfo.Address = newLogicalAddress;
 
-            if (!doingCU)
+            if (!doingCU && !addTombstone)
             {
                 if (sessionFunctions.InitialUpdater(ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
                 {
@@ -495,7 +496,15 @@ namespace Tsavorite.core
                 {
                     if (rmwInfo.Action == RMWAction.CancelOperation)
                         return OperationStatus.CANCELED;
-                    return OperationStatus.NOTFOUND | (forExpiration ? OperationStatus.EXPIRED : OperationStatus.NOTFOUND);
+                    if (!forExpiration)
+                        return OperationStatus.NOTFOUND;
+
+                    // Nothing replaces the expired source, so the new record becomes its tombstone, as in ReinitializeExpiredRecord. The source is
+                    // released as deleted once the tombstone is in the chain.
+                    newLogRecord.InfoRef.SetModified();
+                    newLogRecord.InfoRef.SetTombstone();
+                    addTombstone = true;
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord | StatusCode.Expired);
                 }
             }
             else if (!addTombstone)
@@ -565,10 +574,12 @@ namespace Tsavorite.core
             }
             else
             {
-                Debug.Assert(addTombstone, "This block should only be handling tombstoning requests by NCU where the previous record was not elidable.");
+                Debug.Assert(addTombstone, "This block should only be handling tombstoning requests by NCU, or expiration without an initial update, where the previous record was not elidable.");
                 newLogRecord.InfoRef.SetModified();
                 newLogRecord.InfoRef.SetTombstone();
-                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
+
+                // An expired record that nothing replaces was logically absent, so the key is reported as not found
+                status = OperationStatusUtils.AdvancedOpCode(forExpiration ? OperationStatus.NOTFOUND : OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
             }
 
         DoCAS:
@@ -578,6 +589,8 @@ namespace Tsavorite.core
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
+                rmwInfo.TombstonePublished = addTombstone;
+
                 // Track key overflow internally — session functions only track in-place value deltas.
                 if (newLogRecord.DataHeader.KeyIsOverflow)
                     hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
@@ -598,6 +611,12 @@ namespace Tsavorite.core
                         var valueHeap = newLogRecord.GetValueHeapMemorySize();
                         if (valueHeap != 0)
                             hlogBase.logSizeTracker?.IncrementSize(valueHeap);
+                    }
+                    else
+                    {
+                        // An InitialUpdater that declined after an expiration may have given the tombstone a value, which was never counted, so drop
+                        // it without a release.
+                        newLogRecord.ClearValueIfHeap();
                     }
 
                     // The new record replaces an expired source, which is released as deleted.
@@ -695,6 +714,7 @@ namespace Tsavorite.core
                             // a release, and release the source as deleted.
                             newLogRecord.InfoRef.SetTombstone();
                             newLogRecord.ClearValueIfHeap();
+                            rmwInfo.TombstonePublished = true;
                             status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
                             if (isMemoryLogRecord)
                                 sourceDisposalDeferred = ReleaseSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef(), deleted: true, capturingSnapshot);
@@ -747,21 +767,15 @@ namespace Tsavorite.core
             var advancedStatusCode = isIpu ? StatusCode.InPlaceUpdatedRecord : StatusCode.CreatedRecord;
             advancedStatusCode |= StatusCode.Expired;
 
-            // Dispose the expired record's resources before reinitializing.
-            // For IPU, skip the heap-tracker decrement because the outer pre/post delta
-            // tracking in InternalRMW captures the net heap change across the entire IPU.
-            // We still need the disposal side-effects (trigger + ClearHeapFields).
-            // For CU, this is the newly allocated record (source was already disposed at the decision site).
+            // Clear the record's value and optionals before reinitializing.
+            // For IPU, this is the expired record itself: it gets the dispose trigger, but not the heap-tracker decrement, because the
+            // outer pre/post delta tracking in InternalRMW captures the net heap change across the entire IPU.
+            // For CU, this is the newly allocated record, which is not yet in the hash chain: the expired source is released once the new record
+            // is in the chain, and this record's value has been neither set nor counted in the heap tracker, so there is nothing to dispose or uncount.
             if (isIpu)
-            {
                 storeFunctions.OnDispose(ref logRecord, DisposeReason.Deleted);
-                logRecord.ClearHeapFields(clearKey: false);
-                logRecord.ClearOptionals();
-            }
-            else
-            {
-                OnDispose(ref logRecord, DisposeReason.Deleted);
-            }
+            logRecord.ClearHeapFields(clearKey: false);
+            logRecord.ClearOptionals();
 
             if (!sessionFunctions.NeedInitialUpdate(logRecord, ref input, ref output, ref rmwInfo))
             {
@@ -773,6 +787,7 @@ namespace Tsavorite.core
 
                 // Expiration with no insertion.
                 logRecord.InfoRef.SetTombstone();
+                rmwInfo.TombstonePublished = isIpu;
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
                 return true;
             }
@@ -804,6 +819,7 @@ namespace Tsavorite.core
                     {
                         // Expiration with no insertion.
                         logRecord.InfoRef.SetTombstone();
+                        rmwInfo.TombstonePublished = isIpu;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
                         return true;
                     }
@@ -814,7 +830,10 @@ namespace Tsavorite.core
             //  IPU: move to the NIU->allocate->IU path. Set tombstone so CreateNewRecordRMW uses InitialUpdater (doingCU=false).
             //  CU: caller invalidates allocation, retries operation as NIU->allocate->IU
             if (isIpu)
+            {
                 logRecord.InfoRef.SetTombstone();
+                rmwInfo.TombstonePublished = true;
+            }
             status = OperationStatus.SUCCESS;
             return false;
         }

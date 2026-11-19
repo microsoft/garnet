@@ -27,6 +27,8 @@ namespace Garnet.server
         BadParams,
         Duplicate,
         MissingElement,
+
+        ImportingPending,
     }
 
     /// <summary>
@@ -55,6 +57,8 @@ namespace Garnet.server
         internal const long VADDSetFlagsArg = MigrateIndexKeyLogArg + 1; // AOF: YES. InitialUpdater: NO (record must exist).
         internal const long CreateIndexArg = VADDSetFlagsArg + 1; // New stub record creation. AOF: NO. InitialUpdater: YES.
         internal const long VSETATTRAppendLogArg = CreateIndexArg + 1; // User VSETATTR update, replayed on replicas. AOF: Yes. InitialUpdater: NO.
+        internal const long SetImportStateArg = VSETATTRAppendLogArg + 1; // Import lifecycle flags. AOF: NO. InitialUpdater: NO (record must exist).
+        internal const long XVImportFailedArg = SetImportStateArg + 1; // Replication / replay for failed imports.  AOF: Yes.  InitialUpdater: No.
 
         /// <summary>
         /// Byte stored on log records to distinguish the INDEX key as a Vector Set
@@ -96,6 +100,16 @@ namespace Garnet.server
         /// Beam width default for SearchXXX methods.
         /// </summary>
         internal const int DefaultBeamWidth = 4;
+
+        /// <summary>
+        /// Minimum (inclusive) value for M in VADD (or similar).
+        /// </summary>
+        internal const int MinNumLinks = 4;
+
+        /// <summary>
+        /// Maximum (inclusive) value for M in VADD (or similar).
+        /// </summary>
+        internal const int MaxNumLinks = 4096;
 
         /// <summary>
         /// Ensures the VSIM distance output buffer has at least <paramref name="retrieveCount"/> * sizeof(float) bytes.
@@ -213,7 +227,7 @@ namespace Garnet.server
                 throw new GarnetException($"VectorSetReplayTaskCount should be in range [0,{Environment.ProcessorCount}]!");
             var vectorSetReplayCount = serverOptions.VectorSetReplayTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetReplayTaskCount;
 
-            replicationReplayChannels = new Channel<VADDReplicationState>[vectorSetReplayCount];
+            replicationReplayChannels = new Channel<VectorSetReplicationState>[vectorSetReplayCount];
             replicationReplayTasks = new Task[vectorSetReplayCount];
 
             for (var i = 0; i < replicationReplayTasks.Length; i++)
@@ -221,15 +235,15 @@ namespace Garnet.server
                 replicationReplayTasks[i] = Task.CompletedTask;
 
                 // NOTE: for multi-log we need to disable single writer since multiple AOF replay tasks may append to this common channel.
-                replicationReplayChannels[i] = Channel.CreateUnbounded<VADDReplicationState>(new() { SingleWriter = !serverOptions.MultiLogEnabled, SingleReader = false, AllowSynchronousContinuations = false });
+                replicationReplayChannels[i] = Channel.CreateUnbounded<VectorSetReplicationState>(new() { SingleWriter = !serverOptions.MultiLogEnabled, SingleReader = false, AllowSynchronousContinuations = false });
             }
 
             vectorSetLocks = new(vectorSetReplayCount);
 
             this.getTempSession = getTempSession;
-            cleanupTaskChannel = new();
-            requestCleanupTaskChannel = new();
-            requestDropTaskChannel = new();
+            cleanupTaskChannel = VectorSetCleanupWorkChannel<object>.CreateSingleReaderMultiWriter();
+            requestCleanupTaskChannel = VectorSetCleanupWorkChannel<ulong>.CreateSingleReaderMultiWriter();
+            requestDropTaskChannel = VectorSetCleanupWorkChannel<object>.CreateSingleReaderMultiWriter();
 
             cleanupTask = RunCleanupTaskAsync();
             requestCleanupTask = RunRequestCleanupTaskAsync();
@@ -242,7 +256,7 @@ namespace Garnet.server
             recoveredIndexes = new();
             recoveredMetadata = new();
 
-            quantizationChannel = Channel.CreateUnbounded<QuantizationState>(new() { SingleWriter = false, SingleReader = false, AllowSynchronousContinuations = false });
+            quantizationChannel = VectorSetCleanupWorkChannel<QuantizationState>.CreateMultiReaderMultiWriter();
 
             if (serverOptions.VectorSetQuantizationTaskCount < 0 || serverOptions.VectorSetQuantizationTaskCount > Environment.ProcessorCount)
                 throw new GarnetException($"VectorSetQuantizationTaskCount should be in range [0,{Environment.ProcessorCount}]!");
@@ -286,7 +300,7 @@ namespace Garnet.server
                 dirtyContextMetadatas = [];
             }
 
-            // Spin up quantization
+            // Spin up quantization and import handling tasks
             StartQuantizationTasks();
         }
 
@@ -477,7 +491,11 @@ namespace Garnet.server
             }
 
             // Resume any cleanups we didn't complete before recovery
-            _ = cleanupTaskChannel.TryPublish();
+            if (!cleanupTaskChannel.TryPublish())
+            {
+                logger?.LogCritical("VectorManager cleanup channel rejected a recovery cleanup request");
+                Debug.Assert(false, "VectorManager cleanup channel should never drop a request");
+            }
         }
 
         /// <summary>
@@ -599,6 +617,13 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void Dispose()
         {
+            if (!IsEnabled)
+            {
+                replicationBlockEvent.Dispose();
+
+                return;
+            }
+
             // We must drain all these before disposing, otherwise we'll leave replicationBlockEvent unset
             foreach (var channel in replicationReplayChannels)
             {
@@ -613,6 +638,9 @@ namespace Garnet.server
             // Wait for any _drops_ in progress to finish
             requestDropTaskChannel.CompleteAndWaitForConsumerTask(requestDropTask);
 
+            // Complete all quantization or import tasks - this MIGHT queue something into requestCleanupTaskChannel, so wait for it first
+            quantizationChannel.CompleteAndWaitForConsumerTask(Task.WhenAll(quantizationTasks));
+
             // Wait for any _marking_ of cleanup state to finish. PauseCleanupAsync callers MUST
             // have called ResumeCleanup before reaching here, otherwise the cleanup task
             // is permanently blocked on cleanupGate.WaitAsync() and Dispose will hang.
@@ -625,11 +653,6 @@ namespace Garnet.server
 
             // Cleanup task has fully drained, so nothing else can take this gate.
             cleanupGate.Dispose();
-
-            // drain quantization work and stop the worker tasks
-            _ = quantizationChannel.Writer.TryComplete();
-            while (quantizationChannel.Reader.TryRead(out _)) { }
-            AsyncUtils.BlockingWait(Task.WhenAll(quantizationTasks));
         }
 
         private static void CompletePending(ref Status status, ref VectorOutput output, ref VectorBasicContext ctx)
@@ -765,7 +788,7 @@ namespace Garnet.server
             {
                 if (needsQuantization)
                 {
-                    _ = quantizationChannel.Writer.TryWrite(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
+                    EnqueueQuantization(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
                 }
 
                 return VectorManagerResult.OK;
@@ -805,7 +828,7 @@ namespace Garnet.server
         /// <summary>
         /// Request deletion of a Vector Set given the VALUE of the index key.
         /// </summary>
-        internal void RequestDeletion(ReadOnlySpan<byte> value)
+        internal void RequestDeletion(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
         {
             if (value.Length != IndexSize)
             {
@@ -815,7 +838,7 @@ namespace Garnet.server
 
             ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
-            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out _);
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out var indexPtr);
 
             // Ignore any deletion requested for an index that has the SuppressCleanup flag
             //
@@ -827,6 +850,8 @@ namespace Garnet.server
 
             if (!requestCleanupTaskChannel.TryPublish(context))
             {
+                logger?.LogCritical("VectorManager request cleanup channel rejected a delete request");
+                Debug.Fail("VectorManager request cleanup channel should never drop a request");
                 throw new GarnetException("Could not submit request for Vector Set cleanup, aborting delete");
             }
 
@@ -868,7 +893,11 @@ namespace Garnet.server
                     throw new GarnetException($"Drop triggered multiple times for same index: {SpanByte.ToShortString(key)}");
                 }
 
-                _ = requestDropTaskChannel.TryPublish();
+                if (!requestDropTaskChannel.TryPublish())
+                {
+                    logger?.LogCritical("VectorManager request drop channel rejected an index drop");
+                    Debug.Assert(false, "VectorManager request drop channel should never drop a request");
+                }
             }
         }
 
@@ -1786,9 +1815,7 @@ namespace Garnet.server
                 else
                 {
                     var dupeTracker = new HashSet<byte[]>(ByteArrayComparer.Instance);
-#if NET9_0_OR_GREATER
                     var dupeTrackerLookup = dupeTracker.GetAlternateLookup<ReadOnlySpan<byte>>();
-#endif
 
                     var remaining = candidates;
 
@@ -1804,11 +1831,7 @@ namespace Garnet.server
                         var id = remaining.Slice(sizeof(int), idLen);
                         byte[] idArr = null;
                         var isDupe =
-#if NET9_0_OR_GREATER
                                 dupeTrackerLookup.Contains(id)
-#else
-                                dupeTracker.Contains(idArr ??= id.ToArray())
-#endif
                                 ;
 
                         var afterId = remaining[(sizeof(int) + idLen)..];

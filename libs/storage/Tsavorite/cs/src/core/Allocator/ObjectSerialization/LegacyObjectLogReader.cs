@@ -78,10 +78,7 @@ namespace Tsavorite.core
         /// <returns>False if <paramref name="requestedKey"/> is set and the record's overflow key does not match it; otherwise true</returns>
         [MethodImpl(MethodImplOptions.NoInlining)]
         public bool ReadRecordObjects<TKey>(ref LogRecord logRecord, TKey requestedKey, int segmentSizeBits, int checkpointVersion)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
         {
             Debug.Assert(logRecord.DataHeader.RecordHasObjects, "Inline records should have been checked by the caller");
             Debug.Assert(logRecord.IsDownlevelObjectLogRecord(checkpointVersion), "The legacy reader decodes only downlevel records");

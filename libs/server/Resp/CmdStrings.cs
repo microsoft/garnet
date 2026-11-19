@@ -124,6 +124,14 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> KEEPTTL => "KEEPTTL"u8;
         public static ReadOnlySpan<byte> NX => "NX"u8;
         public static ReadOnlySpan<byte> XX => "XX"u8;
+        public static ReadOnlySpan<byte> IFEQ => "IFEQ"u8;
+        public static ReadOnlySpan<byte> IFNE => "IFNE"u8;
+        public static ReadOnlySpan<byte> IFDEQ => "IFDEQ"u8;
+        public static ReadOnlySpan<byte> IFDNE => "IFDNE"u8;
+        public static ReadOnlySpan<byte> DIGEST => "DIGEST"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_DIGEST => "-ERR must be exactly 16 hexadecimal characters\r\n"u8;
+        public static ReadOnlySpan<byte> DELIFEQ => "DELIFEQ"u8;
+        public static ReadOnlySpan<byte> DELEX => "DELEX"u8;
         public static ReadOnlySpan<byte> CH => "CH"u8;
         public static ReadOnlySpan<byte> UNSAFETRUNCATELOG => "UNSAFETRUNCATELOG"u8;
         public static ReadOnlySpan<byte> SAMPLES => "SAMPLES"u8;
@@ -181,6 +189,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_OK => "+OK\r\n"u8;
         public static ReadOnlySpan<byte> RESP_ERRNOTFOUND => "$-1\r\n"u8;
         public static ReadOnlySpan<byte> RESP_EMPTYLIST => "*0\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_EMPTYMAP => "%0\r\n"u8;
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_1 => ":1\r\n"u8;
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_0 => ":0\r\n"u8;
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_N1 => ":-1\r\n"u8;
@@ -246,6 +255,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER => "ERR value is not an integer or out of range."u8;
         public static ReadOnlySpan<byte> RESP_ERR_HASH_VALUE_IS_NOT_INTEGER => "ERR hash value is not an integer."u8;
         public static ReadOnlySpan<byte> RESP_ERR_HASH_VALUE_IS_NOT_FLOAT => "ERR hash value is not a float."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INCR_DECR_OVERFLOW => "ERR increment or decrement would overflow"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_DECR_OVERFLOW => "ERR decrement would overflow"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_ETAG_OVERFLOW => "ERR ETag would overflow"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE => "ERR value is out of range, must be positive."u8;
         public static ReadOnlySpan<byte> RESP_ERR_PROTOCOL_VALUE_IS_NOT_INTEGER => "ERR Protocol version is not an integer or out of range."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INDEX_OUT_RANGE => "ERR index out of range"u8;
@@ -305,6 +317,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_BUSSYKEY => "BUSYKEY Target key name already exists."u8;
         public static ReadOnlySpan<byte> RESP_ERR_LENGTH_AND_INDEXES => "If you want both the length and indexes, please just use IDX."u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_EXPIRE_TIME => "ERR invalid expire time, must be >= 0"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_EXPIRATION_TICKS => "ERR invalid expiration ticks, must be >= -1"u8;
         public static ReadOnlySpan<byte> RESP_ERR_HCOLLECT_ALREADY_IN_PROGRESS => "ERR HCOLLECT scan already in progress"u8;
         public static ReadOnlySpan<byte> RESP_ERR_ZCOLLECT_ALREADY_IN_PROGRESS => "ERR ZCOLLECT scan already in progress"u8;
         public static ReadOnlySpan<byte> RESP_INVALID_COMMAND_SPECIFIED => "Invalid command specified"u8;
@@ -322,6 +335,7 @@ namespace Garnet.server
         /// Response string templates
         /// </summary>
         public const string GenericErrWrongNumArgs = "ERR wrong number of arguments for '{0}' command";
+        public const string GenericErrUnknownCommand = "ERR unknown command '{0}'";
         public const string GenericErrInvalidClientAttr = "ERR {0} cannot contain spaces, newlines or special characters.";
         public const string GenericErrUnknownOptionConfigSet = "ERR Unknown option or number of arguments for CONFIG SET - '{0}'";
         public const string GenericErrUnknownOption = "ERR Unknown option or number of arguments for '{0}' command";
@@ -339,6 +353,7 @@ namespace Garnet.server
         public const string GenericErrShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
         public const string GenericErrMandatoryMissing = "Mandatory argument {0} is missing or not at the right position";
         public const string GenericErrMustMatchNoOfArgs = "The `{0}` parameter must match the number of arguments";
+        public const string GenericErrInvalidExpireTime = "ERR invalid expire time in '{0}' command";
         public const string GenericUnknownClientType = "ERR Unknown client type '{0}'";
         public const string GenericErrDuplicateFilter = "ERR Filter '{0}' defined multiple times";
         public const string GenericPubSubCommandDisabled = "ERR {0} is disabled, enable it with --pubsub option.";

@@ -492,6 +492,24 @@ namespace Garnet.test
             ClassicAssert.AreEqual(11, totalCount);
         }
 
+        [Test]
+        public void HyperLogLogMultiCountSkipsMissingKeys()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string keyA = "HyperLogLogMultiCountSkipsMissingKeysA";
+            const string keyB = "HyperLogLogMultiCountSkipsMissingKeysB";
+            const string missingKey = "HyperLogLogMultiCountSkipsMissingKeysMissing";
+            db.HyperLogLogAdd(keyA, ["a", "b", "c"]);
+            db.HyperLogLogAdd(keyB, ["d", "e"]);
+
+            ClassicAssert.AreEqual(5, db.HyperLogLogLength([keyA, keyB, missingKey]));
+            ClassicAssert.AreEqual(5, db.HyperLogLogLength([keyA, missingKey, keyB]));
+            ClassicAssert.AreEqual(3, db.HyperLogLogLength([keyA, missingKey]));
+            ClassicAssert.AreEqual(0, db.HyperLogLogLength([missingKey, "anotherMissingKey"]));
+        }
+
         public long LongRandom() => ((long)this.r.Next() << 32) | (long)this.r.Next();
 
         public List<long> RandomSubSeq(List<long> list, int count)

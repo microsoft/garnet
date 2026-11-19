@@ -409,7 +409,7 @@ namespace Tsavorite.test.Objects
             Assert.That(notification.Count, Is.Zero, "the notification must wait for the flush");
 
             gated.Gate = false;
-            for (var ii = 0; ii < gated.CapturedCount; ++ii)
+            for (var ii = 0; ii < gated.PendingCount; ++ii)
                 gated.Release(ii);
 
             Assert.That(notification.Invoked.Wait(FlushTimeout), Is.True, "the notification must complete once the flush is durable");
@@ -436,7 +436,7 @@ namespace Tsavorite.test.Objects
             log.OnFlushed(flushedThrough, FlushNotification.Callback, pending);
 
             gated.Gate = false;
-            for (var ii = 0; ii < gated.CapturedCount; ++ii)
+            for (var ii = 0; ii < gated.PendingCount; ++ii)
                 gated.Release(ii, IoError);
 
             Assert.That(pending.Invoked.Wait(FlushTimeout), Is.True, "a failed flush must fail the notification rather than strand it");

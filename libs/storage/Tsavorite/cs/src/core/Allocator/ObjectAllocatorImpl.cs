@@ -289,26 +289,42 @@ namespace Tsavorite.core
                     ClearPage(index, 0);
                     FreeNativeLogPage(index);
                 }
+                else if (freePagePool.IsFull)
+                {
+                    // The page will not be reused, so only its objects need releasing.
+                    objectPages[index].Clear();
+                }
                 else
                 {
-                    var enqueued = freePagePool.TryAdd(new()
+                    // Clear before pooling: a page turn can take the page from the pool as soon as it is added.
+                    ClearPage(index, 0);
+                    _ = freePagePool.TryAdd(new()
                     {
                         array = pageArrays[index],
                         pointer = pagePointers[index],
                         value = objectPages[index]
                     });
-
-                    // We only need to clear the page if it's enqueued; otherwise we don't reuse the page, so can save the time
-                    if (enqueued)
-                        ClearPage(index, 0);
-                    else
-                        objectPages[index].Clear();
+                    OnPageAddedToPoolTestHook();    // Test only; compiled out of Release builds.
                 }
                 pageArrays[index] = default;
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
             }
         }
+
+        /// <summary>Test only, compiled out of Release builds: invokes <c>testOnPageAddedToPool</c>.</summary>
+        [Conditional("DEBUG")]
+        private void OnPageAddedToPoolTestHook()
+        {
+#if DEBUG
+            testOnPageAddedToPool?.Invoke();
+#endif
+        }
+
+#if DEBUG
+        /// <summary>Test only, DEBUG builds only: if set, <see cref="ReturnPage"/> invokes it right after adding a page to the free-page pool.</summary>
+        internal Action testOnPageAddedToPool;
+#endif
 
         internal void FreePage(int page)
         {
@@ -328,17 +344,18 @@ namespace Tsavorite.core
         internal override void ClearPage(int page, int offset = 0)
         {
             var index = page % BufferSize;
-
-            // Offset is nonzero only for RecoveryReset, to zero out the page past offset (which is tailAddress).
-            // In this case, we want to keep the objectPage information for the used (so far) part of the page.
-            if (offset == 0)
-                objectPages[index].Clear();
             base.ClearPage(index, offset);
 
-            // A page cleared from its start may be reused for a later page without being allocated again, so it needs a fresh header. A zeroed
-            // header's floor reads as a stamped floor of 0, which a flush's stamp does not replace and which holds main object-log truncation back.
-            if (offset == 0 && pagePointers[index] != 0)
-                PageHeader.Initialize(pagePointers[index]);
+            // Offset is nonzero only for RecoveryReset, to zero out the page past offset (which is tailAddress); the objectPage information and
+            // the header for the part of the page below it are kept. A page cleared from its start may be reused for a later page without being
+            // allocated again (FreePage without a size tracker), so it needs a fresh header, as allocating it does: a zeroed header's floor reads
+            // as a stamped floor of 0, which a flush's stamp does not replace and which holds main object-log truncation back.
+            if (offset == 0)
+            {
+                objectPages[index].Clear();
+                if (pagePointers[index] != 0)
+                    PageHeader.Initialize(pagePointers[index]);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -357,10 +374,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitializeRecord<TKey>(TKey key, long logicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord logRecord)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             => logRecord.InitializeRecord(key, in sizeInfo, GetObjectIdMap(logicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -376,10 +390,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordSizeInfo GetRMWInitialRecordSize<TKey, TInput, TVariableLengthInput>(TKey key, ref TInput input, TVariableLengthInput varlenInput)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TVariableLengthInput : IVariableLengthInput<TInput>
         {
             // Used by RMW to determine the length of initial destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
@@ -390,10 +401,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordSizeInfo GetUpsertRecordSize<TKey, TInput, TVariableLengthInput>(TKey key, ReadOnlySpan<byte> value, ref TInput input, TVariableLengthInput varlenInput)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TVariableLengthInput : IVariableLengthInput<TInput>
         {
             // Used by Upsert to determine the length of insert destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
@@ -404,10 +412,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordSizeInfo GetUpsertRecordSize<TKey, TInput, TVariableLengthInput>(TKey key, IHeapObject value, ref TInput input, TVariableLengthInput varlenInput)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TVariableLengthInput : IVariableLengthInput<TInput>
         {
             // Used by Upsert to determine the length of insert destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
@@ -418,10 +423,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordSizeInfo GetUpsertRecordSize<TKey, TSourceLogRecord, TInput, TVariableLengthInput>(TKey key, in TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TSourceLogRecord : ISourceLogRecord
             where TVariableLengthInput : IVariableLengthInput<TInput>
         {
@@ -433,10 +435,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordSizeInfo GetDeleteRecordSize<TKey>(TKey key)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
         {
             // Used by Delete to determine the length of a new tombstone record. Does not require an ISessionFunctions method.
             var sizeInfo = new RecordSizeInfo()
@@ -1510,23 +1509,30 @@ namespace Tsavorite.core
                 objectLog.Truncate(objectLogFloor);
         }
 
-        protected override void RemoveSegment(int segment)
+        /// <inheritdoc/>
+        /// <remarks>
+        /// This also removes the object-log segments above the one that holds the object-log tail recorded with the checkpoint, which
+        /// the objects of every page that recovery reads lie below. If the checkpoint records no object-log tail, the object log is
+        /// left as it is: object-log data above those objects is never read.
+        /// </remarks>
+        private protected override void TrimSegmentsAbove(in HybridLogCheckpointInfo recoveredHLCInfo, int lastValidSegment, int lastAvailSegment)
         {
-            // If segment is not the last segment (which should be the case), the PageHeader at its start has been written. Otherwise use the
-            // previous page's.
-            var objectLogFloor = -1L;
-            var objectLog = Volatile.Read(ref mainObjectLog);
-            if (objectLog is not null)
-            {
-                var addressOfStartOfMainLogPage = GetStartLogicalAddressOfSegment(segment);
-                if (segment >= device.EndSegment)
-                    addressOfStartOfMainLogPage -= PageSize;
-                objectLogFloor = ReadObjectLogFloor(addressOfStartOfMainLogPage);
-            }
+            base.TrimSegmentsAbove(recoveredHLCInfo, lastValidSegment, lastAvailSegment);
 
-            base.RemoveSegment(segment);
-            if (objectLog is not null && objectLogFloor > objectLog.BeginAddress)
-                objectLog.Truncate(objectLogFloor);
+            var recoveredObjectLogTail = recoveredHLCInfo.info.hlogEndObjectLogTail;
+            if (objectLogDevice is null || recoveredObjectLogTail <= 0)
+                return;
+            var lastValidObjectLogSegment = (int)(recoveredObjectLogTail >> objectLogSegmentSizeBits);
+            if (objectLogDevice.TryRemoveSegmentsAbove(lastValidObjectLogSegment, out _))
+                return;
+
+            // As in the base class: the device cannot list its segments, so remove those known to exist one at a time, relying on
+            // RemoveSegment to remove only the segment named. Highest first, from the highest of the device's EndSegment and the
+            // segment this store's object-log tail has reached.
+            var objectLog = Volatile.Read(ref mainObjectLog);
+            var lastAvailObjectLogSegment = Math.Max(objectLogDevice.EndSegment, objectLog is null ? -1 : (int)(objectLog.TailAddress >> objectLogSegmentSizeBits));
+            for (var segment = lastAvailObjectLogSegment; segment > lastValidObjectLogSegment; segment--)
+                objectLogDevice.RemoveSegment(segment);
         }
 
         /// <summary>Read the object-log floor from the durable header of the main-log page starting at <paramref name="addressOfStartOfMainLogPage"/>.</summary>
@@ -1538,13 +1544,16 @@ namespace Tsavorite.core
             if (addressOfStartOfMainLogPage <= PageSize + PageHeader.Size)
                 return -1;
 
-            var buffer = bufferPool.Get(sectorSize);
+            // Flushes pad the main log only to its device's sector size, so read one such sector: the allocator's sector size can be
+            // larger and would run past the end of a partly flushed page.
+            var readLength = device.SectorSize;
+            var buffer = bufferPool.Get((int)readLength);
             try
             {
-                if (!TryReadDevice(device, (ulong)addressOfStartOfMainLogPage, (IntPtr)buffer.aligned_pointer, (uint)sectorSize,
+                if (!TryReadDevice(device, (ulong)addressOfStartOfMainLogPage, (IntPtr)buffer.aligned_pointer, readLength,
                     nameof(ReadObjectLogFloor), out var errorCode, out var numBytesRead, out var ioException))
                 {
-                    throw CreateReadException(nameof(ReadObjectLogFloor), (ulong)addressOfStartOfMainLogPage, (uint)sectorSize,
+                    throw CreateReadException(nameof(ReadObjectLogFloor), (ulong)addressOfStartOfMainLogPage, readLength,
                         errorCode, numBytesRead, ioException);
                 }
 
@@ -1909,7 +1918,7 @@ namespace Tsavorite.core
             {
                 // A ReadOnly flush that starts mid-sector composes that sector separately; get the durable bytes below its start first.
                 var startsMidSector = asyncResult.flushRequestState == FlushRequestState.ReadOnly && alignedStartOffset != startOffset;
-                Debug.Assert(!startsMidSector || deviceSectorSize == sectorSize, "A ReadOnly flush writes the main log device");
+                Debug.Assert(!startsMidSector || ReferenceEquals(device, this.device), "A ReadOnly flush writes the main log device, whose sectors its images use");
                 SectorAlignedMemory firstSector = null;
                 if (startsMidSector && !TryGetDurableSectorPrefix(flushPage, pageStart + alignedStartOffset, startOffset - alignedStartOffset,
                         alignedMainLogFlushPageAddress + (ulong)alignedStartOffset, device, callback, asyncResult, out firstSector))
@@ -2045,7 +2054,7 @@ namespace Tsavorite.core
                                     if (snapshotReader is null)
                                     {
                                         snapshotReader = new(snapshotSourceLog, storeFunctions);
-                                        snapshotReader.ReadAhead = snapshotReadAhead = StartPageReadAhead(snapshotSourceLog, physicalAddress, endPhysicalAddress);
+                                        snapshotReader.ReadAhead = snapshotReadAhead = StartPageReadAhead(snapshotSourceLog, physicalAddress, endPhysicalAddress, endPhysicalAddress);
                                     }
                                     snapshotReader.BeginRecord(in recordRef);
                                     var result = snapshotReader.CopyRecordTo(logWriter);
@@ -2403,6 +2412,21 @@ namespace Tsavorite.core
 
         private void OnPagesMarkedReadOnlyWorker()
         {
+            try
+            {
+                OnPagesMarkedReadOnlyWorkerCore();
+            }
+            catch (Exception ex)
+            {
+                // OngoingFlushedUntilAddress stays set, so every later OnPagesMarkedReadOnly would leave the flush to this worker and
+                // the log would stall silently. Crash instead: a dump is the only practical way to diagnose this.
+                FailFastOnWorkerException($"OnPagesMarkedReadOnlyWorker failed; allocator state is unrecoverable. "
+                    + $"LastIssuedFlushedUntilAddress={LastIssuedFlushedUntilAddress}, OngoingFlushedUntilAddress={OngoingFlushedUntilAddress}", ex);
+            }
+        }
+
+        private void OnPagesMarkedReadOnlyWorkerCore()
+        {
             while (true)
             {
                 var flushStartAddress = LastIssuedFlushedUntilAddress;
@@ -2506,10 +2530,7 @@ namespace Tsavorite.core
         /// Without one this is ReadAtAddress (an implicit match), a scan, or recovery.</param>
         /// <returns>False if <paramref name="requestedKey"/> is set and the record's overflow key does not match it; otherwise true.</returns>
         private bool ReadRecordObjects<TKey>(ObjectLogReader<TStoreFunctions> reader, ref LogRecord logRecord, TKey requestedKey)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
         {
             // Capture the position and hints before materializing anything: assigning a component unstamps the record.
             var recordRef = logRecord.GetObjectLogRecordRef();
@@ -2563,16 +2584,18 @@ namespace Tsavorite.core
             asyncResult.callback = callback;
             asyncResult.destinationPtr = destinationPtr;
 
-            // Bound the object-record walk (in DeserializeObjectsOnPage) to the caller's valid-data extent when one was provided.
-            // For a partial page read the caller sets maxAddressOffsetOnPage to the scan/recovery end (untilAddress), which can be
-            // mid-page and is smaller than the sector-aligned device read length. Walking to the aligned length would process records
-            // that lie ABOVE untilAddress (the page physically continues past the requested range). Such a record can straddle the
-            // read end, so the fields read near its tail -- the ObjectLogPosition word and the raw RDH length bits -- fall past the bytes
-            // actually transferred and are read from the un-read buffer tail. That tail is only incidentally zero (the read buffer is
-            // cleared before the read); a different boundary alignment could bisect a field and yield arbitrary bytes. Either way the
-            // resulting position would be bogus. Only fall back to the read length when the caller left the extent unset.
+            // Bound where the object-record walk (in DeserializeObjectsOnPage) starts records to the caller's valid-data extent when one
+            // was provided. For a partial page read the caller sets maxAddressOffsetOnPage to the scan/recovery end (untilAddress), which
+            // can be mid-page and is smaller than the sector-aligned device read length. Walking to the aligned length would process
+            // records that lie ABOVE untilAddress (the page physically continues past the requested range). Such a record can straddle
+            // the read end, so the fields read near its tail -- the ObjectLogPosition word and the raw RDH length bits -- fall past the
+            // bytes actually transferred and are read from the un-read buffer tail. That tail is only incidentally zero (the read buffer
+            // is cleared before the read); a different boundary alignment could bisect a field and yield arbitrary bytes. Either way the
+            // resulting position would be bogus. Only fall back to the read length when the caller left the extent unset. A record that
+            // starts below the extent is walked to its end, which the read covers (see GetFrameReadLength), so it is bounded by readLength.
             if (asyncResult.maxAddressOffsetOnPage == 0)
                 asyncResult.maxAddressOffsetOnPage = aligned_read_length;
+            asyncResult.readLength = aligned_read_length;
 
             device.ReadAsync(alignedSourceAddress, destinationPtr, aligned_read_length, AsyncReadPageWithObjectsCallback<TContext>, asyncResult);
         }
@@ -2598,10 +2621,11 @@ namespace Tsavorite.core
             // Recovery Pass 1 skips object deserialization; those objects are loaded afterwards by LoadObjectsForRecoveryPass2.
             if (result.recoveryPhase != RecoveryPhase.Pass1)
             {
-                // The remaining callers are runtime reads and the post-recovery head read (RecoveryPhase.None), which read the live
-                // current-format log into a transient map, so decode as current.
-                DeserializeObjectsOnPage((long)result.destinationPtr, result.maxAddressOffsetOnPage, transientObjectIdMap, objectLogDevice: null,
-                    HybridLogRecoveryInfo.CheckpointVersion);
+                // The remaining callers are runtime reads (RecoveryPhase.None) of the live current-format log, into a scan frame's map or the
+                // transient map, so decode as current. These are not resident log pages, so the log size tracker does not count their objects.
+                DeserializeObjectsOnPage((long)result.destinationPtr, result.maxAddressOffsetOnPage, result.objectFrame?.objectIdMap ?? transientObjectIdMap,
+                    objectLogDevice: null, HybridLogRecoveryInfo.CheckpointVersion, trackHeapSize: false, objectFrame: result.objectFrame,
+                    readEndOffsetOnPage: result.readLength);
             }
 
             // Call the "real" page read callback
@@ -2619,11 +2643,19 @@ namespace Tsavorite.core
         /// <param name="checkpointVersion">The checkpoint metadata version whose object-log encoding is being decoded; current-format for a runtime read.</param>
         /// <param name="legacyReadEnd">For a downlevel snapshot object log, its exclusive durable end; unused otherwise</param>
         /// <param name="minAddressOffsetOnPage">First record offset to scan; callers use this to split a page at an object-log address-space boundary</param>
+        /// <param name="trackHeapSize">Whether the page is a resident log page, whose objects the log size tracker counts; false for a scan frame</param>
+        /// <param name="objectFrame">For a scan frame, the extent of its records whose slots are set, which the frame's cleanup frees</param>
+        /// <param name="readEndOffsetOnPage">The end of the bytes read onto the page, which a record starting below <paramref name="maxAddressOffsetOnPage"/>
+        /// may end at or below; no higher than <paramref name="maxAddressOffsetOnPage"/> when it is zero.</param>
         private void DeserializeObjectsOnPage(long pageStartPhysicalAddress, long maxAddressOffsetOnPage, ObjectIdMap objectIdMap, IDevice objectLogDevice,
-            int checkpointVersion, long legacyReadEnd = 0, long minAddressOffsetOnPage = PageHeader.Size)
+            int checkpointVersion, long legacyReadEnd = 0, long minAddressOffsetOnPage = PageHeader.Size, bool trackHeapSize = true,
+            ObjectScanFrame objectFrame = null, long readEndOffsetOnPage = 0)
         {
+            Debug.Assert(objectFrame is null || minAddressOffsetOnPage == PageHeader.Size, "A scan frame's cleanup walks the page from its first record");
+            objectFrame?.Initialize(pageStartPhysicalAddress);
             if (HybridLogRecoveryInfo.UsesDownlevelObjectLog(checkpointVersion))
             {
+                Debug.Assert(trackHeapSize && objectFrame is null, "Only recovery reads a downlevel object log");
                 using var legacyReadBuffers = CreateLegacyReadBuffers(objectLogDevice);
                 DeserializeLegacyObjectsOnPage(pageStartPhysicalAddress, maxAddressOffsetOnPage, objectIdMap, legacyReadBuffers, checkpointVersion,
                     GetLegacyReadHardEnd(objectLogDevice is null ? 0 : legacyReadEnd), minAddressOffsetOnPage);
@@ -2634,10 +2666,16 @@ namespace Tsavorite.core
             ObjectLogReadAhead readAhead = null;
             try
             {
+                // Records start below endAddress, and may end above it, up to extentEndAddress, as a scan frame's last record does.
                 var recordAddress = pageStartPhysicalAddress + minAddressOffsetOnPage;
                 var endAddress = pageStartPhysicalAddress + maxAddressOffsetOnPage;
+                var extentEndAddress = pageStartPhysicalAddress + Math.Max(maxAddressOffsetOnPage, readEndOffsetOnPage);
                 while (recordAddress < endAddress)
                 {
+                    // Every record before this one has all its slots set, so a scan frame's cleanup can free them if a later record throws.
+                    if (objectFrame is not null)
+                        objectFrame.initializedUntilAddress = recordAddress;
+
                     var logRecord = new LogRecord(recordAddress, objectIdMap);
 
                     // PAGE-EXTENT GUARD -- not a record-validity or stamping test. The device read is sector-aligned, so endAddress
@@ -2647,7 +2685,7 @@ namespace Tsavorite.core
                     // would report KeyIsOverflow/ValueIsOverflow set -- out-of-line is the absence of the inline flags -- and yield
                     // a bogus minimum AllocatedSize, stepping the walk off the record boundary.
                     var allocatedSize = logRecord.AllocatedSize;
-                    if (logRecord.DataHeader.word == 0 || allocatedSize <= 0 || recordAddress + allocatedSize > endAddress)
+                    if (logRecord.DataHeader.word == 0 || allocatedSize <= 0 || recordAddress + allocatedSize > extentEndAddress)
                         break;
                     var thisRecordAddress = recordAddress;
                     recordAddress += allocatedSize;
@@ -2674,11 +2712,15 @@ namespace Tsavorite.core
                     {
                         var log = GetReadObjectLog(objectLogDevice);
                         reader = new(log, storeFunctions);
-                        reader.ReadAhead = readAhead = StartPageReadAhead(log, thisRecordAddress, endAddress);
+                        reader.ReadAhead = readAhead = StartPageReadAhead(log, thisRecordAddress, endAddress, extentEndAddress);
                     }
                     _ = ReadRecordObjects(reader, ref logRecord, default(EmptyKey));
-                    TrackRecoveredObjectRecord(in logRecord);
+                    if (trackHeapSize)
+                        TrackRecoveredObjectRecord(in logRecord);
                 }
+
+                if (objectFrame is not null)
+                    objectFrame.initializedUntilAddress = recordAddress;
             }
             finally
             {
@@ -2688,9 +2730,10 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Start reading ahead through the object-log extents of the records in a page buffer, from <paramref name="recordPhysicalAddress"/>
-        /// to <paramref name="endPhysicalAddress"/>, that the walk will read; or return null if fewer than two of them are in the range
-        /// <see cref="ObjectLogReadAheadRange"/> chooses, since a single record's reads gain nothing from it.
+        /// Start reading ahead through the object-log extents of the records in a page buffer that the walk will read: those that start from
+        /// <paramref name="recordPhysicalAddress"/> to <paramref name="endPhysicalAddress"/> and end by <paramref name="extentEndPhysicalAddress"/>;
+        /// or return null if fewer than two of them are in the range <see cref="ObjectLogReadAheadRange"/> chooses, since a single record's reads
+        /// gain nothing from it.
         /// </summary>
         /// <remarks>
         /// A flush writes a page's records to the object log in page order, so most of their extents lie in one ascending range. A record's
@@ -2699,7 +2742,7 @@ namespace Tsavorite.core
         /// left out: on a main-log page the walk invalidates them, since their positions are in a checkpoint's object log, and on a page read
         /// from a checkpoint's object log they are captures, which lie below the page's other records.
         /// </remarks>
-        private ObjectLogReadAhead StartPageReadAhead(ObjectLog log, long recordPhysicalAddress, long endPhysicalAddress)
+        private ObjectLogReadAhead StartPageReadAhead(ObjectLog log, long recordPhysicalAddress, long endPhysicalAddress, long extentEndPhysicalAddress)
         {
             ObjectLogReadAheadRange range = default;
             while (recordPhysicalAddress < endPhysicalAddress)
@@ -2708,7 +2751,7 @@ namespace Tsavorite.core
 
                 // Must match the walk in DeserializeObjectsOnPage; see the page-extent guard there.
                 var allocatedSize = logRecord.AllocatedSize;
-                if (logRecord.DataHeader.word == 0 || allocatedSize <= 0 || recordPhysicalAddress + allocatedSize > endPhysicalAddress)
+                if (logRecord.DataHeader.word == 0 || allocatedSize <= 0 || recordPhysicalAddress + allocatedSize > extentEndPhysicalAddress)
                     break;
                 recordPhysicalAddress += allocatedSize;
 
@@ -3103,7 +3146,8 @@ namespace Tsavorite.core
         internal override bool Scan<TScanFunctions>(TsavoriteKV<TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
                 long beginAddress, long endAddress, ref TScanFunctions scanFunctions, DiskScanBufferingMode scanBufferingMode)
         {
-            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, endAddress, epoch, scanBufferingMode, includeClosedRecords: false, logger: logger);
+            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, endAddress, epoch, scanBufferingMode,
+                includeClosedRecords: false, logger: logger, includeValues: scanFunctions.IncludeValues);
             return PushScanImpl(beginAddress, endAddress, ref scanFunctions, iter);
         }
 
@@ -3115,7 +3159,7 @@ namespace Tsavorite.core
                 bool resetCursor = true, bool includeTombstones = false)
         {
             using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, cursor, endAddress, epoch, GetScanCursorBufferingMode(count),
-                includeClosedRecords: maxAddress < long.MaxValue, logger: logger);
+                includeClosedRecords: maxAddress < long.MaxValue, logger: logger, includeValues: scanFunctions.IncludeValues);
             return ScanLookup<long, long, TScanFunctions, ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor,
                 maxAddress, resetCursor: resetCursor, includeTombstones: includeTombstones);
         }

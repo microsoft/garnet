@@ -21,10 +21,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static LogRecord WriteNewRecordInfo<TKey>(TKey key, AllocatorBase<TStoreFunctions, TAllocator> log, long logicalAddress, long physicalAddress,
             in RecordSizeInfo sizeInfo, bool inNewVersion, long previousAddress)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
         {
             var logRecord = log._wrapper.CreateLogRecord(logicalAddress, physicalAddress);
             logRecord.InitializeHeadersForNewRecord(inNewVersion, previousAddress);
@@ -41,6 +38,52 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => hlog.OnDisposeDiskRecord(ref logRecord, disposeReason);
+
+        /// <summary>
+        /// Whether a copy-on-read's source has a released value: its value slot holds a placeholder, a <see cref="SupersededObjectValue"/> for an
+        /// object, which <see cref="ISourceLogRecord.ValueObject"/> reads as null, or a sentinel for an overflow value, which reads as empty.
+        /// </summary>
+        /// <remarks>
+        /// <para>A placeholder marks a released value: a superseded record's, a deleted or elided record's, or that of the source of a checkpoint's
+        /// capture. A copy of such a source would serve the released value, as null or empty, to later reads of the key, so
+        /// <see cref="TryCopyToReadCache{TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord}"/> and
+        /// <see cref="TryCopyToTail{TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord}"/> copy none, in every build, and a
+        /// Debug build also fails an assertion (<see cref="OnPlaceholderSourceNotCopied"/>).</para>
+        /// <para>A read by key should not find one. It copies the key's latest record and holds the bucket's shared lock from its lookup through
+        /// the copy, so no update can supersede and release the source meanwhile; and the compare-and-swap that publishes an update detaches the
+        /// read-cache prefix, so no later read finds a read-cache source that the update released. Compaction copies a record only if it is not
+        /// a tombstone and has no newer version, and a released record is one or the other. A ReadAtAddress reads the record at an address,
+        /// which can be an older version, so with copying enabled it can find one, and the assertion flags that too.</para>
+        /// <para>A disk image carries a released object as <see cref="SupersededObjectValue.Released"/>, but a released overflow value as an
+        /// empty one, which an in-place update can also make, so a disk image's released overflow value is not recognized here.</para>
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool ValueSlotHoldsPlaceholder<TSourceLogRecord>(in TSourceLogRecord srcLogRecord)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            var dataHeader = srcLogRecord.DataHeader;
+            return dataHeader.ValueIsObject ? srcLogRecord.ValueObject is null : dataHeader.ValueIsOverflow && srcLogRecord.ValueOverflow.IsSentinel;
+        }
+
+        /// <summary>Flag a copy-on-read that found a source whose value slot holds a placeholder; see
+        /// <see cref="ValueSlotHoldsPlaceholder{TSourceLogRecord}(in TSourceLogRecord)"/> for when one can. Compiled out of Release builds. A test
+        /// that gives a copy such a source sets <c>testOnPlaceholderSourceNotCopied</c>, which is called instead of failing the assertion.</summary>
+        [Conditional("DEBUG")]
+        private void OnPlaceholderSourceNotCopied()
+        {
+#if DEBUG
+            if (testOnPlaceholderSourceNotCopied is { } testHook)
+                testHook();
+            else
+                Debug.Fail("A copy-on-read found a source whose value slot holds a placeholder");
+#endif
+        }
+
+#if DEBUG
+        /// <summary>Test only, DEBUG builds only: if set, a copy-on-read that does not copy a source whose value slot holds a placeholder calls
+        /// it instead of failing a Debug assertion; see <see cref="OnPlaceholderSourceNotCopied"/>.</summary>
+        internal System.Action testOnPlaceholderSourceNotCopied;
+#endif
 
         /// <summary>
         /// This is a wrapper for checking the record's version instead of just peeking at the latest record at the tail of the bucket.
@@ -377,10 +420,7 @@ namespace Tsavorite.core
         /// </remarks>
         private void ReleaseUpsertSupersededValue<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord srcLogRecord, long previousAddress)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (!hlog.HasObjectLog)
@@ -421,6 +461,33 @@ namespace Tsavorite.core
                         && (hlogBase.IsNullDevice || address >= hlogBase.FlushedUntilAddress)))
                 return;
             hlog.ReleaseUpsertSourceInPlace(ref record);
+        }
+
+        /// <summary>
+        /// Delete an expired source in place and elide it, when an RMW expires it and no new record replaces it: an ExpireAndStop from
+        /// NeedCopyUpdate, or an expiration after which NeedInitialUpdate declines. The caller has checked that the source is elidable and not
+        /// frozen.
+        /// </summary>
+        /// <remarks>
+        /// The source is disposed here rather than released through <see cref="ReleaseSupersededSource{TInput, TOutput, TContext, TSessionFunctionsWrapper}"/>,
+        /// which would mark the disposal of a source frozen since the check: the elision invalidates the source, and the drain and eviction skip
+        /// invalid records. Below ReadOnlyAddress a scan may copy the source without a lock, so its value is released in place. At or above it
+        /// the source is converted: if the elision fails, the tombstone left in the chain may be revivified there, which needs an inline value.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void DeleteAndElideExpiredSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord source)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            if (stackCtx.recSrc.LogicalAddress < hlogBase.ReadOnlyAddress)
+                ReleaseInPlace(ref source, DisposeReason.Deleted);
+            else
+                OnDispose(ref source, DisposeReason.Deleted);
+            source.InfoRef.SetTombstone();
+            source.InfoRef.SetModified();
+
+            // Elide from hei, and try to either do in-chain tombstoning or free list transfer.
+            HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref source);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -529,8 +596,7 @@ namespace Tsavorite.core
             // (We no longer need to guard the read-cache prefix boundary here: with the latch-free design nothing
             // consumes the boundary after FindInReadCache - the update detaches and the promotion head-inserts via the
             // hash-entry CAS, which itself fails if the prefix was concurrently evicted and the head changed.)
-            // A readcache source keeps the readcache bit set in its LogicalAddress, so it must be compared to the
-            // readcache HeadAddress in absolute form; AbsoluteAddress is a no-op for a main-log source.
+            // Read-cache source addresses carry a flag bit; HeadAddress is an absolute allocator address.
             return !(stackCtx.recSrc.HasInMemorySrc && AbsoluteAddress(stackCtx.recSrc.LogicalAddress) < stackCtx.recSrc.AllocatorBase.HeadAddress);
         }
 

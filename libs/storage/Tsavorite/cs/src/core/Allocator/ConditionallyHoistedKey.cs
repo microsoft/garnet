@@ -179,11 +179,7 @@ namespace Tsavorite.core
         internal static ConditionallyHoistedKey CreatePinned(byte* keyPtr, int keyLen) => new(keyPtr, keyLen);
 
         /// <inheritdoc/>
-        public bool KeysEqual<TOther>(TOther other) where TOther :
-            IKey
-#if NET9_0_OR_GREATER
-            , allows ref struct
-#endif
+        public bool KeysEqual<TOther>(TOther other) where TOther : IKey, allows ref struct
         {
             if (other.HasNamespace)
             {
@@ -229,10 +225,7 @@ namespace Tsavorite.core
         /// </list>
         /// </remarks>
         public static ConditionallyHoistedKey Create<TKey>(TKey key, SectorAlignedBufferPool bufferPool)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-            , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
         {
 
             if (key.IsEmpty)

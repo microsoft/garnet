@@ -32,9 +32,20 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            if (!parseState.TryGetInt(parseState.Count - 2, out var expiry))
+            if (!parseState.TryGetLong(parseState.Count - 2, out var ttlMs))
             {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+            }
+
+            if (ttlMs < 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
+            }
+
+            var expirationTicks = 0L;
+            if (ttlMs > 0 && !ConvertUtils.TryRelativeMillisecondsToTicks(ttlMs, out expirationTicks))
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrInvalidExpireTime, "restore");
             }
 
             var value = parseState.GetArgSliceByRef(2);
@@ -99,10 +110,9 @@ namespace Garnet.server
             parseState.InitializeWithArgument(valArgSlice);
 
             StringInput input;
-            if (expiry > 0)
+            if (ttlMs > 0)
             {
-                var inputArg = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expiry).Ticks;
-                input = new StringInput(RespCommand.SETEXNX, ref parseState, arg1: inputArg);
+                input = new StringInput(RespCommand.SETEXNX, ref parseState, arg1: expirationTicks);
             }
             else
             {
@@ -315,31 +325,34 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// EXISTS multiple keys
+        /// EXISTS or TOUCH multiple keys.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool NetworkEXISTS<TGarnetApi>(ref TGarnetApi storageApi)
+        private bool NetworkEXISTS<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             var count = parseState.Count;
             if (count < 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXISTS));
+                return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
             var exists = 0;
 
             // Prepare input
-            var input = new UnifiedInput(RespCommand.EXISTS);
+            var input = new UnifiedInput(command);
 
             var output = new UnifiedOutput();
 
             for (var i = 0; i < parseState.Count; i++)
             {
                 var key = parseState.GetArgSliceByRef(i);
-                var status = storageApi.EXISTS(key, ref input, ref output);
+                var status = command == RespCommand.TOUCH
+                    ? storageApi.TOUCH(key, ref input, ref output)
+                    : storageApi.EXISTS(key, ref input, ref output);
                 if (status == GarnetStatus.OK)
                     exists++;
             }
@@ -417,14 +430,20 @@ namespace Garnet.server
                 }
             }
 
-            // Convert to expiration time in ticks
-            var expirationTimeInTicks = command switch
+            // Convert to expiration time in ticks, rejecting values that would overflow the representable date range
+            long expirationTimeInTicks;
+            var isValidExpiration = command switch
             {
-                RespCommand.EXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).UtcTicks,
-                RespCommand.PEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).UtcTicks,
-                RespCommand.EXPIREAT => ConvertUtils.UnixTimestampInSecondsToTicks(expiration),
-                _ => ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration)
+                RespCommand.EXPIRE => ConvertUtils.TryRelativeSecondsToTicks(expiration, out expirationTimeInTicks),
+                RespCommand.PEXPIRE => ConvertUtils.TryRelativeMillisecondsToTicks(expiration, out expirationTimeInTicks),
+                RespCommand.EXPIREAT => ConvertUtils.TryUnixTimestampInSecondsToTicks(expiration, out expirationTimeInTicks),
+                _ => ConvertUtils.TryUnixTimestampInMillisecondsToTicks(expiration, out expirationTimeInTicks)
             };
+
+            if (!isValidExpiration)
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrInvalidExpireTime, command.ToString().ToLowerInvariant());
+            }
 
             // Encode expiration time and expiration option and pass them into the input object
             var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);

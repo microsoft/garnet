@@ -200,10 +200,7 @@ namespace Tsavorite.test
             public readonly void OnCheckpoint(CheckpointTrigger trigger, Guid checkpointToken) { }
             public readonly void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
                                                                   ref LogRecord dstLogRecord, long dstLogicalAddress)
-                where TSourceLogRecord : ISourceLogRecord
-#if NET9_0_OR_GREATER
-                    , allows ref struct
-#endif
+                where TSourceLogRecord : ISourceLogRecord, allows ref struct
             { }
             public readonly void OnTruncate(long newBeginAddress) { }
         }
@@ -1142,21 +1139,12 @@ namespace Tsavorite.test
         internal struct OneChainComparer : IKeyComparer
         {
             public readonly long GetHashCode64<TKey>(TKey key)
-                where TKey : IKey
-#if NET9_0_OR_GREATER
-                    , allows ref struct
-#endif
+                where TKey : IKey, allows ref struct
                 => Utility.GetHashCode(1);
 
             public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
-                where TFirstKey : IKey
-#if NET9_0_OR_GREATER
-                    , allows ref struct
-#endif
-                where TSecondKey : IKey
-#if NET9_0_OR_GREATER
-                    , allows ref struct
-#endif
+                where TFirstKey : IKey, allows ref struct
+                where TSecondKey : IKey, allows ref struct
                 => new TestObjectKey.Comparer().Equals(k1, k2);
         }
 
@@ -1360,13 +1348,12 @@ namespace Tsavorite.test
         #region Scan — in-memory records
 
         /// <summary>
-        /// Scanning N records that are all in memory fires <see cref="IRecordTriggers.OnDisposeDiskRecord"/>
-        /// exactly N times with <see cref="DisposeReason.DeserializedFromDisk"/> (the iterator wraps each
-        /// remapped in-memory record as a transient DiskLogRecord). Value objects are SHARED with the
-        /// live on-log records, so the default trigger (no-op) must not dispose them.
+        /// In-memory scan records borrow value objects from live on-log records. The iterator releases
+        /// its remapped slots without firing <see cref="IRecordTriggers.OnDisposeDiskRecord"/>,
+        /// leaving the resident values readable and undisposed.
         /// </summary>
         [Test, Category("TsavoriteKV")]
-        public void ScanInMemoryFiresOnDisposeDiskRecordOncePerRecord()
+        public void ScanInMemoryBorrowsObjectsWithoutFiringOnDisposeDiskRecord()
         {
             const int n = 20;
             for (int i = 0; i < n; i++) Upsert(i, i * 10);
@@ -1379,15 +1366,15 @@ namespace Tsavorite.test
             }
 
             ClassicAssert.AreEqual(n, scanned, "Iterator should yield exactly N in-memory records");
-            ClassicAssert.AreEqual(n, tracker.DisposeDiskCount(DisposeReason.DeserializedFromDisk),
-                "OnDisposeDiskRecord should fire exactly once per scanned in-memory record");
+            ClassicAssert.AreEqual(0, tracker.TotalDisposeDisk(),
+                "Borrowed in-memory scan records must not invoke OnDisposeDiskRecord");
             ClassicAssert.AreEqual(0, tracker.TotalDispose(),
                 "In-memory scan must not invoke OnDispose (on-log records are not being disposed)");
 
             var (total, _) = TrackedObjectValue.Snapshot();
             ClassicAssert.AreEqual(0, total,
-                "In-memory scan with a no-op OnDisposeDiskRecord handler must leave value objects undisposed " +
-                "(they are shared references to the still-live on-log records)");
+                "In-memory scan must leave borrowed value objects undisposed " +
+                "(they belong to the still-live on-log records)");
 
             // The on-log records remain fully readable after the scan — no corruption from the scan wrappers.
             using (var s = NewSession())

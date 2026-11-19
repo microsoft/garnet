@@ -39,6 +39,13 @@ namespace Tsavorite.core
     /// </summary>
     public interface IScanIteratorFunctions
     {
+        /// <summary>
+        /// Whether in-memory snapshots must include values. When false, snapshots may replace the value with an empty
+        /// inline value while preserving the key, namespace, record type, ETag, and expiration. Disk reads are unchanged.
+        /// Readers opting out must not rely on value data or the original value-layout flags.
+        /// </summary>
+        bool IncludeValues => true;
+
         /// <summary>Iteration is starting.</summary>
         /// <param name="beginAddress">Start address of the scan</param>
         /// <param name="endAddress">End address of the scan; if iterating key versions, this is <see cref="kInvalidAddress"/></param>
@@ -69,10 +76,7 @@ namespace Tsavorite.core
     internal interface IPushScanIterator
     {
         bool BeginGetPrevInMemory<TKey>(TKey key, out LogRecord logRecord, out bool continueOnDisk)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             ;
         void EndGetPrevInMemory();
 

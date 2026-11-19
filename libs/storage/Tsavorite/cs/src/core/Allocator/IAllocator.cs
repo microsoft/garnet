@@ -50,10 +50,7 @@ namespace Tsavorite.core
         /// <param name="sizeInfo">The record size info, which tells us the value size and whether that is overflow.</param>
         /// <param name="logRecord">The new log record being initialized</param>
         void InitializeRecord<TKey>(TKey key, long logicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord logRecord)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             ;
 
         /// <summary>Get copy destination size for RMW, taking Input into account</summary>
@@ -63,43 +60,28 @@ namespace Tsavorite.core
 
         /// <summary>Get initial record size for RMW, given the <paramref name="key"/> and <paramref name="input"/></summary>
         RecordSizeInfo GetRMWInitialRecordSize<TKey, TInput, TVariableLengthInput>(TKey key, ref TInput input, TVariableLengthInput varlenInput)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TVariableLengthInput : IVariableLengthInput<TInput>;
 
         /// <summary>Get record size required for the given <paramref name="key"/>, <paramref name="value"/>, and <paramref name="input"/></summary>
         RecordSizeInfo GetUpsertRecordSize<TKey, TInput, TVariableLengthInput>(TKey key, ReadOnlySpan<byte> value, ref TInput input, TVariableLengthInput varlenInput)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TVariableLengthInput : IVariableLengthInput<TInput>;
 
         /// <summary>Get record size required for the given <paramref name="key"/>, <paramref name="value"/>, and <paramref name="input"/></summary>
         RecordSizeInfo GetUpsertRecordSize<TKey, TInput, TVariableLengthInput>(TKey key, IHeapObject value, ref TInput input, TVariableLengthInput varlenInput)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TVariableLengthInput : IVariableLengthInput<TInput>;
 
         /// <summary>Get record size required for the given <paramref name="key"/>, <paramref name="inputLogRecord"/>, and <paramref name="input"/></summary>
         RecordSizeInfo GetUpsertRecordSize<TKey, TSourceLogRecord, TInput, TVariableLengthInput>(TKey key, in TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TSourceLogRecord : ISourceLogRecord
             where TVariableLengthInput : IVariableLengthInput<TInput>;
 
         /// <summary>Get record size required for a new tombstone record</summary>
         RecordSizeInfo GetDeleteRecordSize<TKey>(TKey key)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             ;
 
         /// <summary>Return the <see cref="LogRecord"/> for the allocator page at <paramref name="logicalAddress"/></summary>

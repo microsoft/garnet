@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -54,8 +54,15 @@ namespace Garnet.server
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            _ = unifiedContext.Upsert(in srcLogRecord);
-            return GarnetStatus.OK;
+            if (srcLogRecord.HasNamespace)
+            {
+                // The record is the composite key; its key bytes alone omit the namespace.
+                _ = unifiedContext.Upsert(in srcLogRecord);
+                return GarnetStatus.OK;
+            }
+
+            UnifiedInput input = default;
+            return SET(srcLogRecord.Key, ref input, in srcLogRecord, ref unifiedContext);
         }
 
         /// <summary>
@@ -72,7 +79,17 @@ namespace Garnet.server
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            _ = unifiedContext.Upsert((FixedSpanByteKey)key, ref input, in srcLogRecord);
+            if (!srcLogRecord.DataHeader.ValueIsObject && srcLogRecord.RecordType == 0)
+            {
+                // Zero explicitly clears an existing ETag during replay.
+                var recordInput = new UnifiedInput(RespCommand.SET, RespInputFlags.HasEtag, srcLogRecord.Expiration)
+                {
+                    arg2 = srcLogRecord.ETag
+                };
+                _ = unifiedContext.Upsert((FixedSpanByteKey)key, ref recordInput, in srcLogRecord);
+            }
+            else
+                _ = unifiedContext.Upsert((FixedSpanByteKey)key, ref input, in srcLogRecord);
             return GarnetStatus.OK;
         }
 
@@ -92,8 +109,14 @@ namespace Garnet.server
             // Prepare UnifiedOutput output
             var output = new UnifiedOutput();
 
-            // TODO: The output is unused so optimize ReadMethods to not copy it.
-            return Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+            // The value is not needed, so avoid copying it to the log tail (and any backing files) just before it is deleted
+            var readOptions = new ReadOptions { CopyOptions = ReadCopyOptions.None };
+            var status = unifiedContext.Read((FixedSpanByteKey)key, ref input, ref output, ref readOptions);
+
+            if (status.IsPending)
+                CompletePendingForUnifiedStoreSession(ref status, ref output, ref unifiedContext);
+
+            return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
         /// <summary>
@@ -108,7 +131,9 @@ namespace Garnet.server
             var status = unifiedContext.Delete((FixedSpanByteKey)key);
 
             Debug.Assert(!status.IsPending);
-            return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+
+            // An expired record is physically deleted but is logically absent, so it is reported as not found
+            return status.Found && !status.IsExpired ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
         /// <summary>
@@ -131,14 +156,24 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TUnifiedContext"></typeparam>
         /// <param name="key">The key to set the timeout on.</param>
-        /// <param name="expiryMs">Milliseconds value for the timeout.</param>
+        /// <param name="expiryMs">Milliseconds value for the timeout, formatted as ASCII digits.</param>
         /// <param name="timeoutSet">True when the timeout was properly set.</param>
+        /// <param name="error">True when <paramref name="expiryMs"/> is not an integer or gives an unrepresentable expiration time; the key is unchanged.</param>
         /// <param name="expireOption">>Flags to use for the operation.</param>
         /// <param name="unifiedContext">Basic context for the unified store.</param>
         /// <returns></returns>
-        public unsafe GarnetStatus EXPIRE<TUnifiedContext>(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, ExpireOption expireOption, ref TUnifiedContext unifiedContext)
+        public unsafe GarnetStatus EXPIRE<TUnifiedContext>(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, out bool error, ExpireOption expireOption, ref TUnifiedContext unifiedContext)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
-            => EXPIRE(key, TimeSpan.FromMilliseconds(NumUtils.ReadInt64(expiryMs.Length, expiryMs.ToPointer())), out timeoutSet, expireOption, ref unifiedContext);
+        {
+            if (!NumUtils.TryReadInt64(expiryMs.Length, expiryMs.ToPointer(), out var milliseconds))
+            {
+                timeoutSet = false;
+                error = true;
+                return GarnetStatus.OK;
+            }
+
+            return EXPIRE(key, milliseconds, out timeoutSet, out error, expireOption, ref unifiedContext, RespCommand.PEXPIRE);
+        }
 
         /// <summary>
         /// Set a timeout on key using absolute Unix timestamp (seconds since January 1, 1970).
@@ -147,29 +182,30 @@ namespace Garnet.server
         /// <param name="key">The key to set the timeout on.</param>
         /// <param name="expiryTimestamp">Absolute Unix timestamp</param>
         /// <param name="timeoutSet">True when the timeout was properly set.</param>
+        /// <param name="error">True when <paramref name="expiryTimestamp"/> is not a representable time; the key is unchanged.</param>
         /// <param name="expireOption">Flags to use for the operation.</param>
         /// <param name="unifiedContext">Basic context for the unified store.</param>
         /// <param name="milliseconds">When true, <paramref name="expiryTimestamp"/> is treated as milliseconds else seconds</param>
         /// <returns>Return GarnetStatus.OK when key found, else GarnetStatus.NOTFOUND</returns>
-        public unsafe GarnetStatus EXPIREAT<TUnifiedContext>(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, ExpireOption expireOption, ref TUnifiedContext unifiedContext, bool milliseconds = false)
+        public unsafe GarnetStatus EXPIREAT<TUnifiedContext>(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, out bool error, ExpireOption expireOption, ref TUnifiedContext unifiedContext, bool milliseconds = false)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
-            => EXPIRE(key, expiryTimestamp, out timeoutSet, expireOption, ref unifiedContext, milliseconds ? RespCommand.PEXPIREAT : RespCommand.EXPIREAT);
+            => EXPIRE(key, expiryTimestamp, out timeoutSet, out error, expireOption, ref unifiedContext, milliseconds ? RespCommand.PEXPIREAT : RespCommand.EXPIREAT);
 
         /// <summary>
-        /// Set a timeout on key.
+        /// Set a timeout on key, to millisecond precision.
         /// </summary>
         /// <typeparam name="TUnifiedContext"></typeparam>
         /// <param name="key">The key to set the timeout on.</param>
         /// <param name="expiry">The timespan value to set the expiration for.</param>
         /// <param name="timeoutSet">True when the timeout was properly set.</param>
+        /// <param name="error">True when <paramref name="expiry"/> gives an unrepresentable expiration time; the key is unchanged.</param>
         /// <param name="expireOption">Flags to use for the operation.</param>
         /// <param name="unifiedContext">Basic context for the unified store.</param>
-        /// <param name="milliseconds">When true the command executed is PEXPIRE, expire by default.</param>
         /// <returns>Return GarnetStatus.OK when key found, else GarnetStatus.NOTFOUND</returns>
-        public unsafe GarnetStatus EXPIRE<TUnifiedContext>(PinnedSpanByte key, TimeSpan expiry, out bool timeoutSet, ExpireOption expireOption, ref TUnifiedContext unifiedContext, bool milliseconds = false)
+        public unsafe GarnetStatus EXPIRE<TUnifiedContext>(PinnedSpanByte key, TimeSpan expiry, out bool timeoutSet, out bool error, ExpireOption expireOption, ref TUnifiedContext unifiedContext)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
-            => EXPIRE(key, (long)(milliseconds ? expiry.TotalMilliseconds : expiry.TotalSeconds), out timeoutSet, expireOption,
-                ref unifiedContext, milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE);
+            // Whole seconds would turn a timeout of less than a second into immediate expiration
+            => EXPIRE(key, expiry.Ticks / TimeSpan.TicksPerMillisecond, out timeoutSet, out error, expireOption, ref unifiedContext, RespCommand.PEXPIRE);
 
         /// <summary>
         /// Set a timeout on key.
@@ -178,25 +214,36 @@ namespace Garnet.server
         /// <param name="key">The key to set the timeout on.</param>
         /// <param name="expiration">The timespan value to set the expiration for.</param>
         /// <param name="timeoutSet">True when the timeout was properly set.</param>
+        /// <param name="error">True when <paramref name="expiration"/> gives an unrepresentable expiration time; the key is unchanged.</param>
         /// <param name="expireOption">Flags to use for the operation.</param>
         /// <param name="unifiedContext">Basic context for the main store</param>
         /// <param name="respCommand">The current RESP command</param>
         /// <returns></returns>
-        public unsafe GarnetStatus EXPIRE<TUnifiedContext>(PinnedSpanByte key, long expiration, out bool timeoutSet, ExpireOption expireOption, ref TUnifiedContext unifiedContext, RespCommand respCommand)
+        public unsafe GarnetStatus EXPIRE<TUnifiedContext>(PinnedSpanByte key, long expiration, out bool timeoutSet, out bool error, ExpireOption expireOption, ref TUnifiedContext unifiedContext, RespCommand respCommand)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            Span<byte> rmwOutput = stackalloc byte[sizeof(int)];
+            // CopyDefaultResp writes the reply into this buffer only when the buffer is strictly larger than the reply
+            Span<byte> rmwOutput = stackalloc byte[8];
             var unifiedOutput = new UnifiedOutput(SpanByteAndMemory.FromPinnedSpan(rmwOutput));
 
-            // Convert to expiration time in ticks
-            var expirationTimeInTicks = respCommand switch
+            // Convert to expiration time in ticks, rejecting values that would overflow the representable date range
+            long expirationTimeInTicks;
+            var isValidExpiration = respCommand switch
             {
-                RespCommand.EXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).UtcTicks,
-                RespCommand.PEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).UtcTicks,
-                RespCommand.EXPIREAT => ConvertUtils.UnixTimestampInSecondsToTicks(expiration),
-                _ => ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration)
+                RespCommand.EXPIRE => ConvertUtils.TryRelativeSecondsToTicks(expiration, out expirationTimeInTicks),
+                RespCommand.PEXPIRE => ConvertUtils.TryRelativeMillisecondsToTicks(expiration, out expirationTimeInTicks),
+                RespCommand.EXPIREAT => ConvertUtils.TryUnixTimestampInSecondsToTicks(expiration, out expirationTimeInTicks),
+                _ => ConvertUtils.TryUnixTimestampInMillisecondsToTicks(expiration, out expirationTimeInTicks)
             };
 
+            if (!isValidExpiration)
+            {
+                timeoutSet = false;
+                error = true;
+                return GarnetStatus.OK;
+            }
+
+            error = false;
             var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
 
             var input = new UnifiedInput(RespCommand.EXPIRE, arg1: expirationWithOption.Word);
@@ -284,8 +331,6 @@ namespace Garnet.server
             var oldKey = oldKeySlice;
             var newKey = newKeySlice;
 
-            var abortTransaction = false;
-
             var output = new UnifiedOutput();
             try
             {
@@ -301,7 +346,6 @@ namespace Garnet.server
                 if (isNX && newExists)
                 {
                     result = 0;             // This is the "oldkey was found" return
-                    abortTransaction = true;
                     return GarnetStatus.OK;
                 }
 
@@ -324,7 +368,6 @@ namespace Garnet.server
                 status = GET(oldKey, ref input, ref output, ref context);
                 if (status != GarnetStatus.OK)
                 {
-                    abortTransaction = true;
                     return status;
                 }
 
@@ -372,6 +415,17 @@ namespace Garnet.server
                             functionsState.vectorManager.UpdateHashSlot(oldKey, newKey, logRecord.ValueSpan, ref vectorBasicContext);
                         }
 
+                        if (logRecord.DataHeader.HasExpiration)
+                        {
+                            _ = EXPIREAT(newKey, ConvertUtils.UnixTimeInMillisecondsFromTicks(logRecord.Expiration), out var timeoutSet, out _, ExpireOption.None, ref context, milliseconds: true);
+
+                            if (!timeoutSet)
+                            {
+                                // Record _expired_ during rename, so force a delete
+                                _ = DELETE(newKey, ref context);
+                            }
+                        }
+
                         // Delete the old key
                         _ = DELETE(oldKey, ref context);
                         return GarnetStatus.OK;
@@ -388,11 +442,9 @@ namespace Garnet.server
             {
                 if (createTransaction)
                 {
-                    if (abortTransaction)
-                        txnManager.Reset();
-                    else
-                        txnManager.Commit(true);
+                    txnManager.Commit(true);
                 }
+
                 output.Dispose();
             }
 

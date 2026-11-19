@@ -647,14 +647,14 @@ namespace Tsavorite.test.Objects
                 Assert.That(dispose.Wait(TimeSpan.FromMilliseconds(500)), Is.False, "Dispose returned while its windows' reads were in flight");
 
                 gatedDevice.Gate = false;
-                for (; released < gatedDevice.CapturedCount; released++)
+                for (; released < gatedDevice.PendingCount; released++)
                     gatedDevice.Release(released);
                 Assert.That(dispose.Wait(TimeSpan.FromSeconds(30)), Is.True, "Dispose did not return once its windows' reads completed");
             }
             finally
             {
                 gatedDevice.Gate = false;
-                for (; released < gatedDevice.CapturedCount; released++)
+                for (; released < gatedDevice.PendingCount; released++)
                     gatedDevice.Release(released);
                 readAhead.Dispose();
             }

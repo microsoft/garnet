@@ -34,12 +34,18 @@ namespace Garnet.cluster
         /// <summary>
         /// Get cluster username
         /// </summary>
-        public string ClusterUsername => authContainer.ClusterUsername;
+        public string ClusterUsername => ClusterAuth.ClusterUsername;
 
         /// <summary>
         /// Get cluster password
         /// </summary>
-        public string ClusterPassword => authContainer.ClusterPassword;
+        public string ClusterPassword => ClusterAuth.ClusterPassword;
+
+        /// <summary>
+        /// Current cluster authentication container, read with a memory barrier so reconnecting gossip
+        /// clients observe credential rotations performed through <see cref="UpdateClusterAuth"/>.
+        /// </summary>
+        internal ClusterAuthContainer ClusterAuth => Volatile.Read(ref authContainer);
 
         /// <summary>
         /// Create new cluster provider
@@ -113,11 +119,15 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
+        public void OnGossipClientConfigChanged()
+            => clusterManager?.SwapGossipClients();
+
+        /// <inheritdoc />
         public void Dispose()
         {
+            failoverManager?.Dispose();
             clusterManager?.Dispose();
             replicationManager?.Dispose();
-            failoverManager?.Dispose();
             migrationManager?.Dispose();
         }
 
@@ -126,6 +136,9 @@ namespace Garnet.cluster
         /// <inheritdoc />
         public bool IsReplica()
             => clusterManager?.CurrentConfig.LocalNodeRole == NodeRole.REPLICA || replicationManager?.IsRecovering == true;
+
+        /// <inheritdoc />
+        public bool IsWritePaused => failoverManager?.IsWritePaused ?? false;
 
         /// <inheritdoc />
         public bool IsReplica(string nodeId)
@@ -238,7 +251,7 @@ namespace Garnet.cluster
             {
                 if (role == NodeRole.REPLICA)
                 {
-                    var (address, port) = config.GetLocalNodePrimaryAddress();
+                    var (address, port) = config.GetWorkerClientAddressFromNodeId(config.LocalNodePrimaryId);
                     var primaryLinkStatus = clusterManager.GetPrimaryLinkStatus(config);
                     var replicationOffsetAccLag = storeWrapper.appendOnlyFile.Log.TailAddress.AggregateDiff(replicationManager.ReplicationOffset);
                     var replicationOffsetVectorLag = storeWrapper.appendOnlyFile.Log.TailAddress.Diff(replicationManager.ReplicationOffset);
@@ -266,6 +279,10 @@ namespace Garnet.cluster
                         replicationInfo.Add(new($"slave{i}", replicaInfo[i].ToString()));
                 }
             }
+
+            // Format last-successful phase samples only for startup-enabled managers, on INFO rather than chunks.
+            if (replicationManager.BenchmarkTiming != null)
+                replicationInfo.AddRange(replicationManager.BenchmarkTiming.GetMetrics());
             return [.. replicationInfo];
         }
 
@@ -297,7 +314,7 @@ namespace Garnet.cluster
             var config = clusterManager.CurrentConfig;
             clusterManager.GetConnectionInfo(config.LocalNodePrimaryId, out var connection);
 
-            var (address, port) = config.GetLocalNodePrimaryAddress();
+            var (address, port) = config.GetWorkerClientAddressFromNodeId(config.LocalNodePrimaryId);
             var info = new RoleInfo()
             {
                 address = address,
@@ -314,6 +331,9 @@ namespace Garnet.cluster
         public MetricsItem[] GetGossipStats(bool metricsDisabled)
         {
             var gossipStats = clusterManager.gossipStats;
+            var (activeMemoryUsageBytes, maxMemoryUsageBytes) = metricsDisabled
+                ? default
+                : clusterManager.clusterConnectionStore.GetMemoryUsage();
             return
                 [
                     new("meet_requests_recv", metricsDisabled ? "0" : gossipStats.meet_requests_recv.ToString()),
@@ -326,7 +346,9 @@ namespace Garnet.cluster
                     new("gossip_empty_send", metricsDisabled ? "0" : gossipStats.gossip_empty_send.ToString()),
                     new("gossip_bytes_send", metricsDisabled ? "0" : gossipStats.gossip_bytes_send.ToString()),
                     new("gossip_bytes_recv", metricsDisabled ? "0" : gossipStats.gossip_bytes_recv.ToString()),
-                    new("gossip_open_connections", metricsDisabled ? "0" : this.clusterManager.clusterConnectionStore.Count.ToString())
+                    new("gossip_open_connections", metricsDisabled ? "0" : this.clusterManager.clusterConnectionStore.Count.ToString()),
+                    new("gossip_active_memory_bytes", metricsDisabled ? "0" : activeMemoryUsageBytes.ToString()),
+                    new("gossip_max_memory_bytes", metricsDisabled ? "0" : maxMemoryUsageBytes.ToString())
                 ];
         }
 
@@ -358,9 +380,10 @@ namespace Garnet.cluster
         /// <summary>
         /// Wait for config transition
         /// </summary>
+        /// <param name="token">Cancellation token for the transition wait.</param>
         /// <returns></returns>
-        internal ValueTask<bool> BumpAndWaitForEpochTransitionAsync()
-            => garnetEpoch.BumpAndWaitForEpochTransitionAsync();
+        public ValueTask<bool> BumpAndWaitForEpochTransitionAsync(CancellationToken token = default)
+            => garnetEpoch.BumpAndWaitForEpochTransitionAsync(token);
 
         /// <inheritdoc />
         public string GetRunId() => replicationManager.PrimaryReplId;

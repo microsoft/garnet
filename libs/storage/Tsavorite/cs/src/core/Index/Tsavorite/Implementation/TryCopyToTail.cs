@@ -18,7 +18,9 @@ namespace Tsavorite.core
         /// <returns>
         ///     <list type="bullet">
         ///     <item>RETRY_NOW: failed CAS, so no copy done. This routine deals entirely with new records, so will not encounter Sealed records</item>
-        ///     <item>SUCCESS: copy was done</item>
+        ///     <item>SUCCESS with <see cref="StatusCode.CopiedRecord"/>: copy was done</item>
+        ///     <item>SUCCESS alone: the source's value was released, so no copy was done; see
+        ///         <see cref="ValueSlotHoldsPlaceholder{TSourceLogRecord}(in TSourceLogRecord)"/></item>
         ///     </list>
         /// </returns>
         internal OperationStatus TryCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(in TSourceLogRecord inputLogRecord,
@@ -27,6 +29,12 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
+            if (ValueSlotHoldsPlaceholder(in inputLogRecord))
+            {
+                OnPlaceholderSourceNotCopied();
+                return OperationStatus.SUCCESS;
+            }
+
             var sizeInfo = new RecordSizeInfo() { FieldInfo = inputLogRecord.GetRecordFieldInfo() };
             hlog.PopulateRecordSizeInfo(ref sizeInfo);
 

@@ -11,6 +11,16 @@ namespace Garnet.client
 {
     public sealed partial class GarnetClient
     {
+        static readonly Memory<byte> GET = "$3\r\nGET\r\n"u8.ToArray();
+        static readonly Memory<byte> MGET = "$4\r\nMGET\r\n"u8.ToArray();
+        static readonly Memory<byte> SET = "$3\r\nSET\r\n"u8.ToArray();
+        static readonly Memory<byte> DEL = "$3\r\nDEL\r\n"u8.ToArray();
+        static readonly Memory<byte> INCR = "$4\r\nINCR\r\n"u8.ToArray();
+        static readonly Memory<byte> INCRBY = "$6\r\nINCRBY\r\n"u8.ToArray();
+        static readonly Memory<byte> DECR = "$4\r\nDECR\r\n"u8.ToArray();
+        static readonly Memory<byte> DECRBY = "$6\r\nDECRBY\r\n"u8.ToArray();
+        static readonly Memory<byte> QUIT = "$4\r\nQUIT\r\n"u8.ToArray();
+
         #region quitCMD
         /// <summary>
         /// Send ping
@@ -33,18 +43,6 @@ namespace Garnet.client
         #endregion
 
         #region pingCMD
-        /// <summary>
-        /// Send ping
-        /// </summary>
-        /// <returns></returns>
-        public Task<string> PingAsync() => ExecuteForStringResultAsync(PING, default(string));
-
-        /// <summary>
-        /// Send ping
-        /// </summary>
-        /// <returns></returns>
-        public Task<string> PingAsync(CancellationToken token) => ExecuteForStringResultWithCancellationAsync(PING, default(string), null, token);
-
         /// <summary>
         /// Send ping
         /// </summary>

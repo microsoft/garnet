@@ -120,7 +120,7 @@ namespace Garnet.server
             in TSourceLogRecord inputLogRecord, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            if (!InPlaceWriterForLogRecordValue(ref logRecord, ref input, in inputLogRecord, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.arg1))
+            if (!InPlaceWriterForLogRecordValue(ref logRecord, ref input, in inputLogRecord, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState))
                 return false;
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
@@ -129,10 +129,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref UnifiedInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor
         {
             if ((upsertInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
@@ -141,10 +138,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref UnifiedInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor
         {
             if ((upsertInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF

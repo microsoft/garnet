@@ -54,6 +54,15 @@ namespace Garnet.server
         GarnetStatus DEL_ETagConditional(PinnedSpanByte key, ref StringInput input);
 
         /// <summary>
+        /// Delete a string only when its value satisfies the supplied comparison.
+        /// </summary>
+        /// <param name="key">Key to delete.</param>
+        /// <param name="input">Command, comparison value, and equality condition.</param>
+        /// <param name="output">RESP integer indicating whether the key was deleted.</param>
+        /// <returns>The storage operation status.</returns>
+        GarnetStatus DELETE_Conditional(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
+
+        /// <summary>
         /// SET
         /// </summary>
         GarnetStatus SET(PinnedSpanByte key, Memory<byte> value);
@@ -82,8 +91,9 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="value">Value</param>
         /// <param name="expiryMs">Expiry in milliseconds, formatted as ASCII digits</param>
+        /// <param name="error">True if <paramref name="expiryMs"/> is not a positive integer or gives an expiration time that is not representable; nothing is written</param>
         /// <returns></returns>
-        GarnetStatus SETEX(PinnedSpanByte key, PinnedSpanByte value, PinnedSpanByte expiryMs);
+        GarnetStatus SETEX(PinnedSpanByte key, PinnedSpanByte value, PinnedSpanByte expiryMs, out bool error);
 
         /// <summary>
         /// SETEX
@@ -91,7 +101,8 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="value">Value</param>
         /// <param name="expiry">Expiry</param>
-        GarnetStatus SETEX(PinnedSpanByte key, PinnedSpanByte value, TimeSpan expiry);
+        /// <param name="error">True if <paramref name="expiry"/> is not positive or gives an expiration time that is not representable; nothing is written</param>
+        GarnetStatus SETEX(PinnedSpanByte key, PinnedSpanByte value, TimeSpan expiry, out bool error);
 
         #endregion
 
@@ -135,8 +146,9 @@ namespace Garnet.server
         /// <param name="key">Key whose value is to be appended</param>
         /// <param name="value">Value to be appended</param>
         /// <param name="output">Length of updated value</param>
+        /// <param name="error">True if the result would be longer than the maximum string size; the value is unchanged</param>
         /// <returns>Operation status</returns>
-        GarnetStatus APPEND(PinnedSpanByte key, PinnedSpanByte value, ref PinnedSpanByte output);
+        GarnetStatus APPEND(PinnedSpanByte key, PinnedSpanByte value, ref PinnedSpanByte output, out bool error);
         #endregion
 
         #region RENAME
@@ -178,6 +190,19 @@ namespace Garnet.server
 
         #endregion
 
+        #region TOUCH
+
+        /// <summary>
+        /// Touches a key using the normal read path without returning its value.
+        /// </summary>
+        /// <param name="key">The key to touch.</param>
+        /// <param name="input">The TOUCH command input.</param>
+        /// <param name="output">The unified store output.</param>
+        /// <returns>OK if the key exists; otherwise NOTFOUND.</returns>
+        GarnetStatus TOUCH(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output);
+
+        #endregion
+
         #region EXPIRE
         /// <summary>
         /// Set a timeout on key
@@ -185,9 +210,10 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="expiryMs">Expiry in milliseconds, formatted as ASCII digits</param>
         /// <param name="timeoutSet">Whether timeout was set by the call</param>
+        /// <param name="error">True if <paramref name="expiryMs"/> is not an integer or gives an expiration time that is not representable; the key is unchanged</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus EXPIRE(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus EXPIRE(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, out bool error, ExpireOption expireOption = ExpireOption.None);
 
         /// <summary>
         /// Set a timeout on key using a timeSpan in seconds
@@ -199,14 +225,15 @@ namespace Garnet.server
         GarnetStatus EXPIRE(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output);
 
         /// <summary>
-        /// Set a timeout on key using a timeSpan in seconds
+        /// Set a timeout on key using a timeSpan, to millisecond precision
         /// </summary>
         /// <param name="key">Key</param>
         /// <param name="expiry">Expiry in TimeSpan</param>
         /// <param name="timeoutSet">Whether timeout was set by the call</param>
+        /// <param name="error">True if <paramref name="expiry"/> gives an expiration time that is not representable; the key is unchanged</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus EXPIRE(PinnedSpanByte key, TimeSpan expiry, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus EXPIRE(PinnedSpanByte key, TimeSpan expiry, out bool timeoutSet, out bool error, ExpireOption expireOption = ExpireOption.None);
         #endregion
 
         #region EXPIREAT
@@ -217,9 +244,10 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="expiryTimestamp">Absolute Unix timestamp in seconds</param>
         /// <param name="timeoutSet">Whether timeout was set by the call</param>
+        /// <param name="error">True if <paramref name="expiryTimestamp"/> is not a representable time; the key is unchanged</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus EXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus EXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, out bool error, ExpireOption expireOption = ExpireOption.None);
 
         /// <summary>
         /// Set a timeout on key using absolute Unix timestamp (seconds since January 1, 1970) in milliseconds
@@ -227,9 +255,10 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="expiryTimestamp">Absolute Unix timestamp in milliseconds</param>
         /// <param name="timeoutSet">Whether timeout was set by the call</param>
+        /// <param name="error">True if <paramref name="expiryTimestamp"/> is not a representable time; the key is unchanged</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus PEXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus PEXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, out bool error, ExpireOption expireOption = ExpireOption.None);
 
         #endregion
 
@@ -259,19 +288,22 @@ namespace Garnet.server
         /// Increment (INCR, INCRBY)
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="output"></param>
+        /// <param name="output">The new value</param>
+        /// <param name="error">True if the stored value is not an integer or the result would overflow; the value is unchanged</param>
         /// <param name="incrementCount"></param>
         /// <returns></returns>
-        GarnetStatus Increment(PinnedSpanByte key, out long output, long incrementCount = 1);
+        GarnetStatus Increment(PinnedSpanByte key, out long output, out bool error, long incrementCount = 1);
 
         /// <summary>
         /// Decrement (DECR, DECRBY)
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="output"></param>
+        /// <param name="output">The new value</param>
+        /// <param name="error">True if the stored value is not an integer, the result would overflow, or <paramref name="decrementCount"/>
+        /// is <see cref="long.MinValue"/>; the value is unchanged</param>
         /// <param name="decrementCount"></param>
         /// <returns></returns>
-        GarnetStatus Decrement(PinnedSpanByte key, out long output, long decrementCount = 1);
+        GarnetStatus Decrement(PinnedSpanByte key, out long output, out bool error, long decrementCount = 1);
 
         /// <summary>
         /// Increment by float (INCRBYFLOAT)
@@ -286,10 +318,11 @@ namespace Garnet.server
         /// Increment by float (INCRBYFLOAT)
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="output"></param>
+        /// <param name="output">The new value</param>
+        /// <param name="error">True if the stored value is not a float or the result would not be finite; the value is unchanged</param>
         /// <param name="val"></param>
         /// <returns></returns>
-        GarnetStatus IncrementByFloat(PinnedSpanByte key, out double output, double val);
+        GarnetStatus IncrementByFloat(PinnedSpanByte key, out double output, out bool error, double val);
         #endregion
 
         #region DELETE
@@ -486,8 +519,9 @@ namespace Garnet.server
         /// <param name="increment"></param>
         /// <param name="member"></param>
         /// <param name="newScore"></param>
+        /// <param name="error">True if <paramref name="increment"/> is NaN or the new score would be NaN; nothing is written</param>
         /// <returns></returns>
-        GarnetStatus SortedSetIncrement(PinnedSpanByte key, double increment, PinnedSpanByte member, out double newScore);
+        GarnetStatus SortedSetIncrement(PinnedSpanByte key, double increment, PinnedSpanByte member, out double newScore, out bool error);
 
         /// <summary>
         /// ZREMRANGEBYRANK: Removes all elements in the sorted set stored at key with rank between start and stop.
@@ -1332,6 +1366,52 @@ namespace Garnet.server
 
         #region VectorSet Methods
         /// <summary>
+        /// Creates an empty vector set with fixed parameters and optional native quantizer state.
+        /// </summary>
+        /// <param name="key">Name of the new vector set.</param>
+        /// <param name="dimensions">Input vector dimensions.</param>
+        /// <param name="reduceDims">Reduced dimensions, or zero to disable reduction.</param>
+        /// <param name="quantizer">Quantizer to use.</param>
+        /// <param name="buildExplorationFactor">Exploration factor used to build the graph.</param>
+        /// <param name="numLinks">Maximum graph degree.</param>
+        /// <param name="distanceMetric">Distance metric to use.</param>
+        /// <param name="quantState">Optional opaque quantizer state; null means no supplied state.</param>
+        /// <param name="startPointId">Internal ID reserved for the start point.</param>
+        /// <param name="result">Creation result.</param>
+        /// <param name="errorMsg">Error details when creation fails.</param>
+        GarnetStatus VectorSetCreate(PinnedSpanByte key, int dimensions, int reduceDims, VectorQuantType quantizer,
+            int buildExplorationFactor, int numLinks, VectorDistanceMetricType distanceMetric, PinnedSpanByte? quantState, uint startPointId,
+            out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
+
+        /// <summary>
+        /// Imports an opaque term into an existing vector set.
+        /// </summary>
+        /// <param name="key">Name of the vector set.</param>
+        /// <param name="termType">Native term tag, excluding metadata.</param>
+        /// <param name="id">Opaque term key.</param>
+        /// <param name="value">Opaque term value.</param>
+        /// <param name="result">Import result.</param>
+        /// <param name="errorMsg">Error details when import fails.</param>
+        GarnetStatus VectorSetImport(PinnedSpanByte key, VectorImportTermType termType, PinnedSpanByte id, PinnedSpanByte value,
+            out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
+
+        /// <summary>
+        /// Verifies and finalizes an imported vector set before returning.
+        /// </summary>
+        /// <param name="key">Name of the vector set.</param>
+        /// <param name="result">Finalization result.</param>
+        /// <param name="errorMsg">Error details when finalization fails.</param>
+        GarnetStatus VectorSetVerifyImport(PinnedSpanByte key, int taskIndex, int taskCount, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
+
+        /// <summary>
+        /// Finalizes an imported vector set before returning.
+        /// </summary>
+        /// <param name="key">Name of the vector set.</param>
+        /// <param name="result">Finalization result.</param>
+        /// <param name="errorMsg">Error details when finalization fails.</param>
+        GarnetStatus VectorSetFinishImport(PinnedSpanByte key, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
+
+        /// <summary>
         /// Adds to (and may create) a vector set with the given parameters.
         /// </summary>
         GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte value, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
@@ -1339,12 +1419,12 @@ namespace Garnet.server
         /// <summary>
         /// Remove a member from a vector set, if it is present and the key exists.
         /// </summary>
-        GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element);
+        GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element, out bool importPending);
 
         /// <summary>
         /// Update attribute for element in a Vector Set.
         /// </summary>
-        GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute);
+        GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute, out bool importPending);
         #endregion
     }
 
@@ -1353,6 +1433,15 @@ namespace Garnet.server
     /// </summary>
     public interface IGarnetReadApi
     {
+        /// <summary>
+        /// Compute the XXH3-64 digest of the current string value.
+        /// </summary>
+        /// <param name="key">Key to read.</param>
+        /// <param name="input">DIGEST command input.</param>
+        /// <param name="output">RESP bulk string containing the hexadecimal digest.</param>
+        /// <returns>The storage operation status.</returns>
+        GarnetStatus DIGEST(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
+
         #region GET
         /// <summary>
         /// GET
@@ -1751,7 +1840,7 @@ namespace Garnet.server
         /// <param name="members"></param>
         /// <param name="result"></param>
         /// <returns></returns>
-        GarnetStatus SetIsMember(PinnedSpanByte key, PinnedSpanByte[] members, out int[] result);
+        GarnetStatus SetIsMember(PinnedSpanByte key, ReadOnlySpan<PinnedSpanByte> members, ref Span<int> result);
 
         /// <summary>
         /// Iterates over the members of the Set with the given key using a cursor,
@@ -1807,10 +1896,20 @@ namespace Garnet.server
         /// <summary>
         /// Returns the value associated to the field in the hash stored at key.
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="field"></param>
-        /// <param name="value"></param>
-        /// <returns></returns>
+        /// <remarks>
+        /// A field that is absent from an existing hash reports <see cref="GarnetStatus.NOTFOUND"/>, the same
+        /// status an absent key reports, so it can be told apart from a field that holds an empty value
+        /// (<see cref="GarnetStatus.OK"/> with a zero-length <paramref name="value"/>). Callers that detect a
+        /// missing field by testing for an empty value must check the status instead.
+        /// <para>
+        /// A non-empty <paramref name="value"/> lives in the session's scratch allocator, so it stays valid until
+        /// that allocator is reset: after the current batch of commands, or by <c>ResetScratchBuffer</c>.
+        /// </para>
+        /// </remarks>
+        /// <param name="key">The hash key</param>
+        /// <param name="field">The field to read</param>
+        /// <param name="value">The field's value, empty unless the status is <see cref="GarnetStatus.OK"/></param>
+        /// <returns><see cref="GarnetStatus.OK"/> if the field exists, <see cref="GarnetStatus.NOTFOUND"/> if the key or field does not</returns>
         GarnetStatus HashGet(PinnedSpanByte key, PinnedSpanByte field, out PinnedSpanByte value);
 
         /// <summary>
@@ -2128,7 +2227,8 @@ namespace Garnet.server
         /// <summary>
         /// Count the number of vectors in a Vector Set.
         /// </summary>
-        GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card);
+        /// <remarks>When the status is OK, a negative <paramref name="card"/> indicates an internal index failure.</remarks>
+        GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card, out bool importPending);
 
         /// <summary>
         /// Returns <see cref="GarnetStatus.OK"/> if the given element exists in the given Vector Set.
@@ -2137,14 +2237,14 @@ namespace Garnet.server
         /// 
         /// Returns <see cref="GarnetStatus.WRONGTYPE"/> if the given key exists, but is not a Vector set.
         /// </summary>
-        GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element);
+        GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element, out bool importPending);
 
         /// <summary>
         /// For a given element, find all neighbors and (optionally) the distance to those neighbors.
         /// 
         /// On success, <paramref name="idResults"/> has length prefixed element names, and <paramref name="distanceResults"/> has a float for each of those elements.
         /// </summary>
-        GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults);
+        GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults, out bool importPending);
 
         /// <summary>
         /// Fetch random elements from the given Vector Set.
@@ -2155,7 +2255,7 @@ namespace Garnet.server
         /// 
         /// On success, <paramref name="idResults"/> has length prefixed element names.
         /// </summary>
-        GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults, out int actualCount);
+        GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults, out int actualCount, out bool importPending);
 
         /// <summary>
         /// Perform a similarity search given a vector and these parameters.
@@ -2176,29 +2276,30 @@ namespace Garnet.server
         /// <summary>
         /// Fetch the embedding of a given element in a Vector set.
         /// </summary>
-        GarnetStatus VectorSetEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputDistances);
+        GarnetStatus VectorSetEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputDistances, out bool importPending);
 
         /// <summary>
         /// Fetch RAW embedding of a given element in a Vector Set.
         /// </summary>
-        GarnetStatus VectorSetRawEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory quantizedValues, out VectorQuantType quantType, out double norm, out double? range);
+        GarnetStatus VectorSetRawEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory quantizedValues, out VectorQuantType quantType, out double norm, out double? range, out bool importPending);
 
         /// <summary>
         /// Fetch the dimensionality of the given Vector Set.
         /// 
         /// If the Vector Set was created with reduced dimensions, reports the reduced dimensions.
         /// </summary>
-        GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions);
+        GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions, out bool importPending);
 
         /// <summary>
         /// Fetch debugging information about the Vector Set.
         /// </summary>
-        GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size);
+        /// <remarks>When the status is OK, a negative <paramref name="size"/> indicates an internal index failure.</remarks>
+        GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size, out VectorSetImportState importPending);
 
         /// <summary>
         /// Get the attributes associated with an element in the Vector Set.
         /// </summary>
-        GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes);
+        GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes, out bool importPending);
 
         #endregion 
     }

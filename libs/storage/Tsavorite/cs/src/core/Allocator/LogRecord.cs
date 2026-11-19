@@ -570,10 +570,7 @@ namespace Tsavorite.core
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void InitializeRecord<TKey>(TKey key, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
         {
             RecordNamespace.AssertKeyCorrectlySized(key, in sizeInfo);
 
@@ -654,10 +651,7 @@ namespace Tsavorite.core
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void InitializeRecord<TKey>(TKey key, in RecordSizeInfo sizeInfo)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
         {
             RecordNamespace.AssertKeyCorrectlySized(key, in sizeInfo);
 
@@ -1004,7 +998,7 @@ namespace Tsavorite.core
             var (_ /*oldValueLength*/, valueAddress) = localDataHeader.GetValueFieldInfo(physicalAddress);
             var recordLength = localDataHeader.GetRecordLength();
             var fillerLength = (int)(physicalAddress + recordLength - (valueAddress + sizeInfo.InlineValueSize));
-            if (fillerLength < 0)
+            if (fillerLength < sizeInfo.OptionalSize || localDataHeader.RecordType != sizeInfo.FieldInfo.RecordType)
                 return false;
 
             // Clear optional flags + update ValueLength on the local; SetFiller computes FillerWords from the local's new

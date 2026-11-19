@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Numerics;
 using Garnet.common;
@@ -85,9 +86,49 @@ namespace Garnet.server
         public int ParallelMigrateTaskCount = 1;
 
         /// <summary>
-        /// When migrating slots 1. write directly to network buffer to avoid unecessary copies, 2. do not wait for ack from target before sending next batch of keys.
+        /// Maximum keys collected per slot migration batch (1024-262143). Network buffers may split a batch into smaller sends.
         /// </summary>
-        public bool FastMigrate = false;
+        public int MigrateKeySendBatchSize = (1 << 18) - 1;
+
+        /// <summary>
+        /// Gather the next slot-migration key batch while the active batch is shipped.
+        /// </summary>
+        public bool UseScanAheadMigration = false;
+
+        /// <summary>
+        /// Migration client send-buffer size, rounded down to a power of two. Null uses the log page size.
+        /// Records larger than the buffer are chunked.
+        /// </summary>
+        public string MigrationSendBufferSize = null;
+
+        /// <summary>
+        /// Resolve the migration send-buffer size independently of the log page size when configured.
+        /// </summary>
+        public int GetMigrationSendBufferSize()
+            => PowerOf2SizeOrDefault(MigrationSendBufferSize, 1 << PageSizeBits(), nameof(MigrationSendBufferSize));
+
+        /// <summary>
+        /// Maximum unacknowledged migration batches per worker, from 1 to 64.
+        /// Batches are processed synchronously before acknowledgment.
+        /// </summary>
+        public int MigrationPipelineDepth = 1;
+
+        /// <summary>
+        /// Maximum eligible source keys deleted per epoch-protected migration scope. Must be positive.
+        /// </summary>
+        public int MigrationDeleteBatchSize = 256;
+
+        /// <summary>
+        /// Validate migration settings.
+        /// </summary>
+        public void ValidateMigrationOptions()
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(MigrateKeySendBatchSize, 1024);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(MigrateKeySendBatchSize, (1 << 18) - 1);
+            ArgumentOutOfRangeException.ThrowIfLessThan(MigrationPipelineDepth, 1);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(MigrationPipelineDepth, 64);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(MigrationDeleteBatchSize);
+        }
 
         /// <summary>
         /// Authentication settings
@@ -193,6 +234,17 @@ namespace Garnet.server
         public int IndexResizeThreshold = 50;
 
         /// <summary>
+        /// Overflow bucket count over total index size in percentage at which overflow-bucket allocation fails.
+        /// </summary>
+        /// <remarks>
+        /// Expressed in the same unit as <see cref="IndexResizeThreshold"/> and applied to the same quantity, and must
+        /// exceed it, or the ceiling would be reached before the resize that reclaims overflow buckets. Overflow buckets
+        /// chain linearly off a main bucket and are scanned by reads and upserts, so the percentage is also the average
+        /// chain length allowed; the remedy for exhausting it is a larger index, not a larger ceiling.
+        /// </remarks>
+        public int IndexOverflowThreshold = KVSettings.DefaultIndexOverflowThreshold;
+
+        /// <summary>
         /// Maximum size of a key stored inline in the in-memory portion of the main log.
         /// Accepts a memory size (e.g. \"1k\", \"128\"). Must be in range [0, 1022] bytes; default is 1022.
         /// </summary>
@@ -215,6 +267,13 @@ namespace Garnet.server
         /// Warning: will greatly increase operation latency.
         /// </summary>
         public bool WaitForCommit = false;
+
+        /// <summary>
+        /// Whether to clear everything the AOF device holds above the AOF tail, before anything is appended, when the AOF is
+        /// recovered or a replica sync moves its tail. This keeps a later recovery from adopting stale commits left there.
+        /// Cleared data cannot be salvaged, and a device error while clearing fails the recovery or sync.
+        /// </summary>
+        public bool AofReplayClearAboveTail = true;
 
         /// <summary>
         /// Aof size limit in bytes
@@ -272,9 +331,20 @@ namespace Garnet.server
         public int GossipDelay = 5;
 
         /// <summary>
+        /// Delay (in seconds) applied once to the whole gossip client collection after a configuration
+        /// swap before the previous clients begin graceful retirement.
+        /// </summary>
+        public int GossipClientSwapGraceSecs = 5;
+
+        /// <summary>
         /// Cluster node timeout is the amount of seconds a node must be unreachable. 
         /// </summary>
         public int ClusterTimeout = 60;
+
+        /// <summary>
+        /// Maximum time in seconds a replica spends retrying to restore the old primary after a failed CLUSTER FAILOVER that the primary had already accepted.
+        /// </summary>
+        public int FailoverResetPrimaryTimeout = 60;
 
         /// <summary>
         /// How frequently to flush cluster config unto disk to persist updates. =-1: never (memory only), =0: immediately (every update performs flush), >0: frequency in ms
@@ -285,6 +355,13 @@ namespace Garnet.server
         /// TLS options
         /// </summary>
         public IGarnetTlsOptions TlsOptions;
+
+        /// <summary>
+        /// Longest an accepted connection may take to complete its TLS handshake before it is closed, which frees its
+        /// connection slot. <see cref="System.Threading.Timeout.InfiniteTimeSpan"/> waits indefinitely. A timeout beyond
+        /// the longest a timer supports, about 49.7 days, is limited to it.
+        /// </summary>
+        public TimeSpan TlsHandshakeTimeout = TimeSpan.FromSeconds(10);
 
         /// <summary>
         /// Username for clients used by cluster backend
@@ -431,6 +508,13 @@ namespace Garnet.server
         /// Throttle the maximum outstanding network sends per session
         /// </summary>
         public int NetworkSendThrottleMax = 8;
+
+        /// <summary>
+        /// Longest a response send waits, once <see cref="NetworkSendThrottleMax"/> sends are outstanding, for the client
+        /// to accept data before its connection is closed. Bounds how long a client that stops reading can hold a server
+        /// thread. <see cref="System.Threading.Timeout.InfiniteTimeSpan"/> waits indefinitely.
+        /// </summary>
+        public TimeSpan NetworkSendTimeout = TimeSpan.FromSeconds(60);
 
         /// <summary>
         /// Size of the per-connection network send buffer, and the initial size of the per-connection receive
@@ -651,6 +735,126 @@ namespace Garnet.server
         public bool ReplicaDisklessSync = false;
 
         /// <summary>
+        /// Maximum disk-based Tsavorite checkpoint transfer chunk, rounded down to a power of two.
+        /// Accepts sizes from 512 bytes through 512 MiB, subject to device-sector alignment; default 16 MiB.
+        /// Configured on the primary; CONFIG SET changes apply to new transfers.
+        /// </summary>
+        public string ReplicaDiskBasedSyncChunkSize = "16m";
+
+        /// <summary>
+        /// Maximum supported number of unacknowledged checkpoint chunks per replica.
+        /// </summary>
+        public const int ReplicaDiskBasedSyncPipelineDepthMax = 64;
+
+        /// <summary>
+        /// Maximum checkpoint payload bytes outstanding per replica.
+        /// </summary>
+        public const long ReplicaDiskBasedSyncOutstandingPayloadBytesMax = 512L << 20;
+
+        /// <summary>
+        /// Maximum checkpoint transfer chunk size in bytes.
+        /// </summary>
+        public const int ReplicaDiskBasedSyncChunkSizeBytesMax = 1 << 29;
+
+        internal uint ReplicaDiskBasedSyncSectorSize = IDevice.MinDeviceSectorSize;
+
+        /// <summary>
+        /// Maximum unacknowledged disk-based Tsavorite checkpoint chunks per replica on the primary.
+        /// Accepts 1 through 64; default 4, and 1 disables pipelining.
+        /// Depth times effective chunk size must not exceed 512 MiB.
+        /// CONFIG SET changes apply to new transfers.
+        /// </summary>
+        public int ReplicaDiskBasedSyncPipelineDepth = 4;
+
+        /// <summary>
+        /// Maximum <see cref="ReplicaDiskBasedSyncWriteBuffers"/>.
+        /// </summary>
+        public const int ReplicaDiskBasedSyncWriteBuffersMax = 8;
+
+        /// <summary>
+        /// Received disk-based Tsavorite checkpoint chunks the replica may hold for its file writer, queued or being
+        /// written, so it can receive the next chunk while writing. Each uses one chunk-sized buffer. Accepts 0 through 8;
+        /// default 1, and 0 writes each chunk before receiving the next. Set on the replica.
+        /// </summary>
+        public int ReplicaDiskBasedSyncWriteBuffers = 1;
+
+        /// <summary>
+        /// Issue disk-based Tsavorite checkpoint writes concurrently when more than one write buffer is configured.
+        /// Default false. Captured at receive-handler creation; requires restart.
+        /// </summary>
+        public bool ReplicaDiskBasedSyncWriteBuffersConcurrently;
+
+        /// <summary>
+        /// Experimental whole disk-based checkpoint shipment/recovery metrics on cluster nodes.
+        /// Default false leaves the recorder null. Captured once per replication manager; requires restart.
+        /// No per-chunk counters; independent of DEBUG command authorization.
+        /// </summary>
+        public bool ReplicaEnableBenchmarkTiming;
+
+        /// <summary>
+        /// Validate the pipeline depth and its maximum outstanding payload budget.
+        /// </summary>
+        public int GetReplicaDiskBasedSyncPipelineDepth()
+        {
+            var chunkSize = GetReplicaDiskBasedSyncChunkSizeBytes();
+            ValidateReplicaDiskBasedSyncPipelineDepth(chunkSize, ReplicaDiskBasedSyncPipelineDepth);
+            return ReplicaDiskBasedSyncPipelineDepth;
+        }
+
+        internal static void ValidateReplicaDiskBasedSyncPipelineDepth(int chunkSize, int pipelineDepth)
+        {
+            // Name both values: either may be the default, so a chunk-size-only setting can still exceed the budget.
+            if (pipelineDepth is < 1 or > ReplicaDiskBasedSyncPipelineDepthMax ||
+                (long)pipelineDepth * chunkSize > ReplicaDiskBasedSyncOutstandingPayloadBytesMax)
+                throw new ArgumentException($"{nameof(ReplicaDiskBasedSyncPipelineDepth)} must be from 1 through {ReplicaDiskBasedSyncPipelineDepthMax}, with depth times effective chunk size at most {ReplicaDiskBasedSyncOutstandingPayloadBytesMax >> 20} MiB (depth {pipelineDepth}, chunk size {chunkSize} bytes).",
+                    nameof(ReplicaDiskBasedSyncPipelineDepth));
+        }
+
+        /// <summary>
+        /// Resolve and validate the disk-based checkpoint transfer chunk size in bytes.
+        /// </summary>
+        public int GetReplicaDiskBasedSyncChunkSizeBytes()
+        {
+            var size = ParseReplicaDiskBasedSyncChunkSizeBytes(ReplicaDiskBasedSyncChunkSize, logger);
+            ValidateReplicaDiskBasedSyncChunkSectorSize(size);
+            return size;
+        }
+
+        internal void ValidateReplicaDiskBasedSyncChunkSectorSize(int chunkSize)
+        {
+            if (chunkSize < ReplicaDiskBasedSyncSectorSize || chunkSize % ReplicaDiskBasedSyncSectorSize != 0)
+                throw new ArgumentException($"{nameof(ReplicaDiskBasedSyncChunkSize)} must be at least and a multiple of the configured device sector size ({ReplicaDiskBasedSyncSectorSize} bytes).",
+                    nameof(ReplicaDiskBasedSyncChunkSize));
+        }
+
+        internal static int ParseReplicaDiskBasedSyncChunkSizeBytes(string value, ILogger logger = null)
+        {
+            var digits = 0;
+            while (digits < value?.Length && value[digits] is >= '0' and <= '9')
+                digits++;
+
+            var multiplier = value?[digits..].ToLowerInvariant() switch
+            {
+                "" => 1L,
+                "k" or "kb" => 1L << 10,
+                "m" or "mb" => 1L << 20,
+                "g" or "gb" => 1L << 30,
+                _ => 0
+            };
+
+            // Leave room for framing in the next power-of-two network buffer.
+            if (multiplier == 0 || !long.TryParse(value.AsSpan(0, digits), NumberStyles.None, CultureInfo.InvariantCulture, out var size) ||
+                size > ReplicaDiskBasedSyncChunkSizeBytesMax / multiplier || size * multiplier < IDevice.MinDeviceSectorSize)
+                throw new ArgumentException($"{nameof(ReplicaDiskBasedSyncChunkSize)} '{value}' must be a memory size from 512 bytes through 512 MiB.", nameof(ReplicaDiskBasedSyncChunkSize));
+
+            size *= multiplier;
+            var adjustedSize = PreviousPowerOf2(size);
+            if (size != adjustedSize)
+                logger?.LogInformation("Warning: rounding {option} down to {size} bytes (power of 2)", nameof(ReplicaDiskBasedSyncChunkSize), adjustedSize);
+            return (int)adjustedSize;
+        }
+
+        /// <summary>
         /// Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.
         /// </summary>
         public int ReplicaDisklessSyncDelay = 5;
@@ -792,6 +996,32 @@ namespace Garnet.server
 
         /// <summary>Max size of hash index (cache lines) after rounding down size in bytes to power of 2.</summary>
         public int AdjustedIndexMaxCacheLines;
+
+        /// <summary>
+        /// Bytes of hash-index memory the configuration budgets for: the larger of <c>IndexMemorySize</c> and
+        /// <c>IndexMaxMemorySize</c>, plus what the store's overflow-bucket allocator commits as soon as it exists. Set by
+        /// <see cref="SetIndexMemoryBudget"/> once the store exists, since that floor depends on the sector size of the
+        /// store's devices.
+        /// </summary>
+        /// <remarks>
+        /// Those settings bound only the main bucket array. The index holds an entry per distinct key, including keys
+        /// whose records live only on disk, so beyond this budget it grows into overflow buckets at one 64-byte bucket
+        /// per 7 keys. That excess is charged against the log memory budget, keeping the store within its configured
+        /// memory limit as record count rises.
+        /// </remarks>
+        public long IndexMemoryBudgetBytes;
+
+        /// <summary>
+        /// Resolved ceiling on hash index overflow-bucket memory, in bytes, for the index generation the store starts
+        /// with. Set by <see cref="GetSettings(int, ILoggerFactory, LightEpoch, StateMachineDriver, out INamedDeviceFactory)"/>. Each generation installed by a resize gets a ceiling scaled to its
+        /// own size, so this is a starting value, not a lifetime bound; the live ceiling is reported by <c>INFO STORE</c>.
+        /// </summary>
+        /// <remarks>
+        /// This is a safety ceiling, not a budget the store expects to spend, so it is not part of
+        /// <see cref="IndexMemoryBudgetBytes"/>: charging it against the log would permanently shed log memory for
+        /// buckets that may never be allocated. The log is charged the overflow memory actually in use.
+        /// </remarks>
+        public long IndexOverflowMaxMemorySizeBytes;
 
         /// <summary>Max size of object store hash index (cache lines) after rounding down size in bytes to power of 2.</summary>
         public int AdjustedObjectStoreIndexMaxCacheLines;
@@ -1109,6 +1339,9 @@ namespace Garnet.server
                 logger?.LogInformation("[Store] Using hash index max size of {MaxSize}, ({CacheLines} cache lines)", PrettySize(AdjustedIndexMaxCacheLines * 64L), PrettySize(AdjustedIndexMaxCacheLines));
                 logger?.LogInformation("[Store] Hash index max size is optimized for up to ~{distinctKeys} distinct keys", PrettySize(AdjustedIndexMaxCacheLines * 4L));
             }
+
+            ConfigureIndexMemory(kvSettings, indexCacheLines, logger);
+
             logger?.LogInformation("[Store] Using log mutable percentage of {MutablePercent}%", MutablePercent);
 
             if (DeviceType == DeviceType.Default)
@@ -1131,6 +1364,29 @@ namespace Garnet.server
             else
                 logger?.LogInformation("Using device type {deviceType} (throttle-limit={tl})", DeviceType, DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default");
 
+            if (EnableCluster && !ReplicaDisklessSync)
+            {
+                // Query the configured factories without opening checkpoint files or creating directories.
+                var checkpointFactory = GetInitializedDeviceFactory(GetStoreCheckpointDirectory(0));
+                var naming = new DefaultCheckpointNamingScheme();
+                var sectorSize = Math.Max(checkpointFactory.GetSectorSize(naming.HashTable(Guid.Empty)),
+                    checkpointFactory.GetSectorSize(naming.LogSnapshot(Guid.Empty)));
+                if (!DisableObjects)
+                    sectorSize = Math.Max(sectorSize, checkpointFactory.GetSectorSize(naming.ObjectLogSnapshot(Guid.Empty)));
+                if (EnableStorageTier)
+                {
+                    var factory = GetInitializedDeviceFactory(string.IsNullOrEmpty(LogDir) ? Directory.GetCurrentDirectory() : LogDir);
+                    sectorSize = Math.Max(sectorSize, factory.GetSectorSize(new FileDescriptor("Store", "hlog")));
+                    if (!DisableObjects)
+                        sectorSize = Math.Max(sectorSize, factory.GetSectorSize(new FileDescriptor("Store", "hlog_objs")));
+                }
+                ReplicaDiskBasedSyncSectorSize = sectorSize;
+                _ = GetReplicaDiskBasedSyncChunkSizeBytes();
+                if (ReplicaDiskBasedSyncWriteBuffers is < 0 or > ReplicaDiskBasedSyncWriteBuffersMax)
+                    throw new ArgumentOutOfRangeException(nameof(ReplicaDiskBasedSyncWriteBuffers), ReplicaDiskBasedSyncWriteBuffers,
+                        $"{nameof(ReplicaDiskBasedSyncWriteBuffers)} must be from 0 through {ReplicaDiskBasedSyncWriteBuffersMax}.");
+            }
+
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");
 
@@ -1150,8 +1406,8 @@ namespace Garnet.server
                 if (kvSettings.ReadCacheMemorySize > 0)
                 {
                     var pageCount = kvSettings.ReadCacheMemorySize / kvSettings.ReadCachePageSize;
-                    if (kvSettings.PageCount > pageCount)
-                        logger?.LogInformation("[Store] Warning: Read cache overriding specified PageCount of {kvSettingsReadCachePageCount} with smaller page count calculated from LogMemorySize limit divided by PageSize: {pageCount}", kvSettings.ReadCachePageCount, pageCount);
+                    if (kvSettings.ReadCachePageCount > pageCount)
+                        logger?.LogInformation("[Store] Warning: Read cache overriding specified ReadCachePageCount of {kvSettingsReadCachePageCount} with smaller page count calculated from ReadCacheMemorySize limit divided by ReadCachePageSize: {pageCount}", kvSettings.ReadCachePageCount, pageCount);
 
                     var bufferSize = NextPowerOf2(pageCount);
                     logger?.LogInformation("[Store] Read cache enabled with {LogPages} log pages in memory, of which {pageCount} are initially allocated", PrettySize(bufferSize), pageCount);
@@ -1162,10 +1418,10 @@ namespace Garnet.server
                     if (kvSettings.ReadCachePageCount == 0)
                         throw new TsavoriteException($"Read Cache Log Memory size or PageCount must be specified");
                     var bufferSize = (int)NextPowerOf2(kvSettings.ReadCachePageCount);
-                    if (kvSettings.PageCount < bufferSize)
+                    if (kvSettings.ReadCachePageCount < bufferSize)
                     {
-                        logger?.LogInformation("[Store] Warning: Read cache overriding specified PageCount of {kvSettingsReadCachePageCount} with next power of 2 page count {bufferSize}", kvSettings.ReadCachePageCount, bufferSize);
-                        kvSettings.PageCount = bufferSize;
+                        logger?.LogInformation("[Store] Warning: Read cache overriding specified ReadCachePageCount of {kvSettingsReadCachePageCount} with next power of 2 page count {bufferSize}", kvSettings.ReadCachePageCount, bufferSize);
+                        kvSettings.ReadCachePageCount = bufferSize;
                     }
                     logger?.LogInformation("[Store] Read cache enabled with {LogPages} log pages in memory, all of which will be used because there is no MemorySize limit", PrettySize(bufferSize));
                     logger?.LogInformation("[Store] No Read cache log memory size limit will be enforced");
@@ -1261,6 +1517,68 @@ namespace Garnet.server
             }
 
             return kvSettings;
+        }
+
+
+        /// <summary>
+        /// Resolve the hash index's overflow-bucket ceiling, and validate that it leaves the index able to grow. The
+        /// budget beyond which index memory is charged against the log is resolved once the store exists, by
+        /// <see cref="SetIndexMemoryBudget"/>.
+        /// </summary>
+        /// <param name="kvSettings">Settings being built; receives the resolved overflow threshold.</param>
+        /// <param name="indexCacheLines">Main bucket count the index starts at.</param>
+        /// <param name="logger">Logger</param>
+        private void ConfigureIndexMemory(KVSettings kvSettings, long indexCacheLines, ILogger logger)
+        {
+            // Overflow buckets are reclaimed only by an index resize, which installs a fresh allocator generation, so
+            // once the index reaches its max size overflow memory only climbs and nothing else bounds it. The ceiling is
+            // a percentage of the main bucket count because overflow buckets chain linearly and are scanned by reads and
+            // upserts, so the ratio is the average chain length and is comparable to the resize threshold.
+            kvSettings.IndexOverflowThreshold = IndexOverflowThreshold;
+
+            // Both thresholds are percentages of the same quantity, so their ordering is the whole invariant: at or
+            // below the resize threshold the ceiling is reached before the resize that would have reclaimed those
+            // buckets. Checked whether or not the index can grow, so enabling growth later cannot produce a bad pair.
+            if (IndexOverflowThreshold <= IndexResizeThreshold)
+                throw new Exception(
+                    $"Index overflow threshold ({IndexOverflowThreshold}%) must be greater than the index resize threshold"
+                    + $" ({IndexResizeThreshold}%). Both are percentages of the main hash bucket count; a ceiling at or below"
+                    + " the resize threshold would be reached before the index resize that reclaims overflow buckets.");
+
+            // Ordering the percentages is not sufficient: the ceiling is quantized down to a whole allocator page, and
+            // the allocator reserves a chunk at construction that the resize trigger's count excludes, so a correctly
+            // ordered pair can still resolve to a usable capacity at or below the trigger, making growth unreachable for
+            // that generation. Check every generation the index can occupy.
+            for (var generation = indexCacheLines; generation < AdjustedIndexMaxCacheLines; generation *= 2)
+            {
+                var usableBuckets = KVSettings.GetIndexOverflowMaxMemorySize(generation, IndexOverflowThreshold) / KVSettings.HashBucketSizeBytes
+                    - KVSettings.OverflowBucketInitialAllocation;
+                var resizeTrigger = generation * IndexResizeThreshold / 100;
+                if (usableBuckets <= resizeTrigger)
+                    throw new Exception(
+                        $"Index overflow threshold ({IndexOverflowThreshold}%) resolves to {usableBuckets} usable overflow buckets at an"
+                        + $" index size of {PrettySize(generation * KVSettings.HashBucketSizeBytes)}, which does not exceed the {resizeTrigger} buckets"
+                        + $" that trigger an index resize at the index resize threshold ({IndexResizeThreshold}%). The index could never grow"
+                        + " past that size. Raise the index overflow threshold, lower the index resize threshold, or raise the index size.");
+            }
+
+            IndexOverflowMaxMemorySizeBytes = KVSettings.GetIndexOverflowMaxMemorySize(indexCacheLines, IndexOverflowThreshold);
+            logger?.LogInformation("[Store] Using hash index overflow threshold of {OverflowThreshold}% of the main bucket count, which is {OverflowMaxSize} at the starting index size and allows average chains of {OverflowChain} overflow buckets",
+                IndexOverflowThreshold, PrettySize(IndexOverflowMaxMemorySizeBytes), IndexOverflowThreshold / 100.0);
+        }
+
+        /// <summary>
+        /// Resolve <see cref="IndexMemoryBudgetBytes"/> for a store built from <paramref name="kvSettings"/>. Called once the
+        /// store exists, because its overflow-bucket floor depends on the sector size the store resolves from its devices.
+        /// </summary>
+        /// <param name="kvSettings">Settings the store was built from.</param>
+        /// <param name="indexOverflowFloorBytes">The store's <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.IndexOverflowFloorSizeBytes"/>.</param>
+        public void SetIndexMemoryBudget(KVSettings kvSettings, long indexOverflowFloorBytes)
+        {
+            // The overflow allocator commits its floor as soon as it exists, so that much is inherent to having an index
+            // at the configured size rather than growth to be charged against the log.
+            IndexMemoryBudgetBytes = Math.Max(kvSettings.IndexSize, AdjustedIndexMaxCacheLines * 64L) + indexOverflowFloorBytes;
+            logger?.LogInformation("[Store] Hash index memory budget is {IndexMemoryBudget}; index memory beyond it (overflow buckets) is charged against the log memory size", PrettySize(IndexMemoryBudgetBytes));
         }
 
         /// <summary>

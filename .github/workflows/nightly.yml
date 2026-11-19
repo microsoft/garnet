@@ -21,13 +21,13 @@ jobs:
       matrix:
         test: [ 'Garnet.test', 'Garnet.test.collections', 'Garnet.test.acl', 'Garnet.test.scripting', 'Garnet.test.complexstring', 'Garnet.test.vectorset', 'Garnet.test.rangeindex', 'Garnet.test.extensions' ]
         os: [ ubuntu-latest, windows-latest ]
-        framework: [ 'net8.0', 'net10.0' ]
+        framework: [ 'net10.0' ]
         configuration: [ 'Debug', 'Release' ]
     steps:
       - name: Check out code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup .NET
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
       - name: Install dependencies
         run: dotnet restore
       - name: Check style format
@@ -38,7 +38,7 @@ jobs:
         run: dotnet test test/standalone/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 55
       - name: Upload test results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
           path: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
@@ -53,13 +53,16 @@ jobs:
       matrix:
         test: [ 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.replication.tls', 'Garnet.test.cluster.replication.asyncreplay', 'Garnet.test.cluster.replication.disklesssync', 'Garnet.test.cluster.replication.vectorsets', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog' ]
         os: [ ubuntu-latest, windows-latest ]
-        framework: [ 'net8.0', 'net10.0' ]
+        framework: [ 'net10.0' ]
         configuration: [ 'Debug', 'Release' ]
     steps:
+      - name: Install io_uring runtime
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y liburing2
       - name: Check out code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup .NET
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
       - name: Install dependencies
         run: dotnet restore
       - name: Build Garnet
@@ -68,7 +71,7 @@ jobs:
         run: dotnet test test/cluster/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 55
       - name: Upload test results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
           path: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
@@ -83,7 +86,7 @@ jobs:
       matrix:
         test: [ 'Tsavorite.test', 'Tsavorite.test.recordops', 'Tsavorite.test.session', 'Tsavorite.test.session.context', 'Tsavorite.test.hlog', 'Tsavorite.test.recovery', 'Tsavorite.test.stress' ]
         os: [ ubuntu-latest, windows-latest ]
-        framework: [ 'net8.0', 'net10.0' ]
+        framework: [ 'net10.0' ]
         configuration: [ 'Debug', 'Release' ]
     steps:
       - name: Check out code
@@ -95,9 +98,9 @@ jobs:
         run: echo ("RunAzureTests=yes") >> $env:GITHUB_ENV
         if: ${{ matrix.os == 'windows-latest' }}
       - name: Setup .NET
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
       - name: Setup Node.js for Azurite
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
       - name: Cache Azurite
@@ -132,7 +135,7 @@ jobs:
         run: dotnet test ${{ env.TSAVORITE_TEST_DIR }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
         timeout-minutes: 55
       - name: Upload test results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
           path: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}

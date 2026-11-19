@@ -245,7 +245,7 @@ namespace Tsavorite.test.recovery.sumstore
                 CheckpointDir = MethodTestDir
             };
 
-            // smallSector is there to cause a mismatch in sectorSize. We now have a required minimum so use half that.
+            // smallSector gives the log device a smaller sector size than the checkpoint devices'. We now have a required minimum so use half that.
             log = new LocalMemoryDevice(capacity: kvSettings.SegmentSize * 4, segmentSize: 1L << 22, parallelism: 2, sectorSize: smallSector ? IDevice.MinDeviceSectorSize / 2 : (uint)IDevice.MinDeviceSectorSize, fileName: Path.Join(MethodTestDir, $"{allocatorType}.log"));
             objlog = allocatorType == AllocatorType.Object
                 ? new LocalMemoryDevice(capacity: kvSettings.ObjectLogSegmentSize * 4, segmentSize: 1L << 22, parallelism: 2, fileName: Path.Join(MethodTestDir, $"{allocatorType}.obj.log"))
@@ -294,10 +294,14 @@ namespace Tsavorite.test.recovery.sumstore
             await TestDriver(allocatorType).ConfigureAwait(false);
         }
 
+        /// <summary>
+        /// The log device's sector size is smaller than the checkpoint devices', so the store must adopt the larger one
+        /// for its pages and index for its checkpoints to be written and recovered.
+        /// </summary>
         [Test]
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
-        public async ValueTask RecoveryTestFailOnSectorSize([Values] AllocatorType allocatorType)
+        public async ValueTask RecoveryTestWithSmallerLogSectorSize([Values] AllocatorType allocatorType)
         {
             smallSector = true;
             await TestDriver(allocatorType).ConfigureAwait(false);
@@ -330,18 +334,11 @@ namespace Tsavorite.test.recovery.sumstore
             where TAllocator : IAllocator<TStoreFunctions>
         {
             var store = Setup(allocatorType, storeFunctionsCreator, allocatorCreator);
+            if (smallSector)
+                ClassicAssert.Greater(store.hlogBase.GetDeviceSectorSize(), (int)log.SectorSize, "the store must adopt the checkpoint devices' larger sector size");
             populateAction(store);
             readAction(store);
-            if (smallSector)
-            {
-                // CatchAsync, not ThrowsAsync: the mismatched sector size can be reported either by the device
-                // rejecting the submit or by a flush completion, and the latter arrives wrapped as the derived
-                // TsavoriteIOException with the rejection as its inner exception.
-                _ = Assert.CatchAsync<TsavoriteException>(async () => await Checkpoint(store).ConfigureAwait(false));
-                Assert.Pass("Verified expected exception on mismatched sector sizes; the test cannot continue, so exiting early with success");
-            }
-            else
-                await Checkpoint(store).ConfigureAwait(false);
+            await Checkpoint(store).ConfigureAwait(false);
 
             ClassicAssert.AreNotEqual(Guid.Empty, logToken);
             ClassicAssert.AreNotEqual(Guid.Empty, indexToken);

@@ -261,8 +261,10 @@ namespace Tsavorite.core
             var buffer = buffers[currentIndex] ?? throw new TsavoriteException(
                 $"Internal error in read buffer sequencing; empty buffer[{currentIndex}] encountered with required endpoint {RequiredEndAddress}");
 
-            // Records are flushed in address order and object-log positions are assigned in flush order, so the next stored record
-            // position is never behind the current consumption cursor.
+            // A record's objects start at or after the current position, never before it. Each partial flush ends with a sector-aligning write, so a record
+            // written by a later flush starts up to a sector further on. A record that is not read leaves a larger gap: recovery's undo of the checkpoint's
+            // v+1 records invalidates them but leaves their objects in place, and the record after them can follow those objects. The read covers the whole
+            // range from the first record read to the end of the last one, so skip forward to the record, across buffers and segments if the gap spans them.
             if (!buffer.HasData && !buffer.WaitForDataAvailable())
                 return false;
 
@@ -270,15 +272,15 @@ namespace Tsavorite.core
             {
                 var bufferFilePosition = buffer.GetCurrentFilePosition();
                 Debug.Assert(recordFilePosition.word >= bufferFilePosition.word, $"Record file position ({recordFilePosition}) should be >= ongoing position {bufferFilePosition}");
-                Debug.Assert(recordFilePosition.SegmentId == bufferFilePosition.SegmentId, $"Record file segment ({recordFilePosition.SegmentId}) should == ongoing position {bufferFilePosition.SegmentId}");
                 var increment = recordFilePosition - bufferFilePosition;
 
-                // The target is in this buffer, or we consume the remainder of this buffer and re-evaluate against the next one.
-                if (buffer.currentPosition + (int)increment < buffer.endPosition)
+                // The record starts in this buffer, or further on; a record that starts exactly at the end of this buffer starts the next one.
+                if (increment < (ulong)(buffer.endPosition - buffer.currentPosition))
                 {
                     buffer.currentPosition += (int)increment;
                     break;
                 }
+
                 if (!MoveToNextBuffer(out buffer))
                     break;
             }

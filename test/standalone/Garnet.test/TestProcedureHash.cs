@@ -80,6 +80,20 @@ namespace Garnet
             if (status != GarnetStatus.OK || !value.ReadOnlySpan.SequenceEqual(pairs[0].value.ReadOnlySpan))
                 return false;
 
+            // HGET (field holds an empty value, which is a value and not an absence)
+            status = api.HashSet(myHash, PinnedSpanByte.FromPinnedSpan("emptyfield"u8),
+                PinnedSpanByte.FromPinnedSpan(""u8), out count);
+            if (status != GarnetStatus.OK || count != 1)
+                return false;
+
+            status = api.HashGet(myHash, PinnedSpanByte.FromPinnedSpan("emptyfield"u8), out value);
+            if (status != GarnetStatus.OK || value.Length != 0)
+                return false;
+
+            status = api.HashDelete(myHash, PinnedSpanByte.FromPinnedSpan("emptyfield"u8), out count);
+            if (status != GarnetStatus.OK || count != 1)
+                return false;
+
             // HGETALL
             status = api.HashGetAll(myHash, out var values);
             if (status != GarnetStatus.OK || !values[3].ReadOnlySpan.SequenceEqual(pairs[1].value.ReadOnlySpan))
@@ -123,7 +137,7 @@ namespace Garnet
 
             // HGET (hashobject exists, field not found)
             status = api.HashGet(myHash, PinnedSpanByte.FromPinnedSpan("nonexistingfield"u8), out value);
-            if (status != GarnetStatus.OK || value.Length != 0)
+            if (status != GarnetStatus.NOTFOUND || value.Length != 0)
                 return false;
 
             // HGET (hashobject not found)

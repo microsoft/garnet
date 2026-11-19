@@ -36,7 +36,7 @@ namespace Garnet.test
             var lonError = Math.Abs(longitude - actualLongitude);
 
             ClassicAssert.IsTrue(latError <= Epsilon, "Math.Abs(latError)=" + latError.ToString("F16", CultureInfo.InvariantCulture));
-            ClassicAssert.IsTrue(lonError <= Epsilon, "Math.Abs(lonError)=" + latError.ToString("F16", CultureInfo.InvariantCulture));
+            ClassicAssert.IsTrue(lonError <= Epsilon, "Math.Abs(lonError)=" + lonError.ToString("F16", CultureInfo.InvariantCulture));
         }
 
         [Test]

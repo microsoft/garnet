@@ -150,7 +150,19 @@ namespace Garnet.server
         BITOP_OR = 117,
         BITOP_XOR = 118,
         BITOP_NOT = 119,
-        BITOP_DIFF = 120, // Note: LastWriteCommand — append new write commands after this with the next value
+        BITOP_DIFF = 120,
+        XVCREATE = 121,
+        XVIMPORT = 122,
+        SETIFEQ = 123,
+        SETKEEPTTLIFEQ = 124,
+        SETIFNE = 125,
+        SETKEEPTTLIFNE = 126,
+        DELIFEQ = 127,
+        DELEX = 128,
+        SETIFDEQ = 129,
+        SETKEEPTTLIFDEQ = 130,
+        SETIFDNE = 131,
+        SETKEEPTTLIFDNE = 132, // Note: LastWriteCommand -- append new write commands after this with the next value
 
         // Read-only commands. NEVER persisted (reads never enter the AOF), so these are
         // auto-numbered and may be renumbered/reordered freely across versions. They follow the
@@ -160,6 +172,7 @@ namespace Garnet.server
         BITPOS,
         COSCAN,
         DBSIZE,
+        DIGEST,
         DUMP,
         EXISTS,
         EXPIRETIME,
@@ -218,6 +231,7 @@ namespace Garnet.server
         STRLEN,
         SUBSTR,
         SUNION,
+        TOUCH,
         TTL,
         TYPE,
         VCARD,
@@ -447,7 +461,7 @@ namespace Garnet.server
     /// </summary>
     public static class RespCommandExtensions
     {
-        private static readonly RespCommand[] ExpandedSET = [RespCommand.SETEXNX, RespCommand.SETEXXX, RespCommand.SETKEEPTTL, RespCommand.SETKEEPTTLXX];
+        private static readonly RespCommand[] ExpandedSET = [RespCommand.SETEXNX, RespCommand.SETEXXX, RespCommand.SETKEEPTTL, RespCommand.SETKEEPTTLXX, RespCommand.SETIFEQ, RespCommand.SETKEEPTTLIFEQ, RespCommand.SETIFNE, RespCommand.SETKEEPTTLIFNE, RespCommand.SETIFDEQ, RespCommand.SETKEEPTTLIFDEQ, RespCommand.SETIFDNE, RespCommand.SETKEEPTTLIFDNE];
         private static readonly RespCommand[] ExpandedBITOP = [RespCommand.BITOP_AND, RespCommand.BITOP_NOT, RespCommand.BITOP_OR, RespCommand.BITOP_XOR, RespCommand.BITOP_DIFF];
 
         // Commands that are either returning static data or commands that cannot have issues from concurrent AOF interaction in another session
@@ -563,6 +577,9 @@ namespace Garnet.server
                     RespCommand.SETEXXX => RespCommand.SET,
                     RespCommand.SETKEEPTTL => RespCommand.SET,
                     RespCommand.SETKEEPTTLXX => RespCommand.SET,
+                    RespCommand.SETIFEQ or RespCommand.SETKEEPTTLIFEQ => RespCommand.SET,
+                    RespCommand.SETIFNE or RespCommand.SETKEEPTTLIFNE => RespCommand.SET,
+                    RespCommand.SETIFDEQ or RespCommand.SETKEEPTTLIFDEQ or RespCommand.SETIFDNE or RespCommand.SETKEEPTTLIFDNE => RespCommand.SET,
                     RespCommand.BITOP_AND or RespCommand.BITOP_NOT or RespCommand.BITOP_OR or RespCommand.BITOP_XOR or RespCommand.BITOP_DIFF => RespCommand.BITOP,
                     _ => cmd
                 };
@@ -589,7 +606,7 @@ namespace Garnet.server
         // appended.
         internal const RespCommand FirstWriteCommand = RespCommand.APPEND;
 
-        internal const RespCommand LastWriteCommand = RespCommand.BITOP_DIFF;
+        internal const RespCommand LastWriteCommand = RespCommand.SETKEEPTTLIFDNE;
 
         // Data commands span writes + reads + scripts contiguously: [FirstDataCommand, LastDataCommand].
         internal const RespCommand FirstDataCommand = FirstWriteCommand;
@@ -643,7 +660,7 @@ namespace Garnet.server
         public static bool IsVectorSetCommand(this RespCommand cmd)
             => cmd is RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB
                or RespCommand.VGETATTR or RespCommand.VINFO or RespCommand.VISMEMBER or RespCommand.VLINKS
-               or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM;
+               or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM or RespCommand.XVCREATE or RespCommand.XVIMPORT;
 
         public static bool IsDataCommand(this RespCommand cmd)
         {
@@ -722,7 +739,7 @@ namespace Garnet.server
         /// Returns true if this command can operate on a Vector Set.
         /// </summary>
         public static bool IsLegalOnVectorSet(this RespCommand cmd)
-        => cmd is RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX or RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB or RespCommand.VGETATTR or RespCommand.VINFO or RespCommand.VISMEMBER or RespCommand.VLINKS or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM;
+        => cmd is RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX or RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB or RespCommand.VGETATTR or RespCommand.VINFO or RespCommand.VISMEMBER or RespCommand.VLINKS or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM or RespCommand.XVCREATE or RespCommand.XVIMPORT;
 
         /// <summary>
         /// Returns true if <paramref name="cmd"/> is allowed while a session is in
@@ -767,11 +784,6 @@ namespace Garnet.server
         private Vector128<byte> _cachedPattern1, _cachedMask1;
         private RespCommand _cachedCmd1;
         private byte _cachedLen1, _cachedCount1;
-        /// <summary>
-        /// Maximum number of arguments (excluding the command name) allowed in a single RESP command.
-        /// Prevents pre-auth memory exhaustion from oversized RESP array headers.
-        /// </summary>
-        const int MaxRespArrayLength = 1 << 20; // 1,048,576
 
         /// <summary>
         /// Fast-parses command type for inline RESP commands, starting at the current read head in the receive buffer
@@ -1171,7 +1183,7 @@ namespace Garnet.server
             {
                 var cmdStartOffset = readHead; // Save position before ArrayParseCommand advances it
                 cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success);
-                if (!success) return cmd;
+                if (!success || cmd == RespCommand.INVALID) return cmd;
 
                 // Update MRU cache for commands resolved by hash table.
                 // Exclude custom commands — they have runtime-registered names.
@@ -1186,9 +1198,9 @@ namespace Garnet.server
 
             Debug.Assert(cmd != RespCommand.NONE, "ParseCommand should never return NONE - expected INVALID for unrecognized commands");
             Debug.Assert(count >= 0 || cmd == RespCommand.INVALID, "Argument count must be non-negative for valid commands");
-            if (count > MaxRespArrayLength)
+            if (count > RespLimits.MaxRequestArrayLength)
             {
-                RespParsingException.ThrowExcessiveArgumentCount(count, MaxRespArrayLength);
+                RespParsingException.ThrowExcessiveArgumentCount(count, RespLimits.MaxRequestArrayLength);
             }
 
             // Set up parse state
@@ -1321,22 +1333,38 @@ namespace Garnet.server
             // Extract command name via HashLookupCommand (reads $len\r\n header via GetCommand, relies on prior MakeUpperCase() pass, and advances readHead)
             cmd = HashLookupCommand(ref count, ref specificErrorMessage, out success);
 
-            // Parsing for command name was successful, but the command is unknown
-            if (writeErrorOnFailure && success && cmd == RespCommand.INVALID)
-            {
-                if (!specificErrorMessage.IsEmpty)
-                {
-                    while (!RespWriteUtils.TryWriteError(specificErrorMessage, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    // Return "Unknown RESP Command" message
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
-                        SendAndReset();
-                }
-            }
+            if (success && cmd == RespCommand.INVALID)
+                success = TryHandleInvalidCommand(count, specificErrorMessage, writeErrorOnFailure);
+
             return cmd;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private bool TryHandleInvalidCommand(int count, ReadOnlySpan<byte> errorMessage, bool writeErrorOnFailure)
+        {
+            if (count > RespLimits.MaxRequestArrayLength)
+                RespParsingException.ThrowExcessiveArgumentCount(count, RespLimits.MaxRequestArrayLength);
+
+            // Consume the full request before replying so fragmented requests receive only one error.
+            parseState.Initialize(count);
+            var ptr = recvBufferPtr + readHead;
+            for (int i = 0; i < count; i++)
+            {
+                if (!parseState.Read(i, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+            }
+            endReadHead = (int)(ptr - recvBufferPtr);
+
+            if (writeErrorOnFailure && !errorMessage.IsEmpty)
+            {
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            if (storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.WaitForCommit)
+                HandleAofCommitMode(RespCommand.INVALID);
+
+            return true;
         }
 
         /// <summary>
@@ -1365,7 +1393,7 @@ namespace Garnet.server
             // Single probe returns both the command and whether it has subcommands.
             fixed (byte* namePtr = command)
             {
-                var cmd = RespCommandHashLookup.Lookup(namePtr, command.Length, out var hasSubcommands);
+                var cmd = RespCommandHashLookup.Lookup(namePtr, command.Length, out var hasSubcommands, out var exactArgCount);
 
                 if (cmd == RespCommand.NONE)
                 {
@@ -1376,6 +1404,16 @@ namespace Garnet.server
                     }
 
                     // Not a built-in or custom command
+                    var commandName = Encoding.UTF8.GetString(command[..Math.Min(command.Length, 128)])
+                        .Replace('\r', ' ').Replace('\n', ' ');
+                    specificErrorMessage = Encoding.UTF8.GetBytes(string.Format(CmdStrings.GenericErrUnknownCommand, commandName));
+                    return RespCommand.INVALID;
+                }
+
+                // If the command has a known, constant, arity validate it here
+                if (exactArgCount != 255 && count != exactArgCount)
+                {
+                    specificErrorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs, cmd.ToString()));
                     return RespCommand.INVALID;
                 }
 

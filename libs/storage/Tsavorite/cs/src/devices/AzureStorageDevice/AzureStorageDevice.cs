@@ -399,6 +399,51 @@ namespace Tsavorite.devices
             }, TaskContinuationOptions.ExecuteSynchronously);
         }
 
+        /// <inheritdoc/>
+        /// <remarks>
+        /// <para>
+        /// Removes the segment blobs that the device found when it started and those it has created since, from the highest down,
+        /// without listing storage again. These are the blobs that <see cref="RemoveSegmentAsync(int, AsyncCallback, IAsyncResult)"/>
+        /// can delete; a blob created since by another device instance is not removed.
+        /// </para>
+        /// <para>
+        /// RemoveSegmentAsync completes, and stops tracking the blob, even if deleting it fails, so each blob is checked afterwards.
+        /// One that is still there is tracked again, so that a later attempt finds it, and this throws, rather than report removed
+        /// data that remains.
+        /// </para>
+        /// </remarks>
+        public override bool TryRemoveSegmentsAbove(int segment, out int removed)
+        {
+            removed = 0;
+            if (OmitSegmentIdFromFileName)
+                return false;
+
+            foreach (var above in blobs.Keys.Where(listed => listed > segment).OrderDescending().ToArray())
+            {
+                if (!blobs.TryGetValue(above, out var entry))
+                    continue;
+                RemoveSegment(above);
+
+                bool remains;
+                try
+                {
+                    remains = entry.PageBlob.Default.Exists().Value;
+                }
+                catch (Exception ex)
+                {
+                    _ = blobs.TryAdd(above, entry);
+                    throw new TsavoriteIOException($"Unable to tell whether segment blob {entry.PageBlob.Default.Name} was removed", ex);
+                }
+                if (remains)
+                {
+                    _ = blobs.TryAdd(above, entry);
+                    throw new TsavoriteIOException($"Unable to remove segment blob {entry.PageBlob.Default.Name}", null);
+                }
+                removed++;
+            }
+            return true;
+        }
+
         /// <summary>
         /// Delete the device blobs in storage.
         /// </summary>

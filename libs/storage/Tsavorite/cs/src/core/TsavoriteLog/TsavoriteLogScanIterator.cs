@@ -26,6 +26,12 @@ namespace Tsavorite.core
         protected bool disposed = false;
 
         /// <summary>
+        /// Set by <see cref="ScanForwardForCommit"/>. That scan has no end bound and runs until the written log ends, so
+        /// reaching unwritten space ends the scan rather than failing it.
+        /// </summary>
+        private volatile bool stopAtEndOfLog;
+
+        /// <summary>
         /// Whether iteration has ended, either because we reached the end address of iteration, or because
         /// we reached the end of a completed log.
         /// </summary>
@@ -653,7 +659,8 @@ namespace Tsavorite.core
             {
                 var result = (PageAsyncReadResult<Empty>)context;
 
-                if (errorCode == 0)
+                // The frame is cleared before every read, so a read past the end of the file leaves the page reading as unwritten
+                if (errorCode == 0 || (stopAtEndOfLog && IsEndOfFile(errorCode)))
                     _ = result.handle?.Signal();
                 else
                 {
@@ -680,8 +687,16 @@ namespace Tsavorite.core
             return (length + 3) & ~3;
         }
 
+        /// <summary>
+        /// Whether a read failed only because nothing was written where it started: at or past the end of a file, which Windows
+        /// reports as an error and other platforms as a successful read of zero bytes, or in a segment that does not exist.
+        /// </summary>
+        internal static bool IsEndOfFile(uint errorCode)
+            => (OperatingSystem.IsWindows() && errorCode == Native32.ERROR_HANDLE_EOF) || errorCode == Native32.ERROR_FILE_NOT_FOUND;
+
         internal unsafe bool ScanForwardForCommit(ref TsavoriteLogRecoveryInfo info, long commitNum = -1)
         {
+            stopAtEndOfLog = true;
             epoch.Resume();
             var foundCommit = false;
             // Track the address of the record currently being processed so a torn/invalid commit
@@ -706,15 +721,25 @@ namespace Tsavorite.core
                     if (info.CommitNum == commitNum) break;
                 }
             }
+            catch (TsavoriteIOException)
+            {
+                // A page could not be read, so the scan cannot tell where the log ends. The caller decides whether to fail.
+                throw;
+            }
+            catch (OperationCanceledException ex)
+            {
+                // A failed page read cancels its frame load
+                throw new TsavoriteIOException($"Recovery scan could not read the log after address {currentRecordAddress}", ex);
+            }
             catch (TsavoriteException ex)
             {
-                // We ran into an incomplete/torn commit record. This is expected when the tail of the
-                // log was left half-written by an ungraceful shutdown. Stop scanning here; recovery
+                // We ran into invalid data: an incomplete/torn record, or bytes after end-of-page padding. This is expected
+                // when the tail of the log was left half-written by an ungraceful shutdown. Stop scanning here; recovery
                 // uses the last VALID commit as the upper bound of the redo window. Because
                 // TsavoriteLogRecoveryInfo.Initialize validates before mutating, `info` still holds
                 // that last valid commit's metadata at this point.
                 logger?.LogWarning(ex,
-                    "ScanForwardForCommit stopped at an invalid/torn commit record near address {recordAddress}; " +
+                    "ScanForwardForCommit stopped at invalid data near address {recordAddress}; " +
                     "recovering to last valid commit (until address {untilAddress}, commitNum {commitNum}). " +
                     "This typically indicates a torn tail from an ungraceful shutdown; any operations after " +
                     "the last valid commit were never durably committed and are intentionally dropped.",
@@ -823,6 +848,12 @@ namespace Tsavorite.core
                 // We may encounter zeroed out bits at the end of page in a normal log, therefore, we need to check whether that is the case
                 if (entryLength == 0)
                 {
+                    // Padding runs to the end of the page, since the allocator writes nothing after it. In a scan to the end of
+                    // the log, anything else there was never committed, so the log ends here.
+                    if (stopAtEndOfLog && _currentOffset != 0
+                        && new ReadOnlySpan<byte>((void*)physicalAddress, (int)(allocator.PageSize - _currentOffset)).IndexOfAnyExcept((byte)0) >= 0)
+                        throw new TsavoriteException($"Data found after end-of-page padding at address {currentAddress}");
+
                     // Zero-ed out bytes could be padding at the end of page, first jump to the start of next page. 
                     var nextStart = allocator.GetLogicalAddressOfStartOfPage(1 + allocator.GetPage(currentAddress));
                     if (Utility.MonotonicUpdate(ref nextAddress, nextStart, out _))
@@ -831,7 +862,12 @@ namespace Tsavorite.core
 
                         // If zeroed out field is at page start, we encountered an uninitialized page and should signal up
                         if (pageOffset == 0)
+                        {
+                            // For a scan that runs to the end of the log, the first unwritten page is where the log ends
+                            if (stopAtEndOfLog)
+                                return false;
                             throw new TsavoriteException("Uninitialized page found during scan at page " + allocator.GetPage(currentAddress));
+                        }
                     }
                     continue;
                 }

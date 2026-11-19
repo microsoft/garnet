@@ -52,11 +52,19 @@ For more information about the cluster configuration please see the description 
 
 ## Control Plane
 
-It is important to keep in mind that Garnet's cluster mode design is currently _passive_: this means that it does not implement leader election, and simply responds to cluster 
+Garnet's cluster mode design is _passive_: it does not implement leader election or quorum voting for failover, and responds to cluster
 commands issued by a separate _control plane_. Users have to deploy a control plane (such as an operator in Kubernetes 
 [[example](https://github.com/OT-CONTAINER-KIT/redis-operator)]) to detect failures and request failover. Garnet does not itself yet provide a control plane implementation. 
 All commands necessary for building a robust control plane are included in Garnet, and our partners have built and deployed 
 production-quality control plane implementations for internal use with Garnet.
+
+The external control plane is responsible for authorizing and serializing failovers, including manual operator
+requests and retries. Only one failover may be in flight for a replication group, even when requests target different
+replicas or use different failover commands. Concurrent promotions can create competing writable primaries and lose
+acknowledged writes; configuration epochs and gossip do not make them safe. A single elected controller alone does not
+prevent an isolated old primary from serving writes, so forced promotion also requires fencing the old primary.
+See [CLUSTER FAILOVER](../commands/cluster.md#cluster-failover) for option semantics, completion checks, and recovery
+from ambiguous outcomes. Leader election inside Garnet is not planned; the external coordinator provides this function.
 
 This separation of concerns allows users the flexibility of deploying Garnet over a variety of fabrics such as [Kubernetes](https://kubernetes.io/), 
 [Virtual Machine Scale Sets](https://learn.microsoft.com/en-us/azure/virtual-machine-scale-sets/overview), and [Service Fabric](https://azure.microsoft.com/en-us/products/service-fabric). 

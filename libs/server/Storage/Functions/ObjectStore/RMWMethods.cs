@@ -15,10 +15,7 @@ namespace Garnet.server
     {
         /// <inheritdoc />
         public bool NeedInitialUpdate<TKey>(TKey key, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
         {
             var type = input.header.type;
 
@@ -81,6 +78,8 @@ namespace Garnet.server
         /// <inheritdoc />
         public void PostInitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
         {
+            // Tsavorite reports an expired record that was recreated and one that was tombstoned alike, so the output records the creation.
+            output.OutputFlags |= ObjectOutputFlags.CreatedKey;
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
@@ -92,6 +91,14 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InPlaceUpdater(ref LogRecord logRecord, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
         {
+            // Expired data is logically absent, so check this before the ValueIsObject check below; otherwise an
+            // expired string-typed key would incorrectly report WrongType instead of being treated as missing.
+            if (logRecord.DataHeader.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
+            {
+                rmwInfo.Action = RMWAction.ExpireAndResume;
+                return false;
+            }
+
             if (!logRecord.DataHeader.ValueIsObject)
             {
                 rmwInfo.Action = RMWAction.WrongType;
@@ -112,13 +119,6 @@ namespace Garnet.server
 
         bool InPlaceUpdaterWorker(ref LogRecord logRecord, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
         {
-            // Expired data
-            if (logRecord.DataHeader.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
-            {
-                rmwInfo.Action = RMWAction.ExpireAndResume;
-                return false;
-            }
-
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion);
@@ -182,6 +182,10 @@ namespace Garnet.server
                 return false;
             }
 
+            // Carry the expiration over; nothing after this point sets it.
+            if (!dstLogRecord.TryCopyOptionals(in srcLogRecord, in sizeInfo))
+                return false;
+
             // Defer the actual copying of data to PostCopyUpdater, so we know the record has been successfully CASed into the hash chain before we potentially
             // create large allocations (e.g. if srcLogRecord is from disk, we would have to allocate the overflow byte[]). Because we are doing an update we have
             // and XLock, so nobody will see the unset data even after the CAS. Tsavorite will handle cloning the ValueObject and preserving the (v) value as needed,
@@ -195,10 +199,9 @@ namespace Garnet.server
         {
             // We perform the object update here (and not in CopyUpdater) so that we are guaranteed that the record
             // was CASed into the hash chain before it gets modified. Tsavorite (InternalRMW, right before PCU, for both
-            // memory and disk sources) has already cloned src.ValueObject into dstLogRecord. Reuse it directly — do not clone again.
+            // memory and disk sources) has already cloned src.ValueObject into dstLogRecord. Reuse it directly — do not clone again. CopyUpdater has already copied the expiration.
             var value = Unsafe.As<IGarnetObject>(dstLogRecord.ValueObject);
 
-            // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
             // TODO: Object store ETags
 
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
@@ -251,10 +254,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref ObjectInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor
         {
             if ((rmwInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF

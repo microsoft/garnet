@@ -469,6 +469,87 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Converts an array of elements in RESP format to int[], placing in a pre-allocated Span if possible.
+        /// </summary>
+        /// <param name="output">The RESP format output object</param>
+        /// <param name="elements">Pre-allocated space to store results.  Resized to match actual results on return.</param>
+        /// <param name="error">A description of the error, if there is any</param>
+        /// <returns></returns>
+        unsafe void ProcessRespIntegerArrayOutput(ObjectOutput output, ref Span<int> elements, out string error)
+        {
+            // For reading the elements in the output
+            byte* element = null;
+
+            var outputSpan = output.SpanByteAndMemory.ReadOnlySpan;
+
+            try
+            {
+                fixed (byte* outputPtr = outputSpan)
+                {
+                    var refPtr = outputPtr;
+
+                    if (*refPtr == '-')
+                    {
+                        if (!RespReadUtils.TryReadErrorAsString(out error, ref refPtr, outputPtr + outputSpan.Length))
+                        {
+                            elements = default;
+                            return;
+                        }
+                    }
+                    else if (*refPtr == '*')
+                    {
+                        // Get the number of elements
+                        if (!RespReadUtils.TryReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
+                        {
+                            error = "Could not extract array length";
+                            elements = default;
+                            return;
+                        }
+
+                        // Create the ensure elements length == arraySize
+                        if (elements.Length < arraySize)
+                        {
+                            elements = new int[arraySize];
+                        }
+                        else if (elements.Length > arraySize)
+                        {
+                            elements = elements[..arraySize];
+                        }
+
+                        for (var i = 0; i < elements.Length; i++)
+                        {
+                            if (*refPtr != ':')
+                            {
+                                RespParsingException.ThrowUnexpectedToken(*refPtr);
+                            }
+                            refPtr++;
+
+                            element = null;
+                            if (RespReadUtils.TryReadInt32(ref refPtr, outputPtr + outputSpan.Length, out var number, out var _))
+                            {
+                                elements[i] = number;
+                            }
+
+                            if (*(ushort*)refPtr != MemoryMarshal.Read<ushort>("\r\n"u8))
+                            {
+                                RespParsingException.ThrowUnexpectedToken(*refPtr);
+                            }
+
+                            refPtr += 2;
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                if (!output.SpanByteAndMemory.IsSpanByte)
+                    output.SpanByteAndMemory.Memory.Dispose();
+            }
+
+            error = null;
+        }
+
+        /// <summary>
         /// Converts an array of elements in RESP format to ArgSlice[] type
         /// </summary>
         /// <param name="output">The RESP format output object</param>
@@ -673,9 +754,23 @@ namespace Garnet.server
         /// <returns></returns>
         unsafe PinnedSpanByte ProcessRespSingleTokenOutput(ObjectOutput output)
         {
+            _ = TryProcessRespSingleTokenOutput(output, out var result);
+            return result;
+        }
+
+        /// <summary>
+        /// Converts a single token in RESP format to ArgSlice type, distinguishing a nil token from a
+        /// zero-length one. Both convert to an empty <see cref="PinnedSpanByte"/>, so callers that need to
+        /// tell "no value" from "empty value" apart must use the return value rather than the length.
+        /// </summary>
+        /// <param name="output">The RESP format output object</param>
+        /// <param name="result">The converted token, empty if the token was nil</param>
+        /// <returns>True if the token held a value, false if it was nil</returns>
+        unsafe bool TryProcessRespSingleTokenOutput(ObjectOutput output, out PinnedSpanByte result)
+        {
             byte* element = null;
             var len = 0;
-            PinnedSpanByte result;
+            result = default;
 
             var outputSpan = output.SpanByteAndMemory.ReadOnlySpan;
             try
@@ -687,13 +782,13 @@ namespace Garnet.server
 
                     if (!RespReadUtils.TryReadPtrWithSignedLengthHeader(ref element, ref len, ref refPtr, end)
                         || len < 0)
-                        return default;
+                        return false;
                     result = PinnedSpanByte.FromPinnedPointer(element, len);
 
-                    // When output uses heap Memory, the finally block will dispose it, invalidating
-                    // the PinnedSpanByte pointer. Copy data to scratch buffer while still pinned.
-                    // CreateArgSlice allocates pinned space and copies the data into it.
-                    if (result.Length > 0 && !output.SpanByteAndMemory.IsSpanByte)
+                    // The output buffer does not outlive this call: a pooled one is disposed in the
+                    // finally block, and a caller-supplied stack one dies when the caller returns.
+                    // Copy into scratch space, which the caller may hold on to.
+                    if (result.Length > 0)
                         result = scratchBufferAllocator.CreateArgSlice(result.ReadOnlySpan);
                 }
             }
@@ -703,7 +798,7 @@ namespace Garnet.server
                     output.SpanByteAndMemory.Memory.Dispose();
             }
 
-            return result;
+            return true;
         }
 
         /// <summary>
@@ -785,7 +880,9 @@ namespace Garnet.server
                 return GarnetStatus.WRONGTYPE;
             }
 
-            if (status.NotFound && !status.Record.Created)
+            // A missing or expired key is not found unless the operation created it. The status cannot tell: an expired record
+            // reports the same status whether it was recreated or tombstoned, and a revivified one reports no new record.
+            if (status.NotFound && !output.HasCreatedKey)
                 return GarnetStatus.NOTFOUND;
 
             if (status.Found && output.HasWrongType)

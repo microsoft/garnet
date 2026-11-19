@@ -12,10 +12,12 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.client;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -23,6 +25,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test.cluster
 {
@@ -2374,7 +2377,7 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public async Task VSETATTRReplicatesAsync()
+        public async Task VSETATTRReplicatesAsync([Values(32, 3 * 1024 * 1024)] int attributeSize)
         {
             const int PrimaryIndex = 0;
             const int SecondaryIndex = 1;
@@ -2393,15 +2396,28 @@ namespace Garnet.test.cluster
             var primaryServer = connection.GetServer(primary);
             var secondaryServer = connection.GetServer(secondary);
 
-            var addRes = (int)await primaryServer.ExecuteAsync(0, "VADD", [Key, "VALUES", "3", "1", "2", "3", Element]).ConfigureAwait(false);
+            var attributes = new string('a', attributeSize);
+            var updatedAttributes = new string('b', attributeSize + 1);
+            var addRes = (int)await primaryServer.ExecuteAsync(0, "VADD", [Key, "VALUES", "3", "1", "2", "3", Element, "NOQUANT", "SETATTR", attributes]).ConfigureAwait(false);
             ClassicAssert.AreEqual(1, addRes);
-            var setRes = (int)await primaryServer.ExecuteAsync(0, "VSETATTR", [Key, Element, "{\"foo\":\"bar\"}"]).ConfigureAwait(false);
+            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
+            ClassicAssert.AreEqual("OK", (string)await secondaryServer.ExecuteAsync(0, "READONLY", []).ConfigureAwait(false));
+            ClassicAssert.AreEqual(attributes, (string)await secondaryServer.ExecuteAsync(0, "VGETATTR", [Key, Element], flags: CommandFlags.NoRedirect).ConfigureAwait(false));
+
+            var setRes = (int)await primaryServer.ExecuteAsync(0, "VSETATTR", [Key, Element, updatedAttributes]).ConfigureAwait(false);
             ClassicAssert.AreEqual(1, setRes);
 
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
 
-            var getRes = (string)await secondaryServer.ExecuteAsync(0, "VGETATTR", [Key, Element]).ConfigureAwait(false);
-            ClassicAssert.AreEqual("{\"foo\":\"bar\"}", getRes);
+            var getRes = (string)await secondaryServer.ExecuteAsync(0, "VGETATTR", [Key, Element], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
+            ClassicAssert.AreEqual(updatedAttributes, getRes);
+            ClassicAssert.AreEqual(1, (int)await secondaryServer.ExecuteAsync(0, "VCARD", [Key], flags: CommandFlags.NoRedirect).ConfigureAwait(false));
+            CollectionAssert.AreEqual(new[] { Element }, (string[])await secondaryServer.ExecuteAsync(0, "VSIM", [Key, "VALUES", 3, 1, 2, 3, "COUNT", 1], flags: CommandFlags.NoRedirect).ConfigureAwait(false));
+
+            ClassicAssert.AreEqual(1, (int)await primaryServer.ExecuteAsync(0, "VREM", [Key, Element]).ConfigureAwait(false));
+            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
+            ClassicAssert.AreEqual(0, (int)await secondaryServer.ExecuteAsync(0, "VISMEMBER", [Key, Element], flags: CommandFlags.NoRedirect).ConfigureAwait(false));
+            ClassicAssert.IsTrue((await secondaryServer.ExecuteAsync(0, "VGETATTR", [Key, Element], flags: CommandFlags.NoRedirect).ConfigureAwait(false)).IsNull);
         }
 
         [Test]
@@ -2826,9 +2842,412 @@ namespace Garnet.test.cluster
             }
         }
 
-        private async Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool useTLS = true)
+        [Test]
+        [CancelAfter(30_000)]
+        public async Task RejectDiskLogRecordVectorSetMigrationsAsync(CancellationToken cancellation)
         {
-            context.CreateInstances(shardCount, useTLS: useTLS, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, sublogCount: sublogCount, threadPoolMinIOCompletionThreads: 512);
+            const string KeyName = "0123456789abcdef";
+
+            const int RecordTypeIndex = RecordInfo.Size + RecordDataHeader.RecordTypeOffsetInHeader;
+
+            _ = await SimpleSetupClusterAsync(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1, useTLS: false).ConfigureAwait(false);
+
+            var slot = HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(KeyName));
+
+            var owningNodeIndex = context.clusterTestUtils.GetSourceNodeIndexFromSlot(slot, null);
+            var targetNodeIndex = owningNodeIndex == 0 ? 1 : 0;
+
+            var importingFromId = context.clusterTestUtils.GetLocalNodeId(owningNodeIndex);
+            var targetNodeId = context.clusterTestUtils.GetLocalNodeId(targetNodeIndex);
+
+            var setSlotImportingRes = context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "IMPORTING", importingFromId);
+            ClassicAssert.AreEqual("OK", setSlotImportingRes);
+
+            // Preconstructed DiskLogRecord with the above key
+            var disklogPayload = Convert.FromHexString("0100000000000A0003000410000000003031323334353637383961626364656669794D53744576657159746D4E6F7A33");
+
+            // Corrupt the RecordTypeIndex
+            disklogPayload[RecordTypeIndex] = 255;
+
+            var forgingClient = context.clusterTestUtils.GetGarnetClientSession(targetNodeIndex);
+            forgingClient.SetClusterMigrateHeader(importingFromId, false, false);
+            ClassicAssert.True(forgingClient.TryWriteRecordSpan(disklogPayload, MigrationRecordSpanType.LogRecord, out var task));
+            ClassicAssert.IsNull(task);
+
+            var error = Assert.ThrowsAsync<Exception>(async () =>
+                await forgingClient.SendAndResetIterationBuffer().WaitAsync(cancellation).ConfigureAwait(false));
+            Assert.That(error.Message, Does.Contain("Failed to apply migration batch"));
+
+            var setSlotOwnedRes = context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "NODE", targetNodeId);
+            ClassicAssert.AreEqual("OK", setSlotOwnedRes);
+
+            var setSlotStableRes = context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "STABLE", "");
+            ClassicAssert.AreEqual("OK", setSlotStableRes);
+
+            var existsRes = await forgingClient.ExecuteAsync("EXISTS", KeyName).ConfigureAwait(false);
+
+            ClassicAssert.AreEqual("0", existsRes);
+        }
+
+        [Test]
+        public async Task ImportReplicationAsync()
+        {
+            const string ExportKey = nameof(ImportReplicationAsync) + "_Export";
+            const string ImportKey = nameof(ImportReplicationAsync) + "_Import";
+            const int NumElements = 1_000;
+            const int FanOut = 8;
+            const uint StartPointId = uint.MaxValue; // Garnet always uses this start point id, so we'll export using it
+
+            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: DefaultShards / 2, replicaCount: 1, useTLS: false).ConfigureAwait(false);
+
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
+            var db = connection.GetDatabase();
+
+            // Build a Vector Set to import
+            for (var i = 0; i < NumElements; i++)
+            {
+                ClassicAssert.IsTrue(await db.VectorSetAddAsync(ExportKey, VectorSetAddRequest.Member(i.ToString(), new float[] { i, i + 1, i + 2 }, $"{{\"id\": \"{i}\"}}")).ConfigureAwait(false));
+            }
+
+            // Export the Vector Set
+            var primaryServer = context.nodes[0];
+
+            Span<byte> stateKey = stackalloc byte[sizeof(uint)];
+            BinaryPrimitives.WriteUInt32LittleEndian(stateKey, BinaryPrimitives.ReadUInt32BigEndian("_qnt"u8));
+            var state = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.Metadata, stateKey);
+
+            var startPointKey = BitConverter.GetBytes(0U);
+
+            var importArgs = new List<RedisValue[]>();
+
+            for (var i = 0; i < NumElements; i++)
+            {
+                var internalId = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.InternalIdMap, Encoding.UTF8.GetBytes(i.ToString()));
+
+                var fullVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.FullVector, internalId);
+                var attributes = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.Attributes, internalId);
+                var quantVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.QuantizedVector, internalId);
+                var neighbors = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.NeighborList, internalId);
+                var externalId = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.ExternalIdMap, internalId);
+
+                // Imports are actually stored under internal id
+                importArgs.Add(["ATTRS", internalId, attributes]);
+                importArgs.Add(["EXTMAP", internalId, externalId]);
+                importArgs.Add(["NEIGHBORS", internalId, neighbors]);
+                importArgs.Add(["VECTOR", internalId, fullVector]);
+                importArgs.Add(["QUANT", internalId, quantVector]);
+
+                // INTMAP goes in the opposite direction
+                importArgs.Add(["INTMAP", externalId, internalId]);
+            }
+
+            // Deal with the start point
+            {
+                var internalId = new byte[4];
+                BinaryPrimitives.WriteUInt32LittleEndian(internalId, StartPointId);
+
+                var fullVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.FullVector, internalId);
+                var quantVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.QuantizedVector, internalId);
+                var neighbors = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.NeighborList, internalId);
+
+                // Imports are actually stored under internal id
+                importArgs.Add(["VECTOR", internalId, fullVector]);
+                importArgs.Add(["NEIGHBORS", internalId, neighbors]);
+                importArgs.Add(["QUANT", internalId, quantVector]);
+            }
+
+            var fanCons = new ConnectionMultiplexer[FanOut];
+            try
+            {
+                for (var i = 0; i < fanCons.Length; i++)
+                {
+                    fanCons[i] = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
+                }
+
+                var createTask = db.ExecuteAsync("XVCREATE", [ImportKey, "DIM", 3, "M", 16, "Q8", "QUANT_STATE", state]);
+
+                var parallelImport =
+                    createTask.ContinueWith(
+                        async t =>
+                        {
+                            ClassicAssert.AreEqual("OK", (string)await t.ConfigureAwait(false));
+
+                            var parallelImports = new Task<int>[FanOut];
+                            for (var i = 0; i < parallelImports.Length; i++)
+                            {
+                                var iCopy = i;
+                                var importCon = fanCons[i];
+                                parallelImports[i] = Task.Run(
+                                    async () =>
+                                    {
+                                        var importDb = importCon.GetDatabase();
+
+                                        var imported = 0;
+
+                                        for (var j = 0; j < importArgs.Count; j++)
+                                        {
+                                            if ((j % FanOut) == iCopy)
+                                            {
+                                                ICollection<object> args = [ImportKey, .. importArgs[j]];
+                                                ClassicAssert.AreEqual("OK", (string)await importDb.ExecuteAsync("XVIMPORT", args).ConfigureAwait(false));
+                                                imported++;
+                                            }
+                                        }
+
+                                        return imported;
+                                    }
+                                );
+                            }
+
+                            return (await Task.WhenAll(parallelImports).ConfigureAwait(false)).Sum();
+                        }
+                    )
+                    .Unwrap();
+
+                var verifyImport =
+                    parallelImport.ContinueWith(
+                        async t =>
+                        {
+                            ClassicAssert.AreEqual(importArgs.Count, await t.ConfigureAwait(false));
+
+                            var parallelVerify = new Task[FanOut];
+                            for (var i = 0; i < parallelVerify.Length; i++)
+                            {
+                                var importCon = fanCons[i];
+                                parallelVerify[i] = importCon.GetDatabase().ExecuteAsync("XVIMPORT", [ImportKey, "VERIFY", i, FanOut]);
+                            }
+
+                            await Task.WhenAll(parallelVerify).ConfigureAwait(false);
+                        }
+                    )
+                    .Unwrap();
+
+                await verifyImport.ConfigureAwait(false);
+            }
+            finally
+            {
+                foreach (var con in fanCons)
+                {
+                    await con.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+
+            ClassicAssert.AreEqual("OK", (string)await db.ExecuteAsync("XVIMPORT", [ImportKey, "FINISH"]).ConfigureAwait(false));
+
+            context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
+
+            var replica = connection.GetServer(context.endpoints[1]);
+            ClassicAssert.AreEqual("OK", (string)await replica.ExecuteAsync("READONLY").ConfigureAwait(false));
+
+            // Validate all three relevant Vector Sets
+            for (var i = 0; i < NumElements; i++)
+            {
+                var exactMatch = new float[] { i, i + 1, i + 2 };
+                var searchReq = VectorSetSimilaritySearchRequest.ByVector(exactMatch);
+                searchReq.WithAttributes = true;
+
+                using var searchExportRes = await db.VectorSetSimilaritySearchAsync(ExportKey, searchReq).ConfigureAwait(false);
+                using var searchImportRes = await db.VectorSetSimilaritySearchAsync(ImportKey, searchReq).ConfigureAwait(false);
+                var replicaImportRes = (string[])await replica.ExecuteAsync(database: 0, "VSIM", [ImportKey, "FP32", MemoryMarshal.AsBytes(exactMatch).ToArray(), "WITHATTRIBS"]).ConfigureAwait(false);
+
+                ClassicAssert.AreEqual(searchExportRes.Length, searchImportRes.Length);
+                ClassicAssert.AreEqual(searchExportRes.Length, replicaImportRes.Length / 2);
+
+                for (var j = 0; j < searchExportRes.Length; j++)
+                {
+                    var expectedMember = (string)searchExportRes.Span[j].Member;
+                    var expectedAttr = searchExportRes.Span[j].AttributesJson;
+
+                    var importMember = (string)searchImportRes.Span[j].Member;
+                    var importAttr = searchImportRes.Span[j].AttributesJson;
+
+                    var replicaMember = replicaImportRes[j * 2];
+                    var replicaAttr = replicaImportRes[(j * 2) + 1];
+
+                    ClassicAssert.AreEqual(expectedMember, importMember);
+                    ClassicAssert.AreEqual(expectedMember, replicaMember);
+
+                    ClassicAssert.AreEqual(expectedAttr, importAttr);
+                    ClassicAssert.AreEqual(expectedAttr, replicaAttr);
+                }
+            }
+        }
+
+        [Test]
+        public async Task FailedImportMarkedFailedAsync()
+        {
+            const string ExportKey = nameof(FailedImportMarkedFailedAsync) + "_Export";
+            const string ImportKey = nameof(FailedImportMarkedFailedAsync) + "_Import";
+            const int NumElements = 10;
+            const uint StartPointId = uint.MaxValue; // Garnet always uses this start point id, so we'll export using it
+            const int SEED = 2026_11_02_00;
+
+            var rand = new Random(SEED);
+
+            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: DefaultShards / 2, replicaCount: 1, useTLS: false).ConfigureAwait(false);
+
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
+            var db = connection.GetDatabase();
+
+            // Build a Vector Set to import
+            for (var i = 0; i < NumElements; i++)
+            {
+                ClassicAssert.IsTrue(await db.VectorSetAddAsync(ExportKey, VectorSetAddRequest.Member(i.ToString(), new float[] { i, i + 1, i + 2 }, $"{{\"id\": \"{i}\"}}")).ConfigureAwait(false));
+            }
+
+            // Export the Vector Set
+            var primaryServer = context.nodes[0];
+
+            Span<byte> stateKey = stackalloc byte[sizeof(uint)];
+            BinaryPrimitives.WriteUInt32LittleEndian(stateKey, BinaryPrimitives.ReadUInt32BigEndian("_qnt"u8));
+            var state = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.Metadata, stateKey);
+
+            var startPointKey = BitConverter.GetBytes(0U);
+
+            var importArgsList = new List<RedisValue[]>();
+
+            for (var i = 0; i < NumElements; i++)
+            {
+                var internalId = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.InternalIdMap, Encoding.UTF8.GetBytes(i.ToString()));
+
+                var fullVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.FullVector, internalId);
+                var attributes = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.Attributes, internalId);
+                var quantVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.QuantizedVector, internalId);
+                var neighbors = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.NeighborList, internalId);
+                var externalId = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.ExternalIdMap, internalId);
+
+                // Imports are actually stored under internal id
+                importArgsList.Add(["ATTRS", internalId, attributes]);
+                importArgsList.Add(["EXTMAP", internalId, externalId]);
+                importArgsList.Add(["NEIGHBORS", internalId, neighbors]);
+                importArgsList.Add(["VECTOR", internalId, fullVector]);
+                importArgsList.Add(["QUANT", internalId, quantVector]);
+
+                // INTMAP goes in the opposite direction
+                importArgsList.Add(["INTMAP", externalId, internalId]);
+            }
+
+            // Deal with the start point
+            {
+                var internalId = new byte[4];
+                BinaryPrimitives.WriteUInt32LittleEndian(internalId, StartPointId);
+
+                var fullVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.FullVector, internalId);
+                var quantVector = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.QuantizedVector, internalId);
+                var neighbors = ReadRawVectorTerm(primaryServer, ExportKey, DiskANNService.NeighborList, internalId);
+
+                // Imports are actually stored under internal id
+                importArgsList.Add(["VECTOR", internalId, fullVector]);
+                importArgsList.Add(["NEIGHBORS", internalId, neighbors]);
+                importArgsList.Add(["QUANT", internalId, quantVector]);
+            }
+
+            // Toss half the (repeatably) random import terms on the ground
+            var importArgs = importArgsList.ToArray();
+            rand.Shuffle(importArgs);
+            importArgs = importArgs[..(importArgs.Length / 2)];
+
+            // Run the import
+            ClassicAssert.AreEqual("OK", (string)await db.ExecuteAsync("XVCREATE", [ImportKey, "DIM", 3, "M", 16, "Q8", "QUANT_STATE", state]).ConfigureAwait(false));
+
+            foreach (var argSet in importArgs)
+            {
+                ICollection<object> args = [ImportKey, .. argSet];
+                ClassicAssert.AreEqual("OK", (string)await db.ExecuteAsync("XVIMPORT", args).ConfigureAwait(false));
+            }
+
+            // Verification should fail
+            var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", [ImportKey, "VERIFY", "0", "1"]));
+            ClassicAssert.AreEqual("ERR Vector set import validation failed", exc.Message);
+
+            // Wait for replication to catch up
+            context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
+
+            // Should leave vector set marked failed in both primary and replica
+
+            var primary = connection.GetServer(context.endpoints[0]);
+            var primaryInfo = (await primary.ExecuteAsync(database: 0, "VINFO", [ImportKey]).ConfigureAwait(false)).ToDictionary();
+
+            var replica = connection.GetServer(context.endpoints[1]);
+            ClassicAssert.AreEqual("OK", (string)await replica.ExecuteAsync("READONLY").ConfigureAwait(false));
+            var replicaInfo = (await replica.ExecuteAsync(database: 0, "VINFO", [ImportKey]).ConfigureAwait(false)).ToDictionary();
+
+            ClassicAssert.AreEqual("failed", (string)primaryInfo["import-state"]);
+            ClassicAssert.AreEqual("failed", (string)replicaInfo["import-state"]);
+        }
+
+        private static unsafe byte[] ReadRawVectorTerm(GarnetServer server, string key, byte termType, ReadOnlySpan<byte> termKey, int bufferSize = 8192)
+        {
+            var stub = ReadRawVectorStub(server, key);
+            VectorManager.ReadIndex(stub, out var indexContext, out _, out _, out _, out _, out _, out _, out _, out _);
+            Span<byte> namespaceBytes = stackalloc byte[sizeof(uint)];
+            VectorManager.StoreContextInNamespace(indexContext | termType, ref namespaceBytes);
+
+            var storeWrapper = server.Provider.StoreWrapper;
+            using var session = storeWrapper.DefaultDatabase.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(new VectorSessionFunctions(storeWrapper.CreateFunctionsState()));
+            var context = session.BasicContext;
+            Span<byte> buffer = bufferSize <= 8192 ? stackalloc byte[8192] : new byte[bufferSize];
+            fixed (byte* bufferPtr = buffer)
+            fixed (byte* termKeyPtr = termKey)
+            {
+                var elementKey = new VectorElementKey(namespaceBytes, new ReadOnlySpan<byte>(termKeyPtr, termKey.Length));
+                var input = new VectorInput { ReadDesiredSize = -1 };
+                var output = new VectorOutput(bufferPtr, buffer.Length);
+                var status = context.Read(elementKey, ref input, ref output);
+                if (status.IsPending)
+                {
+                    _ = context.CompletePendingWithOutputs(out var completed, wait: true);
+                    using (completed)
+                    {
+                        ClassicAssert.IsTrue(completed.Next());
+                        status = completed.Current.Status;
+                        output = completed.Current.Output;
+                    }
+                }
+
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.LessOrEqual(input.ReadDesiredSize, buffer.Length);
+                return output.SpanByteAndMemory.ReadOnlySpan.ToArray();
+            }
+
+            byte[] ReadRawVectorStub(GarnetServer server, string key)
+            {
+                var storeWrapper = server.Provider.StoreWrapper;
+                var functionsState = storeWrapper.CreateFunctionsState();
+                var functions = new MainSessionFunctions(functionsState);
+                ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
+
+                using var session = database.Store.NewSession<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions>(functions, false);
+                var context = session.BasicContext;
+
+                Span<byte> stub = stackalloc byte[VectorManager.IndexSizeBytes];
+                var input = new StringInput(RespCommand.VADD, arg1: 0);
+                var output = StringOutput.FromPinnedSpan(stub);
+                Span<byte> keySpan = stackalloc byte[Encoding.ASCII.GetByteCount(key)];
+                _ = Encoding.ASCII.GetBytes(key, keySpan);
+                var status = context.Read((FixedSpanByteKey)keySpan, ref input, ref output);
+                if (status.IsPending)
+                {
+                    _ = context.CompletePendingWithOutputs(out var completed, wait: true);
+                    using (completed)
+                    {
+                        ClassicAssert.IsTrue(completed.Next());
+                        status = completed.Current.Status;
+                        output = completed.Current.Output;
+                    }
+                }
+
+                ClassicAssert.IsTrue(status.Found, $"reading the raw stub for {key} must find the index record");
+                ClassicAssert.IsTrue(output.SpanByteAndMemory.IsSpanByte, "the stub read must stay on the pinned span");
+                ClassicAssert.AreEqual(VectorManager.IndexSizeBytes, output.SpanByteAndMemory.Length, "the stub read returned an unexpected length");
+
+                return output.SpanByteAndMemory.ReadOnlySpan.ToArray();
+            }
+        }
+
+        private async Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool useTLS = true, int replayTasks = 1, int? physicalLogs = null)
+        {
+            context.CreateInstances(shardCount, useTLS: useTLS, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, sublogCount: physicalLogs ?? sublogCount, threadPoolMinIOCompletionThreads: 512, replayTaskCount: replayTasks);
             context.CreateConnection(useTLS: useTLS);
             var ret = await context.clusterTestUtils.SimpleSetupClusterAsync(primary_count: primaryCount, replica_count: replicaCount);
 
@@ -2841,6 +3260,9 @@ namespace Garnet.test.cluster
 
             return ret;
         }
+
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "replicationReplayFailure")]
+        private static extern ref ExceptionDispatchInfo GetVectorReplayFailure(VectorManager manager);
 
         [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "storeWrapper")]
         private static extern ref StoreWrapper GetStoreWrapper(GarnetServer server);

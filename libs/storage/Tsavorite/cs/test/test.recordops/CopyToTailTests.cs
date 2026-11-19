@@ -249,6 +249,199 @@ namespace Tsavorite.test.CopyToTail
         [Category(ReadTestCategory), Category(ReadCacheTestCategory)]
         public void OverflowKeyObjectValueCopyToTail([Values(ReadCopyTo.MainLog, ReadCopyTo.ReadCache)] ReadCopyTo readCopyTo)
             => RunObjectTest(readCopyTo, keyLen: MaxInlineKeyBytes * 2);
+
+        // A copy-on-read does not copy a source whose value slot holds a placeholder, which marks a released value. A read by key should not find
+        // one, because it holds its bucket's shared lock from its lookup through the copy, so each test below puts a placeholder in a live
+        // record's slot. The read still returns what it read, which the placeholder makes null or empty, but neither tail moves, and in a Debug
+        // build the store reports the one copy it declined instead of failing its assertion.
+
+        /// <summary>The key of the placeholder tests' only record.</summary>
+        const int PlaceholderTestKey = 7;
+
+#if DEBUG
+        /// <summary>The copies the store declined because their source's value slot held a placeholder, counted through its test hook.</summary>
+        private int placeholderCopiesDeclined;
+#endif
+
+        /// <summary>Object functions whose read completion accepts a released value, which reads as null.</summary>
+        private sealed class PlaceholderObjectFunctions : TestObjectFunctions
+        {
+            public override void ReadCompletionCallback(ref DiskLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
+            {
+            }
+        }
+
+        /// <summary>Have the store count the copies it declines for a placeholder source instead of failing its Debug assertion. Release builds
+        /// have neither, so this does nothing there.</summary>
+        private void ExpectPlaceholderSources()
+        {
+#if DEBUG
+            placeholderCopiesDeclined = 0;
+            store.testOnPlaceholderSourceNotCopied = () => placeholderCopiesDeclined++;
+#endif
+        }
+
+        /// <summary>Upsert the placeholder tests' record, with an object value or an overflow value.</summary>
+        private void UpsertPlaceholderTestRecord(ReadOnlySpan<byte> key, bool objectValue)
+        {
+            if (objectValue)
+            {
+                using var session = store.NewSession<TestSpanByteKey, TestObjectInput, TestObjectOutput, Empty, PlaceholderObjectFunctions>(new());
+                ClassicAssert.IsFalse(session.BasicContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), new TestObjectValue { value = PlaceholderTestKey }).IsPending);
+                return;
+            }
+
+            using var spanSession = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, CTTSpanByteFunctions>(new CTTSpanByteFunctions(TestRecordType));
+            Span<byte> valueBuf = stackalloc byte[MaxInlineValueBytes * 2];
+            MakeValue(valueBuf, PlaceholderTestKey);
+            ClassicAssert.IsFalse(spanSession.BasicContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), valueBuf).IsPending);
+        }
+
+        /// <summary>Point the value slot of the record at the head of <paramref name="key"/>'s chain at a placeholder, as a release does, without
+        /// changing the record's bytes.</summary>
+        /// <returns>Whether that record is in the read cache.</returns>
+        private bool PutPlaceholderInHeadRecord(ReadOnlySpan<byte> key)
+        {
+            ClassicAssert.IsTrue(store.FindHashBucketEntryForKey(TestSpanByteKey.FromPinnedSpan(key), out var entry), "The key is not in the index");
+            var logRecord = (entry.IsReadCache ? store.readcacheBase : store.hlogBase)._wrapper.CreateLogRecord(entry.Address);
+            ClassicAssert.IsTrue(logRecord.Key.SequenceEqual(key), "The record at the head of the chain is another key's");
+            if (logRecord.DataHeader.ValueIsObject)
+                ClassicAssert.IsNotNull(logRecord.ExchangeValueObjectSlot(SupersededObjectValue.Released), "The record held no object");
+            else
+                ClassicAssert.IsFalse(logRecord.ExchangeValueOverflowSlot(OverflowByteArray.Released).IsEmpty, "The record held no overflow array");
+            return entry.IsReadCache;
+        }
+
+        /// <summary>Read the placeholder tests' key, copying it to <paramref name="readCopyTo"/> from wherever it is, and complete the read if it
+        /// goes pending.</summary>
+        /// <returns>The read's status; whether it went pending; and whether the value it read was released: an object that reads as null, or an
+        /// overflow value that reads as empty.</returns>
+        private (Status status, bool wentPending, bool readReleasedValue) ReadPlaceholderTestRecord(ReadOnlySpan<byte> key, bool objectValue, ReadCopyTo readCopyTo)
+        {
+            ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, readCopyTo) };
+            Status status;
+            bool wentPending;
+            if (objectValue)
+            {
+                using var session = store.NewSession<TestSpanByteKey, TestObjectInput, TestObjectOutput, Empty, PlaceholderObjectFunctions>(new());
+                var bContext = session.BasicContext;
+                TestObjectInput input = default;
+                TestObjectOutput output = default;
+                status = bContext.Read(TestSpanByteKey.FromPinnedSpan(key), ref input, ref output, ref readOptions, out _);
+                wentPending = status.IsPending;
+                if (wentPending)
+                {
+                    _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    (status, output) = GetSinglePendingResult(completedOutputs);
+                }
+                return (status, wentPending, output.value is null);
+            }
+
+            using var spanSession = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, CTTSpanByteFunctions>(new CTTSpanByteFunctions(TestRecordType));
+            var spanContext = spanSession.BasicContext;
+            PinnedSpanByte spanInput = default;
+            SpanByteAndMemory spanOutput = default;
+            status = spanContext.Read(TestSpanByteKey.FromPinnedSpan(key), ref spanInput, ref spanOutput, ref readOptions, out _);
+            wentPending = status.IsPending;
+            if (wentPending)
+            {
+                _ = spanContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                (status, spanOutput) = GetSinglePendingResult(completedOutputs);
+            }
+            var readReleasedValue = spanOutput.Length == 0;
+            spanOutput.Memory?.Dispose();
+            return (status, wentPending, readReleasedValue);
+        }
+
+        /// <summary>Assert that a read of a source whose value slot holds a placeholder found the key and returned the released value, but copied
+        /// nothing.</summary>
+        private void AssertPlaceholderSourceNotCopied(Status status, bool readReleasedValue, long tailBefore, long readCacheTailBefore)
+        {
+            ClassicAssert.IsTrue(status.Found, $"Read not Found; {status}");
+            ClassicAssert.IsTrue(readReleasedValue, "The read should return the released value, as null or empty");
+            ClassicAssert.IsFalse(status.Record.Copied, $"A placeholder source was copied to the main log; {status}");
+            ClassicAssert.IsFalse(status.Record.CopiedToReadCache, $"A placeholder source was copied to the read cache; {status}");
+            ClassicAssert.AreEqual(tailBefore, store.Log.TailAddress, "The main-log tail moved");
+            ClassicAssert.AreEqual(readCacheTailBefore, store.ReadCache?.TailAddress ?? 0, "The read-cache tail moved");
+#if DEBUG
+            ClassicAssert.AreEqual(1, placeholderCopiesDeclined, "The store should report exactly one declined copy");
+#endif
+        }
+
+        /// <summary>A record in the immutable region of the main log, copied to the main log's tail or to the read cache.</summary>
+        [Test]
+        [Category(ReadTestCategory), Category(ReadCacheTestCategory)]
+        public void ImmutablePlaceholderSourceIsNotCopied([Values(ReadCopyTo.MainLog, ReadCopyTo.ReadCache)] ReadCopyTo readCopyTo, [Values] bool objectValue)
+        {
+            CreateStore(readCopyTo);
+            Span<byte> keyBuf = stackalloc byte[sizeof(int)];
+            MakeKey(keyBuf, PlaceholderTestKey);
+
+            UpsertPlaceholderTestRecord(keyBuf, objectValue);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            ClassicAssert.IsFalse(PutPlaceholderInHeadRecord(keyBuf), "The record should be in the main log");
+
+            ExpectPlaceholderSources();
+            var tailBefore = store.Log.TailAddress;
+            var readCacheTailBefore = store.ReadCache?.TailAddress ?? 0;
+            var (status, wentPending, readReleasedValue) = ReadPlaceholderTestRecord(keyBuf, objectValue, readCopyTo);
+            ClassicAssert.IsFalse(wentPending, "An immutable record is read from memory");
+            AssertPlaceholderSourceNotCopied(status, readReleasedValue, tailBefore, readCacheTailBefore);
+        }
+
+        /// <summary>A record read from disk, copied to the main log's tail or to the read cache. The placeholder goes into the record before it is
+        /// flushed: the flush writes a released object as an empty value, which the read loads as the released placeholder. Only an object value
+        /// is tested, because a disk image carries a released overflow value as an empty value, not as a placeholder.</summary>
+        [Test]
+        [Category(ReadTestCategory), Category(ReadCacheTestCategory)]
+        public void DiskPlaceholderSourceIsNotCopied([Values(ReadCopyTo.MainLog, ReadCopyTo.ReadCache)] ReadCopyTo readCopyTo)
+        {
+            CreateStore(readCopyTo);
+            Span<byte> keyBuf = stackalloc byte[sizeof(int)];
+            MakeKey(keyBuf, PlaceholderTestKey);
+
+            UpsertPlaceholderTestRecord(keyBuf, objectValue: true);
+            ClassicAssert.IsFalse(PutPlaceholderInHeadRecord(keyBuf), "The record should be in the main log");
+            store.Log.FlushAndEvict(wait: true);
+
+            ExpectPlaceholderSources();
+            var tailBefore = store.Log.TailAddress;
+            var readCacheTailBefore = store.ReadCache?.TailAddress ?? 0;
+            var (status, wentPending, readReleasedValue) = ReadPlaceholderTestRecord(keyBuf, objectValue: true, readCopyTo);
+            ClassicAssert.IsTrue(wentPending, "An evicted record is read from disk");
+            AssertPlaceholderSourceNotCopied(status, readReleasedValue, tailBefore, readCacheTailBefore);
+
+            // Nothing was copied into memory, so the record is read from disk again.
+            (status, wentPending, _) = ReadPlaceholderTestRecord(keyBuf, objectValue: true, ReadCopyTo.None);
+            ClassicAssert.IsTrue(status.Found && wentPending, $"The record should still be read from disk; {status}");
+        }
+
+        /// <summary>A read-cache hit in the read cache's read-only region, which a read copies to the read cache's tail to give it a second
+        /// chance.</summary>
+        [Test]
+        [Category(ReadTestCategory), Category(ReadCacheTestCategory)]
+        public void ReadCachePlaceholderSourceIsNotPromoted([Values] bool objectValue)
+        {
+            CreateStore(ReadCopyTo.ReadCache);
+            Span<byte> keyBuf = stackalloc byte[sizeof(int)];
+            MakeKey(keyBuf, PlaceholderTestKey);
+
+            // A read from disk copies the record to the read cache. Moving the read cache's ReadOnlyAddress past the copy makes a hit on it
+            // eligible for promotion.
+            UpsertPlaceholderTestRecord(keyBuf, objectValue);
+            store.Log.FlushAndEvict(wait: true);
+            var (status, wentPending, readReleasedValue) = ReadPlaceholderTestRecord(keyBuf, objectValue, ReadCopyTo.ReadCache);
+            ClassicAssert.IsTrue(wentPending && status.Record.CopiedToReadCache && !readReleasedValue, $"The record should be copied to the read cache; {status}");
+            store.ReadCache.ShiftReadOnlyAddress(store.ReadCache.TailAddress, wait: true);
+            ClassicAssert.IsTrue(PutPlaceholderInHeadRecord(keyBuf), "The record should be in the read cache");
+
+            ExpectPlaceholderSources();
+            var tailBefore = store.Log.TailAddress;
+            var readCacheTailBefore = store.ReadCache.TailAddress;
+            (status, wentPending, readReleasedValue) = ReadPlaceholderTestRecord(keyBuf, objectValue, ReadCopyTo.ReadCache);
+            ClassicAssert.IsFalse(wentPending, "A read-cache hit is read from memory");
+            AssertPlaceholderSourceNotCopied(status, readReleasedValue, tailBefore, readCacheTailBefore);
+        }
     }
 
     public class CTTSpanByteFunctions : SessionFunctionsBase<PinnedSpanByte, SpanByteAndMemory, Empty>

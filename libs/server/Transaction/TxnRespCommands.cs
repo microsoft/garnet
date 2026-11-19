@@ -62,7 +62,20 @@ namespace Garnet.server
 
                 if (clusterSession != null)
                 {
+                    if (txnManager.ContainsDatabaseFlush)
+                    {
+                        clusterSession.WaitForWritesToResume();
+                        if (storeWrapper.clusterProvider.IsReplica() && !clusterSession.IsInternalWriteSession)
+                        {
+                            txnManager.Reset(false);
+                            txnManager.watchContainer.Reset();
+                            endReadHead = origReadHead;
+                            return AbortWithErrorMessage(CmdStrings.RESP_ERR_FLUSHALL_READONLY_REPLICA);
+                        }
+                    }
+
                     txnManager.GetSlotVerificationInput(SessionAsking, out var clusterSlotVerificationInput);
+                    clusterSlotVerificationInput.readOnly &= !txnManager.ContainsDatabaseFlush;
 
                     if (txnManager.txnKeysParseState.Count > 0 &&
                         clusterSession.NetworkMultiKeySlotVerify(ref txnManager.txnKeysParseState, ref clusterSlotVerificationInput, ref dcurr, ref dend, isTxn: true))
@@ -187,6 +200,7 @@ namespace Garnet.server
             }
 
             txnManager.LockKeys(commandInfo, isSubCommand);
+            txnManager.ContainsDatabaseFlush |= cmd is RespCommand.FLUSHDB or RespCommand.FLUSHALL;
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_QUEUED, ref dcurr, dend))
                 SendAndReset();

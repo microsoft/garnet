@@ -36,6 +36,16 @@ namespace Tsavorite.core
             /// so it is never transiently zero across a re-pend hop.
             /// </summary>
             public int pendingCount;
+
+            /// <summary>
+            /// Number of pending-IO ops for this session that reached a terminal state without completing successfully.
+            /// Such an op produces no <see cref="CompletedOutputIterator{TInput, TOutput, TContext}"/> entry, because the
+            /// drain transfers outputs only on success, so a caller that must not proceed past a failed operation cannot
+            /// detect it from the outputs and reads this instead. Monotonic for the session's lifetime; compare it across
+            /// a drain rather than resetting it.
+            /// </summary>
+            public long faultedPendingCount;
+
             public readonly AsyncCountDown pendingReads;
 
             /// <summary>

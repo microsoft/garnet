@@ -47,10 +47,7 @@ namespace Tsavorite.core
         internal OperationStatus InternalUpsert<TKey, TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TKey key, long keyHash, ref TInput input,
                             ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, in TSourceLogRecord inputLogRecord, ref TOutput output,
                             ref TContext userContext, ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TValueSelector : IUpsertValueSelector
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
@@ -300,10 +297,7 @@ namespace Tsavorite.core
         private OperationStatus CreateNewRecordUpsert<TKey, TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TKey key, ref LogRecord srcLogRecord, ref TInput input,
                 ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, in TSourceLogRecord inputLogRecord, ref TOutput output, ref OperationState<TInput, TOutput, TContext> operationState,
                 TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref UpsertInfo upsertInfo)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TValueSelector : IUpsertValueSelector
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord

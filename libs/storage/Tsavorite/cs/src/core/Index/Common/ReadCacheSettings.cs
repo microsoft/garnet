@@ -24,7 +24,7 @@ namespace Tsavorite.core
         /// Number of pages in the circular buffer, rounded down to nearest power of 2
         /// </summary>
         /// <remarks>If 0, it is calculated from <see cref="MemorySize"/> and <see cref="PageSizeBits"/>, which is also the max if both this and <see cref="MemorySize"/> are nonzero.</remarks>
-        public int PageCount = 25;
+        public int PageCount = 0;
 
         /// <summary>
         /// Fraction of log head (in memory) used for second chance copy to tail. This is (1 - MutableFraction) for the underlying log

@@ -104,6 +104,37 @@ namespace Garnet.test
         }
 
         [Test]
+        public void PubSubSupportsDeepWildcardPatterns()
+        {
+            using var subRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var sub = subRedis.GetSubscriber();
+            var db = redis.GetDatabase(0);
+            var channel = new string('a', 8192);
+            var pattern = string.Concat(Enumerable.Repeat("*a", channel.Length));
+            using var delivered = new ManualResetEventSlim();
+
+            sub.Subscribe(RedisChannel.Pattern(pattern + "b"), (_, _) => { });
+            sub.Subscribe(RedisChannel.Pattern(pattern), (_, message) =>
+            {
+                if (message == "message")
+                    delivered.Set();
+            });
+            ClassicAssert.AreEqual(1, db.Publish(RedisChannel.Literal(channel), "message"));
+            ClassicAssert.IsTrue(delivered.Wait(TimeSpan.FromSeconds(10)));
+
+            sub.Subscribe(RedisChannel.Literal(channel), (_, _) => { });
+            var channels = (string[])db.Execute("PUBSUB", "CHANNELS", pattern);
+            CollectionAssert.AreEqual(new[] { channel }, channels);
+            ClassicAssert.AreEqual(0, ((RedisResult[])db.Execute("PUBSUB", "CHANNELS", pattern + "b")).Length);
+
+            sub.UnsubscribeAll();
+            ClassicAssert.AreEqual("PONG", (string)db.Execute("PING"));
+            using var other = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            ClassicAssert.AreEqual("PONG", (string)other.GetDatabase(0).Execute("PING"));
+        }
+
+        [Test]
         public void BasicPUBSUB_CHANNELS()
         {
             using var subRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -320,6 +351,39 @@ namespace Garnet.test
             var getResp = "$-1\r\n";
             response = lightClientRequest.Execute("GET bar", getResp.Length);
             ClassicAssert.AreEqual(getResp, response);
+        }
+
+        /// <summary>
+        /// Verifies that a SUBSCRIBE queued in MULTI does not stop EXEC from replaying the remaining
+        /// commands and committing, and that the session is in subscription mode afterwards.
+        /// </summary>
+        [Test]
+        public void SubscribeQueuedInMultiCommitsTransactionInResp2()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Bytes);
+
+            ClassicAssert.AreEqual("+OK\r\n", lightClientRequest.Execute("MULTI", 5));
+            ClassicAssert.AreEqual("+QUEUED\r\n", lightClientRequest.Execute("SUBSCRIBE foo", 9));
+            ClassicAssert.AreEqual("+QUEUED\r\n", lightClientRequest.Execute("SET bar value", 9));
+
+            var execResp = "*2\r\n*3\r\n$9\r\nsubscribe\r\n$3\r\nfoo\r\n:1\r\n+OK\r\n";
+            ClassicAssert.AreEqual(execResp, lightClientRequest.Execute("EXEC", execResp.Length));
+
+            // The transaction released its key lock and applied the write
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var get = redis.GetDatabase(0).StringGetAsync("bar");
+            ClassicAssert.IsTrue(get.Wait(TimeSpan.FromSeconds(10)), "Key remained locked after EXEC");
+            ClassicAssert.AreEqual("value", (string)get.Result);
+
+            // The session is now in subscription mode
+            var errorResp = "-ERR Can't execute 'GET': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT are allowed in this context\r\n";
+            ClassicAssert.AreEqual(errorResp, lightClientRequest.Execute("GET bar", errorResp.Length));
+
+            var unsubResp = "*3\r\n$11\r\nunsubscribe\r\n$3\r\nfoo\r\n:0\r\n";
+            ClassicAssert.AreEqual(unsubResp, lightClientRequest.Execute("UNSUBSCRIBE foo", unsubResp.Length));
+
+            var getResp = "$5\r\nvalue\r\n";
+            ClassicAssert.AreEqual(getResp, lightClientRequest.Execute("GET bar", getResp.Length));
         }
 
         /// <summary>

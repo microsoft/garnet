@@ -1239,6 +1239,24 @@ namespace Garnet.server
 
             try
             {
+                // SWAPDB is rejected while another session is connected. The check precedes every mutation, so a
+                // rejected swap leaves the databases and the sessions as they were.
+                RespServerSession onlySession = null;
+                var activeSessions = 0;
+                foreach (var server in StoreWrapper.Servers)
+                {
+                    if (server is not GarnetServerBase serverBase) continue;
+
+                    foreach (var session in serverBase.ActiveConsumers())
+                    {
+                        if (session is not RespServerSession respServerSession) continue;
+
+                        if (++activeSessions > 1) return false;
+
+                        onlySession = respServerSession;
+                    }
+                }
+
                 var databaseMapSnapshot = databases.Map;
                 var enableAof = StoreWrapper.serverOptions.EnableAOF;
                 databaseMapSnapshot[dbId1] = new GarnetDatabase(dbId1, db2, enableAof, copyLastSaveData: true);
@@ -1251,21 +1269,7 @@ namespace Garnet.server
                 AttachDatabaseMappingProvider(databaseMapSnapshot[dbId2]);
                 JournalDatabaseLabels();
 
-                var activeSessions = 0;
-                foreach (var server in StoreWrapper.Servers)
-                {
-                    if (server is not GarnetServerBase serverBase) continue;
-
-                    foreach (var session in serverBase.ActiveConsumers())
-                    {
-                        if (session is not RespServerSession respServerSession) continue;
-                        activeSessions++;
-
-                        if (activeSessions > 1) return false;
-
-                        respServerSession.TrySwapDatabaseSessions(dbId1, dbId2);
-                    }
-                }
+                onlySession?.TrySwapDatabaseSessions(dbId1, dbId2);
             }
             finally
             {
