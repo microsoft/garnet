@@ -330,7 +330,7 @@ namespace Garnet.server
                         bool invalid;
                         try
                         {
-                            invalid = !RespReadUtils.TryReadInt64Safe(ref ptrCopy, ptrCopy + hashValueRef.Length, out result, out var bytesRead, out _, out _, allowLeadingZeros: false) || bytesRead != (ulong)incrSlice.Length;
+                            invalid = !RespReadUtils.TryReadInt64Safe(ref ptrCopy, ptrCopy + hashValueRef.Length, out result, out var bytesRead, out _, out _, allowLeadingZeros: false) || bytesRead != (ulong)hashValueRef.Length;
                         }
                         catch
                         {
