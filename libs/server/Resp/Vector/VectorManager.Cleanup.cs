@@ -377,41 +377,84 @@ namespace Garnet.server
         /// <returns>Map of context being deleted -&gt; contexts to copy records into (if they do not exist)</returns>
         internal static Dictionary<ulong, List<ulong>> DetermineShallowCopyDataCopies(ConcurrentDictionary<ulong, ulong> shallowCopyBackReferences, HashSet<ulong> toDeleteContexts)
         {
-            // Original Vector Set -> list of shallow copies
-            var sourceRefs = new Dictionary<ulong, List<ulong>>();
-            foreach (var (shallowCopyCtx, sourceCtx) in shallowCopyBackReferences)
+            // Logic here is to build a graph of copies, and each time we remove one of the contexts we record what needs to be copied where
+
+            // A map of source context -> contexts it's copied into
+            var totalGraph = new Dictionary<ulong, HashSet<ulong>>();
             {
-                if (!sourceRefs.TryGetValue(sourceCtx, out var copiedTo))
+                // Build one layer, totalGraph[source] -> [copy]
+                foreach (var (copyContext, srcContext) in shallowCopyBackReferences)
                 {
-                    sourceRefs[sourceCtx] = copiedTo = [];
+                    if (!totalGraph.TryGetValue(srcContext, out var copiedTo))
+                    {
+                        totalGraph[srcContext] = copiedTo = [];
+                    }
+
+                    _ = copiedTo.Add(copyContext);
                 }
 
-                copiedTo.Add(shallowCopyCtx);
-            }
-
-            foreach (var (_, shallowCopies) in sourceRefs)
-            {
-                for (var i = 0; i < shallowCopies.Count; i++)
+                // Repeatedly update totalGraph so source context -> [copied directly, copied indirectly, ...]
+                var modified = true;
+                while (modified)
                 {
-                    var shallowCopy = shallowCopies[i];
+                    modified = false;
 
-                    if (toDeleteContexts.Contains(shallowCopy))
+                    foreach (var (sourceContext, copiedToContexts) in totalGraph)
                     {
-                        if (shallowCopyBackReferences.TryGetValue(shallowCopy, out var olderSource))
+                        foreach (var copiedIntoContext in copiedToContexts.ToList())
                         {
-                            shallowCopies[i] = olderSource;
+                            if (totalGraph.TryGetValue(copiedIntoContext, out var copiedAgainIntoContexts))
+                            {
+                                foreach (var copiedIndirectlyContext in copiedAgainIntoContexts)
+                                {
+                                    if (copiedToContexts.Add(copiedIndirectlyContext))
+                                    {
+                                        modified = true;
+                                    }
+                                }
+                            }
                         }
-                        else
-                        {
-                            shallowCopies.RemoveAt(i);
-                        }
-
-                        i--;
                     }
                 }
             }
 
-            return sourceRefs.Where(kv => toDeleteContexts.Contains(kv.Key) && kv.Value.Count > 0).ToDictionary(static kv => kv.Key, static kv => kv.Value.Distinct().ToList());
+            // Reduce totalGraph to copies that need to be performed
+            //
+            // This is basicallythe subset of [copied directly, copied indirectly, ...] where the context _survives_ but doesn't have an immediate predecessor that does
+            var ret = new Dictionary<ulong, List<ulong>>();
+            foreach (var deletedContext in toDeleteContexts)
+            {
+                if (totalGraph.TryGetValue(deletedContext, out var copiedTo))
+                {
+                    List<ulong> survivingCopies = null;
+
+                    // Filter down to actual copies to perform
+                    foreach (var copiedIntoContext in copiedTo)
+                    {
+                        // Don't copy into anything that's being deleted
+                        if (toDeleteContexts.Contains(copiedIntoContext))
+                        {
+                            continue;
+                        }
+
+                        // Don't copy into a shallow copy if its direct predecessor is surviving
+                        if (shallowCopyBackReferences.TryGetValue(copiedIntoContext, out var source) && !toDeleteContexts.Contains(source))
+                        {
+                            continue;
+                        }
+
+                        survivingCopies ??= [];
+                        survivingCopies.Add(copiedIntoContext);
+                    }
+
+                    if (survivingCopies != null)
+                    {
+                        ret[deletedContext] = survivingCopies;
+                    }
+                }
+            }
+
+            return ret;
         }
 
         /// <summary>
