@@ -866,17 +866,26 @@ namespace Garnet.server
             var status = GarnetStatus.NOTFOUND;
             ObjectOutput output = default;
 
-            // This prevents going to the backend if ZRANDMEMBER is called with a count of 0
-            if (paramCount != 0)
-            {
-                // Prepare output
-                output = GetObjectOutput();
-                status = storageApi.SortedSetRandomMember(key, ref input, ref output);
-            }
+            // Prepare output
+            output = GetObjectOutput();
+            status = storageApi.SortedSetRandomMember(key, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
+                    if (paramCount == 0)
+                    {
+                        if (includedCount)
+                        {
+                            WriteEmptyArray();
+                        }
+                        else
+                        {
+                            WriteNull();
+                        }
+                        break;
+                    }
+
                     ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:

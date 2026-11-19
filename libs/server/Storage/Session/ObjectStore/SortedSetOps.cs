@@ -333,8 +333,6 @@ namespace Garnet.server
                 where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             pairs = default;
-            if (key.Length == 0)
-                return GarnetStatus.OK;
 
             // Prepare the input
             var op = lowScoresFirst ? SortedSetOperation.ZPOPMIN : SortedSetOperation.ZPOPMAX;
@@ -1233,7 +1231,14 @@ namespace Garnet.server
                 {
                     foreach (var (key, score) in sortedSetDictionary)
                     {
-                        pairs[key] = weights[0] * score;
+                        var initialWeight = weights[0] * score;
+
+                        if (double.IsNaN(initialWeight))
+                        {
+                            initialWeight = 0;
+                        }
+
+                        pairs[key] = initialWeight;
                     }
                 }
             }
@@ -1354,8 +1359,6 @@ namespace Garnet.server
                 // Try popping from each key until we find one with members
                 foreach (var key in keys)
                 {
-                    if (key.Length == 0) continue;
-
                     var status = SortedSetPop(key, count, lowScoresFirst, out pairs, ref transactionalContext);
                     if (status == GarnetStatus.OK && pairs != null && pairs.Length > 0)
                     {
@@ -1542,7 +1545,14 @@ namespace Garnet.server
                 pairs = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
                 foreach (var kvp in firstSortedSet.Dictionary)
                 {
-                    pairs[kvp.Key] = kvp.Value * weights[0];
+                    var initialWeight = kvp.Value * weights[0];
+
+                    if (double.IsNaN(initialWeight))
+                    {
+                        initialWeight = 0;
+                    }
+
+                    pairs[kvp.Key] = initialWeight;
                 }
             }
 
