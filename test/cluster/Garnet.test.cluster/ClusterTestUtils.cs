@@ -1367,7 +1367,7 @@ namespace Garnet.test.cluster
                     if (nodeA.IsReplica != nodeB.IsReplica)
                         return false;
 
-                    if (nodeA.Parent != nodeB.Parent)
+                    if (nodeA.ParentNodeId != nodeB.ParentNodeId)
                         return false;
 
                     if (!nodeA.EndPoint.Equals(nodeB.EndPoint))
