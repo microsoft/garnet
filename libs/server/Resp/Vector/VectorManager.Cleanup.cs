@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -278,7 +279,6 @@ namespace Garnet.server
 
                 try
                 {
-                    // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
                     using var cleanupSession = (RespServerSession)getTempSession();
                     if (cleanupSession.activeDbId != dbId && !cleanupSession.TrySwitchActiveDatabaseSession(dbId))
                     {
@@ -294,6 +294,7 @@ namespace Garnet.server
                     ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
 
                     HashSet<ulong> needCleanup = null;
+                    Dictionary<ulong, List<ulong>> copyDeletedRecords = null;
                     lock (this)
                     {
                         for (var i = 0; i < contextMetadatas.Length; i++)
@@ -309,6 +310,12 @@ namespace Garnet.server
                                     _ = needCleanup.Add(offset + item);
                                 }
                             }
+                        }
+
+                        // Determine any copying we need to do as part of deleting shallow copied Vector Sets
+                        if (needCleanup != null)
+                        {
+                            copyDeletedRecords = DetermineShallowCopyDataCopies(shallowCopyBackReferences, needCleanup);
                         }
                     }
 
@@ -338,6 +345,15 @@ namespace Garnet.server
 
                             _ = dirtyContextMetadatas.Add(contextIndex);
                         }
+
+                        // Update shallowCopyBackReferences now that deletes are finished
+                        foreach (var (shallowCopy, source) in shallowCopyBackReferences.ToList())
+                        {
+                            if (needCleanup.Contains(shallowCopy) || needCleanup.Contains(source))
+                            {
+                                shallowCopyBackReferences.Remove(shallowCopy, out _);
+                            }
+                        }
                     }
 
                     UpdateContextMetadata(ref delCtx);
@@ -351,6 +367,51 @@ namespace Garnet.server
                     _ = cleanupGate.Release();
                 }
             }
+        }
+
+        /// <summary>
+        /// Determine the set of copies to do as part of deleting Vector Sets.
+        /// </summary>
+        /// <param name="shallowCopyBackReferences">Map of shallow copy context -&gt; source context</param>
+        /// <param name="toDeleteContexts">Contexts to be deleted</param>
+        /// <returns>Map of context being deleted -&gt; contexts to copy records into (if they do not exist)</returns>
+        internal static Dictionary<ulong, List<ulong>> DetermineShallowCopyDataCopies(ConcurrentDictionary<ulong, ulong> shallowCopyBackReferences, HashSet<ulong> toDeleteContexts)
+        {
+            // Original Vector Set -> list of shallow copies
+            var sourceRefs = new Dictionary<ulong, List<ulong>>();
+            foreach (var (shallowCopyCtx, sourceCtx) in shallowCopyBackReferences)
+            {
+                if (!sourceRefs.TryGetValue(sourceCtx, out var copiedTo))
+                {
+                    sourceRefs[sourceCtx] = copiedTo = [];
+                }
+
+                copiedTo.Add(shallowCopyCtx);
+            }
+
+            foreach (var (_, shallowCopies) in sourceRefs)
+            {
+                for (var i = 0; i < shallowCopies.Count; i++)
+                {
+                    var shallowCopy = shallowCopies[i];
+
+                    if (toDeleteContexts.Contains(shallowCopy))
+                    {
+                        if (shallowCopyBackReferences.TryGetValue(shallowCopy, out var olderSource))
+                        {
+                            shallowCopies[i] = olderSource;
+                        }
+                        else
+                        {
+                            shallowCopies.RemoveAt(i);
+                        }
+
+                        i--;
+                    }
+                }
+            }
+
+            return sourceRefs.Where(kv => toDeleteContexts.Contains(kv.Key) && kv.Value.Count > 0).ToDictionary(static kv => kv.Key, static kv => kv.Value.Distinct().ToList());
         }
 
         /// <summary>

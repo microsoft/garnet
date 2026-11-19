@@ -2,10 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -317,6 +319,139 @@ namespace Garnet.test
 
             ClassicAssert.IsTrue(copyAdditionValues.Span.SequenceEqual(Enumerable.Repeat(3.0f, baseSet.Dimensions).ToArray()));
             ClassicAssert.AreEqual("{\"id\":12345}", copyAdditionAttrs);
+        }
+
+        [Test]
+        public void DetermineShallowCopyDataCopies()
+        {
+            // Make sure completely empty works
+            {
+                var empty = VectorManager.DetermineShallowCopyDataCopies([], []);
+                ClassicAssert.IsEmpty(empty);
+            }
+
+            // Make sure no shallow copies works
+            {
+                var empty = VectorManager.DetermineShallowCopyDataCopies([], [8]);
+                ClassicAssert.IsEmpty(empty);
+            }
+
+            // Simple case, 1 shallow copy and we're deleting it's source
+            {
+                ConcurrentDictionary<ulong, ulong> shallowCopyBackRefs = new();
+                shallowCopyBackRefs[16] = 8;
+
+                var singleCopy = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [8]);
+                AssertSame(new() { [8] = [16] }, singleCopy);
+            }
+
+            // Deleting each layer of a longer chain of shallow copies
+            {
+                ConcurrentDictionary<ulong, ulong> shallowCopyBackRefs = new();
+                shallowCopyBackRefs[16] = 8;
+                shallowCopyBackRefs[24] = 16;
+
+                var deleteBase = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [8]);
+                AssertSame(new() { [8] = [16] }, deleteBase);
+
+                var deleteMid = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [16]);
+                AssertSame(new() { [16] = [24] }, deleteMid);
+
+                var deleteTip = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [24]);
+                ClassicAssert.IsEmpty(deleteTip);
+
+                var deleteBaseAndMid = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [8, 16]);
+                AssertSame(new() { [8] = [24], [16] = [24] }, deleteBaseAndMid);
+
+                var deleteBaseAndTip = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [8, 24]);
+                AssertSame(new() { [8] = [16] }, deleteBaseAndTip);
+
+                var deleteMidAndTip = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [16, 24]);
+                ClassicAssert.IsEmpty(deleteMidAndTip);
+
+                var deleteAll = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [8, 16, 24]);
+                ClassicAssert.IsEmpty(deleteAll);
+            }
+
+            // Delete base with two copies
+            {
+                ConcurrentDictionary<ulong, ulong> shallowCopyBackRefs = new();
+                shallowCopyBackRefs[16] = 8;
+                shallowCopyBackRefs[24] = 8;
+
+                var deleteBase = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [8]);
+                AssertSame(new() { [8] = [16, 24] }, deleteBase);
+
+                var deleteTip0 = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [16]);
+                ClassicAssert.IsEmpty(deleteTip0);
+
+                var deleteTip1 = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [24]);
+                ClassicAssert.IsEmpty(deleteTip1);
+
+                var deleteAll = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [8, 16, 24]);
+                ClassicAssert.IsEmpty(deleteAll);
+            }
+
+            // Delete each layer of longer chain with multiple copies of single base
+            {
+                ConcurrentDictionary<ulong, ulong> shallowCopyBackRefs = new();
+                shallowCopyBackRefs[16] = 8;
+                shallowCopyBackRefs[24] = 8;
+                shallowCopyBackRefs[32] = 16;
+                shallowCopyBackRefs[40] = 24;
+                shallowCopyBackRefs[48] = 24;
+
+                var deleteBase = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [8]);
+                AssertSame(new() { [8] = [16, 24] }, deleteBase);
+
+                var deleteMid0 = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [16]);
+                AssertSame(new() { [16] = [32] }, deleteMid0);
+
+                var deleteMid1 = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [24]);
+                AssertSame(new() { [24] = [40, 48] }, deleteMid1);
+
+                var deleteAllMid = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [16, 24]);
+                AssertSame(new() { [16] = [32], [24] = [40, 48] }, deleteAllMid);
+
+                var deleteBaseAndAllMid = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [8, 16, 24]);
+                AssertSame(new() { [8] = [32, 40, 48], [16] = [32], [24] = [40, 48] }, deleteBaseAndAllMid);
+
+                var deleteTip0 = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [32]);
+                ClassicAssert.IsEmpty(deleteTip0);
+
+                var deleteTip1 = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [40]);
+                ClassicAssert.IsEmpty(deleteTip1);
+
+                var deleteTip2 = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [48]);
+                ClassicAssert.IsEmpty(deleteTip2);
+
+                var deleteBaseAndAllTip = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [8, 32, 40, 48]);
+                AssertSame(new() { [8] = [16, 24] }, deleteBaseAndAllTip);
+
+                var deleteAllMidAndAllTip = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [24, 32, 40, 48]);
+                ClassicAssert.IsEmpty(deleteAllMidAndAllTip);
+
+                var deleteAll = VectorManager.DetermineShallowCopyDataCopies(shallowCopyBackRefs, [8, 16, 24, 32, 40, 48]);
+                ClassicAssert.IsEmpty(deleteAll);
+            }
+
+            // Compare two dictionary maps for equality
+            static void AssertSame(Dictionary<ulong, List<ulong>> expected, Dictionary<ulong, List<ulong>> actual)
+            {
+                ClassicAssert.AreEqual(expected.Count, actual.Count);
+                foreach (var (key, expectedVal) in expected)
+                {
+                    ClassicAssert.IsTrue(actual.TryGetValue(key, out var actualVal));
+
+                    ClassicAssert.AreEqual(expectedVal.Count, actualVal.Count);
+                    ClassicAssert.AreEqual(actualVal.Count, actualVal.Distinct().Count());
+
+                    foreach (var context in expectedVal)
+                    {
+                        ClassicAssert.Contains(context, actualVal);
+                    }
+                }
+            }
         }
 
         /// <summary>
