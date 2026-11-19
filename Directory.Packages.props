@@ -5,15 +5,15 @@
   </PropertyGroup>
   <ItemGroup>
 
-    <PackageVersion Include="Azure.Storage.Blobs" Version="12.27.0" />
-    <PackageVersion Include="Azure.Identity" Version="1.17.0" />
+    <PackageVersion Include="Azure.Storage.Blobs" Version="12.30.1" />
+    <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageVersion Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.15.2" />
     <PackageVersion Include="CommandLineParser" Version="2.9.1" />
     <PackageVersion Include="JsonPath.Net" Version="1.1.6" />
     <PackageVersion Include="KeraLua" Version="1.4.11" />
     <PackageVersion Include="Microsoft.Identity.Client" Version="4.76.0" />
-    <PackageVersion Include="NUnit" Version="4.5.1" />
+    <PackageVersion Include="NUnit" Version="4.6.1" />
     <PackageVersion Include="NUnit3TestAdapter" Version="6.3.1" />
     <PackageVersion Include="Microsoft.CodeAnalysis" Version="5.12.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="11.0.0" />
