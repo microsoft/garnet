@@ -80,8 +80,7 @@ namespace Garnet.server
             {
                 if (pendingNullWrite)
                 {
-                    while (!RespWriteUtils.TryWriteNull(ref session.dcurr, session.dend))
-                        session.SendAndReset();
+                    session.WriteNull();
                 }
                 else
                 {
@@ -236,8 +235,7 @@ namespace Garnet.server
                         else
                         {
                             // Did not find it, was probably synchronous but we couldn't handle it until now
-                            while (!RespWriteUtils.TryWriteNull(ref session.dcurr, session.dend))
-                                session.SendAndReset();
+                            session.WriteNull();
                         }
                     }
                 }

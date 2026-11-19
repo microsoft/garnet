@@ -344,11 +344,11 @@ namespace Garnet.server
 
                 case RespCommand.GETRANGE:
                     var len = value.Length;
-                    var start = input.parseState.GetInt(0);
-                    var end = input.parseState.GetInt(1);
+                    var start = input.parseState.GetLong(0);
+                    var end = input.parseState.GetLong(1);
 
-                    (start, end) = NormalizeRange(start, end, len);
-                    CopyRespTo(value, ref output, start, end);
+                    var (normStart, normEnd) = NormalizeRange(start, end, len);
+                    CopyRespTo(value, ref output, normStart, normEnd);
                     return;
                 case RespCommand.EXPIRETIME:
                     var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(srcLogRecord.DataHeader.HasExpiration ? srcLogRecord.Expiration : -1);
@@ -406,7 +406,7 @@ namespace Garnet.server
         /// value of length <paramref name="len"/>. Offsets are clamped to the value, never wrapped.
         /// </summary>
         /// <returns>The start and exclusive end of the range; (0, 0) when the range is empty</returns>
-        static (int, int) NormalizeRange(int start, int end, int len)
+        static (int Start, int End) NormalizeRange(long start, long end, int len)
         {
             // A range counted from the end whose end precedes its start is empty
             if (start < 0 && end < 0 && start > end)
@@ -420,8 +420,17 @@ namespace Garnet.server
             if (end >= len)
                 end = len - 1;
 
+            if (start > end)
+            {
+                return (0, 0);
+            }
+
+            // Stored values are always < 512M in size, clamp to integer range before we start applying things
+            var resStart = Math.Clamp(start, int.MinValue, int.MaxValue);
+            var resEnd = Math.Clamp(end + 1, int.MinValue, int.MaxValue);
+
             // An empty value leaves end at -1, below any start
-            return start > end ? (0, 0) : (start, end + 1);
+            return ((int)resStart, (int)resEnd);
         }
 
         static bool TryInPlaceUpdateNumber(ref LogRecord logRecord, ref StringOutput output, ref RMWInfo rmwInfo, long input)
