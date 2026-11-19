@@ -113,9 +113,17 @@ namespace Tsavorite.core
                     // This assignment also allocates the slot in ObjectIdMap, overwriting the int* slot at keyAddress
                     // (which held the high 32 bits of the on-disk key length per R11). The raw RDH KeyLength is restored
                     // to ObjectIdSize by OnObjectReadComplete below.
+                    if (keyLength < 0)
+                    {
+                        throw new TsavoriteException($"ReadRecordObjects found an invalid overflow key length {keyLength}");
+                    }
+
                     logRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
                     keyWasSet = true;
-                    _ = Read(logRecord.KeyOverflow.Span);
+                    if (Read(logRecord.KeyOverflow.Span) != keyLength)
+                    {
+                        throw new TsavoriteException("ReadRecordObjects reached the end of the object log while reading the overflow key");
+                    }
                     if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, logRecord))
                     {
                         // Release the key, and clear the value field, which still holds the on-disk length rather than an ObjectId,
@@ -127,8 +135,16 @@ namespace Tsavorite.core
 
                 if (logRecord.DataHeader.ValueIsOverflow)
                 {
+                    if (valueLength > int.MaxValue)
+                    {
+                        throw new TsavoriteException($"ReadRecordObjects found an invalid overflow value length {valueLength}");
+                    }
+
                     logRecord.ValueOverflow = new OverflowByteArray((int)valueLength, startOffset: 0, endOffset: 0, zeroInit: false);
-                    _ = Read(logRecord.ValueOverflow.Span);
+                    if (Read(logRecord.ValueOverflow.Span) != (int)valueLength)
+                    {
+                        throw new TsavoriteException("ReadRecordObjects reached the end of the object log while reading the overflow value");
+                    }
                 }
                 else if (logRecord.DataHeader.ValueIsObject)
                 {
