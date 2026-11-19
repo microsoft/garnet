@@ -6,6 +6,7 @@ WORKDIR /src
 COPY libs/client/*.csproj libs/client/
 COPY libs/cluster/*.csproj libs/cluster/
 COPY libs/common/*.csproj libs/common/
+COPY libs/diagnostics/*.csproj libs/diagnostics/
 COPY libs/host/*.csproj libs/host/
 COPY libs/server/*.csproj libs/server/
 COPY libs/native/bftree-garnet/*.csproj libs/native/bftree-garnet/
@@ -15,6 +16,7 @@ COPY libs/storage/Tsavorite/cs/src/devices/AzureStorageDevice/*.csproj libs/stor
 COPY main/GarnetServer/*.csproj main/GarnetServer/
 COPY metrics/HdrHistogram/*.csproj metrics/HdrHistogram/
 COPY Directory.Build.props Directory.Build.props
+COPY Directory.Build.targets Directory.Build.targets
 COPY Directory.Packages.props Directory.Packages.props
 COPY Version.props Version.props
 COPY .editorconfig .editorconfig
