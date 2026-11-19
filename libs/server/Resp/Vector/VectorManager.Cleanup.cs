@@ -7,6 +7,7 @@ using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -27,12 +28,14 @@ namespace Garnet.server
         private sealed class PostDropCleanupFunctions : IScanIteratorFunctions
         {
             private readonly StorageSession storageSession;
-            private readonly FrozenSet<ulong> contexts;
+            private readonly FrozenSet<ulong> deleteContexts;
+            private readonly FrozenDictionary<ulong, List<ulong>> copyToContexts;
 
-            public PostDropCleanupFunctions(StorageSession storageSession, HashSet<ulong> contexts)
+            public PostDropCleanupFunctions(StorageSession storageSession, HashSet<ulong> contexts, Dictionary<ulong, List<ulong>> copyToContexts)
             {
-                this.contexts = contexts.ToFrozenSet();
+                this.deleteContexts = contexts.ToFrozenSet();
                 this.storageSession = storageSession;
+                this.copyToContexts = copyToContexts.ToFrozenDictionary();
             }
 
             public void OnException(Exception exception, long numberOfRecords) { }
@@ -63,11 +66,52 @@ namespace Garnet.server
                 // We only store the _first_ context in a batch of related contexts to delete
                 // so mask it down to just the first context
                 var pairedContext = ns & ~(ContextStep - 1);
-                if (!contexts.Contains(pairedContext))
+                if (!deleteContexts.Contains(pairedContext))
                 {
                     // Not a target vector set, ignore
                     cursorRecordResult = CursorRecordResult.Skip;
                     return true;
+                }
+
+                // If we're going to delete, check to see if we need to copy this value over to a different context
+                // before we do so
+                if (copyToContexts.TryGetValue(pairedContext, out var copyTo))
+                {
+                    Span<byte> namespaceSpanRaw = stackalloc byte[sizeof(uint)];
+
+                    foreach (var targetContext in copyTo)
+                    {
+                        var namespaceSpan = namespaceSpanRaw;
+
+                        var updatedContext = targetContext | (ns & (ContextStep - 1));
+                        StoreContextInNamespace(updatedContext, ref namespaceSpan);
+
+                        // Only allow new records, if the target Vector Set already has a key here we want to bail
+                        var input = new VectorInput();
+                        input.CopyOnWrite = VectorInput.CopyOnWriteOperation.DisallowOverwrite;
+                        input.WriteDesiredSize = logRecord.ValueSpan.Length;
+
+                        var output = new VectorOutput();
+                        GCHandle? valuePin = logRecord.IsPinnedValue ? null : logRecord.ValueOverflow.Pin();
+                        try
+                        {
+                            output.SpanByteAndMemory = SpanByteAndMemory.FromPinnedSpan(logRecord.ValueSpan);
+
+                            VectorElementKey copyToKey = new(namespaceSpan, logRecord.KeyBytes);
+
+                            var copyStatus = storageSession.vectorBasicContext.RMW(copyToKey, ref input, ref output);
+                            if (copyStatus.IsPending)
+                            {
+                                VectorOutput ignored = new();
+                                CompletePending(ref copyStatus, ref ignored, ref storageSession.vectorBasicContext);
+                            }
+                        }
+                        finally
+                        {
+                            valuePin?.Free();
+                            output.SpanByteAndMemory.Dispose();
+                        }
+                    }
                 }
 
                 VectorElementKey toDeleteKey = new(namespaceBytes, logRecord.KeyBytes);
@@ -325,7 +369,7 @@ namespace Garnet.server
                         continue;
                     }
 
-                    PostDropCleanupFunctions callbacks = new(cleanupSession.storageSession, needCleanup);
+                    PostDropCleanupFunctions callbacks = new(cleanupSession.storageSession, needCleanup, copyDeletedRecords);
 
                     // Scan whole keyspace and remove any associated data using a snapshot
                     // lookup-based push iterator. This avoids building a parallel tempKv (which
