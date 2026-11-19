@@ -289,13 +289,6 @@ namespace Garnet.server
         {
             result = -1;
 
-            // If same name check return early.
-            if (oldKeySlice.ReadOnlySpan.SequenceEqual(newKeySlice.ReadOnlySpan))
-            {
-                result = 1;
-                return GarnetStatus.OK;
-            }
-
             // Note: RespServerSession.CanServeSlot has already verified the keys are in the same slot
 
             // Use transaction to prevent modifications to old and new keys while rename is in progress
@@ -331,7 +324,8 @@ namespace Garnet.server
             var oldKey = oldKeySlice;
             var newKey = newKeySlice;
 
-            var output = new UnifiedOutput();
+            var oldOutput = new UnifiedOutput();
+            var newOutput = new UnifiedOutput();
             try
             {
                 // UnifiedInput needs to know the keys involved for AOF purposes
@@ -339,20 +333,34 @@ namespace Garnet.server
                 toRecord.InitializeWithArguments(oldKey, newKeySlice);
                 UnifiedInput input = new(RespCommand.RENAME, ref toRecord);
 
-                // Check if new key exists.
-                var status = GET(newKey, ref input, ref output, ref context);
+                // Check if old key exists
+                var oldStatus = GET(oldKey, ref input, ref oldOutput, ref context);
+                if (oldStatus != GarnetStatus.OK)
+                {
+                    return oldStatus;
+                }
 
-                var newExists = status != GarnetStatus.NOTFOUND;
+                // Check if new key exists.
+                var newStatus = GET(newKey, ref input, ref newOutput, ref context);
+
+                var newExists = newStatus != GarnetStatus.NOTFOUND;
                 if (isNX && newExists)
                 {
                     result = 0;             // This is the "oldkey was found" return
                     return GarnetStatus.OK;
                 }
 
+                // Short circuit if keys are the same now that we've validated both keys
+                if (oldKeySlice.ReadOnlySpan.SequenceEqual(newKeySlice.ReadOnlySpan))
+                {
+                    result = 1;
+                    return GarnetStatus.OK;
+                }
+
                 bool newIsVectorSet;
                 if (newExists)
                 {
-                    fixed (byte* recordPtr = output.SpanByteAndMemory.ReadOnlySpan)
+                    fixed (byte* recordPtr = newOutput.SpanByteAndMemory.ReadOnlySpan)
                     {
                         // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
                         var logRecord = new LogRecord(recordPtr, functionsState.transientObjectIdMap);
@@ -365,13 +373,7 @@ namespace Garnet.server
                     newIsVectorSet = false;
                 }
 
-                status = GET(oldKey, ref input, ref output, ref context);
-                if (status != GarnetStatus.OK)
-                {
-                    return status;
-                }
-
-                fixed (byte* recordPtr = output.SpanByteAndMemory.ReadOnlySpan)
+                fixed (byte* recordPtr = oldOutput.SpanByteAndMemory.ReadOnlySpan)
                 {
                     // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
                     var logRecord = new LogRecord(recordPtr, functionsState.transientObjectIdMap);
@@ -403,8 +405,8 @@ namespace Garnet.server
                     input.arg1 = oldIsVectorSet ? VectorManager.RecordType : 0;
 
                     // Copy old record into new key - this happens in all 4 cases
-                    status = SET(newKey, ref input, in logRecord, ref context);
-                    if (status == GarnetStatus.OK)
+                    var copyStatus = SET(newKey, ref input, in logRecord, ref context);
+                    if (copyStatus == GarnetStatus.OK)
                     {
                         result = 1;
 
@@ -445,7 +447,8 @@ namespace Garnet.server
                     txnManager.Commit(true);
                 }
 
-                output.Dispose();
+                oldOutput.Dispose();
+                newOutput.Dispose();
             }
 
             return GarnetStatus.NOTFOUND;
