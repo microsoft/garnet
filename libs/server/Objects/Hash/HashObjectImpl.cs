@@ -293,7 +293,7 @@ namespace Garnet.server
                 bool invalid;
                 try
                 {
-                    invalid = !RespReadUtils.TryReadInt64Safe(ref ptr, ptr + incrSlice.length, out incr, out _, out _, out _, allowLeadingZeros: false);
+                    invalid = !RespReadUtils.TryReadInt64Safe(ref ptr, ptr + incrSlice.length, out incr, out var bytesRead, out _, out _, allowLeadingZeros: false) || bytesRead != (ulong)incrSlice.Length;
                 }
                 catch
                 {
@@ -330,7 +330,7 @@ namespace Garnet.server
                         bool invalid;
                         try
                         {
-                            invalid = !RespReadUtils.TryReadInt64Safe(ref ptrCopy, ptrCopy + hashValueRef.Length, out result, out _, out _, out _, allowLeadingZeros: false);
+                            invalid = !RespReadUtils.TryReadInt64Safe(ref ptrCopy, ptrCopy + hashValueRef.Length, out result, out var bytesRead, out _, out _, allowLeadingZeros: false) || bytesRead != (ulong)incrSlice.Length;
                         }
                         catch
                         {

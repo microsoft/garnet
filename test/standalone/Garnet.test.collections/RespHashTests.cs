@@ -540,6 +540,7 @@ namespace Garnet.test
         [TestCase("01")]
         [TestCase("+1")]
         [TestCase("-0")]
+        [TestCase("1f")]
         public async Task HINCRBYRejectsInvalidIntegersAsync(string by)
         {
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
