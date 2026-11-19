@@ -5,6 +5,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -718,10 +719,16 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Async callback delegate
+        /// Async callback delegate. Only the low byte of <paramref name="result"/> is defined: it is the native one-byte status.
         /// </summary>
         public delegate void AsyncIOCallback(IntPtr context, int result, ulong bytesTransferred);
         IntPtr nativeDevice;
+
+        /// <summary>
+        /// Native code passes and returns an IO status as <c>FASTER::core::Status</c>, a one-byte enum, but the calling
+        /// conventions do not define the rest of the register it arrives in. The status is the low byte alone.
+        /// </summary>
+        static int NativeStatus(int value) => (byte)value;
 
         /// <summary>
         /// Selects the IO backend used by the underlying native device. On Linux,
@@ -778,10 +785,13 @@ namespace Tsavorite.core
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_CreateDir", CallingConvention = CallingConvention.Cdecl)]
         static extern int NativeDevice_CreateDir(IntPtr device, string dir, int deleteExisting);
 
+        // The native functions return a one-byte C++ bool, so only one byte of the return value is defined
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_TryComplete", CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.U1)]
         static extern bool NativeDevice_TryComplete(IntPtr device);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_TryCompleteMine", CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.U1)]
         static extern bool NativeDevice_TryCompleteMine(IntPtr device);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_QueueRun", CallingConvention = CallingConvention.Cdecl)]
@@ -804,6 +814,12 @@ namespace Tsavorite.core
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_RemoveSegment", CallingConvention = CallingConvention.Cdecl)]
         static extern void NativeDevice_RemoveSegment(IntPtr device, ulong segment);
+
+        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_TruncateSegments", CallingConvention = CallingConvention.Cdecl)]
+        static extern int NativeDevice_TruncateSegments(IntPtr device, ulong lowerSegment, ulong newBeginSegment);
+
+        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_GetOpenSegments", CallingConvention = CallingConvention.Cdecl)]
+        static extern int NativeDevice_GetOpenSegments(IntPtr device, out ulong begin, out ulong end);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_GetLastError", CallingConvention = CallingConvention.Cdecl)]
         static extern IntPtr NativeDevice_GetLastError();
@@ -1061,7 +1077,7 @@ namespace Tsavorite.core
             // callbacks to finish before destroying the native device underneath them.
             try
             {
-                result.callback((uint)errorCode, (uint)numBytes, result.context, ioException: default);
+                result.callback((uint)NativeStatus(errorCode), (uint)numBytes, result.context, ioException: default);
             }
             catch (Exception ex)
             {
@@ -1635,6 +1651,8 @@ namespace Tsavorite.core
         /// </remarks>
         public override void Reset()
         {
+            base.Reset();
+
             // Lease the native handle (same protocol as ReadAsync/WriteAsync) so a concurrent
             // Dispose() cannot free it while we are inside the native call. A false result means
             // disposal has begun; no-op.
@@ -1733,7 +1751,7 @@ namespace Tsavorite.core
             {
                 try
                 {
-                    int _result = NativeDevice_ReadAsync(nativeDevice, ((ulong)segmentId << segmentSizeBits) | sourceAddress, destinationAddress, readLength, _callbackDelegate, (IntPtr)offset);
+                    int _result = NativeStatus(NativeDevice_ReadAsync(nativeDevice, ((ulong)segmentId << segmentSizeBits) | sourceAddress, destinationAddress, readLength, _callbackDelegate, (IntPtr)offset));
 
                     if (_result != 0)
                         throw new IOException($"Error reading from log file (status {_result}){FormatNativeError()}", _result);
@@ -1810,7 +1828,7 @@ namespace Tsavorite.core
             {
                 try
                 {
-                    int _result = NativeDevice_WriteAsync(nativeDevice, sourceAddress, ((ulong)segmentId << segmentSizeBits) | destinationAddress, numBytesToWrite, _callbackDelegate, (IntPtr)offset);
+                    int _result = NativeStatus(NativeDevice_WriteAsync(nativeDevice, sourceAddress, ((ulong)segmentId << segmentSizeBits) | destinationAddress, numBytesToWrite, _callbackDelegate, (IntPtr)offset));
 
                     if (_result != 0)
                     {
@@ -1854,6 +1872,22 @@ namespace Tsavorite.core
         /// <see cref="IDevice.RemoveSegment(int)"/>
         /// </summary>
         /// <param name="segment"></param>
+        /// <remarks>
+        /// <para>
+        /// The native device removes only <paramref name="segment"/>, and returns once its file is deleted or emptied:
+        /// <list type="bullet">
+        /// <item>If the device does not hold it open, as when no IO has reached it since the device was created or reset, its file is
+        /// deleted.</item>
+        /// <item>If it is the lowest segment the device holds open, its file is closed and deleted.</item>
+        /// <item>If it is open above the lowest, its file is emptied in place: the device keeps the segments it holds open
+        /// contiguous, so the file is deleted when truncation passes it.</item>
+        /// </list>
+        /// </para>
+        /// <para>
+        /// Older native libraries remove every segment from the lowest they hold open through <paramref name="segment"/>. To remove
+        /// the segments above a given one, use <see cref="TryRemoveSegmentsAbove"/>, which works with either.
+        /// </para>
+        /// </remarks>
         public override void RemoveSegment(int segment)
         {
             if (Volatile.Read(ref disposedFlag) != 0) return;
@@ -1865,7 +1899,6 @@ namespace Tsavorite.core
                     var dev = Volatile.Read(ref nativeDevice);
                     if (dev != IntPtr.Zero)
                     {
-                        // Native owns the open handle; let it close+unlink.
                         NativeDevice_RemoveSegment(dev, (ulong)segment);
                         return;
                     }
@@ -1887,6 +1920,93 @@ namespace Tsavorite.core
             catch { }
         }
 
+        /// <inheritdoc/>
+        /// <remarks>
+        /// <para>
+        /// This does not use <see cref="RemoveSegment"/>, because older native libraries remove every segment from the lowest they
+        /// hold open through the one named, not only that one. Instead, from the highest down, each segment file above
+        /// <paramref name="segment"/> is deleted if the native device does not hold it open, and truncated to zero length if it does.
+        /// </para>
+        /// <para>
+        /// The native device keeps open every segment from the lowest to the highest it has accessed since it was created or
+        /// <see cref="Reset"/>, and an open file must not be deleted: Windows refuses, and on Linux later writes through the open
+        /// handle would go to a file that no longer has a name, and be lost. Truncating it through a separate handle keeps that
+        /// handle valid; the empty file is written again when the log reaches that segment. After <see cref="Reset"/>, which
+        /// <see cref="TsavoriteLog.Initialize"/> calls, the device holds nothing above the tail's segment open, so every file above it
+        /// is deleted.
+        /// </para>
+        /// </remarks>
+        public override bool TryRemoveSegmentsAbove(int segment, out int removed)
+        {
+            removed = 0;
+            if (!TryListSegmentFiles(out var segments))
+                return false;
+
+            var (openBegin, openEnd) = GetOpenSegments();
+            foreach (var above in segments.Where(listed => listed > segment).OrderDescending())
+            {
+                var path = GetSegmentName(above);
+                if (above < openBegin || above >= openEnd)
+                {
+                    try
+                    {
+                        var length = new FileInfo(path).Length;
+                        File.Delete(path);
+                        if (length > 0)
+                            removed++;
+                        continue;
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        continue;
+                    }
+                    catch (IOException)
+                    {
+                        // Still open somewhere, such as a handle that Reset has yet to close on Windows: truncate it instead
+                    }
+                }
+
+                try
+                {
+                    using var file = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+                    if (file.Length == 0)
+                        continue;
+                    file.SetLength(0);
+                    removed++;
+                }
+                catch (FileNotFoundException)
+                {
+                    // The native device deleted it since it was listed
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// The segments whose files the native device holds open, [Begin, End). Every segment counts as open if the native library
+        /// cannot report them, as one built before it could.
+        /// </summary>
+        (long Begin, long End) GetOpenSegments()
+        {
+            if (!TryLease(out int shard))
+                return (0, long.MaxValue);
+            try
+            {
+                var dev = Volatile.Read(ref nativeDevice);
+                if (dev == IntPtr.Zero)
+                    return (0, 0);
+                return NativeDevice_GetOpenSegments(dev, out var begin, out var end) != 0 ? ((long)begin, (long)end) : (0, long.MaxValue);
+            }
+            catch (EntryPointNotFoundException)
+            {
+                return (0, long.MaxValue);
+            }
+            finally
+            {
+                ReleaseLease(shard);
+            }
+        }
+
         /// <summary>
         /// <see cref="IDevice.RemoveSegmentAsync(int, AsyncCallback, IAsyncResult)"/>
         /// </summary>
@@ -1897,6 +2017,64 @@ namespace Tsavorite.core
         {
             RemoveSegment(segment);
             callback(result);
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// One native call removes the range and returns once the files are deleted. It also closes and deletes any segment below
+        /// <paramref name="fromSegment"/> that the native device holds open, as when a read reopened a segment truncated earlier;
+        /// <see cref="RemoveSegment"/> would only empty such a segment's file, since the device keeps the segments it holds open
+        /// contiguous. When that call is unavailable, the base class removes the segments one at a time.
+        /// </remarks>
+        protected override void RemoveSegmentsThroughAsync(int fromSegment, int throughSegment, AsyncCallback callback, IAsyncResult result)
+        {
+            if (TryTruncateInOneNativeCall(fromSegment, throughSegment + 1))
+            {
+                callback(result);
+                return;
+            }
+
+            // This is not a retry of a failed call: the call is unavailable. That happens in two cases, and in both, removing the
+            // segments one at a time, lowest first, through RemoveSegment is correct:
+            // - No native device exists yet, as it is created on the first IO. So no segment file is open, and RemoveSegment
+            //   deletes each file by name.
+            // - The native library is older and lacks NativeDevice_TruncateSegments. A library has that export exactly when its
+            //   RemoveSegment removes only the segment named; an older one's removes every open segment through the one named. So
+            //   removing the segments lowest first removes every open segment below the new begin, reopened ones included.
+            base.RemoveSegmentsThroughAsync(fromSegment, throughSegment, callback, result);
+        }
+
+        /// <summary>
+        /// Remove every segment below <paramref name="newBeginSegment"/> with one native call, also deleting the files from
+        /// <paramref name="lowerSegment"/> up that the native device does not hold open
+        /// </summary>
+        /// <returns>
+        /// False only when that call is unavailable: no native device exists yet, or the native library is older and lacks it. True
+        /// once the call has run, even if it failed: a failure is an exception in native code, such as running out of memory, which
+        /// removing the segments one at a time would meet as well, so it is logged and not retried. True also once disposal has
+        /// begun, when removal does nothing, as in <see cref="RemoveSegment"/>.
+        /// </returns>
+        bool TryTruncateInOneNativeCall(int lowerSegment, int newBeginSegment)
+        {
+            if (Volatile.Read(ref disposedFlag) != 0 || !TryLease(out int shard))
+                return true;
+            try
+            {
+                var dev = Volatile.Read(ref nativeDevice);
+                if (dev == IntPtr.Zero)
+                    return false;
+                if (NativeDevice_TruncateSegments(dev, (ulong)lowerSegment, (ulong)newBeginSegment) == 0)
+                    logger?.LogError("NativeStorageDevice failed to remove the segments below {newBeginSegment}{error}", newBeginSegment, FormatNativeError());
+                return true;
+            }
+            catch (EntryPointNotFoundException)
+            {
+                return false;
+            }
+            finally
+            {
+                ReleaseLease(shard);
+            }
         }
 
         /// <summary>

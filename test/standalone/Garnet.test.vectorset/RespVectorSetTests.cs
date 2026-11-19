@@ -70,8 +70,18 @@ namespace Garnet.test
             ReadOnlySpan<RespCommand> vectorSetCommands = [RespCommand.VADD, RespCommand.VCARD, RespCommand.VDIM, RespCommand.VEMB, RespCommand.VGETATTR, RespCommand.VINFO, RespCommand.VISMEMBER, RespCommand.VLINKS, RespCommand.VRANDMEMBER, RespCommand.VREM, RespCommand.VSETATTR, RespCommand.VSIM, RespCommand.XVCREATE, RespCommand.XVIMPORT];
             foreach (var cmd in vectorSetCommands)
             {
+                var cmdStr = cmd.ToString();
+                object[] args =
+                    cmd switch
+                    {
+                        RespCommand.VCARD or RespCommand.VDIM or RespCommand.VINFO => ["foo"],
+                        RespCommand.VGETATTR or RespCommand.VISMEMBER or RespCommand.VREM => ["foo", "bar"],
+                        RespCommand.VSETATTR => ["foo", "bar", "fizz"],
+                        _ => [],
+                    };
+
                 // Should all fault before any validation
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(cmd.ToString()));
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(cmdStr, args));
                 ClassicAssert.AreEqual("ERR Vector Set (preview) commands are not enabled", exc.Message);
             }
         }

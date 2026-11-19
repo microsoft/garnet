@@ -110,6 +110,8 @@ class File {
  public:
   core::Status Close();
   core::Status Delete();
+  /// Truncates the file to zero length through its open descriptor, which stays valid.
+  core::Status Empty();
 
   uint64_t size() const {
     struct stat stat_buffer;
