@@ -512,7 +512,7 @@ namespace Garnet.server
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SetPop<TGarnetApi>(ref TGarnetApi storageApi)
+        private bool SetPop<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             if (parseState.Count < 1 || parseState.Count > 2)
@@ -545,6 +545,12 @@ namespace Garnet.server
             {
                 case GarnetStatus.OK:
                     // Process output
+                    if (countParameter == 0)
+                    {
+                        WriteEmptySet();
+                        break;
+                    }
+
                     ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:

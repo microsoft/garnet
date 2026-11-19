@@ -873,6 +873,19 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
+                    if (paramCount == 0)
+                    {
+                        if (includedCount)
+                        {
+                            WriteEmptyArray();
+                        }
+                        else
+                        {
+                            WriteNull();
+                        }
+                        break;
+                    }
+
                     ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:

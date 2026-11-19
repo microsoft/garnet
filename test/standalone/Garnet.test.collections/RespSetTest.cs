@@ -1711,10 +1711,26 @@ namespace Garnet.test
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
             var db = redis.GetDatabase();
 
+            // WRONGTYPE even with 0 COUNT
             ClassicAssert.IsTrue(await db.StringSetAsync("foo", "bar").ConfigureAwait(false));
 
             var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync(cmd, ["foo", "0"]));
             ClassicAssert.IsTrue(exc.Message.StartsWith("WRONGTYPE "));
+
+            // COUNT 0 works on the correct types
+            switch (cmd[0])
+            {
+                case 'S': ClassicAssert.IsTrue(await db.SetAddAsync("fizz", "buzz").ConfigureAwait(false)); break;
+                case 'H': await db.HashSetAsync("fizz", [new("buzz", "hello")]).ConfigureAwait(false); break;
+                case 'Z': ClassicAssert.AreEqual(1, await db.SortedSetAddAsync("fizz", [new("buzz", 1)]).ConfigureAwait(false)); break;
+                default: ClassicAssert.Fail("Unexpected command type"); break;
+            }
+
+            var res = (string[])await db.ExecuteAsync(cmd, ["fizz", "0"]).ConfigureAwait(false);
+            ClassicAssert.AreEqual(0, res.Length);
+
+            // Check the command stream is not desynced
+            await db.PingAsync().ConfigureAwait(false);
         }
 
 
