@@ -397,10 +397,11 @@ namespace Garnet.server
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
 
             // A tombstone append can return NOTFOUND for immutable or on-disk records.
-            // Check prior existence without copying the value.
+            // Check prior existence without copying the value to the output, log tail, or read cache.
             VectorInput input = new() { ReadDesiredSize = -1 };
             VectorOutput output = new();
-            var status = ctx.Read(keyWithNamespace, ref input, ref output);
+            var readOptions = new ReadOptions { CopyOptions = ReadCopyOptions.None };
+            var status = ctx.Read(keyWithNamespace, ref input, ref output, ref readOptions);
             if (status.IsPending)
             {
                 CompletePending(ref status, ref output, ref ctx);
