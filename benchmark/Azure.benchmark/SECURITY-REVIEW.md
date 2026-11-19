@@ -48,8 +48,8 @@ copy-paste-risky configuration defaults, not exploitable vulnerabilities.
    removed along with its docs (`New-GitHubPat.ps1` helper, `ghclone`, `private`
    visibility). This also eliminates the credential-in-URL / credential-in-`.git/config`
    exposure flagged in review. The Key Vault still stores the VMSS SSH private key
-   (`vmss-ssh-private`) and the tools SAS URL (`tools-sas-url`); those are unrelated
-   and unchanged.
+   (`vmss-ssh-private`), which is unrelated and unchanged. The tools bundle is
+   downloaded with the VMSS managed identity; no tools SAS URL is stored.
 
 ## Placeholders that MUST be filled before deploying
 
