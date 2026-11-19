@@ -453,8 +453,6 @@ namespace Garnet.server
             }
 
             var status = GET(keys[0], out var first, ref objectContext);
-            if (status == GarnetStatus.NOTFOUND)
-                return GarnetStatus.OK;
             if (status == GarnetStatus.WRONGTYPE)
                 return GarnetStatus.WRONGTYPE;
 
@@ -468,21 +466,9 @@ namespace Garnet.server
 
                 output = new HashSet<byte[]>(firstObject.Set, ByteArrayComparer.Instance);
             }
-            else
-            {
-                return GarnetStatus.OK;
-            }
-
 
             for (var i = 1; i < keys.Length; i++)
             {
-                // intersection of anything with empty set is empty set
-                if (output.Count == 0)
-                {
-                    output.Clear();
-                    return GarnetStatus.OK;
-                }
-
                 status = GET(keys[i], out var next, ref objectContext);
                 if (status == GarnetStatus.WRONGTYPE)
                     return GarnetStatus.WRONGTYPE;
@@ -499,7 +485,6 @@ namespace Garnet.server
                 else
                 {
                     output.Clear();
-                    return GarnetStatus.OK;
                 }
             }
 
@@ -885,8 +870,6 @@ namespace Garnet.server
 
             // first SetObject
             var status = GET(keys[0], out var first, ref objectContext);
-            if (status == GarnetStatus.NOTFOUND)
-                return GarnetStatus.OK;
             if (status == GarnetStatus.WRONGTYPE)
                 return GarnetStatus.WRONGTYPE;
 
@@ -900,10 +883,6 @@ namespace Garnet.server
 
                 output = new HashSet<byte[]>(firstObject.Set, ByteArrayComparer.Instance);
             }
-            else
-            {
-                return GarnetStatus.OK;
-            }
 
             // after SetObjects
             for (var i = 1; i < keys.Length; i++)
@@ -911,6 +890,7 @@ namespace Garnet.server
                 status = GET(keys[i], out var next, ref objectContext);
                 if (status == GarnetStatus.WRONGTYPE)
                     return GarnetStatus.WRONGTYPE;
+
                 if (status == GarnetStatus.OK)
                 {
                     if (next.GarnetObject is not SetObject nextObject)

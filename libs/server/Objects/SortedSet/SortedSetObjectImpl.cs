@@ -96,34 +96,33 @@ namespace Garnet.server
 
             var options = SortedSetAddOption.None;
             var currTokenIdx = 0;
-            var parsedOptions = false;
 
             var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             try
             {
+                // Parse options if present
+                if (!input.parseState.TryGetDouble(currTokenIdx, out _))
+                {
+                    if (!GetOptions(ref input, ref currTokenIdx, out options, ref writer))
+                        return;
+                }
+
+                // Validate scores before we apply any of them
+                for (var ix = currTokenIdx; ix < input.parseState.Count; ix += 2)
+                {
+                    if (!input.parseState.TryGetDouble(ix, out _))
+                    {
+                        writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                        return;
+                    }
+                }
+
+                // Apply updates
                 while (currTokenIdx < input.parseState.Count)
                 {
-                    // Try to parse a Score field
-                    if (!input.parseState.TryGetDouble(currTokenIdx, out var score))
-                    {
-                        // Try to get and validate options before the Score field, if any
-                        if (!parsedOptions)
-                        {
-                            parsedOptions = true;
-                            if (!GetOptions(ref input, ref currTokenIdx, out options, ref writer))
-                                return;
-                            continue; // retry after parsing options
-                        }
-                        else
-                        {
-                            // Invalid Score encountered
-                            writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
-                            return;
-                        }
-                    }
-
-                    parsedOptions = true;
+                    // Parse a Score field
+                    var score = input.parseState.GetDouble(currTokenIdx);
                     currTokenIdx++;
 
                     // Member

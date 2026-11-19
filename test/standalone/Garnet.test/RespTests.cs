@@ -3691,7 +3691,7 @@ namespace Garnet.test
         public void SingleRenameWithOldKeyAndNewKeyAsSame()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
+            var db = redis.GetDatabase();
             var origValue = "test1";
             var key = "key1";
             db.StringSet(key, origValue);
@@ -3919,7 +3919,7 @@ namespace Garnet.test
 
             var result = db.KeyRename(key, key, When.NotExists);
 
-            ClassicAssert.IsTrue(result);
+            ClassicAssert.IsFalse(result);
             string retValue = db.StringGet(key);
             ClassicAssert.AreEqual(origValue, retValue);
         }
@@ -3962,6 +3962,27 @@ namespace Garnet.test
         }
 
         #endregion
+
+        [Test]
+        public async Task RenameValidationAsync()
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            //await using var redis = await ConnectionMultiplexer.ConnectAsync("127.0.0.1:6379").ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            //db.KeyDelete("foo");
+            //db.KeyDelete("fizz");
+
+            ClassicAssert.IsTrue(await db.StringSetAsync("foo", "bar").ConfigureAwait(false));
+
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("RENAME", "fizz", "fizz"));
+            ClassicAssert.AreEqual("ERR no such key", exc0.Message);
+
+            ClassicAssert.IsFalse(await db.KeyRenameAsync("foo", "foo", When.NotExists).ConfigureAwait(false));
+
+            var exc1 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("RENAMENX", "fizz", "foo"));
+            ClassicAssert.AreEqual("ERR no such key", exc1.Message);
+        }
 
         [Test]
         public void CanSelectCommand()
@@ -5426,6 +5447,20 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task GETRANGEIntOverflowClampAsync()
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            ClassicAssert.IsTrue(await db.StringSetAsync("foo", "123").ConfigureAwait(false));
+
+            ClassicAssert.AreEqual("123", await db.StringGetRangeAsync("foo", 0, 1 + (long)int.MaxValue).ConfigureAwait(false));
+
+            var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("GETRANGE", "foo", "0", "9223372036854775808"));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", exc.Message);
+        }
+
+        [Test]
         public void SetRangeTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -5506,6 +5541,20 @@ namespace Garnet.test
             resp = db.StringGet(key);
             ClassicAssert.AreEqual(value, resp);
             ClassicAssert.IsTrue(db.KeyDelete(key));
+        }
+
+        [Test]
+        public async Task EmptySetRangeIgnoredAsync()
+        {
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = connection.GetDatabase();
+
+            ClassicAssert.IsTrue(await db.StringSetAsync("foo", "bar").ConfigureAwait(false));
+            ClassicAssert.AreEqual(3, await db.StringSetRangeAsync("foo", 8, "").ConfigureAwait(false));
+            ClassicAssert.AreEqual(3, await db.StringLengthAsync("foo").ConfigureAwait(false));
+
+            ClassicAssert.AreEqual(0, await db.StringSetRangeAsync("fizz", 8, "").ConfigureAwait(false));
+            ClassicAssert.IsFalse(await db.KeyExistsAsync("fizz").ConfigureAwait(false));
         }
 
         /// <summary>
