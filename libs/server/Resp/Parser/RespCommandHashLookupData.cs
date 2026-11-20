@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -415,6 +415,7 @@ namespace Garnet.server
             ("SETNAME", RespCommand.CLIENT_SETNAME),
             ("SETINFO", RespCommand.CLIENT_SETINFO),
             ("UNBLOCK", RespCommand.CLIENT_UNBLOCK),
+            ("REPLY", RespCommand.CLIENT_REPLY),
         ];
 
         private static readonly (string Name, RespCommand Command)[] AclSubcommands =
@@ -507,3 +508,4 @@ namespace Garnet.server
         #endregion
     }
 }
+

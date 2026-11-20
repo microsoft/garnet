@@ -590,7 +590,7 @@
         "Arity": -3,
         "Flags": "Admin, Loading, NoScript, Stale",
         "AclCategories": "Admin, Connection, Dangerous, Slow"
-      }
+      },{"Command": "CLIENT_REPLY", "Name": "CLIENT|REPLY", "Arity": 2, "Flags": "Loading, NoScript, Stale", "AclCategories": "Connection, Slow"}
     ]
   },
   {
