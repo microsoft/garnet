@@ -22,6 +22,8 @@ namespace Tsavorite.core
             internal int startOffset, endOffset;
         }
 
+        internal static readonly int MaxDataLength = System.Array.MaxLength - OverflowHeader.Size;
+
         internal readonly byte[] Array { get; init; }
 
         internal readonly bool IsEmpty => Array is null;
@@ -102,6 +104,9 @@ namespace Tsavorite.core
 
         internal OverflowByteArray(int length, int startOffset, int endOffset, bool zeroInit)
         {
+            if ((uint)length > MaxDataLength)
+                throw new ArgumentOutOfRangeException(nameof(length), $"Overflow data length must be between 0 and {MaxDataLength}");
+
             // Allocate with enough extra space for the metadata (offset from start and end)
             Array = !zeroInit
                 ? GC.AllocateUninitializedArray<byte>(length + OverflowHeader.Size)
