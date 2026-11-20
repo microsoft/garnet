@@ -311,6 +311,7 @@ namespace Garnet.server
         CLIENT_SETNAME,
         CLIENT_SETINFO,
         CLIENT_UNBLOCK,
+        CLIENT_REPLY,
 
         MONITOR,
         MODULE,
@@ -497,6 +498,7 @@ namespace Garnet.server
             RespCommand.CLIENT_SETNAME,
             RespCommand.CLIENT_SETINFO,
             RespCommand.CLIENT_UNBLOCK,
+            RespCommand.CLIENT_REPLY,
             // Command
             RespCommand.COMMAND,
             RespCommand.COMMAND_COUNT,

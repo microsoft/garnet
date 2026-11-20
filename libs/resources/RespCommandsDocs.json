@@ -1216,7 +1216,7 @@
             ]
           }
         ]
-      }
+      },{"Command": "CLIENT_REPLY", "Name": "CLIENT|REPLY", "Summary": "Instruct the server whether to reply to commands.", "Group": "Connection", "Complexity": "O(1)", "Arguments": [{"TypeDiscriminator": "RespCommandBasicArgument", "Name": "reply-mode", "DisplayText": "ON|OFF|SKIP", "Type": "String"}]}
     ]
   },
   {
