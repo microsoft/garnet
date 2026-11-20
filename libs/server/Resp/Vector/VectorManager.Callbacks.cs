@@ -792,11 +792,11 @@ namespace Garnet.server
                 }
 
                 Span<byte> outputTempSpace = stackalloc byte[128];
-                var output = SpanByteAndMemory.FromPinnedSpan(outputTempSpace);
+                var cowReadOutput = SpanByteAndMemory.FromPinnedSpan(outputTempSpace);
                 try
                 {
                     // This read won't race because any COW'd Vector Set is immutable
-                    var inOlder = ReadSizeUnknown(context, keyWithoutNamespace, ref output, allowContextTraveral: true, skipContextsInChain: 1);
+                    var inOlder = ReadSizeUnknown(context, keyWithoutNamespace, ref cowReadOutput, allowContextTraveral: true, skipContextsInChain: 1);
 
                     var needCenotaph = inOlder;
                     if (needCenotaph)
@@ -822,16 +822,31 @@ namespace Garnet.server
                 }
                 catch
                 {
-                    output.Dispose();
+                    cowReadOutput.Dispose();
                 }
             }
 
-            var status = ctx.Delete(keyWithNamespace);
-            Debug.Assert(!status.IsPending, "Deletes should never go async");
+            // A tombstone append can return NOTFOUND for immutable or on-disk records.
+            // Check prior existence without copying the value to the output, log tail, or read cache.
+            VectorInput input = new() { ReadDesiredSize = -1 };
+            VectorOutput output = new();
+            var readOptions = new ReadOptions { CopyOptions = ReadCopyOptions.None };
+            var status = ctx.Read(keyWithNamespace, ref input, ref output, ref readOptions);
+            if (status.IsPending)
+            {
+                CompletePending(ref status, ref output, ref ctx);
+            }
+
+            var found = status.IsCompletedSuccessfully && status.Found;
+            if (found)
+            {
+                status = ctx.Delete(keyWithNamespace);
+                Debug.Assert(!status.IsPending, "Deletes should never go async");
+            }
 
             RestoreKeyLengthPrefix(keyData, keyLength);
 
-            if (status.IsCompletedSuccessfully && status.Found)
+            if (found && status.IsCompletedSuccessfully)
             {
                 return 1;
             }
