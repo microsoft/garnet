@@ -1197,6 +1197,82 @@ namespace Garnet.test.cluster
         }
 
         [Test]
+        public async Task ShallowCopyVectorSetRejectedKeysMigrationAsync()
+        {
+            const int ShardCount = 3;
+
+            _ = await SimpleSetupClusterAsync(ShardCount, primaryCount: -1, replicaCount: -1).ConfigureAwait(false);
+
+            var sourceNodeIndex = 1;
+            var targetNodeIndex = 2;
+            var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, NullLogger.Instance);
+            var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, NullLogger.Instance);
+
+            var key = Encoding.ASCII.GetBytes("{abc}a");
+            List<(byte[] Key, byte[] Data)> vectors = [];
+            List<byte[]> attributes = [];
+
+            var _workingSlot = ClusterTestUtils.HashSlot(key);
+            ClassicAssert.AreEqual(7638, _workingSlot);
+
+            Random rand = new(2026_11_20_00);
+
+            // Build a Vector Set
+            {
+                var elem = new byte[4];
+                rand.NextBytes(elem);
+
+                var data = new byte[75];
+                rand.NextBytes(data);
+
+                var attrs = new byte[16];
+                rand.NextBytes(attrs);
+
+                var addRes = (int)context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), "VADD", [key, "XB8", data, elem, "XPREQ8", "SETATTR", attrs]);
+                ClassicAssert.AreEqual(1, addRes);
+
+                vectors.Add((elem, data));
+                attributes.Add(attrs);
+            }
+
+            // Make a copy
+            var copyKey = Encoding.ASCII.GetBytes("{abc}copy");
+
+            ClassicAssert.AreEqual("OK", (string)await context.clusterTestUtils.ExecuteAsync(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), "XVSCOPY", [key, copyKey]).ConfigureAwait(false));
+
+            // Start migration
+            var respImport = context.clusterTestUtils.SetSlot(targetNodeIndex, _workingSlot, "IMPORTING", sourceNodeId);
+            ClassicAssert.AreEqual(respImport, "OK");
+
+            var respMigrate = context.clusterTestUtils.SetSlot(sourceNodeIndex, _workingSlot, "MIGRATING", targetNodeId);
+            ClassicAssert.AreEqual(respMigrate, "OK");
+
+            // Check key count
+
+            // Enumerate keys in slots
+            var keysInSlot = context.clusterTestUtils.GetKeysInSlot(sourceNodeIndex, _workingSlot, 2);
+
+            // Migrate keys, but each should reject since there are copies involved
+            var toMigrate = keysInSlot.ToList();
+            foreach (var migrateKey in toMigrate)
+            {
+                var target = context.clusterTestUtils.GetEndPoint(targetNodeIndex);
+                ICollection<object> args = [
+                    target.Address.ToString(),
+                    target.Port,
+                    "",
+                    0,
+                    -1,
+                    "KEYS",
+                    migrateKey
+                ];
+
+                var err = (string)await context.clusterTestUtils.ExecuteAsync(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), "MIGRATE", args).ConfigureAwait(false);
+                ClassicAssert.AreEqual("IOERR Migrate keys failed.", err);
+            }
+        }
+
+        [Test]
         public void VectorSetMigrateManyBySlot()
         {
             // Test migrating several vector sets from one primary to another primary, which already has vectors sets of its own
