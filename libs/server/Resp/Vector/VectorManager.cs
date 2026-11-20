@@ -1991,7 +1991,11 @@ namespace Garnet.server
 
             var sourceContextArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref sourceContext, 1)));
 
-            reusableParseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg, contextArg, indexPtrArg, expirationTicksArg, startPointIdArg, sourceContextArg]);
+            // Record these two for replication purposes
+            var sourceKeyArg = PinnedSpanByte.FromPinnedSpan(sourceKey);
+            var destKeyArg = PinnedSpanByte.FromPinnedSpan(destKey);
+
+            reusableParseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg, contextArg, indexPtrArg, expirationTicksArg, startPointIdArg, sourceContextArg, sourceKeyArg, destKeyArg]);
 
             // Create the shallow copy index key
             var input = new StringInput(RespCommand.XVSCOPY, ref reusableParseState, arg1: CreateIndexArg);

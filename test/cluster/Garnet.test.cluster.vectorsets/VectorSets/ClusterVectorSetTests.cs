@@ -1678,20 +1678,34 @@ namespace Garnet.test.cluster
             }
 
             // Query expected results
-            Dictionary<(string Key, byte[] Data), (byte[] Elem, byte[] Attr, float Score)> expected = new(StringAndByteArrayComparer.Instance);
+            Dictionary<(string Key, byte[] Data), List<(byte[] Elem, byte[] Attr, float Score)>> expected = new(StringAndByteArrayComparer.Instance);
 
             foreach (var (key, _, _, data, _) in primary0Keys)
             {
                 var sim0Res = (byte[][])await context.clusterTestUtils.ExecuteAsync(primary0, "VSIM", [key, "XB8", data, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
-                ClassicAssert.AreEqual(3, sim0Res.Length);
-                expected.Add((key, data), (sim0Res[0], sim0Res[2], float.Parse(Encoding.ASCII.GetString(sim0Res[1]))));
+                ClassicAssert.IsTrue(sim0Res.Length >= 3);
+
+                var res = new List<(byte[] Elem, byte[] Attr, float Score)>();
+                for (var i = 0; i < sim0Res.Length; i += 3)
+                {
+                    res.Add((sim0Res[0], sim0Res[2], float.Parse(Encoding.ASCII.GetString(sim0Res[1]))));
+                }
+
+                expected.Add((key, data), res);
             }
 
             foreach (var (key, _, _, data, _) in primary1Keys)
             {
                 var sim1Res = (byte[][])await context.clusterTestUtils.ExecuteAsync(primary1, "VSIM", [key, "XB8", data, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
-                ClassicAssert.AreEqual(3, sim1Res.Length);
-                expected.Add((key, data), (sim1Res[0], sim1Res[2], float.Parse(Encoding.ASCII.GetString(sim1Res[1]))));
+                ClassicAssert.IsTrue(sim1Res.Length >= 3);
+
+                var res = new List<(byte[] Elem, byte[] Attr, float Score)>();
+                for (var i = 0; i < sim1Res.Length; i += 3)
+                {
+                    res.Add((sim1Res[i + 0], sim1Res[i + 2], float.Parse(Encoding.ASCII.GetString(sim1Res[i + 1]))));
+                }
+
+                expected.Add((key, data), res);
             }
 
             context.clusterTestUtils.WaitForReplicaAofSync(Primary0Index, Secondary0Index);
@@ -1719,13 +1733,19 @@ namespace Garnet.test.cluster
             foreach (var (key, _, _, data, _) in primary0Keys.Concat(primary1Keys))
             {
                 var migrateSimRes = (byte[][])await context.clusterTestUtils.ExecuteAsync(primary1, "VSIM", [key, "XB8", data, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
-                ClassicAssert.AreEqual(3, migrateSimRes.Length);
 
-                var (elem, attr, score) = expected[(key, data)];
+                var expectedRes = expected[(key, data)];
 
-                ClassicAssert.IsTrue(elem.SequenceEqual(migrateSimRes[0]));
-                ClassicAssert.AreEqual(score, float.Parse(Encoding.ASCII.GetString(migrateSimRes[1])));
-                ClassicAssert.IsTrue(attr.SequenceEqual(migrateSimRes[2]));
+                ClassicAssert.AreEqual(3 * expectedRes.Count, migrateSimRes.Length);
+
+                for (var i = 0; i < migrateSimRes.Length; i += 3)
+                {
+                    var (elem, attr, score) = expectedRes[i / 3];
+
+                    ClassicAssert.IsTrue(elem.SequenceEqual(migrateSimRes[i + 0]));
+                    ClassicAssert.AreEqual(score, float.Parse(Encoding.ASCII.GetString(migrateSimRes[i + 1])));
+                    ClassicAssert.IsTrue(attr.SequenceEqual(migrateSimRes[i + 2]));
+                }
             }
 
             // Check no longer available on old primary or secondary
@@ -1835,13 +1855,18 @@ namespace Garnet.test.cluster
 
             foreach (var (key, data, migrateSimRes) in replicated)
             {
-                ClassicAssert.AreEqual(3, migrateSimRes.Length, $"Unexpected VSIM reply length for key '{key}'");
+                var expectedRes = expected[(key, data)];
 
-                var (elem, attr, score) = expected[(key, data)];
+                ClassicAssert.AreEqual(3 * expectedRes.Count, migrateSimRes.Length, $"Unexpected VSIM reply length for key '{key}'");
 
-                ClassicAssert.IsTrue(elem.SequenceEqual(migrateSimRes[0]));
-                ClassicAssert.AreEqual(score, float.Parse(Encoding.ASCII.GetString(migrateSimRes[1])));
-                ClassicAssert.IsTrue(attr.SequenceEqual(migrateSimRes[2]));
+                for (var i = 0; i < migrateSimRes.Length; i += 3)
+                {
+                    var (elem, attr, score) = expectedRes[i / 3];
+
+                    ClassicAssert.IsTrue(elem.SequenceEqual(migrateSimRes[i + 0]));
+                    ClassicAssert.AreEqual(score, float.Parse(Encoding.ASCII.GetString(migrateSimRes[i + 1])));
+                    ClassicAssert.IsTrue(attr.SequenceEqual(migrateSimRes[i + 2]));
+                }
             }
         }
 
