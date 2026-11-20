@@ -46,7 +46,8 @@ namespace Garnet.cluster
 
         public bool IsRecovering => currentRecoveryStatus is not (RecoveryStatus.NoRecovery or RecoveryStatus.ReadRole);
 
-        public bool CannotStreamAOF => IsRecovering && currentRecoveryStatus != RecoveryStatus.CheckpointRecoveredAtReplica;
+        public bool CannotStreamAOF => currentRecoveryStatus is not
+            (RecoveryStatus.NoRecovery or RecoveryStatus.ReadRole or RecoveryStatus.CheckpointRecoveredAtReplica);
 
         private AofAddress replicationOffset;
 
