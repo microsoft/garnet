@@ -1599,7 +1599,8 @@ namespace Tsavorite.core
                 // Combine low 12 bits (RDH) with next 32 bits (int* slot at keyAddress).
                 var keyHighBits = (ulong)(uint)*(int*)keyAddress;
                 var combinedKeyLength = (keyHighBits << RecordDataHeader.kKeyLengthBits) | (ulong)(uint)dataHeader.GetKeyLengthRaw();
-                Debug.Assert(combinedKeyLength <= int.MaxValue, $"Key length {combinedKeyLength} exceeds int.MaxValue");
+                if (combinedKeyLength > int.MaxValue)
+                    throw new TsavoriteException($"Overflow key length {combinedKeyLength} exceeds the supported maximum of {int.MaxValue}");
                 keyLength = (int)combinedKeyLength;
             }
             else // KeyIsInline is true; keyLength will be ignored
