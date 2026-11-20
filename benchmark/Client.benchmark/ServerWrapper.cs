@@ -116,11 +116,7 @@ namespace Client.benchmark
                 new OidCollection { new("1.3.6.1.5.5.7.3.1") }, true));
             using var generated = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(1));
             // Schannel requires a PKCS#12-imported private key rather than the ephemeral generated key.
-#if NET9_0_OR_GREATER
             return X509CertificateLoader.LoadPkcs12(generated.Export(X509ContentType.Pkcs12), password: null);
-#else
-            return new X509Certificate2(generated.Export(X509ContentType.Pkcs12));
-#endif
         }
 
         /// <summary>

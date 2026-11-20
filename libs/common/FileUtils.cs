@@ -159,7 +159,7 @@ namespace Garnet.common
                     Assembly assembly;
                     try
                     {
-                        // NET9 seems to hold the assembly locked if it's opened from the path directly, causing tests to fail.
+                        // Sometimes .NET seems to hold the assembly locked if it's opened from the path directly, causing tests to fail.
                         using var fileStream = new FileStream(path, FileMode.Open, FileAccess.Read);
                         assembly = AssemblyLoadContext.Default.LoadFromStream(fileStream);
                     }
