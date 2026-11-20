@@ -4835,6 +4835,32 @@ namespace Garnet.test
         }
 
         [Test]
+        public void ZRandMemberZeroCountValidatesTypeAndKeepsSessionAlive(
+            [Values(RedisProtocol.Resp2, RedisProtocol.Resp3)] RedisProtocol protocol, [Values] bool withScores)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
+            var db = redis.GetDatabase();
+            db.SortedSetAdd("sorted", "member", 1);
+            db.StringSet("string", "value");
+            db.ListRightPush("list", "member");
+
+            foreach (var key in new[] { "sorted", "missing", "string", "list" })
+            {
+                var args = withScores ? new object[] { key, 0, "WITHSCORES" } : [key, 0];
+                if (key == "string" || key == "list")
+                {
+                    var error = ClassicAssert.Throws<RedisServerException>(() => db.Execute("ZRANDMEMBER", args));
+                    ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE), error.Message);
+                }
+                else
+                {
+                    ClassicAssert.IsEmpty((RedisResult[])db.Execute("ZRANDMEMBER", args));
+                }
+                ClassicAssert.AreEqual("PONG", (string)db.Execute("PING"));
+            }
+        }
+
+        [Test]
         public void CanUseZRandMemberWithOverflowingCount()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
@@ -5658,6 +5684,52 @@ namespace Garnet.test
             // ZINTER result should obey sortedset order invariant, 
             var expectedResponse = "*4\r\n$1\r\nf\r\n$1\r\n8\r\n$1\r\ne\r\n$1\r\n9";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public async Task MultiAddValidationAsync()
+        {
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = connection.GetDatabase();
+
+            ClassicAssert.AreEqual(1, await db.SortedSetAddAsync("foo", [new("a", 1)]).ConfigureAwait(false));
+
+            var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("ZADD", ["foo", "2", "a", "bad", "b"]));
+            ClassicAssert.AreEqual("ERR value is not a valid float", exc.Message);
+
+            ClassicAssert.AreEqual(1.0, await db.SortedSetScoreAsync("foo", "a").ConfigureAwait(false));
+        }
+
+        [Test]
+        [TestCase("ZUNIONSTORE")]
+        [TestCase("ZINTERSTORE")]
+        public async Task ForbidStoreNaNAsync(string command)
+        {
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = connection.GetDatabase();
+
+            ClassicAssert.AreEqual(1, await db.SortedSetAddAsync("foo", [new("bar", double.PositiveInfinity)]).ConfigureAwait(false));
+            ClassicAssert.AreEqual(1, (int)await db.ExecuteAsync(command, ["fizz", "1", "foo", "WEIGHTS", "0"]).ConfigureAwait(false));
+            ClassicAssert.AreEqual(0, await db.SortedSetScoreAsync("fizz", "bar").ConfigureAwait(false));
+        }
+
+        [Test]
+        public async Task ZMPOPEmptyStringAsync()
+        {
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = connection.GetDatabase();
+
+            ClassicAssert.AreEqual(1, await db.SortedSetAddAsync("", [new("foo", 1)]).ConfigureAwait(false));
+
+            var resOuter = await db.SortedSetPopAsync([""], 1, Order.Ascending).ConfigureAwait(false);
+            ClassicAssert.AreEqual("", (string)resOuter.Key);
+
+            var res = resOuter.Entries;
+            ClassicAssert.AreEqual(1, res.Length);
+            ClassicAssert.AreEqual("foo", res[0].Element);
+            ClassicAssert.AreEqual(1.0, res[0].Score);
+
+            ClassicAssert.AreEqual(0, await db.SortedSetLengthAsync("").ConfigureAwait(false));
         }
     }
 

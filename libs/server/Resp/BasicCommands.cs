@@ -61,9 +61,6 @@ namespace Garnet.server
         bool NetworkGET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.Count != 1)
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GET));
-
             // Only take the scatter-gather path when the next command is itself a GET to batch with.
             // A single (request/response) GET, or a GET followed by a non-GET, falls through to the simple
             // path so it is as cheap as with sg-get off (no look-ahead, no scatter-gather setup).
@@ -468,6 +465,29 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_STRING_EXCEEDS_MAX_SIZE);
             }
 
+            // Empty update value is equivalent to STRLEN behavior
+            if (value.Length == 0)
+            {
+                var status = storageApi.GET(key, out PinnedSpanByte currentValue);
+
+                switch (status)
+                {
+                    case GarnetStatus.OK:
+                        while (!RespWriteUtils.TryWriteInt32(currentValue.Length, ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                    case GarnetStatus.NOTFOUND:
+                        while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                    case GarnetStatus.WRONGTYPE:
+                        WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                        break;
+                }
+
+                return true;
+            }
+
             var input = new StringInput(RespCommand.SETRANGE, ref parseState, startIdx: 1);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
@@ -499,7 +519,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Validate range
-            if (!parseState.TryGetInt(1, out _) || !parseState.TryGetInt(2, out _))
+            if (!parseState.TryGetLong(1, out _) || !parseState.TryGetLong(2, out _))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }

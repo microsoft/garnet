@@ -249,12 +249,12 @@ namespace Resp.benchmark
         {
             var threadsPerShard = opts.NumThreads.First();
 
-            // In worker pool mode (--pool), load entire DbSize per shard
+            // In fixed worker pool mode (--use-fixed-worker-pool), load entire DbSize per shard
             // In sharded mode, partition DbSize across threads-per-shard
             int keysToLoad;
             int keyOffset;
 
-            if (opts.Pool)
+            if (opts.UseFixedWorkerPool)
             {
                 // Worker pool mode: Load entire DbSize
                 keysToLoad = opts.DbSize;
