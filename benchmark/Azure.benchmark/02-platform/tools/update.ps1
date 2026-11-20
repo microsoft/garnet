@@ -18,8 +18,7 @@ param(
     [switch]$Run,
     [switch]$RunOnly,
     [switch]$Force,
-    [string]$VaultName,
-    [string]$SasSecretName = 'tools-sas-url',
+    [string]$ToolsBlobUrl,
     [switch]$Help
 )
 
@@ -31,14 +30,13 @@ if ($Help -or (-not $Pull -and -not $Fetch -and -not $Copy -and -not $Run -and -
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  -Pull         Pull latest changes from git before copying"
-    Write-Host "  -Fetch        Re-download and unpack a fresh tools tarball from the"
-    Write-Host "                Key Vault SAS URL (no VM redeploy needed)"
+    Write-Host "  -Fetch        Re-download and unpack a fresh tools tarball from storage"
+    Write-Host "                using the VM managed identity (no VM redeploy needed)"
     Write-Host "  -Copy         Copy scripts to deployed locations"
     Write-Host "  -Run          Copy scripts and execute the runcmd section from manifest"
     Write-Host "  -RunOnly      Execute runcmd without copying scripts"
     Write-Host "  -Force        Force pull (git reset --hard) instead of fast-forward"
-    Write-Host "  -VaultName    Key Vault name for -Fetch (default: read from /opt/deploy-actions/keyvault.env)"
-    Write-Host "  -SasSecretName Secret holding the tools SAS URL for -Fetch (default: tools-sas-url)"
+    Write-Host "  -ToolsBlobUrl Tools tarball blob URL for -Fetch (default: read from /opt/deploy-actions/storage.env)"
     Write-Host "  -Help         Show this help message"
     return
 }
@@ -76,17 +74,17 @@ if ($Pull) {
 }
 
 if ($Fetch) {
-    Write-Host "Fetching fresh tools tarball from Key Vault SAS URL..."
+    Write-Host "Fetching fresh tools tarball from storage with the VM managed identity..."
 
-    if (-not $VaultName) {
-        $envFile = '/opt/deploy-actions/keyvault.env'
+    if (-not $ToolsBlobUrl) {
+        $envFile = '/opt/deploy-actions/storage.env'
         if (Test-Path $envFile) {
-            $vn = Select-String -Path $envFile -Pattern '^VAULT_NAME=' | Select-Object -First 1
-            if ($vn) { $VaultName = ($vn.Line -split '=', 2)[1].Trim() }
+            $line = Select-String -Path $envFile -Pattern '^TOOLS_BLOB_URL=' | Select-Object -First 1
+            if ($line) { $ToolsBlobUrl = ($line.Line -split '=', 2)[1].Trim() }
         }
     }
-    if (-not $VaultName) {
-        throw "ERROR: -Fetch requires a Key Vault name (pass -VaultName or set VAULT_NAME in /opt/deploy-actions/keyvault.env)"
+    if (-not $ToolsBlobUrl) {
+        throw "ERROR: -Fetch requires a tools blob URL (pass -ToolsBlobUrl or set TOOLS_BLOB_URL in /opt/deploy-actions/storage.env)"
     }
 
     $extractDir = Split-Path -Parent $ScriptDir
@@ -95,26 +93,22 @@ if ($Fetch) {
     $tarball = "/tmp/tools-$([Environment]::UserName).tar.gz"
     if (Test-Path $tarball) { Remove-Item $tarball -Force -ErrorAction SilentlyContinue }
 
-    # Read the tools SAS URL from Key Vault using the VM's managed identity, then
-    # download and unpack the tarball over the existing tools/ directory. Done in
-    # native PowerShell (Invoke-RestMethod) to avoid shell-quoting pitfalls.
-    $secretUri = "https://$VaultName.vault.azure.net/secrets/$SasSecretName" + '?api-version=7.4'
+    # Storage has Shared Key/SAS disabled: request a Storage token from IMDS and
+    # download with it (requires Storage Blob Data Reader on the VMSS identity).
     $imdsUri = 'http://169.254.169.254/metadata/identity/oauth2/token' +
-        '?api-version=2018-02-01&resource=https://vault.azure.net'
+        '?api-version=2018-02-01&resource=https://storage.azure.com/'
 
     $fetched = $false
     for ($i = 1; $i -le 12; $i++) {
         try {
-            $tokenResp = Invoke-RestMethod -Uri $imdsUri -Headers @{ Metadata = 'true' } -TimeoutSec 10
+            $tokenResp = Invoke-RestMethod -Uri $imdsUri -Headers @{ Metadata = 'true' } -NoProxy -TimeoutSec 10
             $accessToken = $tokenResp.access_token
             if ($accessToken) {
-                $secretResp = Invoke-RestMethod -Uri $secretUri `
-                    -Headers @{ Authorization = "Bearer $accessToken" } -TimeoutSec 15
-                $sasUrl = $secretResp.value
-                if ($sasUrl) {
-                    Invoke-WebRequest -Uri $sasUrl -OutFile $tarball -TimeoutSec 60
-                    if (Test-Path $tarball) { $fetched = $true; Write-Host "  tools bundle fetched"; break }
+                Invoke-WebRequest -Uri $ToolsBlobUrl -OutFile $tarball -TimeoutSec 60 -Headers @{
+                    Authorization  = "Bearer $accessToken"
+                    'x-ms-version' = '2023-11-03'
                 }
+                if (Test-Path $tarball) { $fetched = $true; Write-Host "  tools bundle fetched"; break }
             }
         } catch {
             Write-Host "  attempt ${i}: $($_.Exception.Message)" -ForegroundColor DarkYellow
@@ -123,7 +117,7 @@ if ($Fetch) {
         Start-Sleep -Seconds 5
     }
 
-    if (-not $fetched) { throw "ERROR: -Fetch failed to download the tools tarball from Key Vault" }
+    if (-not $fetched) { throw "ERROR: -Fetch failed to download the tools tarball from $ToolsBlobUrl" }
 
     tar -xzf $tarball -C $extractDir
     if ($LASTEXITCODE -ne 0) { throw "ERROR: -Fetch failed to unpack the tools tarball" }

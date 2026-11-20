@@ -79,53 +79,53 @@ namespace Resp.benchmark
                 startSignal.Wait();
 
                 var sw = Stopwatch.StartNew();
-                var dbSizePerShard = opts.DbSize;
-                var itp = opts.IntraThreadParallelism;
-
                 while (!done && sw.Elapsed < runTime)
                 {
-                    var opStart = Stopwatch.GetTimestamp();
-                    var primaryCount = 0;
-                    var replicaCount = 0;
-
-                    // Issue itp single-key commands (pipelined), routing each independently, then drain.
-                    for (var p = 0; p < itp; p++)
-                    {
-                        var op = SelectOpType();
-                        var key = GenerateKey(dbSizePerShard);
-                        var request = FormatRequest(op, key);
-
-                        var useReplica = ShouldUseReplica(op);
-                        var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
-
-                        fixed (byte* bufPtr = request)
-                        {
-                            client.Send(bufPtr, request.Length, 1);
-                        }
-
-                        if (useReplica && replicaClient != null)
-                            replicaCount++;
-                        else
-                            primaryCount++;
-                    }
-
-                    _ = primaryClient.CompletePendingRequests();
-                    _ = replicaClient?.CompletePendingRequests();
-
-                    var elapsed = Stopwatch.GetTimestamp() - opStart;
-
-                    if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
-                        histogram.RecordValue(elapsed);
-
-                    _ = Interlocked.Add(ref opsCompleted, itp);
-                    _ = Interlocked.Add(ref primaryOps, primaryCount);
-                    _ = Interlocked.Add(ref replicaOps, replicaCount);
+                    ExecuteOnlineLightClientBatch(primaryClient, replicaClient);
                 }
             }
             finally
             {
                 replicaClient?.Dispose();
             }
+        }
+
+        private void ExecuteOnlineLightClientBatch(LightClient primaryClient, LightClient replicaClient)
+        {
+            var opStart = Stopwatch.GetTimestamp();
+            var primaryCount = 0;
+            var replicaCount = 0;
+            var itp = opts.IntraThreadParallelism;
+
+            for (var p = 0; p < itp; p++)
+            {
+                var op = SelectOpType();
+                var key = GenerateKey(opts.DbSize);
+                var request = FormatRequest(op, key);
+                var useReplica = ShouldUseReplica(op);
+                var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
+
+                fixed (byte* bufPtr = request)
+                {
+                    client.Send(bufPtr, request.Length, 1);
+                }
+
+                if (useReplica && replicaClient != null)
+                    replicaCount++;
+                else
+                    primaryCount++;
+            }
+
+            _ = primaryClient.CompletePendingRequests();
+            _ = replicaClient?.CompletePendingRequests();
+
+            var elapsed = Stopwatch.GetTimestamp() - opStart;
+            if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
+                histogram.RecordValue(elapsed);
+
+            _ = Interlocked.Add(ref opsCompleted, itp);
+            _ = Interlocked.Add(ref primaryOps, primaryCount);
+            _ = Interlocked.Add(ref replicaOps, replicaCount);
         }
 
         private void RunOnlineGarnetClientSession(IPEndPoint primaryEndpoint, IPEndPoint replicaEndpoint, ManualResetEventSlim startSignal, TimeSpan runTime)
