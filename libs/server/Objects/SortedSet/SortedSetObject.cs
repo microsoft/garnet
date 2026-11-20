@@ -509,8 +509,13 @@ namespace Garnet.server
 
                 if (addToList)
                 {
+                    // Infinite scores use the Redis spelling, since Utf8Formatter writes "Infinity" and "-Infinity"
+                    if (double.IsPositiveInfinity(item.Value))
+                        items.Add("inf"u8.ToArray());
+                    else if (double.IsNegativeInfinity(item.Value))
+                        items.Add("-inf"u8.ToArray());
                     // Double.TryFormat was prefered to convert the value to UTF8 byte array, but is not available before .net 8
-                    if (Utf8Formatter.TryFormat(item.Value, doubleValueToByteSpan, out var bytesWritten, default))
+                    else if (Utf8Formatter.TryFormat(item.Value, doubleValueToByteSpan, out var bytesWritten, default))
                         items.Add(doubleValueToByteSpan.Slice(0, bytesWritten).ToArray());
                     else
                         items.Add(null);
