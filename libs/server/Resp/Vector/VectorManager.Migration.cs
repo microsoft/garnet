@@ -156,7 +156,8 @@ namespace Garnet.server
                 buildExplorationFactor is 0 or > MaxExplorationFactor ||
                 numLinks is < MinNumLinks or > MaxNumLinks ||
                 (distanceMetric == VectorDistanceMetricType.Invalid || !Enum.IsDefined(distanceMetric)) ||
-                (flags & ~VectorSetFlags.All) != 0;
+                (flags & ~VectorSetFlags.All) != 0 ||
+                (shallowCopyOfContext % ContextStep) != 0;
 
             if (invalidMigrationRecord)
             {
@@ -184,7 +185,6 @@ namespace Garnet.server
                 }
             }
 #endif
-
             // Spin up a new Storage Session is we don't have one
             StorageSession newStorageSession;
             if (ActiveThreadSession == null)
@@ -202,6 +202,17 @@ namespace Garnet.server
 
             try
             {
+                // Update lookup chain before we involve DiskANN
+                if (shallowCopyOfContext != 0)
+                {
+                    lock (this)
+                    {
+                        shallowCopyBackReferences[context] = shallowCopyOfContext;
+                    }
+
+                    UpdateShallowCopyReferences(shallowCopyOfContext);
+                }
+
                 // Prepare as a psuedo-VADD
                 var dimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dimensions, 1)));
                 var reduceDimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
@@ -293,12 +304,6 @@ namespace Garnet.server
                         contextMetadatas[contextIndex].MarkMigrationComplete(contextIndex != 0, contextValue, hashSlot);
 
                         _ = dirtyContextMetadatas.Add(contextIndex);
-
-                        // Update shallow copy back refs once the index is created
-                        if (shallowCopyOfContext != 0)
-                        {
-                            shallowCopyBackReferences[context] = shallowCopyOfContext;
-                        }
                     }
 
                     UpdateContextMetadata(ref ActiveThreadSession.vectorBasicContext);

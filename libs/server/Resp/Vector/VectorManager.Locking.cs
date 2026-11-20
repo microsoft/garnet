@@ -143,8 +143,6 @@ namespace Garnet.server
         /// </summary>
         private static void SetActiveThreadSession(StorageSession storageSession, ReadOnlySpan<byte> indexSpan, ulong? knownContext)
         {
-            const int DefaultLookbackArraySize = 16;
-
             Debug.Assert(knownContext is not null || indexSpan.Length == Index.Size, "Should have one or the other");
             Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
 
@@ -166,35 +164,59 @@ namespace Garnet.server
 
             if (shallowCopyOfContext != 0)
             {
-                var lookupArr = ArrayPool<ulong>.Shared.Rent(DefaultLookbackArraySize);
-                var lookupSpan = lookupArr.AsSpan();
+                UpdateShallowCopyReferences(shallowCopyOfContext);
+            }
+        }
 
-                var curBackRef = shallowCopyOfContext;
-                while (true)
+        /// <summary>
+        /// Repopulate <see cref="ActiveThreadShallowCopyBackReferences"/> with latest info.
+        /// </summary>
+        private static void UpdateShallowCopyReferences(ulong shallowCopyOfContext)
+        {
+            const int DefaultLookbackArraySize = 16;
+
+            Debug.Assert(ActiveThreadSession != null, "Shoud only update if already in a thread session");
+            Debug.Assert(shallowCopyOfContext != 0, "Should only update if actually a shallow copy");
+
+            // Free existing, if any
+            if (!ActiveThreadShallowCopyBackReferences.IsEmpty)
+            {
+                if (MemoryMarshal.TryGetArray(ActiveThreadShallowCopyBackReferences, out var arrSeg) && arrSeg.Array != null && arrSeg.Array.Length > 0)
                 {
-                    lookupSpan[0] = curBackRef;
-                    lookupSpan = lookupSpan[1..];
-
-                    if (!storageSession.vectorManager.shallowCopyBackReferences.TryGetValue(curBackRef, out curBackRef))
-                    {
-                        break;
-                    }
-
-                    if (lookupSpan.IsEmpty)
-                    {
-                        var newLookupArr = ArrayPool<ulong>.Shared.Rent(lookupArr.Length * 2);
-                        lookupArr.CopyTo(newLookupArr);
-
-                        lookupSpan = newLookupArr;
-                        lookupSpan = lookupSpan[lookupArr.Length..];
-
-                        ArrayPool<ulong>.Shared.Return(lookupArr);
-                        lookupArr = newLookupArr;
-                    }
+                    ArrayPool<ulong>.Shared.Return(arrSeg.Array);
                 }
 
-                ActiveThreadShallowCopyBackReferences = lookupArr.AsMemory()[..^lookupSpan.Length];
+                ActiveThreadShallowCopyBackReferences = default;
             }
+
+            var lookupArr = ArrayPool<ulong>.Shared.Rent(DefaultLookbackArraySize);
+            var lookupSpan = lookupArr.AsSpan();
+
+            var curBackRef = shallowCopyOfContext;
+            while (true)
+            {
+                lookupSpan[0] = curBackRef;
+                lookupSpan = lookupSpan[1..];
+
+                if (!ActiveThreadSession.vectorManager.shallowCopyBackReferences.TryGetValue(curBackRef, out curBackRef))
+                {
+                    break;
+                }
+
+                if (lookupSpan.IsEmpty)
+                {
+                    var newLookupArr = ArrayPool<ulong>.Shared.Rent(lookupArr.Length * 2);
+                    lookupArr.CopyTo(newLookupArr);
+
+                    lookupSpan = newLookupArr;
+                    lookupSpan = lookupSpan[lookupArr.Length..];
+
+                    ArrayPool<ulong>.Shared.Return(lookupArr);
+                    lookupArr = newLookupArr;
+                }
+            }
+
+            ActiveThreadShallowCopyBackReferences = lookupArr.AsMemory()[..^lookupSpan.Length];
         }
 
         /// <summary>

@@ -1688,7 +1688,7 @@ namespace Garnet.test.cluster
                 var res = new List<(byte[] Elem, byte[] Attr, float Score)>();
                 for (var i = 0; i < sim0Res.Length; i += 3)
                 {
-                    res.Add((sim0Res[0], sim0Res[2], float.Parse(Encoding.ASCII.GetString(sim0Res[1]))));
+                    res.Add((sim0Res[i + 0], sim0Res[i + 2], float.Parse(Encoding.ASCII.GetString(sim0Res[i + 1]))));
                 }
 
                 expected.Add((key, data), res);
