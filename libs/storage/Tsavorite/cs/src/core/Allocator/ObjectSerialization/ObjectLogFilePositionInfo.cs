@@ -123,7 +123,7 @@ namespace Tsavorite.core
         {
             get
             {
-                var seg = 1L << (NumSegmentAndOffsetBits - SegmentSizeBits);
+                var seg = (1L << (NumSegmentAndOffsetBits - SegmentSizeBits)) - 1;
                 return seg > int.MaxValue ? int.MaxValue : (int)seg;
             }
         }
@@ -142,17 +142,17 @@ namespace Tsavorite.core
             size -= remaining;
 
             // Move to the next segment(s).
-            long nextSegmentId = SegmentId + (int)(size / SegmentSize) + 1;
+            long nextSegmentId = (long)SegmentId + (long)(size / SegmentSize) + 1;
             if (nextSegmentId > MaxSegmentId)
                 throw new InvalidDataException($"Advancing position by {size:N} bytes exceeds maximum object log segment.");
 
             SegmentId = (int)nextSegmentId;
-            Offset += size & (SegmentSize - 1);
+            Offset = size & (SegmentSize - 1);
         }
 
         public void AdvanceToNextSegment()
         {
-            long nextSegmentId = SegmentId + 1;
+            long nextSegmentId = (long)SegmentId + 1;
             if (nextSegmentId > MaxSegmentId)
                 throw new InvalidDataException($"Advancing to next segment exceeds maximum object log segment.");
             SegmentId = (int)nextSegmentId;

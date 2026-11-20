@@ -190,7 +190,7 @@ namespace Tsavorite.core
                 }
 
                 if (!MoveToNextBuffer(out buffer))
-                    break;
+                    return false;
             }
             return true;
         }
