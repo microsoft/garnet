@@ -15,6 +15,30 @@ namespace Garnet.test.Resp.ACL
     [TestFixture]
     class SetUserTests : AclTest
     {
+        [Test]
+        public async Task UpdateUserPreservesExistingSessionAsync()
+        {
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true);
+            server.Start();
+
+            using var admin = TestUtils.GetGarnetClientSession();
+            admin.Connect();
+            ClassicAssert.AreEqual("OK",
+                await admin.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", $">{DummyPassword}", "+@all").ConfigureAwait(false));
+
+            using var user = TestUtils.GetGarnetClientSession();
+            user.Connect();
+            ClassicAssert.AreEqual("OK", await user.ExecuteAsync("AUTH", TestUserA, DummyPassword).ConfigureAwait(false));
+            ClassicAssert.AreEqual("OK", await user.ExecuteAsync("SET", "marker", "value").ConfigureAwait(false));
+
+            ClassicAssert.AreEqual("OK",
+                await admin.ExecuteAsync("ACL", "SETUSER", TestUserA, "off", "resetpass", $">{DummyPasswordB}", "-set").ConfigureAwait(false));
+            ClassicAssert.AreEqual("value", await user.ExecuteAsync("GET", "marker").ConfigureAwait(false));
+            var error = Assert.ThrowsAsync<Exception>(
+                async () => await user.ExecuteAsync("SET", "marker", "changed").ConfigureAwait(false));
+            Assert.That(error.Message, Does.StartWith("NOPERM"));
+        }
+
         /// <summary>
         /// Tests that new connections start with default user when no users are defined
         /// </summary>

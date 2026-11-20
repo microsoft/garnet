@@ -797,27 +797,36 @@ namespace Garnet.server
                     }
                     else
                     {
-                        if (noScriptPassed)
+                        if (cmd == RespCommand.EXEC && txnManager.state == TxnState.Running &&
+                            noScriptBitmap == null)
                         {
-                            if (_authenticator.IsAuthenticated)
-                            {
-                                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOPERM, ref dcurr, dend))
-                                    SendAndReset();
-                            }
-                            else
-                            {
-                                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
-                                    SendAndReset();
-                            }
+                            // Lua also uses Running; only a client replay's EXEC can finalize here.
+                            _ = NetworkEXEC();
                         }
                         else
                         {
-                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOSCRIPT, ref dcurr, dend))
-                                SendAndReset();
-                        }
+                            if (noScriptPassed)
+                            {
+                                if (_authenticator.IsAuthenticated)
+                                {
+                                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOPERM, ref dcurr, dend))
+                                        SendAndReset();
+                                }
+                                else
+                                {
+                                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
+                                        SendAndReset();
+                                }
+                            }
+                            else
+                            {
+                                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOSCRIPT, ref dcurr, dend))
+                                    SendAndReset();
+                            }
 
-                        // Track rejected command (ACL or script permission failure)
-                        commandStats?.IncrementRejected(cmd);
+                            // Track rejected command (ACL or script permission failure)
+                            commandStats?.IncrementRejected(cmd);
+                        }
                     }
                 }
                 else
