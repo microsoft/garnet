@@ -467,10 +467,7 @@ namespace Garnet.server
         /// </summary>
         public void StartReplicaTasks()
         {
-            if (serverOptions.EnableVectorSetPreview)
-            {
-                _ = taskManager.RegisterAndRun(TaskType.VectorReplicationReplayTask, token => DefaultDatabase.VectorManager.StartReplicationTasksAsync(token));
-            }
+            _ = taskManager.RegisterAndRun(TaskType.VectorReplicationReplayTask, token => DefaultDatabase.VectorManager.StartReplicationTasksAsync(token));
         }
 
         /// <summary>

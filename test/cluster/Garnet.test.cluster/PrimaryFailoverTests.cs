@@ -261,7 +261,6 @@ namespace Garnet.test.cluster
         public async Task FailedReplicaOfDoesNotRestartReplicaTasks([Values] bool diskless)
         {
             context.CreateInstances(2, enableAOF: true, CommitFrequencyMs: 100, enableDisklessSync: diskless);
-            context.nodeOptions[1].EnableVectorSetPreview = true;
             context.nodeOptions[1].VectorSetReplayTaskCount = 1;
             EnableIndexGrowth(1);
             context.CreateConnection();

@@ -48,14 +48,6 @@ namespace Garnet.test
         }
 
         [Test]
-        public void DisabledVectorSetsHaveNoMigrationNamespaces()
-        {
-            using var manager = new VectorManager(0, new GarnetServerOptions { EnableVectorSetPreview = false },
-                getTempSession: null, loggerFactory: null);
-            Assert.That(manager.GetNamespacesForHashSlots([0, 8191]), Is.Null);
-        }
-
-        [Test]
         public void SetValueConditionalComparesBinaryValues([Values(0, 1, 2)] int storageRegion, [Values] bool get, [Values("IFEQ", "IFNE")] string condition)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
