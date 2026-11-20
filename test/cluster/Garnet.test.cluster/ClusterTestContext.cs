@@ -945,6 +945,7 @@ namespace Garnet.test.cluster
             _ = clusterTestUtils.ClusterFailover(replicaNodeIndex, "ABORT", logger);
             _ = clusterTestUtils.ClusterFailover(replicaNodeIndex, logger: logger);
 
+            clusterTestUtils.WaitForFailoverCompleted(replicaNodeIndex, logger);
             clusterTestUtils.WaitForPrimaryRole(replicaNodeIndex, logger);
         }
 

@@ -78,7 +78,6 @@ namespace Garnet.common
         /// <inheritdoc />
         public override void Start(SslClientAuthenticationOptions tlsOptions, string remoteEndpointName = null, CancellationToken token = default)
         {
-            if (token == default && cancellationTokenSource != null) token = cancellationTokenSource.Token;
             Start(tlsOptions != null);
             base.Start(tlsOptions, remoteEndpointName, token);
         }
@@ -86,7 +85,6 @@ namespace Garnet.common
         /// <inheritdoc />
         public override async Task StartAsync(SslClientAuthenticationOptions tlsOptions, string remoteEndpointName = null, CancellationToken token = default)
         {
-            if (token == default && cancellationTokenSource != null) token = cancellationTokenSource.Token;
             Start(tlsOptions != null);
             await base.StartAsync(tlsOptions, remoteEndpointName, token).ConfigureAwait(false);
         }
