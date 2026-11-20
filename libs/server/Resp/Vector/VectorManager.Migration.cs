@@ -356,7 +356,7 @@ namespace Garnet.server
         /// 
         /// Meant for use during migration.
         /// </summary>
-        public HashSet<ulong> GetNamespacesForKeys(StoreWrapper storeWrapper, IEnumerable<PinnedSpanByte> keys, Dictionary<byte[], (byte[] Value, DateTime? Expiraiton)> vectorSetKeys)
+        public HashSet<ulong> GetNamespacesForKeys(StoreWrapper storeWrapper, IEnumerable<PinnedSpanByte> keys, Dictionary<byte[], (byte[] Value, DateTime? Expiraiton, bool IsShallowCopyOrShallowCopySource)> vectorSetKeys)
         {
             // TODO: Ideally we wouldn't make a new session for this, but it's fine for now
             using var storageSession = new StorageSession(storeWrapper, new(), new(), null, null, storeWrapper.DefaultDatabase.Id, null, this, logger);
@@ -383,7 +383,7 @@ namespace Garnet.server
 
                     namespaces ??= [];
 
-                    ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _, out _);
+                    ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out var flags, out var shallowCopyOfContext, out _);
                     for (var i = 0UL; i < ContextStep; i++)
                     {
                         _ = namespaces.Add(context + i);
@@ -424,7 +424,9 @@ namespace Garnet.server
                         expiration = null;
                     }
 
-                    vectorSetKeys[key.ToArray()] = (indexSpan.ToArray(), expiration);
+                    var isShallowCopyOrShallowCopySource = flags.HasFlag(VectorSetFlags.ShallowCopySource) || shallowCopyOfContext != 0;
+
+                    vectorSetKeys[key.ToArray()] = (indexSpan.ToArray(), expiration, isShallowCopyOrShallowCopySource);
                 }
             }
 

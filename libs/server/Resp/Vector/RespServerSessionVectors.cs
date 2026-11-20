@@ -358,6 +358,12 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR circular shallow copies are not allowed");
             }
 
+            // We can relax this later, but requiring copies share a slot migration is simplified
+            if (HashSlotUtils.HashSlot(sourceKey) != HashSlotUtils.HashSlot(destKey))
+            {
+                return AbortWithErrorMessage("ERR shallow copy must have same hash slot as source");
+            }
+
             var status = storageApi.VectorSetShallowCopy(sourceKey, destKey, out var result, out var errorMsg);
             if (status == GarnetStatus.WRONGTYPE)
             {

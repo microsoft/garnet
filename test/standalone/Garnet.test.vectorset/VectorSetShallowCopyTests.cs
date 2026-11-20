@@ -39,7 +39,7 @@ namespace Garnet.test
         [Test]
         public async Task ReadSimpleCopyAsync()
         {
-            const string CopyVectorSetKey = nameof(ReadSimpleCopyAsync);
+            const string CopyVectorSetKey = nameof(ReadSimpleCopyAsync) + "{0123}";
             const int ProbeSearchCount = 100;
 
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
@@ -101,8 +101,8 @@ namespace Garnet.test
         [Test]
         public async Task AddToCopyAsync()
         {
-            const string CopyVectorSetKey = nameof(AddToCopyAsync);
-            const string AddedElementKey = nameof(AddToCopyAsync) + "_Added";
+            const string CopyVectorSetKey = nameof(AddToCopyAsync) + "{0123}";
+            const string AddedElementKey = nameof(AddToCopyAsync) + "_Added{0123}";
 
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
             var db = redis.GetDatabase();
@@ -131,7 +131,7 @@ namespace Garnet.test
         [Test]
         public async Task UpdateCopyAsync()
         {
-            const string CopyVectorSetKey = nameof(UpdateCopyAsync);
+            const string CopyVectorSetKey = nameof(UpdateCopyAsync) + "{0123}";
 
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
             var db = redis.GetDatabase();
@@ -178,7 +178,7 @@ namespace Garnet.test
         [Test]
         public async Task DeleteFromCopyAsync()
         {
-            const string CopyVectorSetKey = nameof(UpdateCopyAsync);
+            const string CopyVectorSetKey = nameof(UpdateCopyAsync) + "{0123}";
 
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
             var db = redis.GetDatabase();
@@ -254,7 +254,7 @@ namespace Garnet.test
         [Test]
         public async Task DeleteRootVectorSetAsync()
         {
-            const string CopyVectorSetKey = nameof(DeleteRootVectorSetAsync);
+            const string CopyVectorSetKey = nameof(DeleteRootVectorSetAsync) + "{0123}";
 
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
             var db = redis.GetDatabase();
@@ -463,7 +463,7 @@ namespace Garnet.test
 
             var seed = 2026_11_12_00 + line;
 
-            var key = $"{caller}_root_{seed}";
+            var key = $"{caller}_root_{seed}_{{0123}}";
 
             int? dims = null;
 

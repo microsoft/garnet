@@ -5,7 +5,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -271,7 +273,15 @@ namespace Garnet.test
             return TestVectorSetCommandAsync(RunCommandAsync);
 
             static Task RunCommandAsync(IDatabase db, RedisKey againstKey)
-            => db.ExecuteAsync("XVSCOPY", againstKey, "foo");
+            {
+                var destKey = "foo";
+                while (HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(destKey)) != HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(againstKey)))
+                {
+                    destKey += "0";
+                }
+
+                return db.ExecuteAsync("XVSCOPY", againstKey, destKey);
+            }
         }
 
         [Test]
