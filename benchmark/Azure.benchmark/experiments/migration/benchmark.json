@@ -1,0 +1,8 @@
+{
+  "SchemaVersion": 1,
+  "Kind": "Benchmark",
+  "System": "Resp.benchmark",
+  "InstanceConfig": "preload.conf",
+  "Target": { "Vm": "vm0", "Port": 7000 },
+  "Instances": [{ "Vm": "vm2" }]
+}

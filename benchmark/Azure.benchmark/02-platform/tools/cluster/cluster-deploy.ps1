@@ -36,6 +36,7 @@ param(
     [int]$SshTimeout = 10,
     [int]$TcpTimeout = 60,
     [string]$PeerManifestContent,
+    [string]$TopologyContent,
     [switch]$Help
 )
 
@@ -69,11 +70,14 @@ if ($Help -or -not $Action) {
     Write-Host "  -SshTimeout     SSH connection timeout in seconds (default: 10)"
     Write-Host "  -TcpTimeout     TCP endpoint wait timeout in seconds (default: 60)"
     Write-Host "  -PeerManifestContent Base64 JSON peer inventory for -Action import-peers"
+    Write-Host "  -TopologyContent Base64 resolved node topology for setup; bypasses peer discovery"
     Write-Host "  -Help           Show this help message"
     return
 }
 
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot/cluster-utils.ps1"
+if ($TopologyContent -and $Action -ne 'setup') { throw '-TopologyContent supports only setup.' }
 
 # --- Helper Functions ---
 
@@ -543,10 +547,11 @@ function Wait-ForEndpoints {
             $ip = $parts[0]; $port = [int]$parts[1]
             try {
                 $tcp = [System.Net.Sockets.TcpClient]::new()
-                $tcp.Connect($ip, $port)
-                $tcp.Close()
+                if (-not $tcp.ConnectAsync($ip, $port).Wait(1000)) { $stillPending.Add($ep) }
             } catch {
                 $stillPending.Add($ep)
+            } finally {
+                if ($tcp) { $tcp.Dispose() }
             }
         }
         if ($stillPending.Count -gt 0) {
@@ -565,97 +570,23 @@ function Wait-ForEndpoints {
 }
 
 function New-ClusterManual {
-    param([string[]]$Endpoints, [int]$ReplicaCount, [string]$Cli)
+    param([string[]]$Endpoints, [int]$ReplicaCount, [object]$Cli)
 
-    $totalNodes = $Endpoints.Count
-    $mastersCount = [math]::Floor($totalNodes / ($ReplicaCount + 1))
-    if ($mastersCount -lt 1) { $mastersCount = 1 }
-    $masters  = @($Endpoints[0..($mastersCount - 1)])
-    $replicas = @(if ($totalNodes -gt $mastersCount) { $Endpoints[$mastersCount..($totalNodes - 1)] })
-
-    Write-Host "  Primaries: $($masters -join ', ')" -ForegroundColor DarkGray
-    if ($replicas.Count -gt 0) { Write-Host "  Replicas:  $($replicas -join ', ')" -ForegroundColor DarkGray }
-
-    # Follow the redis-cli --cluster create sequence exactly, operating on nodes
-    # while they are still ISOLATED (before MEET):
-    #   1) ADDSLOTS on primaries        ("Nodes configuration updated")
-    #   2) SET-CONFIG-EPOCH on each node ("Assign a different config epoch to each node")
-    #   3) MEET to join                  ("Sending CLUSTER MEET messages to join the cluster")
-    #   4) REPLICATE on replicas
-    # Step 2 is critical: SET-CONFIG-EPOCH only works while currentEpoch is 0, and
-    # distinct epochs are required for the cluster to converge and accept replicas.
-
-    # 1) Assign slots across primaries (contiguous ranges) while isolated
-    Write-Host "  Assigning 16384 slots across $($masters.Count) primary(ies)..." -ForegroundColor Yellow
-    for ($i = 0; $i -lt $masters.Count; $i++) {
-        $m = $masters[$i] -split ':'
-        $slotStart = [math]::Floor(16384 * $i / $masters.Count)
-        $slotEnd   = [math]::Floor(16384 * ($i + 1) / $masters.Count) - 1
-        bash -c "$Cli -h $($m[0]) -p $($m[1]) CLUSTER ADDSLOTSRANGE $slotStart $slotEnd" 2>&1 | Out-Null
-    }
-
-    # 2) Assign a distinct config epoch to each node (1-based) while isolated
-    Write-Host "  Assigning distinct config epochs to $totalNodes node(s)..." -ForegroundColor Yellow
-    for ($i = 0; $i -lt $totalNodes; $i++) {
-        $n = $Endpoints[$i] -split ':'
-        $epoch = $i + 1
-        $res = bash -c "$Cli -h $($n[0]) -p $($n[1]) CLUSTER SET-CONFIG-EPOCH $epoch" 2>&1
-        $resStr = ($res | Out-String).Trim()
-        if ($resStr -notmatch 'OK') {
-            Write-Host "    WARNING: SET-CONFIG-EPOCH $epoch on $($Endpoints[$i]) returned: $resStr" -ForegroundColor Yellow
+    $primaryCount = [math]::Max(1, [int][math]::Floor($Endpoints.Count / ($ReplicaCount + 1)))
+    $nodes = @()
+    for ($i = 0; $i -lt $Endpoints.Count; $i++) {
+        $parts = $Endpoints[$i] -split ':'
+        $node = [pscustomobject]@{ Vm = "node$i"; Role = 'Replica'; Ip = $parts[0]; Port = [int]$parts[1]; Primary = $null; Slots = $null }
+        if ($i -lt $primaryCount) {
+            $node.Role = 'Primary'
+            $node.Slots = ,@([int][math]::Floor(16384 * $i / $primaryCount),
+                ([int][math]::Floor(16384 * ($i + 1) / $primaryCount) - 1))
+        } else {
+            $node.Primary = 'node' + (($i - $primaryCount) % $primaryCount)
         }
+        $nodes += $node
     }
-
-    # 3) Gossip: MEET every other node from the first node
-    $first = $Endpoints[0] -split ':'
-    Write-Host "  Sending CLUSTER MEET from $($Endpoints[0]) to $($totalNodes - 1) peer(s)..." -ForegroundColor Yellow
-    for ($i = 1; $i -lt $totalNodes; $i++) {
-        $n = $Endpoints[$i] -split ':'
-        bash -c "$Cli -h $($first[0]) -p $($first[1]) CLUSTER MEET $($n[0]) $($n[1])" 2>&1 | Out-Null
-    }
-    Start-Sleep -Seconds 2
-
-    # 4) Attach replicas to primaries (round-robin)
-    if ($replicas.Count -gt 0) {
-        $masterIds = @()
-        foreach ($m in $masters) {
-            $hp = $m -split ':'
-            $id = (bash -c "$Cli -h $($hp[0]) -p $($hp[1]) CLUSTER MYID" 2>&1 | Select-Object -First 1).Trim()
-            $masterIds += $id
-        }
-        Write-Host "  Attaching $($replicas.Count) replica(s) to primaries..." -ForegroundColor Yellow
-        for ($i = 0; $i -lt $replicas.Count; $i++) {
-            $r = $replicas[$i] -split ':'
-            $mid = $masterIds[$i % $masterIds.Count]
-
-            # Wait until this replica has learned the master node via gossip;
-            # CLUSTER REPLICATE fails with "Unknown node" until it does.
-            $known = $false
-            for ($try = 0; $try -lt 15; $try++) {
-                $nodes = bash -c "$Cli -h $($r[0]) -p $($r[1]) CLUSTER NODES" 2>&1
-                if ($nodes -match [regex]::Escape($mid)) { $known = $true; break }
-                Start-Sleep -Seconds 1
-            }
-            if (-not $known) {
-                Write-Host "    WARNING: $($replicas[$i]) has not learned master $mid via gossip; trying REPLICATE anyway" -ForegroundColor Yellow
-            }
-
-            # Issue REPLICATE with retries and surface the result.
-            $ok = $false; $resStr = ""
-            for ($try = 0; $try -lt 10; $try++) {
-                $res = bash -c "$Cli -h $($r[0]) -p $($r[1]) CLUSTER REPLICATE $mid" 2>&1
-                $resStr = ($res | Out-String).Trim()
-                if ($resStr -match 'OK') { $ok = $true; break }
-                Start-Sleep -Seconds 1
-            }
-            if ($ok) {
-                Write-Host "    $($replicas[$i]) -> replicates $mid ✓" -ForegroundColor DarkGray
-            } else {
-                Write-Host "    ERROR: $($replicas[$i]) failed to replicate ${mid}: $resStr" -ForegroundColor Red
-            }
-        }
-    }
-    Start-Sleep -Seconds 2
+    New-ClusterTopology -Nodes $nodes -Cli $Cli
 }
 
 function New-Cluster {
@@ -664,16 +595,11 @@ function New-Cluster {
     $mode = if ($Manual) { "MANUAL" } else { "auto" }
     Write-Host "Forming cluster [$mode] ($($Endpoints.Count) nodes, $ReplicaCount replica(s) per primary)..." -ForegroundColor Yellow
 
-    if ($UseTls) {
-        $metadata = Get-Content '/opt/azurebench/tls/metadata.json' -Raw | ConvertFrom-Json
-        if (-not $metadata.targetHost) { throw 'TLS target host is missing from certificate metadata.' }
-        $cli = "valkey-cli-tls --tls --cacert /opt/azurebench/tls/ca.crt --sni $($metadata.targetHost)"
-    } else {
-        $cli = if ($Sys -eq "valkey") { "valkey-cli" } else { "redis-cli" }
-    }
+    $cliCommand = Get-ClusterCli -System $Sys -UseTls:$UseTls
+    $cli = (@($cliCommand.Name) + $cliCommand.Arguments) -join ' '
 
     if ($Manual) {
-        New-ClusterManual -Endpoints $Endpoints -ReplicaCount $ReplicaCount -Cli $cli
+        New-ClusterManual -Endpoints $Endpoints -ReplicaCount $ReplicaCount -Cli $cliCommand
     } else {
         $endpointStr = $Endpoints -join " "
         $cmd = "$cli --cluster create $endpointStr --cluster-replicas $ReplicaCount --cluster-yes"
@@ -954,6 +880,14 @@ switch ($Action) {
     "setup" {
         if (-not $System) { throw "ERROR: -System is required for setup." }
         if ($Tls -and $System -ne 'garnet') { throw "ERROR: -Tls is currently supported only for Garnet." }
+        if ($TopologyContent) {
+            $json = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($TopologyContent))
+            $nodes = @($json | ConvertFrom-Json)
+            $endpoints = @($nodes | ForEach-Object { "$($_.Ip):$($_.Port)" })
+            Wait-ForEndpoints -Endpoints $endpoints -Timeout $TcpTimeout
+            New-ClusterTopology -Nodes $nodes -Cli (Get-ClusterCli -System $System -UseTls:$Tls) -TimeoutSec $TcpTimeout
+            break
+        }
         if (-not $InstancePerVm) { throw "ERROR: -InstancePerVm is required for setup." }
 
         $peerInfo = Resolve-Peers -VmCount $VmCount -User $User -SshTimeout $SshTimeout -MaxScan $MaxScan
