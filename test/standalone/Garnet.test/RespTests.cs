@@ -6466,7 +6466,7 @@ namespace Garnet.test
                 AssertDuplicateDefinitionError("MAXAGE", () => mainDB.Execute("CLIENT", "KILL", "MAXAGE", "123", "MAXAGE", "456"));
             }
 
-            static void AssertDuplicateDefinitionError(string filter, TestDelegate shouldThrow)
+            static void AssertDuplicateDefinitionError(string filter, Action shouldThrow)
             {
                 var exc = ClassicAssert.Throws<RedisServerException>(shouldThrow);
                 ClassicAssert.AreEqual($"ERR Filter '{filter}' defined multiple times", exc.Message);
