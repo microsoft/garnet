@@ -2,6 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
+using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -24,9 +27,197 @@ namespace Garnet.test
 
         sealed class Payload : IDisposable
         {
-            public bool Disposed;
+            public int DisposeCount;
 
-            public void Dispose() => Disposed = true;
+            public bool Disposed => DisposeCount != 0;
+
+            public void Dispose() => Interlocked.Increment(ref DisposeCount);
+        }
+
+        [Test]
+        public void EmptyStackReportsNotDisposed()
+        {
+            using var stack = new LightConcurrentStack<Payload>(1);
+
+            ClassicAssert.IsFalse(stack.TryPop(out var popped, out var disposed));
+            ClassicAssert.IsNull(popped);
+            ClassicAssert.IsFalse(disposed);
+        }
+
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(4)]
+        public void CapacityLimitPreservesEntriesAndRejectsWithoutDisposing(int capacity)
+        {
+            using var stack = new LightConcurrentStack<Payload>(capacity);
+            var entries = new Payload[capacity];
+            for (var i = 0; i < capacity; i++)
+            {
+                entries[i] = new Payload();
+                ClassicAssert.IsTrue(stack.TryPush(entries[i]));
+            }
+
+            using var rejected = new Payload();
+            ClassicAssert.IsFalse(stack.TryPush(rejected));
+            ClassicAssert.AreEqual(0, rejected.DisposeCount);
+
+            for (var i = capacity - 1; i >= 0; i--)
+            {
+                ClassicAssert.IsTrue(stack.TryPop(out var popped, out var disposed));
+                ClassicAssert.IsFalse(disposed);
+                ClassicAssert.AreSame(entries[i], popped);
+                ClassicAssert.AreEqual(0, popped.DisposeCount);
+                popped.Dispose();
+            }
+
+            ClassicAssert.IsFalse(stack.TryPop(out var empty, out var stackDisposed));
+            ClassicAssert.IsNull(empty);
+            ClassicAssert.IsFalse(stackDisposed);
+        }
+
+        [Test]
+        public void PoppingFromFullStackMakesCapacityReusable()
+        {
+            using var stack = new LightConcurrentStack<Payload>(1);
+            using var first = new Payload();
+            using var second = new Payload();
+            ClassicAssert.IsTrue(stack.TryPush(first));
+            ClassicAssert.IsFalse(stack.TryPush(second));
+
+            ClassicAssert.IsTrue(stack.TryPop(out var popped, out var disposed));
+            ClassicAssert.AreSame(first, popped);
+            ClassicAssert.IsFalse(disposed);
+            ClassicAssert.IsTrue(stack.TryPush(second));
+            ClassicAssert.IsTrue(stack.TryPop(out popped, out disposed));
+            ClassicAssert.AreSame(second, popped);
+            ClassicAssert.IsFalse(disposed);
+        }
+
+        [Test]
+        public void RepeatedDisposeOnlyReleasesEntriesStillOwnedByStackOnce()
+        {
+            using var stack = new LightConcurrentStack<Payload>(2);
+            var retained = new Payload();
+            using var poppedEntry = new Payload();
+            ClassicAssert.IsTrue(stack.TryPush(retained));
+            ClassicAssert.IsTrue(stack.TryPush(poppedEntry));
+            ClassicAssert.IsTrue(stack.TryPop(out var popped, out var disposed));
+            ClassicAssert.AreSame(poppedEntry, popped);
+            ClassicAssert.IsFalse(disposed);
+
+            stack.Dispose();
+            stack.Dispose();
+
+            ClassicAssert.AreEqual(1, retained.DisposeCount);
+            ClassicAssert.AreEqual(0, poppedEntry.DisposeCount);
+        }
+
+        [Test]
+        public void DisposedStackRejectsEntriesWithoutTakingOwnership()
+        {
+            using var stack = new LightConcurrentStack<Payload>(1);
+            stack.Dispose();
+            using var rejected = new Payload();
+
+            ClassicAssert.IsFalse(stack.TryPush(rejected));
+            stack.Dispose();
+
+            ClassicAssert.AreEqual(0, rejected.DisposeCount);
+            ClassicAssert.IsFalse(stack.TryPop(out var popped, out var disposed));
+            ClassicAssert.IsNull(popped);
+            ClassicAssert.IsTrue(disposed);
+        }
+
+        [Test]
+        public void ConcurrentPushesAndPopsReturnEveryEntryExactlyOnce()
+        {
+            const int WorkerCount = 4;
+            const int EntriesPerWorker = 256;
+            var entries = new Payload[WorkerCount * EntriesPerWorker];
+            using var stack = new LightConcurrentStack<Payload>(entries.Length);
+            var options = new ParallelOptions { MaxDegreeOfParallelism = WorkerCount };
+            Parallel.For(0, WorkerCount, options, worker =>
+            {
+                for (var i = worker * EntriesPerWorker; i < (worker + 1) * EntriesPerWorker; i++)
+                {
+                    entries[i] = new Payload();
+                    ClassicAssert.IsTrue(stack.TryPush(entries[i]));
+                }
+            });
+
+            var returned = new ConcurrentDictionary<Payload, byte>();
+            Parallel.For(0, WorkerCount, options, _ =>
+            {
+                for (var i = 0; i < EntriesPerWorker; i++)
+                {
+                    ClassicAssert.IsTrue(stack.TryPop(out var popped, out var disposed));
+                    ClassicAssert.IsFalse(disposed);
+                    ClassicAssert.IsTrue(returned.TryAdd(popped, 0), "An entry was returned more than once");
+                    popped.Dispose();
+                }
+            });
+
+            stack.Dispose();
+
+            ClassicAssert.AreEqual(entries.Length, returned.Count);
+            foreach (var entry in entries)
+            {
+                ClassicAssert.IsTrue(returned.ContainsKey(entry), "An entry was lost");
+                ClassicAssert.AreEqual(1, entry.DisposeCount);
+            }
+            ClassicAssert.IsFalse(stack.TryPop(out var empty, out var stackDisposed));
+            ClassicAssert.IsNull(empty);
+            ClassicAssert.IsTrue(stackDisposed);
+        }
+
+        [Test]
+        public void ConcurrentDisposeAndPopsReleaseEachEntryExactlyOnce()
+        {
+            const int WorkerCount = 4;
+            const int EntriesPerWorker = 256;
+            var entries = new Payload[WorkerCount * EntriesPerWorker];
+            using var stack = new LightConcurrentStack<Payload>(entries.Length);
+            foreach (ref var entry in entries.AsSpan())
+            {
+                entry = new Payload();
+                ClassicAssert.IsTrue(stack.TryPush(entry));
+            }
+
+            using var start = new Barrier(WorkerCount + 1);
+            var workers = new Task[WorkerCount + 1];
+            for (var worker = 0; worker < WorkerCount; worker++)
+            {
+                workers[worker] = Task.Factory.StartNew(() =>
+                {
+                    ClassicAssert.IsTrue(start.SignalAndWait(TimeSpan.FromSeconds(30)));
+                    for (var i = 0; i < EntriesPerWorker; i++)
+                    {
+                        if (stack.TryPop(out var popped, out var disposed))
+                        {
+                            ClassicAssert.IsFalse(disposed);
+                            ClassicAssert.AreEqual(0, popped.DisposeCount);
+                            popped.Dispose();
+                        }
+                        else
+                        {
+                            ClassicAssert.IsNull(popped);
+                            ClassicAssert.IsTrue(disposed);
+                        }
+                    }
+                }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            }
+            workers[WorkerCount] = Task.Factory.StartNew(() =>
+            {
+                ClassicAssert.IsTrue(start.SignalAndWait(TimeSpan.FromSeconds(30)));
+                stack.Dispose();
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            Task.WaitAll(workers);
+
+            foreach (var entry in entries)
+                ClassicAssert.AreEqual(1, entry.DisposeCount);
+            ClassicAssert.IsFalse(stack.TryPop(out var empty, out var stackDisposed));
+            ClassicAssert.IsNull(empty);
+            ClassicAssert.IsTrue(stackDisposed);
         }
 
         [Test]
