@@ -134,14 +134,21 @@ namespace Garnet.cluster
                         var serializeBufferArr = ArrayPool<byte>.Shared.Rent(128);
                         try
                         {
-                            foreach (var (key, (value, expiration)) in vectorSets)
+                            var vectorSetsInOrder = VectorManager.OrderIndexesForMigration(vectorSets);
+
+                            foreach (var (key, (value, expiration)) in vectorSetsInOrder)
                             {
                                 // Update the index context as we move it, so it arrives on the destination node pointed at the appropriate
                                 // namespaces for element data
-                                VectorManager.ReadIndex(value, out var oldContext, out _, out _, out _, out _, out _, out _, out _, out _, out _);
+                                VectorManager.ReadIndex(value, out var oldContext, out _, out _, out _, out _, out _, out _, out _, out var oldShallowCopyOfContext, out _);
 
                                 var newContext = _namespaceMap[oldContext];
                                 VectorManager.SetContextForMigration(value, newContext);
+                                if (oldShallowCopyOfContext != 0)
+                                {
+                                    var newShallowCopyOfContext = _namespaceMap[oldShallowCopyOfContext];
+                                    VectorManager.SetShallowCopyOfContextForMigration(value, newShallowCopyOfContext);
+                                }
 
                                 var neededSpace = VectorManager.GetMigratedIndexKeySerializationSize(key, value);
 

@@ -369,9 +369,9 @@ namespace Garnet.server
 
                         var startPointId = input.parseState.Count >= 14 ? MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(13).Span) : VectorManager.DefaultStartPointId;
 
-                        var copyOfContext = cmd == RespCommand.XVSCOPY && input.parseState.Count >= 15 ? MemoryMarshal.Read<ulong>(input.parseState.GetArgSliceByRef(14).Span) : 0;
+                        var copyOfContext = input.parseState.Count >= 15 ? MemoryMarshal.Read<ulong>(input.parseState.GetArgSliceByRef(14).Span) : 0;
 
-                        Debug.Assert((cmd == RespCommand.XVSCOPY && copyOfContext > 0 && (copyOfContext % VectorManager.ContextStep) == 0) || (cmd != RespCommand.XVSCOPY && copyOfContext == 0), "Copy context provided in illegal command");
+                        Debug.Assert((copyOfContext % VectorManager.ContextStep) == 0, "Copy context provided is illegal");
 
                         functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, index, logRecord.ValueSpan, startPointId, copyOfContext);
 

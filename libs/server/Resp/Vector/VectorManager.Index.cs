@@ -194,6 +194,22 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Update the shallow copy of context stored in a given index.
+        /// 
+        /// This is illegal to do on an index that isn't already a shallow copy
+        /// </summary>
+        public static void SetShallowCopyOfContextForMigration(Span<byte> indexValue, ulong newShallowCopyOfContext)
+        {
+            Debug.Assert(newShallowCopyOfContext != 0, "0 is special, should not be assigning to an index");
+            Debug.Assert(indexValue.Length == Index.Size, $"Index size is incorrect ({indexValue.Length} != {Index.Size}), implies vector set index is probably corrupted");
+
+            ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexValue));
+
+            Debug.Assert(asIndex.ShallowCopyOfContext != 0, "Cannot update shallow copy context if not already a shallow copy");
+            asIndex.ShallowCopyOfContext = newShallowCopyOfContext;
+        }
+
+        /// <summary>
         /// Issues an RMW to set the <see cref="VectorSetFlags.SuppressCleanup"/> flag on the given index.
         /// 
         /// Assumes that appropriate locking has been done to prevent concurrent modification to the index.
