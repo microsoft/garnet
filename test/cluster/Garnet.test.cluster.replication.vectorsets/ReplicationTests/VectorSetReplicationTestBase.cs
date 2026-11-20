@@ -240,7 +240,7 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(output.SpanByteAndMemory.IsSpanByte, $"index record for '{key}' did not come back inline");
             ClassicAssert.AreEqual(VectorManager.IndexSize, output.SpanByteAndMemory.Length, $"value under '{key}' is not a Vector Set index record");
 
-            VectorManager.ReadIndex(output.SpanByteAndMemory.Span, out ctx, out _, out _, out _, out _, out _, out _, out _, out indexPtr);
+            VectorManager.ReadIndex(output.SpanByteAndMemory.Span, out ctx, out _, out _, out _, out _, out _, out _, out _, out _, out indexPtr);
         }
 
         /// <summary>

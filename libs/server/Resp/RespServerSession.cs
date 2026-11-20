@@ -1245,6 +1245,7 @@ namespace Garnet.server
 
                 // Vector Set commands
                 RespCommand.XVIMPORT => NetworkXVIMPORT(ref storageApi),
+                RespCommand.XVSCOPY => NetworkXVSCOPY(ref storageApi),
 
                 _ => Process(command, ref storageApi)
             };

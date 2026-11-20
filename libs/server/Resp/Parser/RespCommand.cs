@@ -151,8 +151,12 @@ namespace Garnet.server
         BITOP_XOR = 118,
         BITOP_NOT = 119,
         BITOP_DIFF = 120,
+
+        // Extension Vector Set commands
         XVCREATE = 121,
         XVIMPORT = 122,
+
+        // Conditional string commands
         SETIFEQ = 123,
         SETKEEPTTLIFEQ = 124,
         SETIFNE = 125,
@@ -162,11 +166,14 @@ namespace Garnet.server
         SETIFDEQ = 129,
         SETKEEPTTLIFDEQ = 130,
         SETIFDNE = 131,
-        SETKEEPTTLIFDNE = 132, // Note: LastWriteCommand -- append new write commands after this with the next value
+        SETKEEPTTLIFDNE = 132,
+
+        // More Vector Set Extension commands
+        XVSCOPY = 133, // Note: LastWriteCommand -- append new write commands after this with the next value
 
         // Read-only commands. NEVER persisted (reads never enter the AOF), so these are
         // auto-numbered and may be renumbered/reordered freely across versions. They follow the
-        // write block; the read range is [FirstReadCommand, LastReadCommand].
+        // write block; the read range is [FirstReadCommand, LastReadCommand].LastWriteCommand
         BITCOUNT,
         BITFIELD_RO,
         BITPOS,
@@ -606,7 +613,7 @@ namespace Garnet.server
         // appended.
         internal const RespCommand FirstWriteCommand = RespCommand.APPEND;
 
-        internal const RespCommand LastWriteCommand = RespCommand.SETKEEPTTLIFDNE;
+        internal const RespCommand LastWriteCommand = RespCommand.XVSCOPY;
 
         // Data commands span writes + reads + scripts contiguously: [FirstDataCommand, LastDataCommand].
         internal const RespCommand FirstDataCommand = FirstWriteCommand;
@@ -660,7 +667,8 @@ namespace Garnet.server
         public static bool IsVectorSetCommand(this RespCommand cmd)
             => cmd is RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB
                or RespCommand.VGETATTR or RespCommand.VINFO or RespCommand.VISMEMBER or RespCommand.VLINKS
-               or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM or RespCommand.XVCREATE or RespCommand.XVIMPORT;
+               or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM
+               or RespCommand.XVCREATE or RespCommand.XVIMPORT or RespCommand.XVSCOPY;
 
         public static bool IsDataCommand(this RespCommand cmd)
         {
@@ -739,7 +747,7 @@ namespace Garnet.server
         /// Returns true if this command can operate on a Vector Set.
         /// </summary>
         public static bool IsLegalOnVectorSet(this RespCommand cmd)
-        => cmd is RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX or RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB or RespCommand.VGETATTR or RespCommand.VINFO or RespCommand.VISMEMBER or RespCommand.VLINKS or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM or RespCommand.XVCREATE or RespCommand.XVIMPORT;
+        => cmd is RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX or RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB or RespCommand.VGETATTR or RespCommand.VINFO or RespCommand.VISMEMBER or RespCommand.VLINKS or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM or RespCommand.XVCREATE or RespCommand.XVIMPORT or RespCommand.XVSCOPY;
 
         /// <summary>
         /// Returns true if <paramref name="cmd"/> is allowed while a session is in

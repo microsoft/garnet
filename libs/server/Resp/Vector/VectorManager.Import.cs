@@ -61,7 +61,7 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+                ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
                 if (hasQuantState && !Service.SetQuantState(context, indexPtr, quantState))
                 {
@@ -90,7 +90,7 @@ namespace Garnet.server
                 return false;
             }
 
-            ReadIndex(indexConfig, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexConfig, out var context, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
             if (!Service.ImportTerm(context, indexPtr, termType, id, value))
             {
@@ -124,7 +124,7 @@ namespace Garnet.server
                 return true;
             }
 
-            ReadIndex(indexConfig, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexConfig, out var context, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
             if (!IsImportPending(indexConfig))
             {
@@ -161,7 +161,7 @@ namespace Garnet.server
         /// </summary>
         internal bool TryVerifyImport(scoped ReadOnlySpan<byte> key, scoped ReadOnlySpan<byte> indexConfig, int taskIndex, int taskCount, out ReadOnlySpan<byte> errorMsg)
         {
-            ReadIndex(indexConfig, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexConfig, out var context, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
             if (!IsImportPending(indexConfig))
             {
@@ -184,19 +184,19 @@ namespace Garnet.server
 
         private static bool IsImportPending(ReadOnlySpan<byte> indexConfig)
         {
-            ReadIndex(indexConfig, out _, out _, out _, out _, out _, out _, out _, out var flags, out _);
+            ReadIndex(indexConfig, out _, out _, out _, out _, out _, out _, out _, out var flags, out _, out _);
             return (flags & VectorSetFlags.ImportPending) != 0;
         }
 
         private static bool IsImportCompleted(ReadOnlySpan<byte> indexConfig)
         {
-            ReadIndex(indexConfig, out _, out _, out _, out _, out _, out _, out _, out var flags, out _);
+            ReadIndex(indexConfig, out _, out _, out _, out _, out _, out _, out _, out var flags, out _, out _);
             return (flags & VectorSetFlags.ImportCompleted) != 0;
         }
 
         private static bool IsImportFailed(ReadOnlySpan<byte> indexConfig)
         {
-            ReadIndex(indexConfig, out _, out _, out _, out _, out _, out _, out _, out var flags, out _);
+            ReadIndex(indexConfig, out _, out _, out _, out _, out _, out _, out _, out var flags, out _, out _);
             return (flags & VectorSetFlags.ImportFailed) != 0;
         }
     }

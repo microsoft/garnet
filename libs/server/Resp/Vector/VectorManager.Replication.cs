@@ -283,6 +283,38 @@ namespace Garnet.server
             }
         }
 
+        internal void HandleVectorSetShallowCopyReplication(StorageSession session, Func<RespServerSession> obtainServerSession, ref StringInput input)
+        {
+            if (!IsEnabled)
+            {
+                throw new GarnetException("Vector Set preview is disabled during import replay");
+            }
+
+            Debug.Assert(input.header.cmd == RespCommand.XVSCOPY, "Only XVSCOPY should be redirected here");
+            Debug.Assert(input.parseState.Count >= 17, "Not enough values record for replay");
+
+            Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
+            var sourceKey = input.parseState.GetArgSliceByRef(15);
+            var destKey = input.parseState.GetArgSliceByRef(16);
+
+            var inputCopy = input;
+            inputCopy.arg1 = default;
+
+            // Don't need *WithElement lock here because removes won't be concurrent to adds or updates
+            using (ReadVectorIndex(session, sourceKey, ref inputCopy, indexSpan, out var status, out var importPending))
+            {
+                Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a copy is successful, so index must exist");
+                Debug.Assert(!importPending, "Replication should only occur when a copy is successful, so index should not be importing");
+
+                var res = ShallowCopy(session, sourceKey, indexSpan, destKey, out var vecRes, out var error);
+
+                if (res != GarnetStatus.OK || vecRes != VectorManagerResult.OK)
+                {
+                    throw new GarnetException("Failed to shallow copy a vector set index during AOF sync, this should never happen but will cause data loss if it does");
+                }
+            }
+        }
+
         /// <summary>
         /// Maps a context chosen by a PRIMARY for an in-flight migration onto the context this node actually
         /// stores that migrated Vector Set under.
@@ -469,7 +501,7 @@ namespace Garnet.server
                     localIndexValue = remappedIndexValue;
                 }
 
-                ActiveThreadSession = currentSession;
+                SetActiveThreadSession(currentSession, default, context);
                 try
                 {
                     DateTime? expiration = expirationTicks == 0 ? null : new DateTime(expirationTicks, DateTimeKind.Utc);
@@ -477,7 +509,7 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    ActiveThreadSession = null;
+                    ClearActiveThreadSession();
                 }
 
                 // Element records for a migration are all transmitted, applied, and acknowledged before its index
@@ -816,7 +848,7 @@ namespace Garnet.server
                 Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a setattr is successful, so index must exist");
                 Debug.Assert(!importPending, "Replication should only occur when a setattr is successful, so index should not be importing");
 
-                if (!TrySetAttribute(indexSpan, element, attribute))
+                if (!TrySetAttribute(indexSpan, element, attribute, out _))
                 {
                     throw new GarnetException("Failed to set attribute on vector set during AOF sync, this should never happen but will cause data loss if it does");
                 }

@@ -156,7 +156,7 @@ namespace Garnet.server
                 throw new GarnetException("Invalid or corrupt Vector Set index record (unexpected length)");
             }
 
-            ReadIndex(value, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out var flags, out var indexPtr);
+            ReadIndex(value, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out var flags, out var shallowCopyOfContext, out var indexPtr);
             var startPointId = ReadStartPointId(value);
 
             var invalidMigrationRecord =
@@ -167,7 +167,8 @@ namespace Garnet.server
                 buildExplorationFactor is 0 or > MaxExplorationFactor ||
                 numLinks is < MinNumLinks or > MaxNumLinks ||
                 (distanceMetric == VectorDistanceMetricType.Invalid || !Enum.IsDefined(distanceMetric)) ||
-                (flags & ~VectorSetFlags.All) != 0;
+                (flags & ~VectorSetFlags.All) != 0 ||
+                (shallowCopyOfContext % ContextStep) != 0;
 
             if (invalidMigrationRecord)
             {
@@ -185,9 +186,16 @@ namespace Garnet.server
 
                 Debug.Assert(contextMetadatas[contextIndex].IsInUse(contextIndex != 0, contextValue), "Context should be assigned if we're migrating");
                 Debug.Assert(contextMetadatas[contextIndex].IsMigrating(contextIndex != 0, contextValue), "Context should be marked migrating if we're moving an index key in");
+
+                if (shallowCopyOfContext != 0)
+                {
+                    var (shallowCopyContextIndex, shallowCopyContextValue) = ContextMetadata.DecomposeContext(shallowCopyOfContext);
+
+                    Debug.Assert(contextMetadatas[shallowCopyContextIndex].IsInUse(shallowCopyContextIndex != 0, shallowCopyContextValue), "Shallow Copy Context should be assigned if we're migrating");
+                    // Context being targetd _was_ migrated, but may not be being migrated anymore so no assert here
+                }
             }
 #endif
-
             // Spin up a new Storage Session is we don't have one
             StorageSession newStorageSession;
             if (ActiveThreadSession == null)
@@ -195,7 +203,8 @@ namespace Garnet.server
                 Debug.Assert(db != null, "Must have DB if session is not already set");
                 Debug.Assert(storeWrapper != null, "Must have StoreWrapper if session is not already set");
 
-                ActiveThreadSession = newStorageSession = new StorageSession(storeWrapper, new(), new(), null, null, db.Id, null, this, this.logger);
+                newStorageSession = new StorageSession(storeWrapper, new(), new(), null, null, db.Id, null, this, this.logger);
+                SetActiveThreadSession(newStorageSession, default, context);
             }
             else
             {
@@ -204,6 +213,17 @@ namespace Garnet.server
 
             try
             {
+                // Update lookup chain before we involve DiskANN
+                if (shallowCopyOfContext != 0)
+                {
+                    lock (this)
+                    {
+                        shallowCopyBackReferences[context] = shallowCopyOfContext;
+                    }
+
+                    UpdateShallowCopyReferences(shallowCopyOfContext);
+                }
+
                 // Prepare as a psuedo-VADD
                 var dimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dimensions, 1)));
                 var reduceDimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
@@ -233,7 +253,15 @@ namespace Garnet.server
                 var expirationArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<long, byte>(MemoryMarshal.CreateSpan(ref expirationTicks, 1)));
                 var startPointArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref startPointId, 1)));
 
-                input.parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg, ctxArg, indexArg, expirationArg, startPointArg]);
+                if (shallowCopyOfContext != 0)
+                {
+                    var shallowCopyOfContextArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref shallowCopyOfContext, 1)));
+                    input.parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg, ctxArg, indexArg, expirationArg, startPointArg, shallowCopyOfContextArg]);
+                }
+                else
+                {
+                    input.parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg, ctxArg, indexArg, expirationArg, startPointArg]);
+                }
 
                 Span<byte> indexSpan = stackalloc byte[Index.Size];
                 var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);
@@ -249,7 +277,7 @@ namespace Garnet.server
                     needsWaitForDrop = false;
                 }
 
-                using (AcquireExclusiveLocks(ActiveThreadSession, key))
+                using (AcquireExclusiveLock(ActiveThreadSession, key))
                 {
                     // If we're racing with a drop to the same key, we need to drop the lock and wait for index drop.
                     //
@@ -303,7 +331,7 @@ namespace Garnet.server
             }
             finally
             {
-                ActiveThreadSession = null;
+                ClearActiveThreadSession();
 
                 // If we spun up a new storage session, dispose it
                 newStorageSession?.Dispose();
@@ -366,7 +394,7 @@ namespace Garnet.server
         /// 
         /// Meant for use during migration.
         /// </summary>
-        public HashSet<ulong> GetNamespacesForKeys(StoreWrapper storeWrapper, IEnumerable<PinnedSpanByte> keys, Dictionary<byte[], (byte[] Value, DateTime? Expiraiton)> vectorSetKeys)
+        public HashSet<ulong> GetNamespacesForKeys(StoreWrapper storeWrapper, IEnumerable<PinnedSpanByte> keys, Dictionary<byte[], (byte[] Value, DateTime? Expiraiton, bool IsShallowCopyOrShallowCopySource)> vectorSetKeys)
         {
             // TODO: Ideally we wouldn't make a new session for this, but it's fine for now
             using var storageSession = new StorageSession(storeWrapper, new(), new(), null, null, storeWrapper.DefaultDatabase.Id, null, this, logger);
@@ -393,7 +421,7 @@ namespace Garnet.server
 
                     namespaces ??= [];
 
-                    ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
+                    ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out var flags, out var shallowCopyOfContext, out _);
                     for (var i = 0UL; i < ContextStep; i++)
                     {
                         _ = namespaces.Add(context + i);
@@ -434,7 +462,9 @@ namespace Garnet.server
                         expiration = null;
                     }
 
-                    vectorSetKeys[key.ToArray()] = (indexSpan.ToArray(), expiration);
+                    var isShallowCopyOrShallowCopySource = flags.HasFlag(VectorSetFlags.ShallowCopySource) || shallowCopyOfContext != 0;
+
+                    vectorSetKeys[key.ToArray()] = (indexSpan.ToArray(), expiration, isShallowCopyOrShallowCopySource);
                 }
             }
 
@@ -588,6 +618,52 @@ namespace Garnet.server
             // Expiration date (0 is no expiration)
             var expirationTicks = BinaryPrimitives.ReadInt64LittleEndian(readFrom);
             expiration = expirationTicks != 0 ? new DateTime(expirationTicks, DateTimeKind.Utc) : null;
+        }
+
+        /// <summary>
+        /// Indexes need to be sent over so that Vector Sets that are shallow copied get imported BEFORE the Vector Sets which copy them.
+        /// 
+        /// This makes it so DiskANN can do reads right away without having to wait for the overall migration to finish.
+        /// </summary>
+        public static IEnumerable<(byte[] Key, (byte[] Value, DateTime? Expiration))> OrderIndexesForMigration(Dictionary<byte[], (byte[] Value, DateTime? Expiration)> vectorSets)
+        {
+            Dictionary<byte[], (byte[] Value, DateTime? Expiration)> remaining = new(vectorSets, vectorSets.Comparer);
+
+            var ret = new List<(byte[] Key, (byte[] Value, DateTime? Expiration))>();
+            var availableContexts = new HashSet<ulong>();
+
+            // First move over everything that isn't a source or copy
+            foreach (var (key, (value, expiration)) in vectorSets)
+            {
+                ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out var shallowCopyOfContext, out _);
+                if (!flags.HasFlag(VectorSetFlags.ShallowCopySource) && shallowCopyOfContext == 0)
+                {
+                    ret.Add((key, (value, expiration)));
+
+                    _ = availableContexts.Add(context);
+
+                    _ = remaining.Remove(key);
+                }
+            }
+
+            // Repeatedly move over anything whose antecedants have been moved
+            while (remaining.Count > 0)
+            {
+                foreach (var (key, (value, expiration)) in remaining)
+                {
+                    ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out var shallowCopyOfContext, out _);
+                    if (shallowCopyOfContext == 0 || availableContexts.Contains(shallowCopyOfContext))
+                    {
+                        ret.Add((key, (value, expiration)));
+                        _ = availableContexts.Add(context);
+
+                        _ = remaining.Remove(key);
+                        break;
+                    }
+                }
+            }
+
+            return ret;
         }
     }
 }
