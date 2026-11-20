@@ -2,10 +2,13 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO.Hashing;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -16,6 +19,7 @@ using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test
 {
@@ -41,6 +45,785 @@ namespace Garnet.test
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             TestUtils.OnTearDown();
+        }
+
+        [Test]
+        public void DisabledVectorSetsHaveNoMigrationNamespaces()
+        {
+            using var manager = new VectorManager(0, new GarnetServerOptions { EnableVectorSetPreview = false },
+                getTempSession: null, loggerFactory: null);
+            Assert.That(manager.GetNamespacesForHashSlots([0, 8191]), Is.Null);
+        }
+
+        [Test]
+        public void SetValueConditionalComparesBinaryValues([Values(0, 1, 2)] int storageRegion, [Values] bool get, [Values("IFEQ", "IFNE")] string condition)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            byte[] original = [0, 255, 13, 10, (byte)'a'];
+            byte[] mismatch = [0, 255, 13, 10, (byte)'A'];
+            var replacement = new string('x', 10000);
+            db.StringSet("key", original);
+            PrepareSetIfEqualRecord(storageRegion);
+
+            var result = db.Execute("SET", get
+                ? ["key", replacement, condition.ToLowerInvariant(), condition == "IFEQ" ? mismatch : original, "get"]
+                : ["key", replacement, condition.ToLowerInvariant(), condition == "IFEQ" ? mismatch : original]);
+            if (get)
+                CollectionAssert.AreEqual(original, (byte[])result);
+            else
+                ClassicAssert.IsTrue(result.IsNull);
+            CollectionAssert.AreEqual(original, (byte[])db.StringGet("key"));
+
+            result = db.Execute("SET", get
+                ? ["key", replacement, "GET", condition, condition == "IFEQ" ? original : mismatch]
+                : ["key", replacement, condition, condition == "IFEQ" ? original : mismatch]);
+            if (get)
+                CollectionAssert.AreEqual(original, (byte[])result);
+            else
+                ClassicAssert.AreEqual("OK", (string)result);
+            ClassicAssert.AreEqual(replacement, (string)db.StringGet("key"));
+
+            db.StringSet("empty", "");
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "empty", "value", "IFEQ", ""));
+            ClassicAssert.AreEqual("value", (string)db.Execute("SET", "empty", "", "GET", "IFEQ", "value"));
+            ClassicAssert.AreEqual("", (string)db.StringGet("empty"));
+        }
+
+        [Test]
+        public void SetValueConditionalExpiry([Values(0, 1, 2)] int storageRegion, [Values("", "EX", "PX", "EXAT", "PXAT", "KEEPTTL")] string expiryOption, [Values("IFEQ", "IFNE")] string condition)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            db.Execute("SET", "key", "old", "PX", 60000);
+            long originalExpiry = (long)db.Execute("PEXPIRETIME", "key");
+            PrepareSetIfEqualRecord(storageRegion);
+
+            var absoluteExpiry = DateTimeOffset.UtcNow.AddMinutes(2).ToUnixTimeSeconds() * 1000;
+            object[] options = expiryOption switch
+            {
+                "EX" => ["EX", 120],
+                "PX" => ["PX", 120000],
+                "EXAT" => ["EXAT", absoluteExpiry / 1000],
+                "PXAT" => ["PXAT", absoluteExpiry],
+                "KEEPTTL" => ["KEEPTTL"],
+                _ => []
+            };
+            ClassicAssert.IsTrue(db.Execute("SET", ["key", "rejected", .. options, condition, condition == "IFEQ" ? "different" : "old"]).IsNull);
+            ClassicAssert.AreEqual(originalExpiry, (long)db.Execute("PEXPIRETIME", "key"));
+            ClassicAssert.AreEqual("old", (string)db.StringGet("key"));
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SET", ["key", "new", .. options, condition, condition == "IFEQ" ? "old" : "different"]));
+            ClassicAssert.AreEqual("new", (string)db.StringGet("key"));
+            long expiration = (long)db.Execute("PEXPIRETIME", "key");
+            if (expiryOption == "")
+                ClassicAssert.AreEqual(-1, expiration);
+            else if (expiryOption == "KEEPTTL")
+                ClassicAssert.AreEqual(originalExpiry, expiration);
+            else if (expiryOption is "EXAT" or "PXAT")
+                ClassicAssert.AreEqual(absoluteExpiry, expiration);
+            else
+                ClassicAssert.GreaterOrEqual(expiration, originalExpiry + 60000);
+        }
+
+        [Test]
+        public void SetComparisonAbsoluteExpiryValidatesAndExpires(
+            [Values("IFEQ", "IFNE", "IFDEQ", "IFDNE")] string condition, [Values("EXAT", "PXAT")] string expiryOption)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            db.StringSet("key", "old", TimeSpan.FromMinutes(1));
+            var originalExpiry = (long)db.Execute("PEXPIRETIME", "key");
+            var comparison = condition switch
+            {
+                "IFEQ" => "old",
+                "IFNE" => "different",
+                "IFDEQ" => DigestOf("old"),
+                _ => DigestOf("different")
+            };
+
+            foreach (var invalidExpiry in new[] { 0L, long.MaxValue })
+            {
+                var exception = ClassicAssert.Throws<RedisServerException>(() =>
+                    db.Execute("SET", "key", "new", condition, comparison, expiryOption, invalidExpiry));
+                ClassicAssert.AreEqual("ERR invalid expire time in 'set' command", exception.Message);
+                ClassicAssert.AreEqual("old", (string)db.StringGet("key"));
+                ClassicAssert.AreEqual(originalExpiry, (long)db.Execute("PEXPIRETIME", "key"));
+            }
+
+            var past = DateTimeOffset.UtcNow.AddSeconds(-1);
+            var expiry = expiryOption == "EXAT" ? past.ToUnixTimeSeconds() : past.ToUnixTimeMilliseconds();
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "key", "new", condition, comparison, expiryOption, expiry));
+            ClassicAssert.IsFalse(db.KeyExists("key"));
+        }
+
+        [Test]
+        public void SetIfEqualDoesNotCreateMissingOrExpiredKeys([Values(0, 1, 2)] int storageRegion, [Values] bool objectValue)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            ClassicAssert.IsTrue(db.Execute("SET", "missing", "new", "IFEQ", "").IsNull);
+            ClassicAssert.IsTrue(db.Execute("SET", "missing", "new", "IFEQ", "", "GET").IsNull);
+            ClassicAssert.IsFalse(db.KeyExists("missing"));
+
+            if (objectValue)
+                db.ListRightPush("expired", "old");
+            else
+                db.StringSet("expired", "old");
+            db.KeyExpire("expired", TimeSpan.FromMilliseconds(20));
+            PrepareSetIfEqualRecord(storageRegion);
+            Thread.Sleep(50);
+            ClassicAssert.IsTrue(db.Execute("SET", "expired", "new", "IFEQ", "old", "GET", "KEEPTTL").IsNull);
+            ClassicAssert.IsFalse(db.KeyExists("expired"));
+        }
+
+        [Test]
+        public void SetValueConditionalRejectsWrongType([Values(0, 1, 2)] int storageRegion, [Values] bool get, [Values("IFEQ", "IFNE")] string condition)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            db.ListRightPush("key", "old");
+            PrepareSetIfEqualRecord(storageRegion);
+            var exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SET", get
+                ? ["key", "new", condition, "old", "GET"]
+                : ["key", "new", condition, "old"]));
+            ClassicAssert.AreEqual("WRONGTYPE Operation against a key holding the wrong kind of value.", exception.Message);
+            ClassicAssert.AreEqual("old", (string)db.ListGetByIndex("key", 0));
+        }
+
+        [Test]
+        public void SetIfEqualRejectsInvalidOptions()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            db.StringSet("key", "old");
+            string[][] invalidOptions =
+            [
+                ["IFEQ"],
+                ["NX", "IFEQ", "old"],
+                ["IFEQ", "old", "NX"],
+                ["XX", "IFEQ", "old"],
+                ["IFEQ", "old", "XX"],
+                ["IFEQ", "old", "IFEQ", "old"],
+                ["IFEQ", "old", "EX"],
+                ["IFEQ", "old", "PX"],
+                ["IFEQ", "old", "EX", "1", "KEEPTTL"],
+                ["IFNE"],
+                ["NX", "IFNE", "old"],
+                ["IFNE", "old", "XX"],
+                ["IFNE", "old", "IFEQ", "old"],
+                ["IFEQ", "old", "IFNE", "old"],
+                ["IFNE", "old", "IFNE", "old"],
+                ["IFDEQ"],
+                ["IFDNE"],
+                ["NX", "IFDEQ", "0000000000000000"],
+                ["IFDNE", "0000000000000000", "XX"],
+                ["IFDEQ", "0000000000000000", "IFNE", "old"],
+                ["IFDNE", "0000000000000000", "IFDEQ", "0000000000000000"]
+            ];
+            foreach (var options in invalidOptions)
+            {
+                var exception = ClassicAssert.Throws<RedisServerException>(() =>
+                    db.Execute("SET", ["key", "new", .. options]));
+                ClassicAssert.AreEqual("ERR syntax error", exception.Message);
+                ClassicAssert.AreEqual("old", (string)db.StringGet("key"));
+            }
+        }
+
+        [Test]
+        public async Task SetValueConditionalHasOneWinner([Values(0, 1, 2)] int storageRegion, [Values("IFEQ", "IFNE")] string condition)
+        {
+            using var first = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var second = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            first.GetDatabase().StringSet("key", "old");
+            PrepareSetIfEqualRecord(storageRegion);
+            using var start = new Barrier(2);
+            var results = await Task.WhenAll(Update(first), Update(second));
+            ClassicAssert.AreEqual(1, results.Count(result => (string)result == "OK"));
+            ClassicAssert.AreEqual(1, results.Count(result => result.IsNull));
+            ClassicAssert.AreEqual("new", (string)first.GetDatabase().StringGet("key"));
+
+            Task<RedisResult> Update(ConnectionMultiplexer client) => Task.Run(() =>
+            {
+                start.SignalAndWait();
+                return client.GetDatabase().Execute("SET", "key", "new", condition, condition == "IFEQ" ? "old" : "new");
+            });
+        }
+
+        [Test]
+        public void SetIfNotEqualCreatesMissingAndExpiredKeys([Values(0, 1, 2)] int storageRegion, [Values] bool objectValue, [Values] bool get)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            var result = db.Execute("SET", get
+                ? ["missing", "new", "IFNE", "", "GET", "KEEPTTL"]
+                : ["missing", "new", "IFNE", "", "KEEPTTL"]);
+            if (get)
+                ClassicAssert.IsTrue(result.IsNull);
+            else
+                ClassicAssert.AreEqual("OK", (string)result);
+            ClassicAssert.AreEqual("new", (string)db.StringGet("missing"));
+            ClassicAssert.AreEqual(-1, (long)db.Execute("PTTL", "missing"));
+
+            if (objectValue)
+                db.ListRightPush("expired", "old");
+            else
+                db.StringSet("expired", "old");
+            db.KeyExpire("expired", TimeSpan.FromMilliseconds(20));
+            PrepareSetIfEqualRecord(storageRegion);
+            Thread.Sleep(50);
+            result = db.Execute("SET", get
+                ? ["expired", "new", "IFNE", "old", "GET", "EX", 60]
+                : ["expired", "new", "IFNE", "old", "EX", 60]);
+            if (get)
+                ClassicAssert.IsTrue(result.IsNull);
+            else
+                ClassicAssert.AreEqual("OK", (string)result);
+            ClassicAssert.AreEqual("new", (string)db.StringGet("expired"));
+            ClassicAssert.Greater((long)db.Execute("PTTL", "expired"), 0);
+        }
+
+        [Test]
+        public void DeleteValueConditionalComparesBinaryValues([Values(0, 1, 2)] int storageRegion, [Values("DELIFEQ", "IFEQ", "IFNE")] string condition)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            byte[] original = [0, 255, 13, 10, (byte)'a'];
+            byte[] different = [0, 255, 13, 10, (byte)'A'];
+            db.StringSet("key", original, TimeSpan.FromMinutes(1));
+            long expiration = (long)db.Execute("PEXPIRETIME", "key");
+            PrepareSetIfEqualRecord(storageRegion);
+            ClassicAssert.AreEqual(0, Delete(condition == "IFNE" ? original : different));
+            CollectionAssert.AreEqual(original, (byte[])db.StringGet("key"));
+            ClassicAssert.AreEqual(expiration, (long)db.Execute("PEXPIRETIME", "key"));
+            ClassicAssert.AreEqual(1, Delete(condition == "IFNE" ? different : original));
+            ClassicAssert.IsFalse(db.KeyExists("key"));
+            ClassicAssert.AreEqual(0, Delete(original));
+
+            db.StringSet("key", "");
+            ClassicAssert.AreEqual(1, Delete(condition == "IFNE" ? original : []));
+
+            long Delete(byte[] comparison) => (long)db.Execute(condition == "DELIFEQ" ? "delifeq" : "delex",
+                condition == "DELIFEQ" ? ["key", comparison] : ["key", condition.ToLowerInvariant(), comparison]);
+        }
+
+        [Test]
+        public void DeleteValueConditionalHandlesTypesAndExpiry([Values(0, 1, 2)] int storageRegion, [Values("DELIFEQ", "IFEQ", "IFNE")] string condition)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            db.ListRightPush("key", "old");
+            PrepareSetIfEqualRecord(storageRegion);
+            var exception = ClassicAssert.Throws<RedisServerException>(() => Delete());
+            ClassicAssert.AreEqual("WRONGTYPE Operation against a key holding the wrong kind of value.", exception.Message);
+            ClassicAssert.AreEqual("old", (string)db.ListGetByIndex("key", 0));
+            db.KeyExpire("key", TimeSpan.FromMilliseconds(20));
+            PrepareSetIfEqualRecord(storageRegion);
+            Thread.Sleep(50);
+            ClassicAssert.AreEqual(0, Delete());
+            ClassicAssert.IsFalse(db.KeyExists("key"));
+
+            long Delete() => (long)db.Execute(condition == "DELIFEQ" ? "DELIFEQ" : "DELEX",
+                condition == "DELIFEQ" ? ["key", "old"] : ["key", condition, "old"]);
+        }
+
+        [Test]
+        public void DeleteValueConditionalValidatesSyntax()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            ClassicAssert.Throws<RedisServerException>(() => db.Execute("DELIFEQ"));
+            ClassicAssert.Throws<RedisServerException>(() => db.Execute("DELIFEQ", "key"));
+            ClassicAssert.Throws<RedisServerException>(() => db.Execute("DELIFEQ", "key", "value", "extra"));
+            ClassicAssert.Throws<RedisServerException>(() => db.Execute("DELEX"));
+            object[][] invalid =
+            [
+                ["key", "IFEQ"], ["key", "IFNE"], ["key", "NX", "old"],
+                ["key", "IFEQ", "old", "IFNE", "other"],
+                ["key", "IFDEQ"], ["key", "IFDNE"]
+            ];
+            foreach (var args in invalid)
+            {
+                var exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute("DELEX", args));
+                ClassicAssert.AreEqual("ERR syntax error", exception.Message);
+            }
+            db.ListRightPush("key", "value");
+            ClassicAssert.AreEqual(1, (long)db.Execute("DELEX", "key"));
+            ClassicAssert.AreEqual(0, (long)db.Execute("DELEX", "key"));
+        }
+
+        [Test]
+        public async Task DeleteValueConditionalHasOneWinner([Values(0, 1, 2)] int storageRegion, [Values("DELIFEQ", "IFEQ", "IFNE")] string condition)
+        {
+            using var first = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var second = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            first.GetDatabase().StringSet("key", "old");
+            PrepareSetIfEqualRecord(storageRegion);
+            using var start = new Barrier(2);
+            var results = await Task.WhenAll(Delete(first), Delete(second));
+            ClassicAssert.AreEqual(1, results.Sum());
+            ClassicAssert.IsFalse(first.GetDatabase().KeyExists("key"));
+
+            Task<long> Delete(ConnectionMultiplexer client) => Task.Run(() =>
+            {
+                start.SignalAndWait();
+                return (long)client.GetDatabase().Execute(condition == "DELIFEQ" ? "DELIFEQ" : "DELEX",
+                    condition == "DELIFEQ" ? ["key", "old"] : ["key", condition, condition == "IFNE" ? "different" : "old"]);
+            });
+        }
+
+        [Test]
+        public async Task DeleteValueConditionalTransactionsAndWatch([Values(0, 1, 2)] int storageRegion)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var writer = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var client = TestUtils.GetGarnetClientSession();
+            client.Connect();
+            var db = redis.GetDatabase();
+            db.StringSet("key", "old");
+            PrepareSetIfEqualRecord(storageRegion);
+            await client.ExecuteAsync("WATCH", "key");
+            ClassicAssert.AreEqual(0, (long)writer.GetDatabase().Execute("DELEX", "key", "IFNE", "old"));
+            await client.ExecuteAsync("MULTI");
+            await client.ExecuteAsync("SET", "key", "new", "IFNE", "different");
+            await client.ExecuteAsync("DELIFEQ", "key", "old");
+            await client.ExecuteAsync("DELEX", "key", "IFEQ", "new");
+            var results = await client.ExecuteForArrayAsync("EXEC");
+            CollectionAssert.AreEqual(new[] { "OK", "0", "1" }, results);
+            ClassicAssert.IsFalse(db.KeyExists("key"));
+
+            db.StringSet("key", "old");
+            PrepareSetIfEqualRecord(storageRegion);
+            await client.ExecuteAsync("WATCH", "key");
+            ClassicAssert.AreEqual(1, (long)writer.GetDatabase().Execute("DELIFEQ", "key", "old"));
+            await client.ExecuteAsync("MULTI");
+            await client.ExecuteAsync("GET", "key");
+            ClassicAssert.IsNull(await client.ExecuteForArrayAsync("EXEC"));
+        }
+
+        [Test]
+        public void SetIfEqualTransactionsAndWatch()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var writer = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            db.StringSet("key", "old");
+            db.Execute("WATCH", "key");
+            ClassicAssert.IsTrue(writer.GetDatabase().Execute("SET", "key", "rejected", "IFEQ", "different").IsNull);
+            db.Execute("MULTI");
+            db.Execute("SET", "key", "new", "IFEQ", "old", "KEEPTTL");
+            db.Execute("SET", "key", "final", "IFEQ", "new", "GET");
+            var results = (RedisResult[])db.Execute("EXEC");
+            ClassicAssert.AreEqual("OK", (string)results[0]);
+            ClassicAssert.AreEqual("new", (string)results[1]);
+            ClassicAssert.AreEqual("final", (string)db.StringGet("key"));
+
+            db.Execute("WATCH", "key");
+            ClassicAssert.AreEqual("OK", (string)writer.GetDatabase().Execute("SET", "key", "changed", "IFEQ", "final"));
+            db.Execute("MULTI");
+            db.Execute("GET", "key");
+            ClassicAssert.IsTrue(db.Execute("EXEC").IsNull);
+        }
+
+        [Test]
+        public async Task RejectedConditionalSetPreservesWatchConflictDetection(
+            [Values("IFEQ", "IFNE", "IFDEQ", "IFDNE")] string condition, [Values] bool get, [Values] bool keepTtl)
+        {
+            using var writer = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var client = TestUtils.GetGarnetClientSession();
+            client.Connect();
+            var db = writer.GetDatabase();
+            db.StringSet("key", "old", TimeSpan.FromMinutes(1));
+            var comparison = condition switch
+            {
+                "IFEQ" => "different",
+                "IFNE" => "old",
+                "IFDEQ" => DigestOf("different"),
+                _ => DigestOf("old")
+            };
+            object[] options = keepTtl ? ["KEEPTTL"] : [];
+            if (get)
+                options = [.. options, "GET"];
+
+            for (var write = 0; write < 2; write++)
+            {
+                await client.ExecuteAsync("WATCH", "key");
+                var result = db.Execute("SET", ["key", "rejected", condition, comparison, .. options]);
+                if (get)
+                    ClassicAssert.AreEqual("old", (string)result);
+                else
+                    ClassicAssert.IsTrue(result.IsNull);
+                if (write == 1)
+                    ClassicAssert.IsTrue(db.StringSet("key", "new", expiry: null, keepTtl: true));
+
+                await client.ExecuteAsync("MULTI");
+                await client.ExecuteAsync("GET", "key");
+                var results = await client.ExecuteForArrayAsync("EXEC");
+                if (write == 0)
+                    CollectionAssert.AreEqual(new[] { "old" }, results);
+                else
+                    ClassicAssert.IsNull(results);
+            }
+        }
+
+        [Test]
+        public async Task RejectedConditionalDeletePreservesWatchConflictDetection(
+            [Values("DELIFEQ", "IFEQ", "IFNE", "IFDEQ", "IFDNE")] string condition)
+        {
+            using var writer = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var client = TestUtils.GetGarnetClientSession();
+            client.Connect();
+            var db = writer.GetDatabase();
+            db.StringSet("key", "old");
+            var comparison = condition switch
+            {
+                "IFNE" => "old",
+                "IFDEQ" => DigestOf("different"),
+                "IFDNE" => DigestOf("old"),
+                _ => "different"
+            };
+
+            for (var write = 0; write < 2; write++)
+            {
+                await client.ExecuteAsync("WATCH", "key");
+                ClassicAssert.AreEqual(0, (long)db.Execute(condition == "DELIFEQ" ? "DELIFEQ" : "DELEX",
+                    condition == "DELIFEQ" ? ["key", comparison] : ["key", condition, comparison]));
+                if (write == 1)
+                    ClassicAssert.IsTrue(db.StringSet("key", "new"));
+
+                await client.ExecuteAsync("MULTI");
+                await client.ExecuteAsync("GET", "key");
+                var results = await client.ExecuteForArrayAsync("EXEC");
+                if (write == 0)
+                    CollectionAssert.AreEqual(new[] { "old" }, results);
+                else
+                    ClassicAssert.IsNull(results);
+            }
+        }
+
+        [TestCase("", "2d06800538d394c2", 0)]
+        [TestCase("", "2d06800538d394c2", 1)]
+        [TestCase("", "2d06800538d394c2", 2)]
+        [TestCase("Hello world", "b6acb9d84a38ff74", 0)]
+        [TestCase("Hello world", "b6acb9d84a38ff74", 1)]
+        [TestCase("Hello world", "b6acb9d84a38ff74", 2)]
+        [TestCase("v8lf0c11xh8ymlqztfd3eeq16kfn4sspw7fqmnuuq3k3t75em5wdizgcdw7uc26nnf961u2jkfzkjytls2kwlj7626sd", "00006c38adf31777", 0)]
+        [TestCase("v8lf0c11xh8ymlqztfd3eeq16kfn4sspw7fqmnuuq3k3t75em5wdizgcdw7uc26nnf961u2jkfzkjytls2kwlj7626sd", "00006c38adf31777", 1)]
+        [TestCase("v8lf0c11xh8ymlqztfd3eeq16kfn4sspw7fqmnuuq3k3t75em5wdizgcdw7uc26nnf961u2jkfzkjytls2kwlj7626sd", "00006c38adf31777", 2)]
+        public void DigestMatchesRedisVectors(string value, string expected, int storageRegion)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            db.StringSet("key", value);
+            PrepareSetIfEqualRecord(storageRegion);
+            ClassicAssert.AreEqual(expected, (string)db.Execute("DIGEST", "key"));
+        }
+
+        [Test]
+        public void DigestRecomputesAfterMutations([Values(0, 1, 2)] int storageRegion)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            byte[] value = new byte[20000];
+            value[^1] = 255;
+            db.StringSet("key", value);
+            PrepareSetIfEqualRecord(storageRegion);
+            AssertDigest();
+            string original = (string)db.Execute("DIGEST", "key");
+            db.KeyExpire("key", TimeSpan.FromMinutes(1));
+            ClassicAssert.AreEqual(original, (string)db.Execute("DIGEST", "key"));
+            db.StringAppend("key", "suffix");
+            AssertDigest();
+            db.StringSetRange("key", 5, "changed");
+            AssertDigest();
+            db.StringSetBit("key", 0, true);
+            AssertDigest();
+            db.StringSet("key", "12345");
+            AssertDigest();
+            db.StringIncrement("key");
+            AssertDigest();
+            db.Execute("SETWITHETAG", "key", "12346");
+            AssertDigest();
+            ClassicAssert.Throws<RedisServerException>(() => db.Execute("DIGEST"));
+            ClassicAssert.Throws<RedisServerException>(() => db.Execute("DIGEST", "key", "extra"));
+
+            void AssertDigest() => ClassicAssert.AreEqual(DigestOf((byte[])db.StringGet("key")), (string)db.Execute("digest", "key"));
+        }
+
+        [Test]
+        public void SetDigestConditionalComparesCurrentValue([Values(0, 1, 2)] int storageRegion,
+            [Values("IFDEQ", "IFDNE")] string condition, [Values] bool get, [Values("", "EX", "PX", "EXAT", "PXAT", "KEEPTTL")] string expiryOption)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            byte[] original = Encoding.UTF8.GetBytes(new string('a', 10000) + "\0\u00ff\r\n");
+            string replacement = new string('x', 20000);
+            db.StringSet("key", original, TimeSpan.FromMinutes(1));
+            long expiration = (long)db.Execute("PEXPIRETIME", "key");
+            string digest = DigestOf(original).ToUpperInvariant();
+            PrepareSetIfEqualRecord(storageRegion);
+            var absoluteExpiry = DateTimeOffset.UtcNow.AddMinutes(2).ToUnixTimeSeconds() * 1000;
+            object[] options = expiryOption switch
+            {
+                "EX" => ["EX", 120],
+                "PX" => ["PX", 120000],
+                "EXAT" => ["EXAT", absoluteExpiry / 1000],
+                "PXAT" => ["PXAT", absoluteExpiry],
+                "KEEPTTL" => ["KEEPTTL"],
+                _ => []
+            };
+            object[] getOption = get ? ["GET"] : [];
+            var result = db.Execute("SET", ["key", replacement, condition.ToLowerInvariant(),
+                condition == "IFDEQ" ? "zzzzzzzzzzzzzzzz" : digest, .. getOption, .. options]);
+            if (get)
+                CollectionAssert.AreEqual(original, (byte[])result);
+            else
+                ClassicAssert.IsTrue(result.IsNull);
+            ClassicAssert.AreEqual(expiration, (long)db.Execute("PEXPIRETIME", "key"));
+
+            result = db.Execute("SET", ["key", replacement, .. getOption, condition,
+                condition == "IFDEQ" ? digest : "zzzzzzzzzzzzzzzz", .. options]);
+            if (get)
+                CollectionAssert.AreEqual(original, (byte[])result);
+            else
+                ClassicAssert.AreEqual("OK", (string)result);
+            ClassicAssert.AreEqual(replacement, (string)db.StringGet("key"));
+            ClassicAssert.AreEqual(DigestOf(replacement), (string)db.Execute("DIGEST", "key"));
+            long updatedExpiry = (long)db.Execute("PEXPIRETIME", "key");
+            if (expiryOption == "")
+                ClassicAssert.AreEqual(-1, updatedExpiry);
+            else if (expiryOption == "KEEPTTL")
+                ClassicAssert.AreEqual(expiration, updatedExpiry);
+            else if (expiryOption is "EXAT" or "PXAT")
+                ClassicAssert.AreEqual(absoluteExpiry, updatedExpiry);
+            else
+                ClassicAssert.GreaterOrEqual(updatedExpiry, expiration + 60000);
+            ClassicAssert.IsTrue(db.Execute("SET", "key", "rejected", condition,
+                condition == "IFDEQ" ? digest : DigestOf(replacement)).IsNull);
+        }
+
+        [Test]
+        public void DigestConditionsHandleMissingTypesAndValidation([Values(0, 1, 2)] int storageRegion, [Values] bool objectValue)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            ClassicAssert.IsTrue(db.Execute("DIGEST", "missing").IsNull);
+            ClassicAssert.IsTrue(db.Execute("SET", "missing", "new", "IFDEQ", "bad", "GET").IsNull);
+            ClassicAssert.IsTrue(db.Execute("SET", "missing", "new", "IFDNE", "bad", "GET", "KEEPTTL").IsNull);
+            ClassicAssert.AreEqual("new", (string)db.StringGet("missing"));
+            PrepareSetIfEqualRecord(storageRegion);
+            foreach (var condition in new[] { "IFDEQ", "IFDNE" })
+            {
+                foreach (var invalid in new[] { "", "123456789012345", "12345678901234567" })
+                {
+                    var error = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SET", "missing", "rejected", condition, invalid, "GET"));
+                    ClassicAssert.AreEqual("ERR must be exactly 16 hexadecimal characters", error.Message);
+                    error = ClassicAssert.Throws<RedisServerException>(() => db.Execute("DELEX", "missing", condition, invalid));
+                    ClassicAssert.AreEqual("ERR must be exactly 16 hexadecimal characters", error.Message);
+                }
+                ClassicAssert.AreEqual(0, (long)db.Execute("DELEX", "absent", condition, "bad"));
+            }
+            db.ListRightPush("object", "old");
+            PrepareSetIfEqualRecord(storageRegion);
+            ClassicAssert.Throws<RedisServerException>(() => db.Execute("DIGEST", "object"));
+            foreach (var command in new[] { "SET", "DELEX" })
+            {
+                var error = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, command == "SET"
+                    ? ["object", "new", "IFDNE", "bad"] : ["object", "IFDEQ", "bad"]));
+                ClassicAssert.AreEqual("WRONGTYPE Operation against a key holding the wrong kind of value.", error.Message);
+            }
+            if (objectValue)
+                db.ListRightPush("expired", "old");
+            else
+                db.StringSet("expired", "old");
+            db.KeyExpire("expired", TimeSpan.FromMilliseconds(20));
+            PrepareSetIfEqualRecord(storageRegion);
+            Thread.Sleep(50);
+            ClassicAssert.IsTrue(db.Execute("DIGEST", "expired").IsNull);
+            ClassicAssert.AreEqual(0, (long)db.Execute("DELEX", "expired", "IFDEQ", "bad"));
+            ClassicAssert.AreEqual(0, (long)db.Execute("DELEX", "expired", "IFDNE", "bad"));
+            ClassicAssert.IsTrue(db.Execute("SET", "expired", "new", "IFDEQ", "bad").IsNull);
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "expired", "new", "IFDNE", "bad", "PX", 60000));
+            ClassicAssert.Greater((long)db.Execute("PTTL", "expired"), 0);
+        }
+
+        [Test]
+        public void DeleteDigestConditionalComparesCurrentValue([Values(0, 1, 2)] int storageRegion, [Values("IFDEQ", "IFDNE")] string condition)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            byte[] value = [0, 255, 13, 10, (byte)'a'];
+            db.StringSet("key", value, TimeSpan.FromMinutes(1));
+            string digest = DigestOf(value).ToUpperInvariant();
+            long expiration = (long)db.Execute("PEXPIRETIME", "key");
+            PrepareSetIfEqualRecord(storageRegion);
+            ClassicAssert.AreEqual(0, (long)db.Execute("DELEX", "key", condition.ToLowerInvariant(), condition == "IFDEQ" ? "zzzzzzzzzzzzzzzz" : digest));
+            CollectionAssert.AreEqual(value, (byte[])db.StringGet("key"));
+            ClassicAssert.AreEqual(expiration, (long)db.Execute("PEXPIRETIME", "key"));
+            ClassicAssert.AreEqual(1, (long)db.Execute("DELEX", "key", condition, condition == "IFDEQ" ? digest : "zzzzzzzzzzzzzzzz"));
+            ClassicAssert.IsFalse(db.KeyExists("key"));
+            ClassicAssert.AreEqual(0, (long)db.Execute("DELEX", "key", condition, ""));
+            db.StringSet("key", "");
+            ClassicAssert.AreEqual(1, (long)db.Execute("DELEX", "key", condition, condition == "IFDEQ" ? DigestOf("") : digest));
+        }
+
+        [Test]
+        public async Task DigestConditionsHaveOneWinner([Values(0, 1, 2)] int storageRegion, [Values("IFDEQ", "IFDNE")] string condition, [Values] bool delete)
+        {
+            using var first = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var second = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            first.GetDatabase().StringSet("key", "old");
+            PrepareSetIfEqualRecord(storageRegion);
+            using var start = new Barrier(2);
+            var results = await Task.WhenAll(Update(first), Update(second));
+            ClassicAssert.AreEqual(1, results.Count(result => delete ? (long)result == 1 : (string)result == "OK"));
+            ClassicAssert.AreEqual(1, results.Count(result => delete ? (long)result == 0 : result.IsNull));
+            if (delete)
+                ClassicAssert.IsFalse(first.GetDatabase().KeyExists("key"));
+            else
+                ClassicAssert.AreEqual("new", (string)first.GetDatabase().StringGet("key"));
+
+            Task<RedisResult> Update(ConnectionMultiplexer client) => Task.Run(() =>
+            {
+                start.SignalAndWait();
+                string digest = DigestOf(condition == "IFDEQ" ? "old" : "new");
+                return client.GetDatabase().Execute(delete ? "DELEX" : "SET",
+                    delete ? ["key", condition, digest] : ["key", "new", condition, digest]);
+            });
+        }
+
+        [Test]
+        public async Task DigestConditionsTransactionsAndWatch([Values(0, 1, 2)] int storageRegion)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var writer = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var client = TestUtils.GetGarnetClientSession();
+            client.Connect();
+            var db = redis.GetDatabase();
+            db.StringSet("key", "old");
+            PrepareSetIfEqualRecord(storageRegion);
+            await client.ExecuteAsync("WATCH", "key");
+            ClassicAssert.AreEqual(DigestOf("old"), (string)db.Execute("DIGEST", "key"));
+            ClassicAssert.AreEqual(0, (long)writer.GetDatabase().Execute("DELEX", "key", "IFDNE", DigestOf("old")));
+            await client.ExecuteAsync("MULTI");
+            await client.ExecuteAsync("SET", "key", "new", "IFDEQ", DigestOf("old"));
+            await client.ExecuteAsync("DELEX", "key", "IFDNE", DigestOf("old"));
+            CollectionAssert.AreEqual(new[] { "OK", "1" }, await client.ExecuteForArrayAsync("EXEC"));
+            ClassicAssert.IsFalse(db.KeyExists("key"));
+            db.StringSet("key", "old");
+            PrepareSetIfEqualRecord(storageRegion);
+            await client.ExecuteAsync("WATCH", "key");
+            ClassicAssert.AreEqual(1, (long)writer.GetDatabase().Execute("DELEX", "key", "IFDEQ", DigestOf("old")));
+            await client.ExecuteAsync("MULTI");
+            await client.ExecuteAsync("DIGEST", "key");
+            ClassicAssert.IsNull(await client.ExecuteForArrayAsync("EXEC"));
+        }
+
+        [Test]
+        public async Task RmwDeleteUpdatesWatch([Values(0, 1, 2)] int storageRegion,
+            [Values("GETDEL", "DELIFGREATER")] string command, [Values] bool delete)
+        {
+            using var writer = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var client = TestUtils.GetGarnetClientSession();
+            client.Connect();
+            var db = writer.GetDatabase();
+            ClassicAssert.AreEqual(1, (long)db.Execute("SETWITHETAG", "key", "old"));
+            PrepareSetIfEqualRecord(storageRegion);
+            var key = command == "GETDEL" && !delete ? "missing" : "key";
+            await client.ExecuteAsync("WATCH", key);
+            if (command == "GETDEL")
+            {
+                var result = db.Execute(command, key);
+                if (delete)
+                    ClassicAssert.AreEqual("old", (string)result);
+                else
+                    ClassicAssert.IsTrue(result.IsNull);
+            }
+            else
+                ClassicAssert.AreEqual(delete ? 1 : 0, (long)db.Execute(command, key, delete ? 2 : 1));
+
+            await client.ExecuteAsync("MULTI");
+            await client.ExecuteAsync("PING");
+            var results = await client.ExecuteForArrayAsync("EXEC");
+            if (delete)
+                ClassicAssert.IsNull(results);
+            else
+                CollectionAssert.AreEqual(new[] { "PONG" }, results);
+        }
+
+        [TestCase("DELIFEQ", ExistOptions.IFEQ)]
+        [TestCase("DELEX", ExistOptions.IFEQ)]
+        [TestCase("DELEX", ExistOptions.IFNE)]
+        [TestCase("DELEX", ExistOptions.IFDEQ)]
+        [TestCase("DELEX", ExistOptions.IFDNE)]
+        public unsafe void ConditionalDeleteWaitsForPublication(string command, ExistOptions condition)
+        {
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
+            server.Start();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            db.StringSet("key", "old");
+            var wrapper = server.Provider.StoreWrapper;
+            var state = wrapper.CreateFunctionsState();
+            var functions = new MainSessionFunctions(state);
+            var rmwInfo = new RMWInfo { KeyHash = Tsavorite.core.Utility.HashBytes("key"u8) };
+            var version = state.watchVersionMap.ReadVersion(rmwInfo.KeyHash);
+            var aofTail = state.appendOnlyFile.Log.GetTailAddress(0);
+            var comparison = Encoding.UTF8.GetBytes(condition switch
+            {
+                ExistOptions.IFNE => "different",
+                ExistOptions.IFDEQ => DigestOf("old"),
+                ExistOptions.IFDNE => DigestOf("different"),
+                _ => "old"
+            });
+            fixed (byte* pointer = comparison)
+            {
+                SessionParseState args = default;
+                args.InitializeWithArguments([PinnedSpanByte.FromPinnedPointer(pointer, comparison.Length)]);
+                var input = new StringInput(command == "DELIFEQ" ? RespCommand.DELIFEQ : RespCommand.DELEX,
+                    ref args, arg1: (long)condition);
+                var output = new StringOutput();
+                try
+                {
+                    using var iterator = wrapper.store.Log.Scan(wrapper.store.Log.BeginAddress, wrapper.store.Log.TailAddress);
+                    ClassicAssert.IsTrue(iterator.GetNext());
+                    ClassicAssert.IsFalse(functions.NeedCopyUpdate(in iterator, ref input, ref output, ref rmwInfo));
+                    ClassicAssert.AreEqual(RMWAction.ExpireAndStop, rmwInfo.Action);
+                    ClassicAssert.AreEqual(version, state.watchVersionMap.ReadVersion(rmwInfo.KeyHash));
+                    ClassicAssert.AreEqual(0, rmwInfo.UserData);
+
+                    functions.PostRMWOperation((FixedSpanByteKey)"key"u8, ref input, ref rmwInfo, wrapper.store.epoch);
+                    ClassicAssert.AreEqual(aofTail, state.appendOnlyFile.Log.GetTailAddress(0));
+                    ClassicAssert.AreEqual(version, state.watchVersionMap.ReadVersion(rmwInfo.KeyHash));
+                }
+                finally
+                {
+                    output.Dispose();
+                }
+            }
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SET", "key", "new", "IFEQ", "old"));
+            ClassicAssert.AreEqual("new", (string)db.StringGet("key"));
+            _ = server.Store.CommitAOFAsync(default).GetAwaiter().GetResult();
+            redis.Dispose();
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+            using var recovered = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            ClassicAssert.AreEqual("new", (string)recovered.GetDatabase().StringGet("key"));
+        }
+
+        private static string DigestOf(string value) => DigestOf(Encoding.UTF8.GetBytes(value));
+
+        private static string DigestOf(byte[] value) => XxHash3.HashToUInt64(value).ToString("x16", CultureInfo.InvariantCulture);
+
+        private void PrepareSetIfEqualRecord(int storageRegion)
+        {
+            var store = server.Provider.StoreWrapper.store;
+            if (storageRegion == 1)
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            else if (storageRegion == 2)
+                store.Log.FlushAndEvict(wait: true);
         }
 
         /// <summary>
@@ -273,6 +1056,57 @@ namespace Garnet.test
             var value = db.StringGet("mykey");
 
             ClassicAssert.AreEqual("val", value.ToString());
+        }
+
+        /// <summary>
+        /// RESTORE sets its TTL in milliseconds, including TTLs too long for an int.
+        /// </summary>
+        [Test]
+        public void RestoreTtlIsInMilliseconds()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "val");
+            var dump = db.KeyDump("mykey")!;
+            db.KeyDelete("mykey");
+
+            foreach (var ttl in new[] { TimeSpan.FromHours(1), TimeSpan.FromDays(30) })
+            {
+                db.KeyRestore("mykey", dump, ttl);
+                var restoredTtl = db.KeyTimeToLive("mykey");
+                ClassicAssert.IsNotNull(restoredTtl, ttl.ToString());
+                ClassicAssert.Greater(restoredTtl.Value, ttl - TimeSpan.FromMinutes(1), ttl.ToString());
+                ClassicAssert.LessOrEqual(restoredTtl.Value, ttl, ttl.ToString());
+                db.KeyDelete("mykey");
+            }
+        }
+
+        /// <summary>
+        /// RESTORE rejects a TTL that is not an integer, is negative, or gives an unrepresentable expiration, and creates no key.
+        /// </summary>
+        [Test]
+        public void RestoreRejectsInvalidTtl()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "val");
+            var dump = db.KeyDump("mykey")!;
+            db.KeyDelete("mykey");
+
+            foreach (var (ttl, expected) in new (object, string)[]
+            {
+                ("abc", "ERR value is not an integer or out of range."),
+                ("1.5", "ERR value is not an integer or out of range."),
+                (-1, "ERR invalid expire time, must be >= 0"),
+                (long.MaxValue, "ERR invalid expire time in 'restore' command"),
+            })
+            {
+                var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("RESTORE", "mykey", ttl, dump));
+                ClassicAssert.AreEqual(expected, ex.Message, ttl.ToString());
+                ClassicAssert.IsFalse(db.KeyExists("mykey"), ttl.ToString());
+            }
         }
 
         /// <summary>
@@ -792,6 +1626,46 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SetExpiryAtOptions()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            void AssertAbsoluteTtl(string key, long unixTimeMilliseconds)
+            {
+                var ttl = (long)db.Execute("PTTL", key);
+                var expectedTtl = unixTimeMilliseconds - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                ClassicAssert.Greater(ttl, expectedTtl - 10_000);
+                ClassicAssert.LessOrEqual(ttl, expectedTtl + 1_000);
+            }
+
+            var exat = DateTimeOffset.UtcNow.AddMinutes(2).ToUnixTimeSeconds();
+            var result = db.Execute("SET", "set-exat", "value", "EXAT", exat);
+            ClassicAssert.AreEqual("OK", result.ToString());
+            AssertAbsoluteTtl("set-exat", exat * 1000);
+
+            var pxat = DateTimeOffset.UtcNow.AddMinutes(2).ToUnixTimeMilliseconds();
+            result = db.Execute("SET", "set-pxat", "value", "PXAT", pxat);
+            ClassicAssert.AreEqual("OK", result.ToString());
+            AssertAbsoluteTtl("set-pxat", pxat);
+
+            result = db.Execute("SET", "set-expired-pxat", "value", "PXAT",
+                DateTimeOffset.UtcNow.AddSeconds(-1).ToUnixTimeMilliseconds());
+            ClassicAssert.AreEqual("OK", result.ToString());
+            ClassicAssert.IsFalse(db.KeyExists("set-expired-pxat"));
+
+            var conditionalExpiry = DateTimeOffset.UtcNow.AddMinutes(2);
+            result = db.Execute("SET", "set-exat-nx", "value", "EXAT", conditionalExpiry.ToUnixTimeSeconds(), "NX");
+            ClassicAssert.AreEqual("OK", result.ToString());
+            ClassicAssert.AreEqual("value", db.StringGet("set-exat-nx").ToString());
+
+            ClassicAssert.IsTrue(db.StringSet("set-pxat-xx-get", "old-value"));
+            result = db.Execute("SET", "set-pxat-xx-get", "new-value", "PXAT", conditionalExpiry.ToUnixTimeMilliseconds(), "XX", "GET");
+            ClassicAssert.AreEqual("old-value", result.ToString());
+            AssertAbsoluteTtl("set-pxat-xx-get", conditionalExpiry.ToUnixTimeMilliseconds());
+        }
+
+        [Test]
         public void SetExpiryOutOfRangeIsRejectedWithoutKillingSession()
         {
             const string Key = nameof(SetExpiryOutOfRangeIsRejectedWithoutKillingSession);
@@ -817,6 +1691,10 @@ namespace Garnet.test
 
                 AssertInvalidExpiry("SET", Key, "replacement", "EX", overflowSeconds);
                 AssertInvalidExpiry("SET", Key, "replacement", "PX", long.MaxValue);
+                AssertInvalidExpiry("SET", Key, "replacement", "EXAT", 0);
+                AssertInvalidExpiry("SET", Key, "replacement", "PXAT", 0);
+                AssertInvalidExpiry("SET", Key, "replacement", "EXAT", long.MaxValue);
+                AssertInvalidExpiry("SET", Key, "replacement", "PXAT", long.MaxValue);
                 AssertInvalidExpiry("SETEX", Key, overflowSeconds, "replacement");
                 AssertInvalidExpiry("PSETEX", Key, long.MaxValue, "replacement");
 
@@ -951,6 +1829,176 @@ namespace Garnet.test
 
             retValue = db.StringGet(key);
             ClassicAssert.AreEqual(newValue, retValue);
+        }
+
+        [Test]
+        public void SetXxOverwritesNonStringKey([Values(RedisType.List, RedisType.Hash, RedisType.Set)] RedisType type)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+
+            CreateNonStringKey(db, key, type);
+            ClassicAssert.IsTrue(db.StringSet(key, "v1", null, When.Exists, CommandFlags.None));
+            ClassicAssert.AreEqual(RedisType.String, db.KeyType(key));
+            ClassicAssert.AreEqual("v1", (string)db.StringGet(key));
+            ClassicAssert.IsNull(db.KeyTimeToLive(key));
+
+            // With expiry
+            _ = db.KeyDelete(key);
+            CreateNonStringKey(db, key, type);
+            ClassicAssert.IsTrue(db.StringSet(key, "v2", TimeSpan.FromSeconds(100), When.Exists, CommandFlags.None));
+            ClassicAssert.AreEqual(RedisType.String, db.KeyType(key));
+            ClassicAssert.AreEqual("v2", (string)db.StringGet(key));
+            var ttl = db.KeyTimeToLive(key);
+            ClassicAssert.IsNotNull(ttl);
+            ClassicAssert.IsTrue(ttl.Value > TimeSpan.Zero && ttl.Value <= TimeSpan.FromSeconds(100));
+
+            // KEEPTTL XX
+            _ = db.KeyDelete(key);
+            CreateNonStringKey(db, key, type);
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SET", key, "v3", "KEEPTTL", "XX"));
+            ClassicAssert.AreEqual(RedisType.String, db.KeyType(key));
+            ClassicAssert.AreEqual("v3", (string)db.StringGet(key));
+        }
+
+        [Test]
+        public void SetNxLeavesNonStringKey([Values(RedisType.List, RedisType.Hash, RedisType.Set)] RedisType type)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            CreateNonStringKey(db, key, type);
+
+            ClassicAssert.IsFalse(db.StringSet(key, "v1", null, When.NotExists, CommandFlags.None));
+            ClassicAssert.IsFalse(db.StringSet(key, "v2", TimeSpan.FromSeconds(100), When.NotExists, CommandFlags.None));
+            ClassicAssert.IsTrue(db.Execute("SET", key, "v3", "KEEPTTL", "NX").IsNull);
+
+            ClassicAssert.AreEqual(type, db.KeyType(key));
+            ClassicAssert.IsNull(db.KeyTimeToLive(key));
+            switch (type)
+            {
+                case RedisType.List:
+                    ClassicAssert.AreEqual(2, db.ListLength(key));
+                    break;
+                case RedisType.Hash:
+                    ClassicAssert.AreEqual("v", (string)db.HashGet(key, "f"));
+                    break;
+                case RedisType.Set:
+                    ClassicAssert.IsTrue(db.SetContains(key, "m"));
+                    break;
+            }
+        }
+
+        [Test]
+        public void SetKeepTtlOverNonStringKeyKeepsTtl([Values(RedisType.List, RedisType.Hash, RedisType.Set)] RedisType type, [Values] bool xx)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            object[] args = xx ? [key, "v1", "KEEPTTL", "XX"] : [key, "v1", "KEEPTTL"];
+
+            CreateNonStringKey(db, key, type);
+            ClassicAssert.IsTrue(db.KeyExpire(key, TimeSpan.FromSeconds(100)));
+            var expireTime = db.KeyExpireTime(key);
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SET", args));
+            ClassicAssert.AreEqual(RedisType.String, db.KeyType(key));
+            ClassicAssert.AreEqual("v1", (string)db.StringGet(key));
+            ClassicAssert.AreEqual(expireTime, db.KeyExpireTime(key));
+
+            // Without a TTL
+            _ = db.KeyDelete(key);
+            CreateNonStringKey(db, key, type);
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SET", args));
+            ClassicAssert.AreEqual("v1", (string)db.StringGet(key));
+            ClassicAssert.IsNull(db.KeyTimeToLive(key));
+        }
+
+        /// <summary>
+        /// SET KEEPTTL XX over a non-string key that expires while the SET holds its lock finds the key missing.
+        /// </summary>
+        [Test]
+        public async Task SetKeepTtlXxOverNonStringKeyExpiringUnderLock()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+            const ExceptionInjectionType pause = ExceptionInjectionType.Set_Pause_Before_NonString_Recheck;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            var expireTime = DateTime.UtcNow.AddSeconds(1);
+            CreateNonStringKey(db, key, RedisType.List);
+            ClassicAssert.IsTrue(db.KeyExpire(key, expireTime));
+
+            try
+            {
+                ExceptionInjectionHelper.EnableException(pause);
+                var set = db.ExecuteAsync("SET", key, "v1", "KEEPTTL", "XX");
+                await ExceptionInjectionHelper.WaitOnClearAsync(pause).WaitAsync(TimeSpan.FromSeconds(10));
+
+                // Let the key expire before the SET rechecks it
+                await Task.Delay(expireTime - DateTime.UtcNow + TimeSpan.FromMilliseconds(100));
+                ExceptionInjectionHelper.EnableException(pause);
+
+                ClassicAssert.IsTrue((await set).IsNull);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(pause);
+            }
+
+            ClassicAssert.IsFalse(db.KeyExists(key));
+        }
+
+        [Test]
+        public void SetConditionalOnNonStringKeysInTransaction()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            CreateNonStringKey(db, "list", RedisType.List);
+            CreateNonStringKey(db, "hash", RedisType.Hash);
+            CreateNonStringKey(db, "set", RedisType.Set);
+            ClassicAssert.IsTrue(db.KeyExpire("set", TimeSpan.FromSeconds(100)));
+            var expireTime = db.KeyExpireTime("set");
+
+            var tran = db.CreateTransaction();
+            var xx = tran.ExecuteAsync("SET", ["list", "v1", "XX"]);
+            var nx = tran.ExecuteAsync("SET", ["hash", "v2", "NX"]);
+            var keepTtlXx = tran.ExecuteAsync("SET", ["set", "v3", "KEEPTTL", "XX"]);
+            ClassicAssert.IsTrue(tran.Execute());
+
+            ClassicAssert.AreEqual("OK", (string)xx.Result);
+            ClassicAssert.IsTrue(nx.Result.IsNull);
+            ClassicAssert.AreEqual("OK", (string)keepTtlXx.Result);
+            ClassicAssert.AreEqual("v1", (string)db.StringGet("list"));
+            ClassicAssert.AreEqual(RedisType.Hash, db.KeyType("hash"));
+            ClassicAssert.AreEqual("v3", (string)db.StringGet("set"));
+            ClassicAssert.AreEqual(expireTime, db.KeyExpireTime("set"));
+        }
+
+        private static void CreateNonStringKey(IDatabase db, string key, RedisType type)
+        {
+            switch (type)
+            {
+                case RedisType.List:
+                    _ = db.ListRightPush(key, ["a", "b"]);
+                    break;
+                case RedisType.Hash:
+                    _ = db.HashSet(key, "f", "v");
+                    break;
+                case RedisType.Set:
+                    _ = db.SetAdd(key, "m");
+                    break;
+                default:
+                    Assert.Fail($"Unsupported type {type}");
+                    break;
+            }
         }
 
         [Test]
@@ -1424,7 +2472,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            string[] values = ["", "7 3", "02+(34", "笑い男", "01", "-01", "7ab"];
+            string[] values = ["", "7 3", "02+(34", "笑い男", "01", "-01", "7ab", "--5", "-+5", "+5", "+05", "+0", "-0"];
 
             for (var i = 0; i < values.Length; i++)
             {
@@ -1495,6 +2543,165 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("ERR value is not an integer or out of range.", msg);
             }
             ClassicAssert.IsTrue(exception);
+        }
+
+        [Test]
+        [TestCase(1L)]
+        [TestCase(100L)]
+        public void SingleIncrementFromLongMinValue(long increment)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "test";
+            db.StringSet(key, long.MinValue.ToString(CultureInfo.InvariantCulture));
+
+            var result = increment == 1 ? db.StringIncrement(key) : db.StringIncrement(key, increment);
+            var expected = long.MinValue + increment;
+
+            ClassicAssert.AreEqual(expected, result);
+            ClassicAssert.AreEqual(expected.ToString(CultureInfo.InvariantCulture), db.StringGet(key).ToString());
+        }
+
+        /// <summary>
+        /// A stored long.MinValue is a valid integer on the copy-update path (record in the read-only region) and in the
+        /// record sizing that precedes it. Decrementing it overflows and leaves the value unchanged.
+        /// </summary>
+        [Test]
+        public void IncrementFromLongMinValueInReadOnlyRegion()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var store = server.Provider.StoreWrapper.store;
+            var minValue = long.MinValue.ToString(CultureInfo.InvariantCulture);
+
+            _ = db.StringSet("incr", minValue);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            ClassicAssert.AreEqual(long.MinValue + 1, db.StringIncrement("incr"));
+            ClassicAssert.AreEqual((long.MinValue + 1).ToString(CultureInfo.InvariantCulture), (string)db.StringGet("incr"));
+
+            _ = db.StringSet("decr", minValue);
+            var ex = ClassicAssert.Throws<RedisServerException>(() => db.StringDecrement("decr"));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", ex.Message);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            ex = ClassicAssert.Throws<RedisServerException>(() => db.StringDecrement("decr"));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", ex.Message);
+            ClassicAssert.AreEqual(minValue, (string)db.StringGet("decr"));
+        }
+
+        /// <summary>
+        /// Incrementing a stored value that is not a number is an error reply on the in-place path and on the copy-update
+        /// path (record in the read-only region), and leaves the value unchanged.
+        /// </summary>
+        [Test]
+        public void IncrementOfNonNumberIsAnError([Values("INCR", "INCRBY", "DECR", "DECRBY", "INCRBYFLOAT")] string cmd)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var store = server.Provider.StoreWrapper.store;
+            var expectedError = cmd == "INCRBYFLOAT" ? "ERR value is not a valid float" : "ERR value is not an integer or out of range.";
+
+            _ = db.StringSet("key", "hello");
+            foreach (var readOnlyRegion in new[] { false, true })
+            {
+                if (readOnlyRegion)
+                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+                var ex = ClassicAssert.Throws<RedisServerException>(() => _ = cmd is "INCR" or "DECR" ? db.Execute(cmd, "key") : db.Execute(cmd, "key", "1"));
+                ClassicAssert.AreEqual(expectedError, ex.Message);
+                ClassicAssert.AreEqual("hello", (string)db.StringGet("key"));
+            }
+        }
+
+        /// <summary>
+        /// A stored integer must be canonical: INCR and DECR reject a '+' sign and -0 on the copy-update and in-place paths.
+        /// </summary>
+        [Test]
+        public void IncrementOfNonCanonicalIntegerIsAnError([Values("+5", "+05", "+0", "-0")] string stored, [Values] bool readOnlyRegion)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var store = server.Provider.StoreWrapper.store;
+
+            _ = db.StringSet("key", stored);
+            if (readOnlyRegion)
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+            foreach (var cmd in new[] { "INCR", "DECR" })
+            {
+                var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute(cmd, "key"));
+                ClassicAssert.AreEqual("ERR value is not an integer or out of range.", ex.Message, cmd);
+                ClassicAssert.AreEqual(stored, (string)db.StringGet("key"), cmd);
+            }
+        }
+
+        /// <summary>
+        /// DECRBY negates its argument, and -long.MinValue does not fit in a long.
+        /// </summary>
+        [Test]
+        public void DecrementByLongMinValueIsRejected()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var minValue = long.MinValue.ToString(CultureInfo.InvariantCulture);
+
+            _ = db.StringSet("existing", 5);
+            var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("DECRBY", "existing", minValue));
+            ClassicAssert.AreEqual("ERR decrement would overflow", ex.Message);
+            ClassicAssert.AreEqual("5", (string)db.StringGet("existing"));
+
+            ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("DECRBY", "missing", minValue));
+            ClassicAssert.AreEqual("ERR decrement would overflow", ex.Message);
+            ClassicAssert.IsFalse(db.KeyExists("missing"));
+
+            // The most negative decrement that can be negated is applied
+            _ = db.StringSet("boundary", -5);
+            var result = (long)db.Execute("DECRBY", "boundary", (-long.MaxValue).ToString(CultureInfo.InvariantCulture));
+            ClassicAssert.AreEqual(long.MaxValue - 5, result);
+        }
+
+        /// <summary>
+        /// Integer arguments must be canonical: a lone sign, a '+' sign and -0 are rejected. Read as 0, EXPIRE would delete the key.
+        /// </summary>
+        [Test]
+        public void NonCanonicalIntegerArgumentsAreRejected([Values("-", "+", "+5", "+0", "-0")] string arg)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            _ = db.StringSet("key", "10");
+
+            var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("INCRBY", "key", arg));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", ex.Message);
+            ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EXPIRE", "key", arg));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", ex.Message);
+            ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SETRANGE", "key", arg, "x"));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", ex.Message);
+            ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("BITFIELD", "key", "GET", "u8", arg));
+            ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range", ex.Message);
+
+            ClassicAssert.AreEqual("10", (string)db.StringGet("key"));
+            ClassicAssert.IsNull(db.KeyTimeToLive("key"));
+        }
+
+        /// <summary>
+        /// 32-bit integer arguments reject leading zeros, as 64-bit integer arguments do.
+        /// </summary>
+        [Test]
+        public void LeadingZerosInIntegerArgumentsAreRejected()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            _ = db.StringSet("key", "0123456789");
+
+            foreach (var arg in new[] { "01", "-01", "007" })
+            {
+                var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GETRANGE", "key", arg, "5"));
+                ClassicAssert.AreEqual("ERR value is not an integer or out of range.", ex.Message);
+                ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SETRANGE", "key", arg, "x"));
+                ClassicAssert.AreEqual("ERR value is not an integer or out of range.", ex.Message);
+            }
+
+            ClassicAssert.AreEqual("0123456789", (string)db.StringGet("key"));
+            ClassicAssert.AreEqual("01", (string)db.Execute("GETRANGE", "key", "0", "1"));
         }
 
         /// <summary>
@@ -1611,11 +2818,88 @@ namespace Garnet.test
                 db.StringSet(key, (double)initialValue);
             else if (initialValue is string)
                 db.StringSet(key, (string)initialValue);
+            var storedValue = (string)db.StringGet(key);
 
-            // TODO: This is RedisServerException in the InPlaceUpdater call, but GetRMWModifiedFieldInfo currently throws RedisConnectionException.
-            // This can be different in CIs vs. locally.
-            Assert.That(() => db.Execute("INCRBYFLOAT", key, incrByValue),
-                    Throws.TypeOf<RedisServerException>().Or.TypeOf<RedisConnectionException>());
+            // An increment that overflows to infinity is an error reply that leaves the value unchanged
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("INCRBYFLOAT", key, incrByValue));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR), ex.Message);
+            ClassicAssert.AreEqual(storedValue, (string)db.StringGet(key));
+        }
+
+        /// <summary>
+        /// INCRBYFLOAT validates and sizes a copy-updated record (record in the read-only region) exactly as the in-place
+        /// path does: a leading zero is a valid float, and a stored value that the update rejects is left unchanged.
+        /// </summary>
+        [Test]
+        public void IncrementByFloatInReadOnlyRegion()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var store = server.Provider.StoreWrapper.store;
+
+            _ = db.StringSet("leadingZero", "05");
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            ClassicAssert.AreEqual(123456794.125, db.StringIncrement("leadingZero", 123456789.125));
+            ClassicAssert.AreEqual("123456794.125", (string)db.StringGet("leadingZero"));
+
+            foreach (var (stored, increment) in new[] { ("--5", -4.0), ("-+5", 1.0), ("Infinity", 1.0), ("1e308", 1e308) })
+            {
+                _ = db.StringSet("rejected", stored);
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.StringIncrement("rejected", increment), stored);
+                ClassicAssert.AreEqual(stored, (string)db.StringGet("rejected"));
+            }
+        }
+
+        [Test]
+        public void IncrementByFloatRejectsNaN([Values("nan", "NaN", "-NaN")] string nan)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("INCRBYFLOAT", "missing", nan));
+            ClassicAssert.AreEqual("ERR value is not a valid float", ex.Message);
+            ClassicAssert.IsFalse(db.KeyExists("missing"));
+
+            _ = db.StringSet("existing", "1.5");
+            ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("INCRBYFLOAT", "existing", nan));
+            ClassicAssert.AreEqual("ERR value is not a valid float", ex.Message);
+            ClassicAssert.AreEqual("1.5", (string)db.StringGet("existing"));
+        }
+
+        /// <summary>
+        /// INCRBYFLOAT stores digits that parse back to its result, in exactly the space it sizes for them: just below a power
+        /// of ten, where a logarithm counts one digit too many, and at magnitudes up to the largest double.
+        /// </summary>
+        [Test]
+        public void IncrementByFloatStoresExactDigits([Values] bool readOnlyRegion)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var store = server.Provider.StoreWrapper.store;
+
+            foreach (var (stored, expected) in new[]
+            {
+                ("99.99999999999999", "99.99999999999999"),
+                ("-99.99999999999999", "-99.99999999999999"),
+                ("9999999999999998", "9999999999999998"),
+                ("1e23", "99999999999999991611392"),
+                ("1.7976931348623157e308", double.MaxValue.ToString("F0", CultureInfo.InvariantCulture)),
+            })
+            {
+                // Created by the increment
+                _ = db.KeyDelete("key");
+                ClassicAssert.AreEqual(expected, (string)db.Execute("INCRBYFLOAT", "key", stored), stored);
+                ClassicAssert.AreEqual(expected, (string)db.StringGet("key"), stored);
+
+                // Updated by the increment, which parses the stored digits
+                _ = db.StringSet("key", stored);
+                if (readOnlyRegion)
+                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                ClassicAssert.AreEqual(expected, (string)db.Execute("INCRBYFLOAT", "key", "0"), stored);
+                ClassicAssert.AreEqual(expected, (string)db.Execute("INCRBYFLOAT", "key", "0"), stored);
+                ClassicAssert.AreEqual(double.Parse(stored, CultureInfo.InvariantCulture), double.Parse((string)db.StringGet("key"), CultureInfo.InvariantCulture), stored);
+            }
         }
 
         [Test]
@@ -1868,6 +3152,43 @@ namespace Garnet.test
         }
 
         [Test]
+        public void ExpiryCommandOnExpiredKeyReturnsZero([Values(false, true)] bool isObject, [Values("EXPIRE", "PEXPIRE", "PERSIST")] string command)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "myKey";
+            if (isObject)
+                db.HashSet(key, "field", "value");
+            else
+                db.StringSet(key, "value");
+            db.KeyExpire(key, TimeSpan.FromMilliseconds(1));
+            Thread.Sleep(50);
+
+            var reply = command == "PERSIST" ? db.Execute(command, key) : db.Execute(command, key, "100");
+            ClassicAssert.AreEqual(ResultType.Integer, reply.Resp2Type);
+            ClassicAssert.AreEqual(0, (int)reply);
+            ClassicAssert.IsFalse(db.KeyExists(key));
+        }
+
+        [Test]
+        public void SetBitOnExpiredKeyStartsFromZeroes()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // The expired value is as long as the bitmap SETBIT creates, so its record is reused without growing
+            var key = "myKey";
+            db.StringSet(key, "garnet-string", TimeSpan.FromMilliseconds(1));
+            Thread.Sleep(50);
+
+            ClassicAssert.IsFalse(db.StringSetBit(key, 100, true));
+            var expected = new byte[13];
+            expected[12] = 0x08;
+            ClassicAssert.AreEqual(expected, (byte[])db.StringGet(key));
+        }
+
+        [Test]
         public void MultiKeyUnlink([Values] bool withoutObjectStore)
         {
             if (withoutObjectStore)
@@ -1990,6 +3311,86 @@ namespace Garnet.test
 
             var exists = db.KeyExists(["key", "listKey", "zset:test", "foo"]);
             ClassicAssert.AreEqual(3, exists);
+        }
+
+        [Test]
+        public void TouchKeys()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.IsFalse(db.KeyTouch("missing"));
+            db.StringSet("string", "value");
+            db.ListRightPush("list", ["a", "b"]);
+            db.HashSet("hash", "field", "value");
+            db.SetAdd("set", "member");
+            db.SortedSetAdd("sortedset", "member", 1);
+            db.StringSet("expiring", "value", TimeSpan.FromMinutes(5));
+            var expiration = (long)db.Execute("PEXPIRETIME", "expiring");
+
+            ClassicAssert.IsTrue(db.KeyTouch("string"));
+            ClassicAssert.AreEqual(7, db.KeyTouch(["string", "list", "hash", "set", "sortedset", "missing", "string", "expiring"]));
+            ClassicAssert.AreEqual(expiration, (long)db.Execute("PEXPIRETIME", "expiring"));
+            ClassicAssert.AreEqual("value", (string)db.StringGet("string"));
+            CollectionAssert.AreEqual(new RedisValue[] { "a", "b" }, db.ListRange("list"));
+            ClassicAssert.AreEqual("value", (string)db.HashGet("hash", "field"));
+            ClassicAssert.IsTrue(db.SetContains("set", "member"));
+            ClassicAssert.AreEqual(1, db.SortedSetScore("sortedset", "member"));
+            ClassicAssert.IsFalse(db.KeyExists("missing"));
+        }
+
+        [Test]
+        public void TouchExpiredKeys()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("string", "value");
+            db.ListRightPush("list", "value");
+            var expiration = DateTime.UtcNow.AddMilliseconds(100);
+            ClassicAssert.IsTrue(db.KeyExpire("string", expiration));
+            ClassicAssert.IsTrue(db.KeyExpire("list", expiration));
+            Thread.Sleep(150);
+
+            ClassicAssert.AreEqual(0, db.KeyTouch(["string", "list", "string", "missing"]));
+            ClassicAssert.AreEqual(0, db.KeyExists(["string", "list", "missing"]));
+        }
+
+        [Test]
+        public void TouchWrongNumberOfArguments()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var ex = ClassicAssert.Throws<RedisServerException>(() => db.Execute("TOUCH"));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'TOUCH' command", ex.Message);
+        }
+
+        [Test]
+        public void TouchPipelinedCommands()
+        {
+            using var client = TestUtils.CreateRequest();
+            client.SendCommand("SET key value");
+
+            var response = client.SendCommands("tOuCh key missing key", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(":2\r\n+PONG\r\n", response);
+
+            response = client.SendCommands("TOUCH", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength("-ERR wrong number of arguments for 'TOUCH' command\r\n+PONG\r\n", response);
+        }
+
+        [Test]
+        public async Task TouchInTransaction()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.StringSet("string", "value");
+            db.ListRightPush("list", "value");
+
+            var transaction = db.CreateTransaction();
+            var result = transaction.KeyTouchAsync(["string", "list", "missing", "string"]);
+            ClassicAssert.IsTrue(await transaction.ExecuteAsync());
+            ClassicAssert.AreEqual(3, await result);
         }
 
         #region ExpireTime
@@ -2290,7 +3691,7 @@ namespace Garnet.test
         public void SingleRenameWithOldKeyAndNewKeyAsSame()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
+            var db = redis.GetDatabase();
             var origValue = "test1";
             var key = "key1";
             db.StringSet(key, origValue);
@@ -2518,7 +3919,7 @@ namespace Garnet.test
 
             var result = db.KeyRename(key, key, When.NotExists);
 
-            ClassicAssert.IsTrue(result);
+            ClassicAssert.IsFalse(result);
             string retValue = db.StringGet(key);
             ClassicAssert.AreEqual(origValue, retValue);
         }
@@ -2561,6 +3962,27 @@ namespace Garnet.test
         }
 
         #endregion
+
+        [Test]
+        public async Task RenameValidationAsync()
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            //await using var redis = await ConnectionMultiplexer.ConnectAsync("127.0.0.1:6379").ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            //db.KeyDelete("foo");
+            //db.KeyDelete("fizz");
+
+            ClassicAssert.IsTrue(await db.StringSetAsync("foo", "bar").ConfigureAwait(false));
+
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("RENAME", "fizz", "fizz"));
+            ClassicAssert.AreEqual("ERR no such key", exc0.Message);
+
+            ClassicAssert.IsFalse(await db.KeyRenameAsync("foo", "foo", When.NotExists).ConfigureAwait(false));
+
+            var exc1 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("RENAMENX", "fizz", "foo"));
+            ClassicAssert.AreEqual("ERR no such key", exc1.Message);
+        }
 
         [Test]
         public void CanSelectCommand()
@@ -3901,7 +5323,7 @@ namespace Garnet.test
 
             //-len < s < 0 < e < len where len + s < e
             resp = (string)db.StringGetRange(key, -4, 8);
-            ClassicAssert.AreEqual(value.Substring(value.Length - 4, 2), resp);
+            ClassicAssert.AreEqual(value.Substring(value.Length - 4, 3), resp);
 
             //-len < s < e < 0
             resp = (string)db.StringGetRange(key, -4, -1);
@@ -3934,7 +5356,7 @@ namespace Garnet.test
 
             //equal offsets
             resp = db.StringGetRange(key, -101, -101);
-            ClassicAssert.AreEqual("9", resp);
+            ClassicAssert.AreEqual("0", resp);
 
             //start larger than end
             resp = db.StringGetRange(key, -1, -3);
@@ -3957,9 +5379,7 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Regression test for GETRANGE on a key holding an empty string throwing
-        /// DivideByZeroException when start is negative (NormalizeRange's start %= len hits
-        /// len == 0). Real Redis returns an empty string for any range on an empty value.
+        /// GETRANGE on a key holding an empty string returns an empty string for any range.
         /// </summary>
         [Test]
         public void GetRangeEmptyValueTest()
@@ -3981,6 +5401,63 @@ namespace Garnet.test
 
             resp = (string)db.StringGetRange(key, 0, -1);
             ClassicAssert.AreEqual(string.Empty, resp);
+        }
+
+        /// <summary>
+        /// GETRANGE offsets count back from the end when negative and are clamped to the value, never wrapped, for every
+        /// combination of in-range, negative and out-of-range offsets.
+        /// </summary>
+        [Test]
+        public void GetRangeClampsOffsetsToTheValue()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string key = "rangeKey";
+            const string value = "0123456789";
+            _ = db.StringSet(key, value);
+
+            int[] offsets = [.. Enumerable.Range(-15, 28), int.MinValue, int.MinValue + 1, int.MaxValue];
+            foreach (var start in offsets)
+            {
+                foreach (var end in offsets)
+                {
+                    var actual = (string)db.StringGetRange(key, start, end);
+                    ClassicAssert.AreEqual(ExpectedRange(value, start, end), actual, $"GETRANGE {start} {end}");
+                }
+            }
+
+            static string ExpectedRange(string s, long start, long end)
+            {
+                long len = s.Length;
+                if (start < 0 && end < 0 && start > end)
+                    return string.Empty;
+                if (start < 0)
+                    start = len + start;
+                if (end < 0)
+                    end = len + end;
+                if (start < 0)
+                    start = 0;
+                if (end < 0)
+                    end = 0;
+                if (end >= len)
+                    end = len - 1;
+                return start > end || len == 0 ? string.Empty : s.Substring((int)start, (int)(end - start + 1));
+            }
+        }
+
+        [Test]
+        public async Task GETRANGEIntOverflowClampAsync()
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            ClassicAssert.IsTrue(await db.StringSetAsync("foo", "123").ConfigureAwait(false));
+
+            ClassicAssert.AreEqual("123", await db.StringGetRangeAsync("foo", 0, 1 + (long)int.MaxValue).ConfigureAwait(false));
+
+            var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("GETRANGE", "foo", "0", "9223372036854775808"));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", exc.Message);
         }
 
         [Test]
@@ -4064,6 +5541,63 @@ namespace Garnet.test
             resp = db.StringGet(key);
             ClassicAssert.AreEqual(value, resp);
             ClassicAssert.IsTrue(db.KeyDelete(key));
+        }
+
+        [Test]
+        public async Task EmptySetRangeIgnoredAsync()
+        {
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = connection.GetDatabase();
+
+            ClassicAssert.IsTrue(await db.StringSetAsync("foo", "bar").ConfigureAwait(false));
+            ClassicAssert.AreEqual(3, await db.StringSetRangeAsync("foo", 8, "").ConfigureAwait(false));
+            ClassicAssert.AreEqual(3, await db.StringLengthAsync("foo").ConfigureAwait(false));
+
+            ClassicAssert.AreEqual(0, await db.StringSetRangeAsync("fizz", 8, "").ConfigureAwait(false));
+            ClassicAssert.IsFalse(await db.KeyExistsAsync("fizz").ConfigureAwait(false));
+        }
+
+        /// <summary>
+        /// APPEND rejects a result longer than the maximum string size, as SETRANGE does, and leaves the value unchanged.
+        /// </summary>
+        [Test]
+        public void AppendBeyondMaxSizeIsRejected()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Build a value of exactly the maximum size on the server, without sending it over the wire
+            var key = "maxSized";
+            var maxSize = BitmapManager.MaxBitmapPayloadBytes;
+            ClassicAssert.AreEqual(maxSize, (long)db.Execute("SETRANGE", key, maxSize - 1, "x"));
+
+            var ex = Assert.Throws<RedisServerException>(() => db.StringAppend(key, "y"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_STRING_EXCEEDS_MAX_SIZE), ex.Message);
+            ClassicAssert.AreEqual(maxSize, db.StringLength(key));
+
+            // Appending nothing does not grow the value, so it is allowed
+            ClassicAssert.AreEqual(maxSize, db.StringAppend(key, ""));
+            ClassicAssert.IsTrue(db.KeyDelete(key));
+        }
+
+        /// <summary>
+        /// APPEND to an expired key starts a new value, whether the expired record is updated in place or in the read-only region.
+        /// </summary>
+        [Test]
+        public void AppendToExpiredKeyStartsNewValue([Values] bool readOnlyRegion)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var store = server.Provider.StoreWrapper.store;
+
+            _ = db.StringSet("key", "old", TimeSpan.FromMilliseconds(10));
+            if (readOnlyRegion)
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            Thread.Sleep(100);
+
+            ClassicAssert.AreEqual(3, db.StringAppend("key", "new"));
+            ClassicAssert.AreEqual("new", (string)db.StringGet("key"));
+            ClassicAssert.IsNull(db.KeyTimeToLive("key"));
         }
 
         [Test]
@@ -4410,6 +5944,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, response);
             response = await c.ExecuteAsync("ZSCORE", "nx", "foo").ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedResponse, response);
+            response = await c.ExecuteAsync("MGET", "nx").ConfigureAwait(false);
+            ClassicAssert.AreEqual("*1\r\n" + expectedResponse, response);
 
             response = await c.ExecuteAsync("BITFIELD", "bf", "OVERFLOW", "FAIL", "INCRBY", "u1", "1", "1").ConfigureAwait(false);
             ClassicAssert.AreEqual("*1\r\n:1\r\n", response);
@@ -5812,6 +7348,190 @@ namespace Garnet.test
             }
         }
 
+        /// <summary>
+        /// The broker's first attempt on behalf of a new observer pops the item out of the list and only then
+        /// hands it to the observer. CLIENT UNBLOCK targets the same observer as soon as it is registered, which
+        /// is before that attempt runs. Unless the attempt and the hand-off are atomic with respect to the
+        /// unblock, the unblock can claim the observer in between: the client is told it was unblocked and the
+        /// item, already popped, belongs to nobody.
+        /// <para>
+        /// Two invariants are checked per round. The item is either handed to the popping client or still in
+        /// the list, never neither; and the client gets exactly one reply for its BLPOP. A second reply
+        /// desynchronizes the connection, so from then on every command reads the previous command's reply.
+        /// PING is the probe for that -- its reply can only land where expected if BLPOP wrote exactly one.
+        /// </para>
+        /// <para>
+        /// Raw sockets rather than StackExchange.Redis: it multiplexes, so its keep-alive cannot get past an
+        /// in-flight blocking command on the same connection, and on a machine short of cores its watchdog
+        /// tears the connection down. That failure arrives as a parse error or a dead socket, which masks the
+        /// invariants under test rather than reporting them.
+        /// </para>
+        /// <para>
+        /// The race it guards needs a completion to land inside a few instructions on the receive path, so it
+        /// is reproduced by starving the server of cores:
+        /// <c>DOTNET_PROCESSOR_COUNT=2 taskset -c 0,1 dotnet test ... --filter
+        /// FullyQualifiedName~ClientUnblockRacingAPopNeverLoses</c>. Against the defect this fails within a
+        /// handful of runs; with it fixed it stays green.
+        /// </para>
+        /// </summary>
+        [Test]
+        public void ClientUnblockRacingAPopNeverLosesTheItemAndWritesExactlyOneReply()
+        {
+            const int Workers = 8;
+            const int RoundsPerWorker = 500;
+            const string ValuePrefix = "unblockRaceValue";
+
+            const string Pong = "+PONG\r\n";
+            const string Unblocked = "-UNBLOCKED client unblocked via CLIENT UNBLOCK\r\n";
+
+            var blockers = new Socket[Workers];
+            var admins = new Socket[Workers];
+            var clientIds = new string[Workers];
+            for (var i = 0; i < Workers; i++)
+            {
+                blockers[i] = RawConnect();
+                admins[i] = RawConnect();
+                RawSend(blockers[i], "CLIENT", "ID");
+                clientIds[i] = RawReadUntil(blockers[i], "\r\n")[1..^2];
+            }
+
+            var failures = new ConcurrentQueue<string>();
+            var delivered = 0;
+            var stop = false;
+
+            try
+            {
+                Parallel.For(0, Workers, worker =>
+                {
+                    var key = $"unblockReplyCountKey:{worker}";
+                    var blocker = blockers[worker];
+                    var admin = admins[worker];
+                    var clientId = clientIds[worker];
+
+                    for (var round = 0; round < RoundsPerWorker; round++)
+                    {
+                        if (Volatile.Read(ref stop))
+                            return;
+
+                        // A per-round value makes a reply from an earlier round distinguishable from this round's.
+                        var value = $"{ValuePrefix}{round}";
+                        var popped = $"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n";
+                        RawSend(admin, "RPUSH", key, value);
+                        if (RawReadUntil(admin, "\r\n") != ":1\r\n")
+                        {
+                            failures.Enqueue($"worker {worker} round {round}: RPUSH did not return 1");
+                            Volatile.Write(ref stop, true);
+                            return;
+                        }
+
+                        // The item is already there, so the pop resolves on the broker's first attempt,
+                        // which is what the unblock races.
+                        RawSend(blocker, "BLPOP", key, "10");
+                        RawSend(admin, "CLIENT", "UNBLOCK", clientId, "ERROR");
+                        _ = RawReadUntil(admin, "\r\n");
+
+                        RawSend(blocker, "PING");
+                        var got = RawReadUntil(blocker, Pong);
+
+                        var blpop = got[..^Pong.Length];
+                        if (blpop != Unblocked && blpop != popped)
+                        {
+                            failures.Enqueue($"worker {worker} round {round}: expected exactly one BLPOP reply before the PONG, got {Escape(got)}");
+                            Volatile.Write(ref stop, true);
+                            return;
+                        }
+
+                        // The item was either handed to the popping client or is still in the list. Never neither.
+                        var gotItem = blpop == popped;
+                        RawSend(admin, "LLEN", key);
+                        var remaining = RawReadUntil(admin, "\r\n");
+                        var expected = gotItem ? ":0\r\n" : ":1\r\n";
+                        if (remaining != expected)
+                        {
+                            failures.Enqueue($"worker {worker} round {round}: BLPOP {(gotItem ? "returned" : "did not return")} the item, LLEN was {Escape(remaining)}");
+                            Volatile.Write(ref stop, true);
+                            return;
+                        }
+
+                        if (gotItem)
+                        {
+                            _ = Interlocked.Increment(ref delivered);
+                        }
+                        else
+                        {
+                            RawSend(admin, "DEL", key);
+                            _ = RawReadUntil(admin, "\r\n");
+                        }
+                    }
+                });
+            }
+            finally
+            {
+                for (var i = 0; i < Workers; i++)
+                {
+                    blockers[i].Dispose();
+                    admins[i].Dispose();
+                }
+            }
+
+            ClassicAssert.IsEmpty(failures, string.Join(" ;; ", failures.Take(4)));
+
+            // Guards against the race never being set up at all, e.g. if the unblock always arrived first.
+            ClassicAssert.Greater(delivered, 0, "No round delivered the item, so the pop path was never exercised.");
+        }
+
+        static Socket RawConnect()
+        {
+            var s = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true, ReceiveTimeout = 30_000 };
+            s.Connect(TestUtils.EndPoint);
+            return s;
+        }
+
+        static void RawSend(Socket s, params string[] parts)
+        {
+            var sb = new StringBuilder();
+            _ = sb.Append('*').Append(parts.Length).Append("\r\n");
+            foreach (var p in parts)
+                _ = sb.Append('$').Append(p.Length).Append("\r\n").Append(p).Append("\r\n");
+            var bytes = Encoding.ASCII.GetBytes(sb.ToString());
+            var sent = 0;
+            while (sent < bytes.Length)
+                sent += s.Send(bytes, sent, bytes.Length - sent, SocketFlags.None);
+        }
+
+        /// <summary>
+        /// Reads until the accumulated response ends with <paramref name="suffix"/>, so that anything the
+        /// server wrote before it is kept and can be reported.
+        /// </summary>
+        static string RawReadUntil(Socket s, string suffix)
+        {
+            var sb = new StringBuilder();
+            var buf = new byte[8 * 1024];
+            while (sb.Length < 64 * 1024)
+            {
+                int n;
+                try
+                {
+                    n = s.Receive(buf);
+                }
+                catch (SocketException e)
+                {
+                    throw new Exception($"connection dropped after {Escape(sb.ToString())}: {e.SocketErrorCode}");
+                }
+
+                if (n == 0)
+                    throw new Exception($"connection closed after {Escape(sb.ToString())}");
+
+                _ = sb.Append(Encoding.ASCII.GetString(buf, 0, n));
+                if (sb.Length >= suffix.Length && sb.ToString().EndsWith(suffix, StringComparison.Ordinal))
+                    return sb.ToString();
+            }
+
+            throw new Exception($"never saw the end of the reply: {Escape(sb.ToString())}");
+        }
+
+        static string Escape(string s) => s.Replace("\r", "\\r").Replace("\n", "\\n");
+
         [Test]
         [TestCase(-1, Description = "Unblock with invalid client ID")]
         [TestCase(999999, Description = "Unblock with non-existent client ID")]
@@ -5831,6 +7551,53 @@ namespace Garnet.test
             var mainDB = mainConnection.GetDatabase(0);
 
             Assert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "UNBLOCK", 123, "INVALID"));
+        }
+
+        [TestCase("NOPEX", "NOPEX", int.MaxValue)]
+        [TestCase("NOPEIFEQ", "NOPEIFEQ", 1)]
+        [TestCase("nopex", "NOPEX", 1)]
+        [TestCase("", "", int.MaxValue)]
+        [TestCase("BAD\r\nCOMMAND", "BAD  COMMAND", int.MaxValue)]
+        public void UnknownCommandErrorIncludesQuotedName(string command, string expectedName, int bytesPerSend)
+        {
+            using var request = TestUtils.CreateRequest(countResponseType: CountResponseType.Newlines);
+
+            var response = request.SendCommandChunks($"{command} key value", bytesPerSend, returnAccumulatedBuffer: true);
+            TestUtils.AssertEqualUpToExpectedLength($"-ERR unknown command '{expectedName}'\r\n", response);
+
+            response = request.SendCommand("PING");
+            TestUtils.AssertEqualUpToExpectedLength("+PONG\r\n", response);
+        }
+
+        [Test]
+        public void UnknownCommandErrorKeepsPipelineSynchronized()
+        {
+            using var request = TestUtils.CreateRequest(countResponseType: CountResponseType.Newlines);
+
+            var response = request.SendCommands("NOPEX key value", "PING");
+            TestUtils.AssertEqualUpToExpectedLength("-ERR unknown command 'NOPEX'\r\n+PONG\r\n", response);
+        }
+
+        [TestCase("COMMAND UNKNOWN key value", "-ERR unknown subcommand 'UNKNOWN'.\r\n")]
+        [TestCase("CONFIG", "-ERR wrong number of arguments for 'CONFIG' command\r\n")]
+        public void InvalidCommandErrorKeepsSessionSynchronized(string command, string expectedResponse)
+        {
+            using var request = TestUtils.CreateRequest(countResponseType: CountResponseType.Newlines);
+
+            var response = request.SendCommandChunks(command, 1, returnAccumulatedBuffer: true);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = request.SendCommand("PING");
+            TestUtils.AssertEqualUpToExpectedLength("+PONG\r\n", response);
+        }
+
+        [Test]
+        public void UnknownCommandErrorTruncatesLongName()
+        {
+            using var request = TestUtils.CreateRequest(countResponseType: CountResponseType.Newlines);
+
+            var response = request.SendCommands(new string('A', 4096), "PING");
+            TestUtils.AssertEqualUpToExpectedLength($"-ERR unknown command '{new string('A', 128)}'\r\n+PONG\r\n", response);
         }
 
         [Test]
@@ -5870,7 +7637,6 @@ namespace Garnet.test
 
             var response = Encoding.ASCII.GetString(buffer, 0, totalRead);
             var expectedResponse =
-                "-ERR unknown command\r\n" +
                 "-ERR Protocol Error: RESP array argument count '1999999' exceeds maximum allowed count of '1048576'.\r\n";
             ClassicAssert.AreEqual(expectedResponse, response);
 
@@ -5912,6 +7678,28 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             db.StringSet("testkey", "testvalue");
             ClassicAssert.AreEqual("testvalue", db.StringGet("testkey").ToString());
+        }
+
+        [Test]
+        public async Task GetParseAlignmentAsync()
+        {
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = connection.GetDatabase();
+
+            ClassicAssert.AreEqual("OK", (string)await db.ExecuteAsync("SET", "foo", "bar").ConfigureAwait(false));
+
+            // Reject malformed GET
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("GET"));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'GET' command", exc0.Message);
+
+            // Command stream still aligned
+            ClassicAssert.AreEqual("bar", (string)await db.ExecuteAsync("GET", "foo").ConfigureAwait(false));
+
+            var exc1 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("GET", "fizz", "buzz"));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'GET' command", exc1.Message);
+
+            // Command stream still aligned
+            ClassicAssert.AreEqual("bar", (string)await db.ExecuteAsync("GET", "foo").ConfigureAwait(false));
         }
     }
 }

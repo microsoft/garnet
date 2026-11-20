@@ -43,7 +43,12 @@ namespace Garnet
             while ((key = GetNextArg(ref procInput, ref offset)).Length > 0)
             {
                 value = GetNextArg(ref procInput, ref offset);
-                api.SETEX(key, value, expiryMs);
+                api.SETEX(key, value, expiryMs, out var error);
+                if (error)
+                {
+                    WriteError(ref output, "ERR invalid expire time in 'msetpx' command");
+                    return;
+                }
             }
             WriteSimpleString(ref output, "OK");
         }

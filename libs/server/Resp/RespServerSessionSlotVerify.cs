@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -76,6 +77,27 @@ namespace Garnet.server
             csvi.sessionAsking = SessionAsking;
             csvi.waitForStableSlot = false;
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
+        }
+
+        /// <summary>
+        /// Verifies, without writing a redirect, that this node serves <paramref name="key"/> for <paramref name="cmd"/>.
+        /// Script fast paths call the storage API directly and so bypass <see cref="CanServeSlot"/>; when this returns
+        /// false they run the command through RESP dispatch, which writes the redirect. The check ignores ASKING, so a
+        /// command on an importing slot also takes RESP dispatch, which applies the script's inherited ASKING state.
+        /// </summary>
+        /// <param name="cmd">The single-key command the script issues.</param>
+        /// <param name="key">The key the command operates on.</param>
+        /// <returns>True if the node serves the key.</returns>
+        internal bool CanServeSlotForScriptKey(RespCommand cmd, PinnedSpanByte key)
+        {
+            Debug.Assert(clusterSession != null);
+
+            // RESP dispatch does not verify commands run by a transaction; its keys were verified when it locked them
+            if (txnManager.state == TxnState.Running)
+                return true;
+
+            clusterSession.ResetCachedSlotVerificationResult();
+            return clusterSession.NetworkIterativeSlotVerify(key, cmd.IsReadOnly(), SessionAsking: 0, waitForStableSlot: false);
         }
 
         /// <summary>

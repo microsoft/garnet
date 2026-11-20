@@ -1,6 +1,12 @@
 {
   "repos": [
     {
+      "name": "hiredis",
+      "url": "https://github.com/redis/hiredis.git",
+      "path": "/home/guser/hiredis",
+      "branch": "v1.5.0"
+    },
+    {
       "name": "garnet",
       "url": "https://github.com/microsoft/garnet.git",
       "path": "/home/guser/garnet",
@@ -46,6 +52,11 @@
       "mode": "755"
     },
     {
+      "src": "bootstrap/install-native-dependencies.ps1",
+      "dst": "/opt/deploy-actions/install-native-dependencies.ps1",
+      "mode": "755"
+    },
+    {
       "src": "bootstrap/setup-network.ps1",
       "dst": "/opt/deploy-actions/setup-network.ps1",
       "mode": "755"
@@ -86,6 +97,16 @@
       "mode": "755"
     },
     {
+      "src": "bootstrap/azurebench-nvme.service",
+      "dst": "/etc/systemd/system/azurebench-nvme.service",
+      "mode": "644"
+    },
+    {
+      "src": "bootstrap/install-nvme-service.ps1",
+      "dst": "/opt/deploy-actions/install-nvme-service.ps1",
+      "mode": "755"
+    },
+    {
       "src": "cluster/mcluster.ps1",
       "dst": "/usr/local/bin/mcluster.ps1",
       "mode": "755"
@@ -106,12 +127,27 @@
       "mode": "755"
     },
     {
+      "src": "cluster/cluster-utils.ps1",
+      "dst": "/usr/local/bin/cluster-utils.ps1",
+      "mode": "644"
+    },
+    {
       "src": "bootstrap/list-ips.ps1",
       "dst": "/usr/local/bin/list-ips.ps1",
       "mode": "755"
     }
   ],
   "runcmd": [
+    {
+      "run": "install-native-dependencies.ps1",
+      "sudo": true,
+      "args": ""
+    },
+    {
+      "run": "install-nvme-service.ps1",
+      "sudo": true,
+      "args": ""
+    },
     {
       "run": "install-dotnet.ps1",
       "sudo": true,
@@ -121,6 +157,11 @@
       "run": "clone-repos.ps1",
       "sudo": false,
       "args": ""
+    },
+    {
+      "run": "build.ps1",
+      "sudo": true,
+      "args": "hiredis"
     },
     {
       "run": "build.ps1",

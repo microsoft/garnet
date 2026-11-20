@@ -26,6 +26,11 @@ namespace Garnet.server
         /// Wrong type of value
         /// </summary>
         WrongType = 1 << 1,
+
+        /// <summary>
+        /// The operation created the key, which was absent or had expired
+        /// </summary>
+        CreatedKey = 1 << 2,
     }
 
     /// <summary>
@@ -66,6 +71,12 @@ namespace Garnet.server
         /// </summary>
         public readonly bool HasRemoveKey =>
             (OutputFlags & ObjectOutputFlags.RemoveKey) == ObjectOutputFlags.RemoveKey;
+
+        /// <summary>
+        /// True if output flag CreatedKey is set
+        /// </summary>
+        public readonly bool HasCreatedKey =>
+            (OutputFlags & ObjectOutputFlags.CreatedKey) == ObjectOutputFlags.CreatedKey;
 
         public ObjectOutput() => SpanByteAndMemory = new(null);
 

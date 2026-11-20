@@ -169,12 +169,28 @@ namespace Garnet
         public bool? CleanClusterConfig { get; set; }
 
         [IntRangeValidation(0, 16384)]
-        [Option("pmt", Required = false, HelpText = "Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used.")]
+        [Option("parallel-migrate-task-count", Required = false, HelpText = "Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used.")]
         public int ParallelMigrateTaskCount { get; set; }
 
+        [IntRangeValidation(1024, 262143)]
+        [Option("migrate-key-send-batch-size", Required = false, HelpText = "Maximum keys collected per slot migration batch (1024-262143). Network buffers may split a batch into smaller sends.")]
+        public int MigrateKeySendBatchSize { get; set; }
+
         [OptionValidation]
-        [Option("fast-migrate", Required = false, HelpText = "When migrating slots 1. write directly to network buffer to avoid unnecessary copies, 2. do not wait for ack from target before sending next batch of keys.")]
-        public bool? FastMigrate { get; set; }
+        [Option("use-scan-ahead-migration", Required = false, HelpText = "Gather the next slot-migration key batch while the active batch is shipped (default: false). When false, scan only after shipping and deletion complete.")]
+        public bool? UseScanAheadMigration { get; set; }
+
+        [MemorySizeValidation(isRequired: false)]
+        [Option("migrate-send-buffer-size", Required = false, HelpText = "Migration client send-buffer size, independent of log page size (rounds down to a power of 2; at least 1k and below 2g). Defaults to log page size. Larger records are chunked.")]
+        public string MigrationSendBufferSize { get; set; }
+
+        [IntRangeValidation(1, 64)]
+        [Option("migrate-pipeline-depth", Required = false, HelpText = "Maximum unacknowledged migration batches per worker, from 1 to 64 (1 disables pipelining). Batches are processed synchronously before acknowledgment.")]
+        public int MigrationPipelineDepth { get; set; }
+
+        [IntRangeValidation(1, int.MaxValue)]
+        [Option("migrate-delete-batch-size", Required = false, HelpText = "Maximum eligible source keys deleted per epoch-protected migration scope (positive integer, default: 256). Larger values hold epoch protection longer.")]
+        public int MigrationDeleteBatchSize { get; set; }
 
         [Option("auth", Required = false, HelpText = "Authentication mode of Garnet. This impacts how AUTH command is processed and how clients are authenticated against Garnet. Value options: NoAuth, Password, Aad, ACL")]
         public GarnetAuthenticationMode AuthenticationMode { get; set; }
@@ -261,6 +277,10 @@ namespace Garnet
         [Option("aof-commit-wait", Required = false, HelpText = "Wait for AOF to flush the commit before returning results to client. Warning: will greatly increase operation latency.")]
         public bool? WaitForCommit { get; set; }
 
+        [OptionValidation]
+        [Option("aof-replay-clear-above-tail", Required = false, HelpText = "If true (default), when the AOF is recovered or a replica sync moves its tail, clear everything the AOF device holds above the tail before appending: remove or empty segment files above the tail's segment, zero data above the tail in that segment, and remove commit metadata for commits above the tail. This keeps a later recovery from adopting stale commits left there. Cleared data cannot be salvaged; see the configuration docs for risks.")]
+        public bool? AofReplayClearAboveTail { get; set; }
+
         [MemorySizeValidation(false)]
         [Option("aof-size-limit", Required = false, HelpText = "Maximum size of AOF (rounds down to power of 2) after which unsafe truncation will be applied. Left empty AOF will grow without bound unless a checkpoint is taken")]
         public string AofSizeLimit { get; set; }
@@ -309,8 +329,16 @@ namespace Garnet
         public int GossipDelay { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
+        [Option("gossip-client-swap-grace", Required = false, HelpText = "Delay (in seconds) applied once to the whole gossip client collection after a configuration swap before the previous clients begin graceful retirement.")]
+        public int GossipClientSwapGraceSecs { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
         [Option("cluster-timeout", Required = false, HelpText = "Cluster node timeout is the amount of seconds a node must be unreachable.")]
         public int ClusterTimeout { get; set; }
+
+        [IntRangeValidation(1, int.MaxValue / 1000)]
+        [Option("failover-reset-primary-timeout", Required = false, HelpText = "Maximum time in seconds a replica spends retrying to restore the old primary after a failed CLUSTER FAILOVER that the primary had already accepted.")]
+        public int FailoverResetPrimaryTimeout { get; set; }
 
         [IntRangeValidation(-1, int.MaxValue)]
         [Option("cluster-config-flush-frequency", Required = false, HelpText = "How frequently to flush cluster config unto disk to persist updates. =-1: never (memory only), =0: immediately (every update performs flush), >0: frequency in ms")]
@@ -485,6 +513,26 @@ namespace Garnet
         [OptionValidation]
         [Option("repl-diskless-sync", Required = false, HelpText = "Whether diskless replication is enabled or not.")]
         public bool? ReplicaDisklessSync { get; set; }
+
+        [ReplicaDiskBasedSyncChunkSizeValidation]
+        [Option("repl-disk-based-sync-chunk-size", Required = false, HelpText = "Maximum Tsavorite checkpoint transfer chunk on the primary (512 bytes to 512m, subject to device-sector alignment, rounds down to power of 2; default 16m). CONFIG SET applies to new transfers. Does not affect diskless sync, AOF streaming or RangeIndex files.")]
+        public string ReplicaDiskBasedSyncChunkSize { get; set; }
+
+        [ReplicaDiskBasedSyncPipelineDepthValidation]
+        [Option("repl-disk-based-sync-pipeline-depth", Required = false, HelpText = "Maximum unacknowledged disk-based Tsavorite checkpoint chunks per replica on the primary (1-64, default 4; 1 disables pipelining). Depth times effective chunk size must not exceed 512 MiB. CONFIG SET applies to new transfers.")]
+        public int ReplicaDiskBasedSyncPipelineDepth { get; set; }
+
+        [IntRangeValidation(0, GarnetServerOptions.ReplicaDiskBasedSyncWriteBuffersMax)]
+        [Option("repl-disk-based-sync-write-buffers", Required = false, HelpText = "Received disk-based Tsavorite checkpoint chunks the replica may hold for its file writer, queued or being written, so it can receive the next chunk while writing (0-8, default 1; 0 writes each chunk before receiving the next). Each uses one chunk-sized buffer. Set on the replica; requires restart.")]
+        public int ReplicaDiskBasedSyncWriteBuffers { get; set; }
+
+        [OptionValidation]
+        [Option("repl-disk-based-sync-write-buffers-concurrently", Required = false, HelpText = "Issue disk-based Tsavorite checkpoint writes concurrently when the replica has more than one write buffer (default false). Does not change buffer limits or EOF completion. Set on the replica; requires restart.")]
+        public bool? ReplicaDiskBasedSyncWriteBuffersConcurrently { get; set; }
+
+        [OptionValidation]
+        [Option("repl-enable-benchmark-timing", Required = false, HelpText = "Experimental whole disk-based checkpoint shipment/recovery metrics on cluster nodes (default false). No per-chunk counters; independent of DEBUG authorization. Requires restart; read-only CONFIG GET.")]
+        public bool? ReplicaEnableBenchmarkTiming { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("repl-diskless-sync-delay", Required = false, HelpText = "Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.")]
@@ -946,7 +994,11 @@ namespace Garnet
                 EnableCluster = EnableCluster.GetValueOrDefault(),
                 CleanClusterConfig = CleanClusterConfig.GetValueOrDefault(),
                 ParallelMigrateTaskCount = ParallelMigrateTaskCount,
-                FastMigrate = FastMigrate.GetValueOrDefault(),
+                MigrateKeySendBatchSize = MigrateKeySendBatchSize,
+                UseScanAheadMigration = UseScanAheadMigration.GetValueOrDefault(),
+                MigrationSendBufferSize = MigrationSendBufferSize,
+                MigrationPipelineDepth = MigrationPipelineDepth,
+                MigrationDeleteBatchSize = MigrationDeleteBatchSize,
                 AuthSettings = GetAuthenticationSettings(logger),
                 AclStrictCustomCommands = AclStrictCustomCommands.GetValueOrDefault(true),
                 EnableAOF = EnableAOF.GetValueOrDefault(),
@@ -963,6 +1015,7 @@ namespace Garnet
                 AofTailWitnessFreqMs = AofTailWitnessFreqMs,
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
+                AofReplayClearAboveTail = AofReplayClearAboveTail.GetValueOrDefault(true),
                 AofSizeLimit = AofSizeLimit,
                 AofSizeLimitEnforceFrequencySecs = AofSizeLimitEnforceFrequencySecs,
                 CompactionFrequencySecs = CompactionFrequencySecs,
@@ -973,7 +1026,9 @@ namespace Garnet
                 CompactionMaxSegments = CompactionMaxSegments,
                 GossipSamplePercent = GossipSamplePercent,
                 GossipDelay = GossipDelay,
+                GossipClientSwapGraceSecs = GossipClientSwapGraceSecs,
                 ClusterTimeout = ClusterTimeout,
+                FailoverResetPrimaryTimeout = FailoverResetPrimaryTimeout,
                 ClusterConfigFlushFrequencyMs = ClusterConfigFlushFrequencyMs,
                 FastCommitThrottleFreq = FastCommitThrottleFreq,
                 NetworkSendThrottleMax = NetworkSendThrottleMax,
@@ -1034,6 +1089,11 @@ namespace Garnet
                 ReplicaDisklessSync = ReplicaDisklessSync.GetValueOrDefault(),
                 ReplicaDisklessSyncDelay = ReplicaDisklessSyncDelay,
                 ReplicaSyncTimeout = ReplicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(ReplicaSyncTimeout),
+                ReplicaDiskBasedSyncChunkSize = ReplicaDiskBasedSyncChunkSize,
+                ReplicaDiskBasedSyncPipelineDepth = ReplicaDiskBasedSyncPipelineDepth,
+                ReplicaDiskBasedSyncWriteBuffers = ReplicaDiskBasedSyncWriteBuffers,
+                ReplicaDiskBasedSyncWriteBuffersConcurrently = ReplicaDiskBasedSyncWriteBuffersConcurrently.Value,
+                ReplicaEnableBenchmarkTiming = ReplicaEnableBenchmarkTiming.Value,
                 ReplicaAttachTimeout = ReplicaAttachTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(ReplicaAttachTimeout),
                 ReplicaDisklessSyncFullSyncAofThreshold = ReplicaDisklessSyncFullSyncAofThreshold,
                 UseAofNullDevice = UseAofNullDevice.GetValueOrDefault(),

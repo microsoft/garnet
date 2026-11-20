@@ -135,7 +135,7 @@ namespace Garnet.server
         /// <param name="number">Result</param>
         /// <param name="canBeInfinite">Allow reading an infinity</param>
         /// <returns>
-        /// True if double parsed successfully
+        /// True if double parsed successfully; NaN is not a valid double argument
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool TryReadDouble(PinnedSpanByte slice, out double number, bool canBeInfinite)
@@ -143,7 +143,7 @@ namespace Garnet.server
             var sbNumber = slice.ReadOnlySpan;
             if (Utf8Parser.TryParse(sbNumber, out number, out var bytesConsumed) &&
                             bytesConsumed == sbNumber.Length)
-                return true;
+                return !double.IsNaN(number);
 
             return canBeInfinite && RespReadUtils.TryReadInfinity(sbNumber, out number);
         }
@@ -173,7 +173,7 @@ namespace Garnet.server
         /// <param name="number">Result</param>
         /// <param name="canBeInfinite">Allow reading an infinity</param>
         /// <returns>
-        /// True if float parsed successfully
+        /// True if float parsed successfully; NaN is not a valid float argument
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool TryReadFloat(PinnedSpanByte slice, out float number, bool canBeInfinite)
@@ -181,7 +181,7 @@ namespace Garnet.server
             var sbNumber = slice.ReadOnlySpan;
             if (Utf8Parser.TryParse(sbNumber, out number, out var bytesConsumed) &&
                             bytesConsumed == sbNumber.Length)
-                return true;
+                return !float.IsNaN(number);
 
             return canBeInfinite && RespReadUtils.TryReadInfinity(sbNumber, out number);
         }

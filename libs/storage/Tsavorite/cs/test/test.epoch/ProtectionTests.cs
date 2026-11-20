@@ -111,7 +111,7 @@ namespace Tsavorite.test.epoch
 
             Assert.That(epoch.ThisInstanceProtected(), Is.True, because);
             Assert.That(entry, Is.GreaterThan(0), because);
-            Assert.That(entry, Is.LessThanOrEqualTo(epoch.EntryCount), because);
+            Assert.That(entry, Is.LessThanOrEqualTo(LightEpoch.EntryCount), because);
             Assert.That(epoch.TestHookThreadIdAt(entry), Is.EqualTo(Environment.CurrentManagedThreadId), because);
             Assert.That(epoch.TestHookThisThreadAnnouncedEpoch(), Is.EqualTo(announcedEpoch), because);
             Assert.That(epoch.TestHookAnnouncedEpochAt(entry), Is.EqualTo(announcedEpoch), because);

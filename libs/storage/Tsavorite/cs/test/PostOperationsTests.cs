@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -22,6 +23,10 @@ namespace Tsavorite.test
             internal long pcuAddress;
             internal long psdAddress;
             internal bool returnFalseFromPCU;
+            internal bool deleteOnRmw;
+            internal bool deleteInCopyUpdater;
+            internal Action beforeCopyDelete;
+            internal readonly List<bool> tombstonePublications = [];
 
             internal void Clear()
             {
@@ -47,11 +52,37 @@ namespace Tsavorite.test
                 => piuAddress = rmwInfo.Address;
 
             public override bool InPlaceUpdater(ref LogRecord logRecord, ref int input, ref int output, ref RMWInfo rmwInfo)
-                => false; // For this test, we want this to fail and lead to InitialUpdater
+            {
+                if (deleteOnRmw)
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
+                return false;
+            }
+
+            public override bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref int input, ref int output, ref RMWInfo rmwInfo)
+            {
+                if (!deleteOnRmw)
+                    return true;
+                beforeCopyDelete?.Invoke();
+                if (deleteInCopyUpdater)
+                    return true;
+                rmwInfo.Action = RMWAction.ExpireAndStop;
+                return false;
+            }
+
+            public override void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref int input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+            {
+                if (deleteOnRmw)
+                    tombstonePublications.Add(rmwInfo.TombstonePublished);
+            }
 
             /// <inheritdoc/>
             public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
             {
+                if (deleteOnRmw)
+                {
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
+                    return false;
+                }
                 dstLogRecord.ValueSpan.AsRef<int>() = srcLogRecord.ValueSpan.AsRef<int>();
                 return true;
             }
@@ -226,6 +257,56 @@ namespace Tsavorite.test
             // Verify the key no longer exists.
             (status, _ /*output*/) = bContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
             ClassicAssert.IsFalse(status.Found, "Expected the record to no longer exist");
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        [Category("Smoke")]
+        public void RmwTombstonePublicationTest([Values(0, 1, 2)] int storageRegion, [Values] bool copyUpdater)
+        {
+            var functions = session.functions;
+            functions.deleteOnRmw = true;
+            functions.deleteInCopyUpdater = copyUpdater;
+            if (storageRegion == 1)
+                store.Log.Flush(wait: true);
+            else if (storageRegion == 2)
+                store.Log.FlushAndEvict(wait: true);
+
+            int key = TargetKey, input = 0;
+            _ = bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref input);
+            _ = bContext.CompletePending(wait: true);
+            ClassicAssert.AreEqual(1, functions.tombstonePublications.FindAll(published => published).Count);
+            var (status, _) = bContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
+            if (status.IsPending)
+            {
+                _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                (status, _) = GetSinglePendingResult(outputs);
+            }
+            ClassicAssert.IsTrue(status.NotFound);
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        [Category("Smoke")]
+        public void RmwAllocationRetryDoesNotPublishTombstone()
+        {
+            store.Log.Flush(wait: true);
+            var functions = session.functions;
+            functions.deleteOnRmw = true;
+            functions.deleteInCopyUpdater = true;
+            functions.beforeCopyDelete = () =>
+            {
+                functions.beforeCopyDelete = null;
+                store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: false);
+            };
+
+            int key = TargetKey, input = 0;
+            _ = bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref input);
+            _ = bContext.CompletePending(wait: true);
+            ClassicAssert.GreaterOrEqual(functions.tombstonePublications.Count, 2);
+            ClassicAssert.IsFalse(functions.tombstonePublications[0], "Source eviction during allocation must retry without publishing a deletion.");
+            ClassicAssert.AreEqual(1, functions.tombstonePublications.FindAll(published => published).Count);
+            ClassicAssert.IsTrue(functions.tombstonePublications[^1]);
         }
 
         [Test]

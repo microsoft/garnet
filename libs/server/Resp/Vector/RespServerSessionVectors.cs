@@ -37,15 +37,7 @@ namespace Garnet.server
             while (optionIndex < parseState.Count)
             {
                 var option = parseState.GetArgSliceByRef(optionIndex++).ReadOnlySpan;
-                var optionQuantizer =
-                    option.EqualsUpperCaseSpanIgnoringCase("NOQUANT"u8) ? VectorQuantType.NoQuant :
-                    option.EqualsUpperCaseSpanIgnoringCase("Q8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.Q8 :
-                    option.EqualsUpperCaseSpanIgnoringCase("BIN"u8) ? VectorQuantType.Bin :
-                    option.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_U8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XNoQuant_U8 :
-                    option.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_I8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XNoQuant_I8 :
-                    option.EqualsUpperCaseSpanIgnoringCase("XBIN_U8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XBin_U8 :
-                    option.EqualsUpperCaseSpanIgnoringCase("XBIN_I8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XBin_I8 :
-                    VectorQuantType.Invalid;
+                var optionQuantizer = ParseVectorQuantizer(option);
 
                 if (optionQuantizer != VectorQuantType.Invalid)
                 {
@@ -210,6 +202,23 @@ namespace Garnet.server
             return true;
         }
 
+        private static VectorQuantType ParseVectorQuantizer(ReadOnlySpan<byte> option, bool allowLegacyAlias = false) =>
+            option.EqualsUpperCaseSpanIgnoringCase("NOQUANT"u8) ? VectorQuantType.NoQuant :
+            option.EqualsUpperCaseSpanIgnoringCase("Q8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.Q8 :
+            option.EqualsUpperCaseSpanIgnoringCase("BIN"u8) ? VectorQuantType.Bin :
+            option.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_U8"u8, allowNonAlphabeticChars: true)
+                || (allowLegacyAlias && option.EqualsUpperCaseSpanIgnoringCase("XPREQ8"u8, allowNonAlphabeticChars: true)) ? VectorQuantType.XNoQuant_U8 :
+            option.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_I8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XNoQuant_I8 :
+            option.EqualsUpperCaseSpanIgnoringCase("XBIN_I8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XBin_I8 :
+            option.EqualsUpperCaseSpanIgnoringCase("XBIN_U8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XBin_U8 :
+            option.EqualsUpperCaseSpanIgnoringCase("XSPHERICAL2"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XSpherical2 :
+            option.EqualsUpperCaseSpanIgnoringCase("XSPHERICAL2_I8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XSpherical2_I8 :
+            option.EqualsUpperCaseSpanIgnoringCase("XSPHERICAL2_U8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XSpherical2_U8 :
+            option.EqualsUpperCaseSpanIgnoringCase("XSPHERICAL4"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XSpherical4 :
+            option.EqualsUpperCaseSpanIgnoringCase("XSPHERICAL4_I8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XSpherical4_I8 :
+            option.EqualsUpperCaseSpanIgnoringCase("XSPHERICAL4_U8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XSpherical4_U8 :
+            VectorQuantType.Invalid;
+
         private bool NetworkXVIMPORT<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
@@ -223,16 +232,14 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVIMPORT));
             }
 
+            var key = parseState.GetArgSliceByRef(0);
+
             var term = parseState.GetArgSliceByRef(1).ReadOnlySpan;
             if (term.EqualsUpperCaseSpanIgnoringCase("FINISH"u8))
             {
                 if (parseState.Count != 2)
                 {
                     return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVIMPORT));
-                }
-                if (parseState.GetArgSliceByRef(0).ReadOnlySpan.IsEmpty)
-                {
-                    return AbortWithErrorMessage("ERR Vector Set key cannot be empty"u8);
                 }
 
                 var finishStatus = storageApi.VectorSetFinishImport(parseState.GetArgSliceByRef(0), out var finishResult, out var finishErrorMsg);
@@ -252,6 +259,33 @@ namespace Garnet.server
                 WriteDirect(CmdStrings.RESP_OK);
                 return true;
             }
+            else if (term.EqualsUpperCaseSpanIgnoringCase("VERIFY"u8))
+            {
+                if (parseState.Count != 4)
+                {
+                    return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVIMPORT));
+                }
+
+                if (!parseState.TryGetInt(2, out var taskIndex) || !parseState.TryGetInt(3, out var taskCount))
+                {
+                    return AbortWithErrorMessage("ERR XVIMPORT VERIFY must have integer taskIndex and taskCount parameters");
+                }
+
+                var verifyStatus = storageApi.VectorSetVerifyImport(key, taskIndex, taskCount, out var res, out var verifyErrorMsg);
+                if (verifyStatus == GarnetStatus.WRONGTYPE)
+                {
+                    return AbortVectorSetWrongType();
+                }
+
+                if (res != VectorManagerResult.OK)
+                {
+                    return AbortWithErrorMessage(verifyErrorMsg);
+                }
+
+                WriteDirect(CmdStrings.RESP_OK);
+                return true;
+            }
+
             if (parseState.Count != 4)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVIMPORT));
@@ -271,7 +305,6 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR invalid vector set import term"u8);
             }
 
-            var key = parseState.GetArgSliceByRef(0);
             var id = parseState.GetArgSliceByRef(2);
             var value = parseState.GetArgSliceByRef(3);
 
@@ -505,86 +538,15 @@ namespace Garnet.server
                     }
 
                     // Look for quantizer specs
-                    if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("NOQUANT"u8))
+                    var optionQuantizer = ParseVectorQuantizer(parseState.GetArgSliceByRef(curIx).ReadOnlySpan, allowLegacyAlias: true);
+                    if (optionQuantizer != VectorQuantType.Invalid)
                     {
                         if (quantType != null)
                         {
                             return AbortWithErrorMessage("Quantization specified multiple times");
                         }
 
-                        quantType = VectorQuantType.NoQuant;
-                        curIx++;
-
-                        continue;
-                    }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("Q8"u8))
-                    {
-                        if (quantType != null)
-                        {
-                            return AbortWithErrorMessage("Quantization specified multiple times");
-                        }
-
-                        quantType = VectorQuantType.Q8;
-                        curIx++;
-
-                        continue;
-                    }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("BIN"u8))
-                    {
-                        if (quantType != null)
-                        {
-                            return AbortWithErrorMessage("Quantization specified multiple times");
-                        }
-
-                        quantType = VectorQuantType.Bin;
-                        curIx++;
-
-                        continue;
-                    }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_U8"u8, allowNonAlphabeticChars: true) || parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XPREQ8"u8)) // XPREQ8 kept for backwards compatability, prefer XNOQUANT_U8
-                    {
-                        if (quantType != null)
-                        {
-                            return AbortWithErrorMessage("Quantization specified multiple times");
-                        }
-
-                        quantType = VectorQuantType.XNoQuant_U8;
-                        curIx++;
-
-                        continue;
-                    }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_I8"u8, allowNonAlphabeticChars: true))
-                    {
-                        if (quantType != null)
-                        {
-                            return AbortWithErrorMessage("Quantization specified multiple times");
-                        }
-
-                        quantType = VectorQuantType.XNoQuant_I8;
-                        curIx++;
-
-                        continue;
-                    }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XBIN_I8"u8, allowNonAlphabeticChars: true))
-                    {
-                        if (quantType != null)
-                        {
-                            return AbortWithErrorMessage("Quantization specified multiple times");
-                        }
-
-                        quantType = VectorQuantType.XBin_I8;
-                        curIx++;
-
-                        continue;
-                    }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XBIN_U8"u8, allowNonAlphabeticChars: true))
-                    {
-                        if (quantType != null)
-                        {
-                            return AbortWithErrorMessage("Quantization specified multiple times");
-                        }
-
-                        quantType = VectorQuantType.XBin_U8;
+                        quantType = optionQuantizer;
                         curIx++;
 
                         continue;
@@ -724,7 +686,7 @@ namespace Garnet.server
                 GarnetStatus res;
                 VectorManagerResult result;
                 ReadOnlySpan<byte> customErrMsg;
-                if (quantType is VectorQuantType.XBin_U8 or VectorQuantType.XBin_I8 or VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8 && reduceDim != 0)
+                if (quantType is VectorQuantType.XBin_U8 or VectorQuantType.XBin_I8 or VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8 or VectorQuantType.XSpherical2_I8 or VectorQuantType.XSpherical2_U8 or VectorQuantType.XSpherical4_I8 or VectorQuantType.XSpherical4_U8 && reduceDim != 0)
                 {
                     result = VectorManagerResult.BadParams;
                     res = GarnetStatus.OK;
@@ -1589,6 +1551,8 @@ namespace Garnet.server
                 //
                 // The quantization map (which is written as first element) is as:
                 //  BIN, XBIN_I8, XBIN_U8  -> bin
+                //  XSPHERICAL2, XSPHERICAL2_I8, XSPHERICAL2_U8 -> spherical2
+                //  XSPHERICAL4, XSPHERICAL4_I8, XSPHERICAL4_U8 -> spherical4
                 //  Q8, XNOQUANT_I8, XNOQUANT_U8 -> q8
                 //  NOQUANT -> fp32
                 //
@@ -1635,6 +1599,14 @@ namespace Garnet.server
                         else if (quantType == VectorQuantType.NoQuant)
                         {
                             WriteSimpleString("fp32");
+                        }
+                        else if (quantType is VectorQuantType.XSpherical2 or VectorQuantType.XSpherical2_I8 or VectorQuantType.XSpherical2_U8)
+                        {
+                            WriteSimpleString("spherical2"u8);
+                        }
+                        else if (quantType is VectorQuantType.XSpherical4 or VectorQuantType.XSpherical4_I8 or VectorQuantType.XSpherical4_U8)
+                        {
+                            WriteSimpleString("spherical4"u8);
                         }
                         else
                         {
@@ -1898,7 +1870,7 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            var res = storageApi.VectorSetInfo(key, out var quantType, out var distanceMetricType, out var vectorDimensions, out var reducedDimensions, out var buildExplorationFactor, out var numLinks, out var size, out var importPending);
+            var res = storageApi.VectorSetInfo(key, out var quantType, out var distanceMetricType, out var vectorDimensions, out var reducedDimensions, out var buildExplorationFactor, out var numLinks, out var size, out var importPendingState);
 
             if (res != GarnetStatus.OK)
             {
@@ -1915,7 +1887,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage($"Unexpected GarnetStatus: {res}");
             }
 
-            if (!importPending && size < 0)
+            if (importPendingState != VectorSetImportState.None && size < 0)
             {
                 return AbortWithErrorMessage("ERR vector set cardinality failed"u8);
             }
@@ -1929,6 +1901,12 @@ namespace Garnet.server
                 VectorQuantType.XNoQuant_I8 => "xnoquant_i8"u8,
                 VectorQuantType.XBin_I8 => "xbin_i8"u8,
                 VectorQuantType.XBin_U8 => "xbin_u8"u8,
+                VectorQuantType.XSpherical2 => "xspherical2"u8,
+                VectorQuantType.XSpherical2_I8 => "xspherical2_i8"u8,
+                VectorQuantType.XSpherical2_U8 => "xspherical2_u8"u8,
+                VectorQuantType.XSpherical4 => "xspherical4"u8,
+                VectorQuantType.XSpherical4_I8 => "xspherical4_i8"u8,
+                VectorQuantType.XSpherical4_U8 => "xspherical4_u8"u8,
                 _ => throw new GarnetException($"Invalid VectorQuantType: {quantType}"),
             };
 
@@ -1941,7 +1919,15 @@ namespace Garnet.server
                 _ => throw new GarnetException($"Invalid VectorDistanceMetricType: {distanceMetricType}"),
             };
 
-            WriteMapLength(importPending ? 7 : 8);
+            var importPendingStateSpan = importPendingState switch
+            {
+                VectorSetImportState.None => "not-importing",
+                VectorSetImportState.ImportInProgress => "pending",
+                VectorSetImportState.ImportFailed => "failed",
+                _ => throw new GarnetException($"Invalid VectorSetImportState: {importPendingState}"),
+            };
+
+            WriteMapLength(importPendingState == VectorSetImportState.None ? 8 : 7);
             WriteSimpleString("quant-type"u8);
             WriteSimpleString(quantTypeSpan);
             WriteSimpleString("distance-metric"u8);
@@ -1954,13 +1940,13 @@ namespace Garnet.server
             WriteInt32((int)buildExplorationFactor);
             WriteSimpleString("num-links"u8);
             WriteInt32((int)numLinks);
-            if (!importPending)
+            if (importPendingState == VectorSetImportState.None)
             {
                 WriteSimpleString("size"u8);
                 WriteInt64(size);
             }
-            WriteSimpleString("import-pending"u8);
-            WriteInt32(importPending ? 1 : 0);
+            WriteSimpleString("import-state"u8);
+            WriteSimpleString(importPendingStateSpan);
 
             return true;
         }

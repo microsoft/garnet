@@ -113,6 +113,24 @@ namespace Tsavorite.core
         byte[] GetLogCheckpointMetadata(Guid logToken);
 
         /// <summary>
+        /// Read index metadata for inspection without creating storage. Missing metadata throws
+        /// <see cref="System.IO.FileNotFoundException"/>; other read failures remain errors.
+        /// </summary>
+        /// <param name="indexToken">Token to inspect.</param>
+        /// <returns>The metadata payload without its length prefix or sector padding.</returns>
+        byte[] ReadIndexCheckpointMetadata(Guid indexToken)
+            => throw new NotSupportedException("This checkpoint manager does not support non-creating metadata inspection");
+
+        /// <summary>
+        /// Read HybridLog metadata for inspection without creating storage. Missing metadata throws
+        /// <see cref="System.IO.FileNotFoundException"/>; other read failures remain errors.
+        /// </summary>
+        /// <param name="logToken">Token to inspect.</param>
+        /// <returns>The metadata payload without its length prefix or sector padding.</returns>
+        byte[] ReadLogCheckpointMetadata(Guid logToken)
+            => throw new NotSupportedException("This checkpoint manager does not support non-creating metadata inspection");
+
+        /// <summary>
         /// Get list of index checkpoint tokens, in order of usage preference
         /// </summary>
         /// <returns></returns>
@@ -144,6 +162,15 @@ namespace Tsavorite.core
         /// <param name="token"></param>
         /// <returns></returns>
         IDevice GetSnapshotObjectLogDevice(Guid token);
+
+        /// <summary>
+        /// Get the largest sector size, in bytes, of the devices returned by <see cref="GetIndexDevice(Guid)"/>,
+        /// <see cref="GetSnapshotLogDevice(Guid)"/> and <see cref="GetSnapshotObjectLogDevice(Guid)"/>, without creating
+        /// any of them. A store calls this once, when it is created, and aligns its log pages, hash index and overflow
+        /// buckets to at least this size so that its checkpoints can be written to and recovered from those devices.
+        /// </summary>
+        /// <returns>The sector size; the default implementation returns <see cref="IDevice.MinDeviceSectorSize"/>.</returns>
+        uint GetCheckpointDeviceSectorSize() => IDevice.MinDeviceSectorSize;
 
         /// <summary>
         /// Cleanup all data (subfolder) related to the given guid by this manager

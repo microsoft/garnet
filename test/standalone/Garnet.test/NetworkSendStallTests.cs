@@ -34,6 +34,7 @@ namespace Garnet.test
         const int GetsPerClient = 3;
         const string Key = "bigkey";
         const ExceptionInjectionType PauseBeforeSlotRelease = ExceptionInjectionType.Sender_Pause_Before_Slot_Release;
+        const ExceptionInjectionType PauseBeforeTimedOutSlotWait = ExceptionInjectionType.Sender_Pause_Before_Timed_Out_Slot_Wait;
 
         // A throttle no response reaches, so every send is in flight when QUIT ends the session and the only wait
         // is the one for them to drain
@@ -62,6 +63,7 @@ namespace Garnet.test
         public void TearDown()
         {
             ExceptionInjectionHelper.DisableException(PauseBeforeSlotRelease);
+            ExceptionInjectionHelper.DisableException(PauseBeforeTimedOutSlotWait);
             server?.Dispose();
             server = null;
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
@@ -133,12 +135,9 @@ namespace Garnet.test
             using var healthy = ConnectTls();
 
             using var stalled = ConnectTls(receiveBufferSize: 4096);
-            var elapsed = Stopwatch.StartNew();
             stalled.Write(Gets());
 
             WaitForDisposedConnections(2, "a TLS client that accepts no data for the send timeout must be disconnected");
-            Assert.That(elapsed.Elapsed, Is.LessThan(StalledCloseBound),
-                "a send that times out must close its connection, rather than wait a further timeout for the connection's other sends to drain");
 
             Ping(healthy);
             AssertClosedBeforeFullResponse(stalled);
@@ -148,6 +147,35 @@ namespace Garnet.test
                 "a TLS client that stops reading is an expected condition, not a server error");
             Assert.That(logged, Does.Not.Contain(nameof(IOException)),
                 "a send timeout must end the session without writing again to the connection it closed");
+        }
+
+        /// <summary>
+        /// A TLS send timeout closes the socket before waiting for outstanding sends, independently of request
+        /// dispatch time. The sender stays paused while the client observes the incomplete response and closure.
+        /// </summary>
+        [Test]
+        public async Task TlsSendTimeoutClosesSocketBeforeWaitingForItsSendSlot()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            StartServer(SendTimeout, enableTLS: true);
+            using var healthy = ConnectTls();
+            using var stalled = ConnectTls(receiveBufferSize: 4096);
+            ExceptionInjectionHelper.EnableException(PauseBeforeTimedOutSlotWait);
+            try
+            {
+                stalled.Write(Gets());
+                await ExceptionInjectionHelper.WaitOnClearAsync(PauseBeforeTimedOutSlotWait).WaitAsync(Deadline);
+
+                AssertClosedBeforeFullResponse(stalled);
+                Ping(healthy);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.EnableException(PauseBeforeTimedOutSlotWait);
+            }
+
+            WaitForDisposedConnections(2, "a timed-out TLS sender must finish disposing after its wait is released");
         }
 
         /// <summary>

@@ -180,8 +180,8 @@ size was adjusted for each topology:
 
 Both products therefore operated on the same approximately one-million-key  
 logical dataset despite using different shard counts. The benchmark used a  
-connection pool for every worker; in this mode each worker maintained two  
-connections to every shard. Broadcast mode was not enabled.
+fixed worker pool; each worker maintained two connections to every shard.
+Parallel fan-out was not enabled.
 
 ### SET and GET Experiments
 

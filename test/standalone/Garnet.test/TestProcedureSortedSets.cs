@@ -110,8 +110,8 @@ namespace Garnet
                 return false;
 
             // Exercise SortedSetIncrement
-            status = api.SortedSetIncrement(ssA, 12345, ssMembers[0], out var newScore);
-            if (status != GarnetStatus.OK || newScore != 12345)
+            status = api.SortedSetIncrement(ssA, 12345, ssMembers[0], out var newScore, out var incrementError);
+            if (status != GarnetStatus.OK || incrementError || newScore != 12345)
                 return false;
 
             status = api.SortedSetExpire(ssA, [.. ssItems.Skip(4).Take(1).Select(x => x.member), PinnedSpanByte.FromPinnedSpan(Encoding.UTF8.GetBytes("nonExist"))], DateTimeOffset.UtcNow.AddMinutes(10), ExpireOption.None, out var expireResults);

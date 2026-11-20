@@ -503,6 +503,13 @@ namespace Garnet.server
                     {
                         if (NumUtils.TryReadInt64(token, out var expTicks))
                         {
+                            // -1 removes the expiration, 0 keeps it, and a positive value sets it
+                            if (expTicks < -1)
+                            {
+                                errorMsg = CmdStrings.RESP_ERR_INVALID_EXPIRATION_TICKS;
+                                break;
+                            }
+
                             cmdArgs.ExpirationTicks = expTicks;
                             optionalParamsRead++;
                             continue;

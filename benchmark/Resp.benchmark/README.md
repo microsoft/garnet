@@ -30,6 +30,40 @@ dotnet $RB --op GET --dbsize 1000000 -t 8 -b 512 --runtime 15   # offline throug
 
 Always measure on a **Release** build. `dotnet $RB --help` lists all flags.
 
+## Native configuration files
+
+Both standalone and `ClusterBench` modes accept `--config benchmark.conf`.
+The file is a JSON object whose keys are the `[Option]` property names in
+`Options.cs`, not CLI flag names:
+
+```json
+{
+  "Address": "127.0.0.1",
+  "Port": 6379,
+  "NumThreads": [8, 16],
+  "BatchSize": [512],
+  "RunTime": 15,
+  "Op": "GET",
+  "DbSize": 1024,
+  "LSet": true,
+  "ClusterBench": false
+}
+```
+
+Precedence is **built-in defaults < file < explicit CLI options**.
+For example, `Resp.benchmark --config benchmark.conf --host 10.0.0.4 --threads 32`
+overrides only the address and thread count. Boolean overrides can use
+`--cluster-bench=false`; enum values are strings and collections are JSON arrays.
+Use `BatchSize` in files; the CLI alias `--pipeline` remains supported.
+
+`--config benchmark.conf --validate-config` checks option names, types and
+supported features without connecting, preloading or running a workload.
+It does not check connectivity, external files or every workload-specific constraint.
+Unknown/duplicate keys, nulls, invalid values and CLI errors return nonzero.
+`ConfigFile`, `ValidateConfig` and aliases are CLI-only, not file properties.
+New native `[Option]` properties are automatically available in JSON; no separate
+configuration map is required. CLI-only invocation remains supported.
+
 ## Key knobs
 
 | Flag | Default | Controls |
@@ -194,6 +228,13 @@ dotnet $RB --cluster-bench --op GET --dbsize 16777216 -t 16 -b 1024 --zipf  # sk
 
 ## Online (latency)
 
+For ClusterBench, `--use-fixed-worker-pool` makes `--threads` the total worker count
+across all shards; without it, `--threads` is the worker count per shard. Add
+`--use-parallel-fan-out` to have each worker send shard-specific work to every shard,
+then drain all responses before starting the next round. Requests overlap across
+shards without creating additional worker threads.
+Azure benchmark configurations use `UseFixedWorkerPool` and `UseParallelFanOut`.
+
 ```bash
 # Single-client GET latency (cleanest reading)
 dotnet $RB --online --op-workload GET --op-percent 100 --dbsize 1000000 -t 1 -b 1 --runtime 30
@@ -236,7 +277,7 @@ dotnet $RB --online --op-workload GET --op-percent 100 --dbsize 1000000 -t 8 --i
 |---|---|
 | `Skipload not supported with --online` | drop `-s` or use offline |
 | `-b N>1` warning in online | tool forces `-b 1`; use `--itp` for concurrency |
-| `--pool` with `LightClient` unsupported | use GarnetClientSession / GarnetClient / SERedis |
+| `--use-fixed-worker-pool` rejected with `LightClient` in online mode | use ClusterBench without parallel fan-out, or another client supported by the selected mode |
 | Disk-bound throughput far below KV.benchmark | server-side bottleneck — profile with `dotnet-trace` |
 | `--dbsize % loadThreads != 0` | round `--dbsize` to a multiple of the loader thread count |
 

@@ -182,6 +182,7 @@ namespace Garnet.cluster
             var newSlotMap = DeserializeSlotMap(ref reader);
 
             int numWorkers = reader.ReadInt32();
+            ValidateWorkerCount(numWorkers, version, other.Length - ms.Position);
             var newWorkers = new Worker[numWorkers];
             for (int i = 1; i < numWorkers; i++)
             {
@@ -214,6 +215,24 @@ namespace Garnet.cluster
             return new ClusterConfig(newSlotMap, newWorkers);
         }
 
+        /// <summary>
+        /// Rejects a worker count that the payload cannot hold before the worker array is sized from it.
+        /// Slots refer to workers by a 16-bit id, and every serialized worker takes at least a fixed number of
+        /// bytes, so a count outside either bound can only come from a malformed or malicious payload.
+        /// </summary>
+        /// <param name="numWorkers">Declared worker count, including the unused entry at index 0.</param>
+        /// <param name="version">Serialization version of the payload.</param>
+        /// <param name="remainingBytes">Payload bytes that follow the worker count.</param>
+        private static void ValidateWorkerCount(int numWorkers, byte version, long remainingBytes)
+        {
+            // Empty Nodeid and Address strings (1 byte each), Port, ConfigEpoch, Role, ReplicaOf flag,
+            // ReplicationOffset and hostname flag; version 2 adds an empty ClusterAddress and ClusterPort.
+            var minWorkerBytes = version >= 2 ? 30 : 25;
+
+            if (numWorkers < 1 || numWorkers > ushort.MaxValue + 1 || (long)(numWorkers - 1) * minWorkerBytes > remainingBytes)
+                throw new InvalidDataException($"Invalid ClusterConfig payload: worker count {numWorkers} does not fit the payload");
+        }
+
         private static HashSlot[] DeserializeSlotMap(ref BinaryReader reader)
         {
             var newSlotMap = new HashSlot[16384];
@@ -226,6 +245,8 @@ namespace Garnet.cluster
                 SlotState state = (SlotState)reader.ReadByte();
 
                 count += slotOffset;
+                if (count > newSlotMap.Length)
+                    throw new InvalidDataException("Invalid ClusterConfig payload: slot segments exceed the slot range");
                 while (slotOffset < count)
                 {
                     newSlotMap[slotOffset]._workerId = workerId;

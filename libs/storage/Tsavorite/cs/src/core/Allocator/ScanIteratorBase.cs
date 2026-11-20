@@ -483,7 +483,7 @@ namespace Tsavorite.core
                     throw;
                 }
                 else
-                    throw new TsavoriteException("Page read from storage failed, skipping page. Inner exception: " + e.ToString());
+                    throw new TsavoriteIOException("Page read from storage failed, skipping page", e);
             }
             finally
             {

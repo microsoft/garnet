@@ -120,7 +120,7 @@ and requires `--enable-vector-set-preview`.
 
 ```text
 XVCREATE key DIM dimensions [M degree] [EF build-exploration-factor] [DISTANCE_METRIC metric]
-         [NOQUANT | Q8 | BIN | XNOQUANT_U8 | XNOQUANT_I8 | XBIN_U8 | XBIN_I8]
+         [quantizer]
          [REDUCE reduced-dimensions] [QUANT_STATE state] [START_POINT id]
 ```
 
@@ -132,7 +132,7 @@ Options may appear in any order after the key. Each option, including the quanti
 | `M degree`                    | `16`         | Maximum graph degree, from 4 to 4096.                                                                     |
 | `EF build-exploration-factor` | `200`        | Build-time exploration factor, from 1 to 1000000. Fixed at creation; later `VADD` calls do not change it. |
 | `DISTANCE_METRIC metric`      | `L2`         | `L2`, `COSINE`, `IP`, or `XCOSINE_NORMALIZED`.                                                            |
-| Quantizer                     | `Q8`         | One of the seven quantizers in the syntax above.                                                          |
+| Quantizer                     | `Q8`         | One of the modes listed under [Quantization](#quantization).                                              |
 | `REDUCE reduced-dimensions`   | Disabled     | Positive dimensions no greater than `DIM`. Not supported with the `_U8` or `_I8` quantizers.              |
 | `QUANT_STATE state`           | Not supplied | Opaque binary quantizer state passed unchanged to DiskANN. Not supported with any `NOQUANT` variant.      |
 | `START_POINT id`              | `4294967295` | Start-point internal ID, from 0 to 4294967295. Useful to specify start point for imports.                 |
@@ -202,8 +202,9 @@ that integrate with DiskANN code in other contexts where the index is created
 outside of Garnet but where it might be beneficial to serve queries with Garnet.
 
 Start with `XVCREATE`. Quantized sets require `QUANT_STATE` before importing.
-Imports may run concurrently. Wait for all term-import replies, then call `XVIMPORT key FINISH`
-before using other vector set operations. `DEL` can discard an incomplete import.
+Imports may run concurrently. Wait for all term-import replies, then call `XVIMPORT key VERIFY <index> <count>`
+to validate the import.  Once all verification is complete, call `XVIMPORT key FINISH` before using other 
+vector set operations. `DEL` can discard an incomplete import.
 
 Once a term is accepted, ordinary vector commands other than `VINFO` return
 `ERR Vector Set import is not finished` until `FINISH` succeeds. A newly created empty set with no imported
@@ -217,26 +218,22 @@ Both RESP2 and RESP3 return the simple string `OK` when the term is accepted. Mi
 Repeated terms may be accepted. A failed import must be retried successfully or the set discarded;
 failure does not guarantee that no storage changes occurred.
 
-`XVIMPORT key FINISH` waits for vector set finalization before returning
-`OK`. Finalization requires a valid imported start point, even when there are no data vectors.
+The client is responsible for making sure all data-bearing `XVIMPORT`s have finished before calling
+`XVIMPORT key VERIFY <index> <count>`, and similarly that all verification has finished before calling
+`XVIMPORT key FINISH`.  Verification is optional.
+
+Finalization requires a valid imported start point, even when there are no data vectors.
 Verification failure returns `ERR vector set import verification failed`; a failure during final setup
 returns `ERR vector set import finalization failed`. Imports are disabled once finalization starts.
 
 If ordinary operations have disabled imports and no import is pending, `FINISH` returns
 `ERR vector set import verification failed` without changing the set's state or availability.
 
-Concurrent `FINISH` calls join the same attempt. After a verification failure, another `FINISH` retries only
-failed partitions, leaving successful partitions complete. Missing terms cannot be supplied once finalization
-has started, so an incomplete import must be discarded. A finalization failure is terminal; discard the set.
-After success, repeated `FINISH` returns `OK` without re-finalizing, including after rename, eviction, or
-recovery. Terminal failure also survives eviction, recovery, replication, and migration; `FINISH` continues
-to return an error without native work. Deleting and recreating the key starts a new import lifecycle.
-Partition retry state remains cached only while the same native handle is live.
-
-:::caution
-`OK` for a term acknowledges acceptance, not graph finalization. AOF recovery or replication ending before
-FINISH leaves the set pending; replay does not finalize imports implicitly.
-:::
+Missing terms cannot be supplied once finalizationhas started, so an incomplete import must be discarded.
+A finalization failure is terminal; discard the set.  After success, repeated `FINISH` returns `OK` without
+re-finalizing, including after rename, eviction, or recovery. Terminal failure also survives eviction, recovery, 
+replication, and migration; `FINISH` continues to return an error without native work. Deleting and recreating
+the key starts a new import lifecycle. Partition retry state remains cached only while the same native handle is live.
 
 ---
 
@@ -247,8 +244,8 @@ Insert a vector with the given element ID into a Vector Set, creating the index 
 #### Syntax
 
 ```bash
-VADD key [REDUCE dim] (FP32 vector | XB8 vector | VALUES n v1 ... vN) element
-         [CAS] [NOQUANT | XPREQ8] [EF n] [SETATTR attr] [M n]
+VADD key [REDUCE dim] (FP32 vector | XU8 vector | XI8 vector | VALUES n v1 ... vN) element
+         [CAS] [quantizer] [EF n] [SETATTR attr] [M n]
          [XDISTANCE_METRIC L2 | COSINE | IP | XCOSINE_NORMALIZED]
 ```
 
@@ -263,15 +260,15 @@ VADD key [REDUCE dim] (FP32 vector | XB8 vector | VALUES n v1 ... vN) element
 
 #### Options
 
-| Option                                                                                 | Default    | Description                                                                                                                                                                       |
-|----------------------------------------------------------------------------------------|------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `REDUCE dim`                                                                           | _disabled_ | Project the input vector down to `dim` dimensions. `dim` must be ≤ the input dimensions. Not allowed with `XPREQ8`. Only honored on the first `VADD` (when the index is created). |
-| `CAS`                                                                                  | _off_      | Accepted for parser compatibility with Redis; currently a no-op.                                                                                                                  |
-| `NOQUANT` \| `BIN` \| `Q8` \| `XNOQUANT_U8` \| `XNOQUANT_I8` \| `XBIN_I8` \| `XBIN_U8` | `Q8`       | Quantization (see [Quantization](#quantization)).                                                                                                                                 |
-| `EF n`                                                                                 | `200`      | Build-time exploration factor (DiskANN `R` candidate-list size). Must be in `[1, 1000000]`.                                                                                       |
-| `SETATTR attr`                                                                         | _none_     | Attach an arbitrary byte string to the element (typically a JSON object). Retrieve later with `VGETATTR` or via `WITHATTRIBS` on `VSIM`.                                          |
-| `M n`                                                                                  | `16`       | DiskANN max out-degree per node. Must be in `[4, 4096]`.                                                                                                                          |
-| `XDISTANCE_METRIC`                                                                     | `L2`       | Distance function (see [Distance Metrics](#distance-metrics)).                                                                                                                    |
+| Option             | Default    | Description                                                                                                                                                                       |
+|--------------------|------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `REDUCE dim`       | _disabled_ | Project the input vector down to `dim` dimensions. `dim` must be ≤ the input dimensions. Not allowed with `XPREQ8`. Only honored on the first `VADD` (when the index is created). |
+| `CAS`              | _off_      | Accepted for parser compatibility with Redis; currently a no-op.                                                                                                                  |
+| Quantizer          | `Q8`       | One of the modes listed under [Quantization](#quantization).                                                                                                                      |
+| `EF n`             | `200`      | Build-time exploration factor (DiskANN `R` candidate-list size). Must be in `[1, 1000000]`.                                                                                       |
+| `SETATTR attr`     | _none_     | Attach an arbitrary byte string to the element (typically a JSON object). Retrieve later with `VGETATTR` or via `WITHATTRIBS` on `VSIM`.                                          |
+| `M n`              | `16`       | DiskANN max out-degree per node. Must be in `[4, 4096]`.                                                                                                                          |
+| `XDISTANCE_METRIC` | `L2`       | Distance function (see [Distance Metrics](#distance-metrics)).                                                                                                                    |
 
 Once the index is created, subsequent `VADD` calls must agree on `REDUCE`, quantization, `M`, and distance metric;
 mismatches return errors like `ERR asked M value mismatch with existing vector set`.
@@ -286,8 +283,11 @@ VADD movies FP32 <16-byte float blob> dune XDISTANCE_METRIC COSINE M 32
 VADD movies VALUES 3 0.12 0.34 0.56 inception \
      NOQUANT SETATTR "{\"year\":2010,\"rating\":4.2}" XDISTANCE_METRIC COSINE
 
-# Insert a uint8 vector with the XPREQ8 pseudo-quantizer
-VADD photos XB8 <128-byte blob> photo:42 XPREQ8
+# Insert a uint8 vector with the no quantization
+VADD photos XB8 <128-byte blob> photo:42 XNOQUANT_U8
+
+# Insert an int8 vector with the spherical 4-bit quantizer
+VADD embeddings XI8 <256-byte blob> item:42 XSPHERICAL4_I8
 ```
 
 #### Resp Reply
@@ -316,14 +316,14 @@ RESP2 returns an array of 14 elements (7 alternating field-name / value pairs); 
 
 | Field                      | Type                  | Description                                                                                         |
 |----------------------------|-----------------------|-----------------------------------------------------------------------------------------------------|
-| `quant-type`               | simple string         | One of `f32`, `bin`, `q8`, `xpreq8`                                                                 |
+| `quant-type`               | simple string         | Lowercase quantizer token from [Quantization](#quantization), except `NOQUANT` reports `f32`.       |
 | `distance-metric`          | simple string         | One of `l2`, `cosine`, `inner-product`, `cosine-normalized`                                         |
 | `input-vector-dimensions`  | integer               | Dimensions of the input vector                                                                      |
 | `reduced-dimensions`       | integer               | Dimensions stored in the index (after `REDUCE`); same as `input-vector-dimensions` if no projection |
 | `build-exploration-factor` | integer               | `EF` used at build time                                                                             |
 | `num-links`                | integer               | `M` (max out-degree)                                                                                |
 | `size`                     | integer               | Number of elements currently in the index                                                           |
-| `import-pending`           | integer (bulk string) | `1` while import awaits successful `FINISH`; otherwise `0`                                          |
+| `import-state`             | simple string         | One of `not-importing`, `pending`, `failed`                                                         |
 
 `VINFO` remains available during import and finalization, including after a failed `FINISH`. While pending,
 it reads stored metadata without calling DiskANN or disabling further term imports.
@@ -348,8 +348,8 @@ RESP2 example:
 12) (integer) 16
 13) "size"
 14) (integer) 1024
-15) "import-pending"
-16) "0"
+15) "import-state"
+16) "not-importing"
 ```
 
 ---
@@ -457,7 +457,10 @@ Array of bulk strings, one per dimension. Returns an empty array if the element 
 ```
 
 :::note
-The `RAW` form (`VEMB key element RAW`) is parsed but not yet implemented — invoking it currently throws.
+`VEMB key element RAW` returns the internal vector encoding, its type, and norm (plus range for `Q8`).
+After spherical training completes, 2-bit modes report `spherical2` and 4-bit modes report `spherical4`.
+At 256 dimensions, these codes occupy 70 and 134 bytes respectively. The encoding is an internal format;
+ordinary `VEMB` continues to return the retained original vector.
 :::
 
 ---
@@ -621,15 +624,21 @@ VSIM movies VALUES 3 0.12 0.34 0.56 FILTER ".year != null and .rating >= 4.0"
 
 The active quantizer determines how vectors are stored internally and which input forms are valid.
 
-| Token         | Status      | Notes                                                                                                                  |
-|---------------|-------------|------------------------------------------------------------------------------------------------------------------------|
-| `NOQUANT`     | ✅ Supported | Store input as `float32`, use unquantized forms for graph search.                                                      |
-| `Q8`          | ✅ Supported | Store input as `float32`, use 8-bit quantized forms for graph search.                                                  |
-| `BIN`         | ✅ Supported | Store input as `float32`, use 1-bit quantized forms for graph search.                                                  |
-| `XNOQUANT_U8` | ✅ Supported | Garnet extension: stores input as `uint8` bytes with no further quantization. Incompatible with `REDUCE`.              |
-| `XNOQUANT_I8` | ✅ Supported | Garnet extension: stores input as `int8` bytes with no further quantization. Incompatible with `REDUCE`.               |
-| `XBIN_U8`     | ✅ Supported | Garnet extension: stores input `uint8` bytes, uses 1-bit quantized forms for graph search. Incompatible with `REDUCE`. |
-| `XBIN_I8`     | ✅ Supported | Garnet extension: stores input `int8` bytes, uses 1-bit quantized forms for graph search. Incompatible with `REDUCE`.  |
+| Token            | Status      | Notes                                                                                                                  |
+|------------------|-------------|------------------------------------------------------------------------------------------------------------------------|
+| `NOQUANT`        | ✅ Supported | Store input as `float32`, use unquantized forms for graph search.                                                      |
+| `Q8`             | ✅ Supported | Store input as `float32`, use 8-bit quantized forms for graph search.                                                  |
+| `BIN`            | ✅ Supported | Store input as `float32`, use 1-bit quantized forms for graph search.                                                  |
+| `XNOQUANT_U8`    | ✅ Supported | Garnet extension: stores input as `uint8` bytes with no further quantization. Incompatible with `REDUCE`.              |
+| `XNOQUANT_I8`    | ✅ Supported | Garnet extension: stores input as `int8` bytes with no further quantization. Incompatible with `REDUCE`.               |
+| `XBIN_U8`        | ✅ Supported | Garnet extension: stores input `uint8` bytes, uses 1-bit quantized forms for graph search. Incompatible with `REDUCE`. |
+| `XBIN_I8`        | ✅ Supported | Garnet extension: stores input `int8` bytes, uses 1-bit quantized forms for graph search. Incompatible with `REDUCE`.  |
+| `XSPHERICAL2`    | ✅ Supported | Garnet extension: stores input as `float32`, uses 2-bit spherical quantization for graph search. |
+| `XSPHERICAL2_I8` | ✅ Supported | Garnet extension: stores input `int8` bytes, uses 2-bit spherical quantization for graph search. Incompatible with `REDUCE`. |
+| `XSPHERICAL2_U8` | ✅ Supported | Garnet extension: stores input `uint8` bytes, uses 2-bit spherical quantization for graph search. Incompatible with `REDUCE`. |
+| `XSPHERICAL4`    | ✅ Supported | Garnet extension: stores input as `float32`, uses 4-bit spherical quantization for graph search. |
+| `XSPHERICAL4_I8` | ✅ Supported | Garnet extension: stores input `int8` bytes, uses 4-bit spherical quantization for graph search. Incompatible with `REDUCE`. |
+| `XSPHERICAL4_U8` | ✅ Supported | Garnet extension: stores input `uint8` bytes, uses 4-bit spherical quantization for graph search. Incompatible with `REDUCE`. |
 
 If no quantizer is specified on the first `VADD`, the default is `Q8`.  Matching input format and storage format improves performance by removing a conversion step in `VADD`.
 

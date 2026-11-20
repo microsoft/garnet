@@ -24,6 +24,7 @@ namespace Garnet.cluster
         private readonly ILogger logger;
         private readonly IOCallbackContext ioContext = new();
         private volatile uint lastIOErrorCode;
+        private volatile uint lastIOBytes;
 
         public CheckpointFileType Type { get; }
         public Guid Token { get; }
@@ -94,6 +95,16 @@ namespace Garnet.cluster
                     $"I/O error {errorCode} writing {Type} checkpoint file at address {startAddress} (requested {numBytesToWrite} bytes)"));
             }
 
+            // Zero means the device does not report a count; a known count below the padded length is a short write.
+            // The write has completed, so the buffer can be returned before failing.
+            var bytesWritten = lastIOBytes;
+            if (bytesWritten != 0 && bytesWritten < numBytesToWrite)
+            {
+                pbuffer.Return();
+                ExceptionUtils.ThrowException(new GarnetException(
+                    $"Short write of {bytesWritten} bytes writing {Type} checkpoint file at address {startAddress} (requested {numBytesToWrite} bytes)"));
+            }
+
             // IO completed successfully — return buffer to pool for reuse.
             pbuffer.Return();
         }
@@ -113,6 +124,7 @@ namespace Garnet.cluster
         private void IOCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             lastIOErrorCode = errorCode;
+            lastIOBytes = numBytes;
             if (errorCode != 0)
             {
                 var errorMessage = Utility.GetCallbackErrorMessage(errorCode, numBytes, context);

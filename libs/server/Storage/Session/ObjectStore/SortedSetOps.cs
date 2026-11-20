@@ -333,8 +333,6 @@ namespace Garnet.server
                 where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             pairs = default;
-            if (key.Length == 0)
-                return GarnetStatus.OK;
 
             // Prepare the input
             var op = lowScoresFirst ? SortedSetOperation.ZPOPMIN : SortedSetOperation.ZPOPMAX;
@@ -362,13 +360,15 @@ namespace Garnet.server
         /// <param name="increment"></param>
         /// <param name="member"></param>
         /// <param name="newScore"></param>
+        /// <param name="error">True if <paramref name="increment"/> is NaN or the new score would be NaN; nothing is written.</param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus SortedSetIncrement<TObjectContext>(PinnedSpanByte key, double increment, PinnedSpanByte member,
-            out double newScore, ref TObjectContext objectContext)
+            out double newScore, out bool error, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             newScore = 0;
+            error = false;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
@@ -389,6 +389,18 @@ namespace Garnet.server
                 ref output);
 
             scratchBufferBuilder.RewindScratchBuffer(incrSlice);
+
+            // An invalid increment or a NaN score replies with an error instead of the score; a missing key stays missing (NOTFOUND)
+            if (status is GarnetStatus.OK or GarnetStatus.NOTFOUND)
+            {
+                var outputSpan = output.SpanByteAndMemory.ReadOnlySpan;
+                if (!outputSpan.IsEmpty && outputSpan[0] == '-')
+                {
+                    error = true;
+                    output.SpanByteAndMemory.Dispose();
+                    return GarnetStatus.OK;
+                }
+            }
 
             // Process output
             if (status == GarnetStatus.OK)
@@ -625,7 +637,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedContext);
+                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, out _, ExpireOption.None, ref unifiedContext);
                 }
 
                 return status;
@@ -753,7 +765,7 @@ namespace Garnet.server
                 if (status == GarnetStatus.NOTFOUND)
                 {
                     // Expire/Delete the destination key if the source key is not found
-                    _ = EXPIRE(dstKey, TimeSpan.Zero, out _, ExpireOption.None, ref ssUnifiedTransactionalContext);
+                    _ = EXPIRE(dstKey, TimeSpan.Zero, out _, out _, ExpireOption.None, ref ssUnifiedTransactionalContext);
                     writer.WriteInt32(0);
                     return GarnetStatus.OK;
                 }
@@ -1170,7 +1182,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedContext);
+                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, out _, ExpireOption.None, ref unifiedContext);
                 }
 
                 return status;
@@ -1219,7 +1231,14 @@ namespace Garnet.server
                 {
                     foreach (var (key, score) in sortedSetDictionary)
                     {
-                        pairs[key] = weights[0] * score;
+                        var initialWeight = weights[0] * score;
+
+                        if (double.IsNaN(initialWeight))
+                        {
+                            initialWeight = 0;
+                        }
+
+                        pairs[key] = initialWeight;
                     }
                 }
             }
@@ -1340,8 +1359,6 @@ namespace Garnet.server
                 // Try popping from each key until we find one with members
                 foreach (var key in keys)
                 {
-                    if (key.Length == 0) continue;
-
                     var status = SortedSetPop(key, count, lowScoresFirst, out pairs, ref transactionalContext);
                     if (status == GarnetStatus.OK && pairs != null && pairs.Length > 0)
                     {
@@ -1428,7 +1445,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedContext);
+                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, out _, ExpireOption.None, ref unifiedContext);
                 }
 
                 return status;
@@ -1528,7 +1545,14 @@ namespace Garnet.server
                 pairs = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
                 foreach (var kvp in firstSortedSet.Dictionary)
                 {
-                    pairs[kvp.Key] = kvp.Value * weights[0];
+                    var initialWeight = kvp.Value * weights[0];
+
+                    if (double.IsNaN(initialWeight))
+                    {
+                        initialWeight = 0;
+                    }
+
+                    pairs[kvp.Key] = initialWeight;
                 }
             }
 

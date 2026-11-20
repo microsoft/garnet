@@ -40,7 +40,8 @@ namespace Garnet.server
 
         public AofAddress MemorySizeBytes => AofAddress.Create(1, value: log.MemorySizeBytes);
 
-        public ValueTask RecoverAsync() => log.RecoverAsync();
+        public ValueTask RecoverAsync(bool clearAboveTail) => log.RecoverAsync(-1, clearAboveTail);
+        public void PrepareToAppend() => log.PrepareToAppend();
         public void Reset() => log.Reset();
 
         public void Dispose()

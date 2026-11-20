@@ -472,6 +472,55 @@ namespace Garnet.test.cluster
             Assert.Throws<EndOfStreamException>(() => ClusterConfig.FromByteArray(bytes[..^1]));
         }
 
+        [TestCase((byte)1, int.MaxValue)]
+        [TestCase((byte)2, int.MaxValue)]
+        [TestCase((byte)2, -1)]
+        [TestCase((byte)2, 0)]
+        [TestCase((byte)2, ushort.MaxValue + 2)]
+        [TestCase((byte)2, 1000)]
+        [Category("CLUSTER-CONFIG")]
+        public void ClusterConfigRejectsWorkerCountThePayloadCannotHoldTest(byte version, int numWorkers)
+        {
+            var bytes = CreateWorkerCountPayload(version, numWorkers);
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            Assert.Throws<InvalidDataException>(() => ClusterConfig.FromByteArray(bytes));
+            Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(1 << 20));
+        }
+
+        [Test]
+        [Category("CLUSTER-CONFIG")]
+        public void ClusterConfigRejectsSlotSegmentsBeyondTheSlotRangeTest()
+        {
+            var ms = new MemoryStream();
+            var writer = new BinaryWriter(ms);
+            writer.Write((byte)2);
+            writer.Write((ushort)2);
+            for (var i = 0; i < 2; i++)
+            {
+                writer.Write((ushort)ClusterConfig.MAX_HASH_SLOT_VALUE);
+                writer.Write((ushort)0);
+                writer.Write((byte)0);
+            }
+            writer.Write(1);
+            writer.Flush();
+
+            Assert.Throws<InvalidDataException>(() => ClusterConfig.FromByteArray(ms.ToArray()));
+        }
+
+        private static byte[] CreateWorkerCountPayload(byte version, int numWorkers)
+        {
+            var ms = new MemoryStream();
+            var writer = new BinaryWriter(ms);
+            writer.Write(version);
+            writer.Write((ushort)1);
+            writer.Write((ushort)ClusterConfig.MAX_HASH_SLOT_VALUE);
+            writer.Write((ushort)0);
+            writer.Write((byte)0);
+            writer.Write(numWorkers);
+            writer.Flush();
+            return ms.ToArray();
+        }
+
         [TestCase(1, true)]
         [TestCase(2, true)]
         [TestCase(0, false)]
@@ -1389,6 +1438,41 @@ namespace Garnet.test.cluster
                 Assert.That(GossipClusterConverged(nodes), Is.True,
                     $"cluster did not converge after {RoundsPerTrial} gossip rounds in trial {trial}:\n{DescribeGossipCluster(nodes)}");
             }
+        }
+
+        [Test, CancelAfter(120_000)]
+        [Category("CLUSTER-CONFIG")]
+        public void GossipClientSwapRetiresThroughTaskManager([Values] bool shutdownDuringGrace)
+        {
+            context.CreateInstances(2);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var provider = (ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider;
+            var taskManager = provider.storeWrapper.TaskManager;
+            Assert.That(() => provider.clusterManager.clusterConnectionStore.Count, Is.GreaterThan(0).After(10_000, 10));
+
+            var endpoint = context.clusterTestUtils.GetEndPoint(0);
+            var grace = shutdownDuringGrace ? "3600" : "0";
+            Assert.That((string)context.clusterTestUtils.Execute(endpoint, "CONFIG", ["SET", "gossip-client-swap-grace", grace]), Is.EqualTo("OK"));
+            var pageCount = int.Parse((string)((RedisResult[])context.clusterTestUtils.Execute(endpoint, "CONFIG", ["GET", "gossip-request-page-count"]))[1]);
+            Assert.That((string)context.clusterTestUtils.Execute(endpoint, "CONFIG", ["SET", "gossip-request-page-count", (pageCount * 2).ToString()]), Is.EqualTo("OK"));
+
+            if (!shutdownDuringGrace)
+            {
+                // The retire task drains the previous clients and unregisters itself.
+                Assert.That(() => taskManager.IsRegistered(Garnet.server.TaskType.GossipClientRetireTask), Is.False.After(30_000, 10));
+                return;
+            }
+
+            // The swap registers the retire task synchronously; it is parked in the grace window.
+            Assert.That(taskManager.IsRegistered(Garnet.server.TaskType.GossipClientRetireTask), Is.True);
+
+            // Shutdown cancels the grace window and forces the drain instead of waiting an hour.
+            var shutdown = System.Diagnostics.Stopwatch.StartNew();
+            context.ShutdownNode(0);
+            Assert.That(shutdown.Elapsed, Is.LessThan(TimeSpan.FromSeconds(30)));
+            Assert.That(taskManager.IsRegistered(Garnet.server.TaskType.GossipClientRetireTask), Is.False);
         }
     }
 }

@@ -53,6 +53,21 @@ namespace Garnet.server
         public CommandStats GetCommandStats => commandStats;
 
         /// <summary>
+        /// Updates the session's command counters for a command that did not pass through the message loop,
+        /// as the loop does for each command it processes.
+        /// </summary>
+        /// <param name="cmd">The command that was executed or rejected.</param>
+        internal void CountCommandProcessed(RespCommand cmd)
+        {
+            if (sessionMetrics == null)
+                return;
+
+            sessionMetrics.total_commands_processed++;
+            sessionMetrics.total_write_commands_processed += cmd.OneIfWrite();
+            sessionMetrics.total_read_commands_processed += cmd.OneIfRead();
+        }
+
+        /// <summary>
         /// Get a copy of latencyMetrics
         /// </summary>
         public GarnetLatencyMetricsSession GetLatencyMetrics() => LatencyMetrics;
@@ -337,6 +352,7 @@ namespace Garnet.server
             clusterSession = cp?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, storageSession.stringBasicContext, storageSession.vectorBasicContext, networkSender, logger);
             clusterSession?.SetUserHandle(this._userHandle);
             sessionScriptCache?.SetUserHandle(this._userHandle);
+            sessionScriptCache?.SetEpochOwner(clusterSession);
 
             parseState.Initialize();
             readHead = 0;
@@ -742,7 +758,8 @@ namespace Garnet.server
                     {
                         // In RESP2, only a small set of commands are allowed while in subscription mode.
                         // RESP3 uses distinct push types for subscription messages, so all commands are valid.
-                        if (isSubscriptionSession && respProtocolVersion == 2 && !cmd.IsAllowedInSubscriptionMode())
+                        // Commands replayed by EXEC were queued before subscription mode began; rejecting them would skip the commit.
+                        if (isSubscriptionSession && respProtocolVersion == 2 && txnManager.state != TxnState.Running && !cmd.IsAllowedInSubscriptionMode())
                         {
                             while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericPubSubCommandNotAllowed, cmd.ToString()), ref dcurr, dend))
                                 SendAndReset();
@@ -905,6 +922,7 @@ namespace Garnet.server
             _ = cmd switch
             {
                 RespCommand.GET => NetworkGET(ref storageApi),
+                RespCommand.DIGEST => NetworkDIGEST(ref storageApi),
                 RespCommand.GETEX => NetworkGETEX(ref storageApi),
                 RespCommand.SET => NetworkSET(ref storageApi),
                 RespCommand.SETEX => NetworkSETEX(false, ref storageApi),
@@ -912,9 +930,11 @@ namespace Garnet.server
                 RespCommand.PSETEX => NetworkSETEX(true, ref storageApi),
                 RespCommand.SETEXNX => NetworkSETEXNX(ref storageApi),
                 RespCommand.DEL => NetworkDEL(ref storageApi),
+                RespCommand.DELIFEQ or RespCommand.DELEX => NetworkDELValueConditional(cmd, ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(ref storageApi),
                 RespCommand.RENAMENX => NetworkRENAMENX(ref storageApi),
-                RespCommand.EXISTS => NetworkEXISTS(ref storageApi),
+                RespCommand.EXISTS => NetworkEXISTS(RespCommand.EXISTS, ref storageApi),
+                RespCommand.TOUCH => NetworkEXISTS(RespCommand.TOUCH, ref storageApi),
                 RespCommand.EXPIRE => NetworkEXPIRE(RespCommand.EXPIRE, ref storageApi),
                 RespCommand.PEXPIRE => NetworkEXPIRE(RespCommand.PEXPIRE, ref storageApi),
                 RespCommand.EXPIRETIME => NetworkEXPIRETIME(RespCommand.EXPIRETIME, ref storageApi),

@@ -147,6 +147,69 @@ namespace Garnet.test
         }
     }
 
+    /// <summary>
+    /// Runs a custom raw string command with two arguments; replies OK, or with the command's error if it fails.
+    /// </summary>
+    /// <remarks>
+    /// Format: INVOKERAWSTRING command key arg1 arg2
+    /// </remarks>
+    public class InvokeRawStringCommandProc : CustomProcedure
+    {
+        public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+        {
+            var offset = 0;
+            var command = Encoding.ASCII.GetString(GetNextArg(ref procInput, ref offset).ReadOnlySpan);
+            var key = GetNextArg(ref procInput, ref offset);
+            PinnedSpanByte[] args = [GetNextArg(ref procInput, ref offset), GetNextArg(ref procInput, ref offset)];
+
+            if (!ParseCustomRawStringCommand(command, out var rawStringCommand))
+                return false;
+
+            if (!ExecuteCustomRawStringCommand(garnetApi, rawStringCommand, key, args, out var commandOutput))
+            {
+                // The output is the error, prefixed by '-'
+                WriteError(ref output, Encoding.ASCII.GetString(commandOutput.ReadOnlySpan[1..]));
+                return false;
+            }
+
+            WriteSimpleString(ref output, "OK");
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Runs a custom object command; replies with the command's RESP output as a bulk string, or with the command's error if it fails.
+    /// </summary>
+    /// <remarks>
+    /// Format: INVOKEOBJECT command key [arg ...]
+    /// </remarks>
+    public class InvokeObjectCommandProc : CustomProcedure
+    {
+        public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+        {
+            var offset = 0;
+            var command = Encoding.ASCII.GetString(GetNextArg(ref procInput, ref offset).ReadOnlySpan);
+            var key = GetNextArg(ref procInput, ref offset);
+            var args = new List<PinnedSpanByte>();
+            PinnedSpanByte arg;
+            while ((arg = GetNextArg(ref procInput, ref offset)).Length > 0)
+                args.Add(arg);
+
+            if (!ParseCustomObjectCommand(command, out var objectCommand))
+                return false;
+
+            if (!ExecuteCustomObjectCommand(garnetApi, objectCommand, key, [.. args], out var commandOutput))
+            {
+                // The output is the error, prefixed by '-'
+                WriteError(ref output, Encoding.ASCII.GetString(commandOutput.ReadOnlySpan[1..]));
+                return false;
+            }
+
+            WriteBulkString(ref output, commandOutput.Span);
+            return true;
+        }
+    }
+
     public class CustomIncrProc : CustomProcedure
     {
         public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
@@ -155,7 +218,7 @@ namespace Garnet.test
             var keyToIncrement = GetNextArg(ref procInput, ref offset);
 
             // should update etag invisibly
-            garnetApi.Increment(keyToIncrement, out long _, 1);
+            garnetApi.Increment(keyToIncrement, out long _, out _, 1);
 
             var keyToReturn = GetNextArg(ref procInput, ref offset);
             garnetApi.GET(keyToReturn, out PinnedSpanByte outval);
@@ -218,7 +281,7 @@ namespace Garnet.test
             var keyToIncrment = GetNextArg(ref procInput, ref offset);
 
             // non-ETag commands are ETag-blind
-            garnetApi.Increment(keyToIncrment, out long _, 1);
+            garnetApi.Increment(keyToIncrment, out long _, out _, 1);
         }
     }
 
@@ -249,6 +312,34 @@ namespace Garnet.test
         public override void NotFound(ReadOnlySpan<byte> key, ref StringInput input, ref RespMemoryWriter writer)
         {
             writer.WriteBulkString(Encoding.UTF8.GetBytes($"Did not find: {Encoding.UTF8.GetString(key)}"));
+        }
+    }
+
+    /// <summary>
+    /// Custom object command whose NotFound writes nothing
+    /// </summary>
+    public sealed class EmptyNotFoundFunctions : CustomObjectFunctions
+    {
+        public override void NotFound(ReadOnlySpan<byte> key, ref ObjectInput input, ref RespMemoryWriter writer)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Custom raw string command whose NotFound writes nothing
+    /// </summary>
+    public sealed class EmptyNotFoundStringFunctions : CustomRawStringFunctions
+    {
+        public override bool CopyUpdater(ReadOnlySpan<byte> key, ref StringInput input, ReadOnlySpan<byte> oldValue, Span<byte> newValue, ref RespMemoryWriter writer, ref RMWInfo rmwInfo) => throw new NotImplementedException();
+        public override int GetInitialLength(ref StringInput input) => throw new NotImplementedException();
+        public override int GetLength(ReadOnlySpan<byte> value, ref StringInput input) => throw new NotImplementedException();
+        public override bool InitialUpdater(ReadOnlySpan<byte> key, ref StringInput input, Span<byte> value, ref RespMemoryWriter writer, ref RMWInfo rmwInfo) => throw new NotImplementedException();
+        public override bool InPlaceUpdater(ReadOnlySpan<byte> key, ref StringInput input, Span<byte> value, ref int valueLength, ref RespMemoryWriter writer, ref RMWInfo rmwInfo) => throw new NotImplementedException();
+
+        public override bool Reader(ReadOnlySpan<byte> key, ref StringInput input, ReadOnlySpan<byte> value, ref RespMemoryWriter writer, ref ReadInfo readInfo) => throw new NotImplementedException();
+
+        public override void NotFound(ReadOnlySpan<byte> key, ref StringInput input, ref RespMemoryWriter writer)
+        {
         }
     }
 
@@ -825,6 +916,193 @@ namespace Garnet.test
             // should be expired now
             retValue = db.StringGet(key);
             ClassicAssert.AreEqual(null, retValue);
+        }
+
+        /// <summary>
+        /// A custom command whose expiration is past the representable time replies with an error and writes nothing,
+        /// whether run directly or from a procedure.
+        /// </summary>
+        [Test]
+        public void CustomCommandWithUnrepresentableExpirationIsRejected()
+        {
+            server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(), new RespCommandsInfo { Arity = 4 },
+                expirationTicks: long.MaxValue);
+            server.Register.NewProcedure("INVOKERAWSTRING", () => new InvokeRawStringCommandProc());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var prefix = BitConverter.GetBytes(0L);
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("SETWPIFPGT", "key", "value", prefix));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'setwpifpgt' command", ex.Message);
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("INVOKERAWSTRING", "SETWPIFPGT", "key", "value", prefix));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'setwpifpgt' command", ex.Message);
+
+            ClassicAssert.IsFalse(db.KeyExists("key"));
+        }
+
+        /// <summary>
+        /// A custom command keeps a key's expiration by default, including when the record is copied from the read-only region.
+        /// </summary>
+        [Test]
+        public void CustomCommandKeepsExpiration([Values] bool readOnlyRegion)
+        {
+            server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(), new RespCommandsInfo { Arity = 4 });
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var store = server.Provider.StoreWrapper.store;
+
+            _ = db.Execute("SETWPIFPGT", "key", "v1", BitConverter.GetBytes(1L));
+            ClassicAssert.IsTrue(db.KeyExpire("key", TimeSpan.FromMinutes(10)));
+            if (readOnlyRegion)
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+            _ = db.Execute("SETWPIFPGT", "key", "v2", BitConverter.GetBytes(2L));
+
+            var value = (byte[])db.StringGet("key");
+            ClassicAssert.AreEqual("v2", Encoding.ASCII.GetString(value, 8, value.Length - 8));
+            var ttl = db.KeyTimeToLive("key");
+            ClassicAssert.IsNotNull(ttl);
+            ClassicAssert.Greater(ttl.Value, TimeSpan.FromMinutes(9));
+        }
+
+        /// <summary>
+        /// A custom command registered to remove the expiration creates keys without one, and removes it from existing keys
+        /// in place or when the record is copied from the read-only region.
+        /// </summary>
+        [Test]
+        public void CustomCommandRemovesExpiration([Values] bool readOnlyRegion)
+        {
+            server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(), new RespCommandsInfo { Arity = 4 },
+                expirationTicks: -1);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var store = server.Provider.StoreWrapper.store;
+
+            _ = db.Execute("SETWPIFPGT", "key", "v1", BitConverter.GetBytes(1L));
+            ClassicAssert.IsTrue(db.KeyExists("key"));
+            ClassicAssert.IsNull(db.KeyTimeToLive("key"));
+
+            ClassicAssert.IsTrue(db.KeyExpire("key", TimeSpan.FromMinutes(10)));
+            if (readOnlyRegion)
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+            _ = db.Execute("SETWPIFPGT", "key", "v2", BitConverter.GetBytes(2L));
+            ClassicAssert.IsTrue(db.KeyExists("key"));
+            ClassicAssert.IsNull(db.KeyTimeToLive("key"));
+        }
+
+        /// <summary>
+        /// A custom read-modify-write command on a key of another type replies WRONGTYPE without running, whether run directly or from a procedure.
+        /// </summary>
+        [Test]
+        public void CustomCommandOnKeyOfAnotherTypeIsWrongType()
+        {
+            server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(), new RespCommandsInfo { Arity = 4 });
+            server.Register.NewProcedure("INVOKERAWSTRING", () => new InvokeRawStringCommandProc());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            _ = db.ListLeftPush("list", "a");
+            var prefix = BitConverter.GetBytes(1L);
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("SETWPIFPGT", "list", "value", prefix));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE), ex.Message);
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("INVOKERAWSTRING", "SETWPIFPGT", "list", "value", prefix));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE), ex.Message);
+
+            ClassicAssert.AreEqual(1, db.ListLength("list"));
+        }
+
+        /// <summary>
+        /// A custom object command on a key of another type replies WRONGTYPE without running, whether run directly or from a procedure.
+        /// </summary>
+        [Test]
+        [TestCase(RedisType.String)]
+        [TestCase(RedisType.Hash)]
+        public void CustomObjectCommandOnKeyOfAnotherTypeIsWrongType(RedisType type)
+        {
+            var factory = new MyDictFactory();
+            server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
+            server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
+            server.Register.NewProcedure("INVOKEOBJECT", () => new InvokeObjectCommandProc());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            if (type == RedisType.String)
+                _ = db.StringSet("key", "value");
+            else
+                _ = db.HashSet("key", "field", "value");
+
+            var wrongType = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("MYDICTGET", "key", "field"));
+            ClassicAssert.AreEqual(wrongType, ex.Message);
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("MYDICTSET", "key", "field", "value"));
+            ClassicAssert.AreEqual(wrongType, ex.Message);
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("INVOKEOBJECT", "MYDICTGET", "key", "field"));
+            ClassicAssert.AreEqual(wrongType, ex.Message);
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("INVOKEOBJECT", "MYDICTSET", "key", "field", "value"));
+            ClassicAssert.AreEqual(wrongType, ex.Message);
+
+            ClassicAssert.AreEqual(type, db.KeyType("key"));
+        }
+
+        /// <summary>
+        /// A custom object command run from a procedure on a missing key returns the command's NotFound reply.
+        /// </summary>
+        [Test]
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void CustomObjectCommandFromProcedureReturnsNotFoundReply(RedisProtocol protocol)
+        {
+            server.Register.NewCommand("MYDICTGET", CommandType.Read, new MyDictFactory(), new MyDictGet(), new RespCommandsInfo { Arity = 3 });
+            server.Register.NewProcedure("INVOKEOBJECT", () => new InvokeObjectCommandProc());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
+            var db = redis.GetDatabase(0);
+
+            var nullReply = protocol == RedisProtocol.Resp3 ? "_\r\n" : "$-1\r\n";
+            ClassicAssert.AreEqual(nullReply, (string)db.Execute("INVOKEOBJECT", "MYDICTGET", "missing", "field"));
+        }
+
+        /// <summary>
+        /// Custom commands run from a procedure on a missing key succeed when their NotFound writes nothing.
+        /// </summary>
+        [Test]
+        public void CustomCommandFromProcedureAllowsEmptyNotFoundReply()
+        {
+            server.Register.NewCommand("EMPTYSNF", CommandType.Read, new EmptyNotFoundStringFunctions(), new RespCommandsInfo { Arity = 2 });
+            server.Register.NewCommand("EMPTYNF", CommandType.Read, new CustomNotFoundFactory(), new EmptyNotFoundFunctions(), new RespCommandsInfo { Arity = 2 });
+            server.Register.NewProcedure("INVOKERAWSTRING", () => new InvokeRawStringCommandProc());
+            server.Register.NewProcedure("INVOKEOBJECT", () => new InvokeObjectCommandProc());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("INVOKERAWSTRING", "EMPTYSNF", "missing"));
+            ClassicAssert.AreEqual("", (string)db.Execute("INVOKEOBJECT", "EMPTYNF", "missing"));
+        }
+
+        /// <summary>
+        /// Registration rejects a custom command expiration below -1, through the API and through REGISTERCS.
+        /// </summary>
+        [Test]
+        public void CustomCommandRegistrationRejectsExpirationTicksBelowMinusOne()
+        {
+            _ = Assert.Throws<ArgumentOutOfRangeException>(() => server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite,
+                new SetWPIFPGTCustomCommand(), new RespCommandsInfo { Arity = 4 }, expirationTicks: -2));
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            object[] args = ["RMW", "SETIFPM", 2, "SetIfPMCustomCommand", -2, "SRC", .. CreateTestLibraries()];
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("REGISTERCS", args));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_INVALID_EXPIRATION_TICKS), ex.Message);
+
+            _ = Assert.Throws<RedisServerException>(() => db.Execute("SETWPIFPGT", "key", "value", BitConverter.GetBytes(1L)));
+            _ = Assert.Throws<RedisServerException>(() => db.Execute("SETIFPM", "key", "value", "prefix"));
         }
 
         [Test]

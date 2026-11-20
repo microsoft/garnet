@@ -63,6 +63,12 @@ namespace Garnet.server
         /// Coordinates a primary- or replica-initiated failover across role changes.
         /// </summary>
         FailoverTask,
+
+        /// <summary>
+        /// Retires gossip clients replaced by a GOSSIP_CLIENT configuration change: waits for the swap grace
+        /// window, then drains each previous client gracefully, bounded by the cluster node timeout.
+        /// </summary>
+        GossipClientRetireTask,
     }
 
     /// <summary>
@@ -89,6 +95,7 @@ namespace Garnet.server
             TaskPlacementMapping[(int)TaskType.ExpiredKeyDeletionTask] = TaskPlacementCategory.Primary;
             TaskPlacementMapping[(int)TaskType.IndexAutoGrowTask] = TaskPlacementCategory.All;
             TaskPlacementMapping[(int)TaskType.FailoverTask] = TaskPlacementCategory.ControlPlane;
+            TaskPlacementMapping[(int)TaskType.GossipClientRetireTask] = TaskPlacementCategory.ControlPlane;
         }
 
         /// <summary>
