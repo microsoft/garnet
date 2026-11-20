@@ -3868,6 +3868,31 @@ namespace Garnet.test
         }
 
         [Test]
+        public void VREMRemovesImmutableMember([Values] bool evictToDisk)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            const string Key = "vectors";
+            byte[] removed = [1, 0, 0, 0];
+            byte[] retained = [2, 0, 0, 0];
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", [Key, "VALUES", "3", "1", "2", "3", removed, "NOQUANT"]));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", [Key, "VALUES", "3", "4", "5", "6", retained, "NOQUANT"]));
+
+            var log = server.Provider.StoreWrapper.store.Log;
+            if (evictToDisk)
+                log.FlushAndEvict(wait: true);
+            else
+                log.ShiftReadOnlyAddress(log.TailAddress, wait: true);
+
+            ClassicAssert.AreEqual(1, (int)db.Execute("VREM", Key, removed));
+            ClassicAssert.AreEqual(0, (int)db.Execute("VISMEMBER", Key, removed));
+            ClassicAssert.AreEqual(0, (int)db.Execute("VREM", Key, removed));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VCARD", Key));
+            var hits = (byte[][])db.Execute("VSIM", [Key, "VALUES", "3", "1", "2", "3", "COUNT", "2"]);
+            CollectionAssert.AreEqual(new[] { retained }, hits);
+        }
+
+        [Test]
         public void SimpleInternalIdReuse()
         {
             const string Key = "SimpleInternalIdReuse";
