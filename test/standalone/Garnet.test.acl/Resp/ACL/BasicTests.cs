@@ -2,7 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -195,6 +198,57 @@ namespace Garnet.test.Resp.ACL
 
             ClassicAssert.IsTrue(db.StringSet("some-key", "some-value"));
             ClassicAssert.AreEqual("some-value", (string)db.StringGet("some-key"));
+        }
+
+        /// <summary>
+        /// A command denied inside MULTI must abort the transaction.
+        /// </summary>
+        [Test]
+        public async Task DeniedCommandInMultiAbortsTransactionAsync()
+        {
+            await CreateLimitedUserAsync("+@all", "-publish").ConfigureAwait(false);
+
+            using var lightClientRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Newlines);
+            var noPerm = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOPERM)}\r\n";
+            var execAbort = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_EXEC_ABORT)}\r\n";
+
+            AssertExecute(lightClientRequest, $"AUTH {TestUserA} {DummyPassword}", "+OK\r\n");
+            AssertExecute(lightClientRequest, "MULTI", "+OK\r\n");
+            AssertExecute(lightClientRequest, "SET txn-key 1", "+QUEUED\r\n");
+            AssertExecute(lightClientRequest, "PUBLISH channel message", noPerm);
+            AssertExecute(lightClientRequest, "EXEC", execAbort);
+            AssertExecute(lightClientRequest, "PING", "+PONG\r\n");
+            AssertExecute(lightClientRequest, "GET txn-key", "$-1\r\n");
+        }
+
+        /// <summary>
+        /// A WATCH rejected inside MULTI must not be replayed by EXEC, even after its permission is revoked.
+        /// </summary>
+        [Test]
+        public async Task RejectedWatchInMultiNotReplayedAfterRevokeAsync()
+        {
+            await CreateLimitedUserAsync("+@all").ConfigureAwait(false);
+
+            using var lightClientRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Newlines);
+            var watchInMulti = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_WATCH_IN_MULTI)}\r\n";
+
+            AssertExecute(lightClientRequest, $"AUTH {TestUserA} {DummyPassword}", "+OK\r\n");
+            AssertExecute(lightClientRequest, "MULTI", "+OK\r\n");
+            AssertExecute(lightClientRequest, "SET txn-key 1", "+QUEUED\r\n");
+            AssertExecute(lightClientRequest, "WATCH other-key", watchInMulti);
+
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+            ClassicAssert.AreEqual("OK", await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "-watch").ConfigureAwait(false));
+
+            AssertExecute(lightClientRequest, "EXEC", "*1\r\n+OK\r\n");
+            AssertExecute(lightClientRequest, "PING", "+PONG\r\n");
+        }
+
+        private static void AssertExecute(LightClientRequest lightClientRequest, string command, string expectedResponse)
+        {
+            var response = lightClientRequest.Execute(command, expectedResponse.Count(c => c == '\n'));
+            ClassicAssert.AreEqual(expectedResponse, response, $"Unexpected reply to {command}");
         }
 
         /// <summary>
