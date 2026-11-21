@@ -221,6 +221,10 @@ namespace Garnet.common
         /// </summary>
         Sender_Pause_Before_Slot_Release,
         /// <summary>
+        /// Server network sender: signal that a send is waiting for an earlier send's slot.
+        /// </summary>
+        Sender_Signal_Before_Slot_Wait,
+        /// <summary>
         /// Server network sender: pause after a send timeout closes the socket, before waiting for its send slot.
         /// </summary>
         Sender_Pause_Before_Timed_Out_Slot_Wait,
@@ -240,6 +244,14 @@ namespace Garnet.common
         /// Replica failover: pause after the primary acknowledged FAILSTOPWRITES, before waiting for the replica to catch up.
         /// </summary>
         Failover_Pause_Waiting_For_Sync,
+        /// <summary>
+        /// ROLE: pause after selecting a replica response, before writing it.
+        /// </summary>
+        Role_Pause_After_Role_Check,
+        /// <summary>
+        /// SLOWLOG GET: pause after deserializing argument pointers, before reading them.
+        /// </summary>
+        SlowLog_Pause_After_Deserialize,
         /// <summary>
         /// SET over a non-string key: pause while holding the key's lock, before rechecking its type.
         /// </summary>

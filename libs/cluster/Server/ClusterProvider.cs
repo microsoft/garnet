@@ -311,7 +311,25 @@ namespace Garnet.cluster
                 };
             }
 
+            return GetReplicaInfo(clusterManager.CurrentConfig);
+        }
+
+        /// <inheritdoc />
+        public bool TryGetReplicaInfo(out RoleInfo info)
+        {
             var config = clusterManager.CurrentConfig;
+            if (!serverOptions.EnableCluster || !config.IsReplica)
+            {
+                info = default;
+                return false;
+            }
+
+            info = GetReplicaInfo(config);
+            return true;
+        }
+
+        private RoleInfo GetReplicaInfo(ClusterConfig config)
+        {
             clusterManager.GetConnectionInfo(config.LocalNodePrimaryId, out var connection);
 
             var (address, port) = config.GetWorkerClientAddressFromNodeId(config.LocalNodePrimaryId);

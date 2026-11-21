@@ -63,6 +63,13 @@ namespace Garnet.server
         RoleInfo GetReplicaInfo();
 
         /// <summary>
+        /// Reads the replica role and its primary information from one configuration snapshot.
+        /// </summary>
+        /// <param name="info">Replica information when the captured role is a replica.</param>
+        /// <returns>True for a replica snapshot; false for a primary.</returns>
+        bool TryGetReplicaInfo(out RoleInfo info);
+
+        /// <summary>
         /// Purger buffer pool for provided manager
         /// </summary>
         /// <param name="managerType"></param>

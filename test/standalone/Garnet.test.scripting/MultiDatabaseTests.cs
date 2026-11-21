@@ -1717,8 +1717,8 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(db2val1, value.ToString());
 
                 // Verify that new data was not recovered for DB 1
-                ClassicAssert.IsFalse(db1.KeyExists(db2Key3));
-                ClassicAssert.IsFalse(db1.KeyExists(db2Key4));
+                ClassicAssert.IsFalse(db2.KeyExists(db2Key3));
+                ClassicAssert.IsFalse(db2.KeyExists(db2Key4));
             }
         }
 

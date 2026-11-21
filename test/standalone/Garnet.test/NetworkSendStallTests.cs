@@ -34,6 +34,7 @@ namespace Garnet.test
         const int GetsPerClient = 3;
         const string Key = "bigkey";
         const ExceptionInjectionType PauseBeforeSlotRelease = ExceptionInjectionType.Sender_Pause_Before_Slot_Release;
+        const ExceptionInjectionType SignalBeforeSlotWait = ExceptionInjectionType.Sender_Signal_Before_Slot_Wait;
         const ExceptionInjectionType PauseBeforeTimedOutSlotWait = ExceptionInjectionType.Sender_Pause_Before_Timed_Out_Slot_Wait;
 
         // A throttle no response reaches, so every send is in flight when QUIT ends the session and the only wait
@@ -63,6 +64,7 @@ namespace Garnet.test
         public void TearDown()
         {
             ExceptionInjectionHelper.DisableException(PauseBeforeSlotRelease);
+            ExceptionInjectionHelper.DisableException(SignalBeforeSlotWait);
             ExceptionInjectionHelper.DisableException(PauseBeforeTimedOutSlotWait);
             server?.Dispose();
             server = null;
@@ -350,12 +352,12 @@ namespace Garnet.test
 
             using var stalled = Connect(receiveBufferSize: 4096);
             ExceptionInjectionHelper.EnableException(PauseBeforeSlotRelease);
-            stalled.Send(Command("GET", Key));
+            ExceptionInjectionHelper.EnableException(SignalBeforeSlotWait);
+            stalled.Send(Gets());
 
-            // Let the session fill the socket and wait for a slot, then read, so a send completes and frees the
-            // slot while the session waits for it. Reading on to the close leaves no other send in flight.
-            Thread.Sleep(200);
-            var drained = Task.Run(() => AssertClosedBeforeFullResponse(stalled, expected: BulkStringLength(ValueSize)));
+            // Read only once the sender has exhausted its socket capacity and is waiting for a send slot.
+            await ExceptionInjectionHelper.WaitOnClearAsync(SignalBeforeSlotWait).WaitAsync(Deadline);
+            var drained = Task.Run(() => AssertClosedBeforeFullResponse(stalled));
             await ExceptionInjectionHelper.WaitOnClearAsync(PauseBeforeSlotRelease).WaitAsync(Deadline);
             await drained.WaitAsync(Deadline);
 
