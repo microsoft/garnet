@@ -66,11 +66,12 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<ulong, uint, uint, nint, nuint, nint, nint, void> readCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback,
-            delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback,
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, nint, byte> readModifyWriteCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> filterCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, void> logCallback,
             ulong startPointId,
-            out bool quantizationRequested
+            out bool quantizationRequested,
+            byte adjacencyCodec = 0
         )
         {
 #if DEBUG
@@ -81,7 +82,7 @@ namespace Garnet.server
                 buildExplorationFactor = Math.Min(buildExplorationFactor, MaxEffectiveBuildExplorationFactor);
                 numLinks = Math.Min(numLinks, MaxEffectiveNumLinks);
 
-                var ret = NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, distanceMetric, buildExplorationFactor, numLinks, startPointId, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback, (nint)filterCallback, (nint)logCallback, out quantizationRequested);
+                var ret = NativeDiskANNMethods.create_index_with_adjacency_codec(context, dimensions, reduceDims, quantType, distanceMetric, buildExplorationFactor, numLinks, startPointId, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback, (nint)filterCallback, (nint)logCallback, adjacencyCodec, out quantizationRequested);
 
                 if (ret == 0)
                 {
@@ -103,13 +104,14 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<ulong, uint, uint, nint, nuint, nint, nint, void> readCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback,
-            delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback,
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, nint, byte> readModifyWriteCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> filterCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, void> logCallback,
             ulong startPointId,
-            out bool quantizationRequested
+            out bool quantizationRequested,
+            byte adjacencyCodec = 0
         )
-        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetricType, readCallback, writeCallback, deleteCallback, readModifyWriteCallback, filterCallback, logCallback, startPointId, out quantizationRequested);
+        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetricType, readCallback, writeCallback, deleteCallback, readModifyWriteCallback, filterCallback, logCallback, startPointId, out quantizationRequested, adjacencyCodec);
 
         public void DropIndex(ulong context, nint index)
         {
@@ -544,7 +546,7 @@ namespace Garnet.server
         const string DISKANN_GARNET = "diskann_garnet";
 
         [LibraryImport(DISKANN_GARNET)]
-        public static partial nint create_index(
+        public static partial nint create_index_with_adjacency_codec(
             ulong context,
             uint dimensions,
             uint reduceDims,
@@ -559,6 +561,7 @@ namespace Garnet.server
             nint readModifyWriteCallback,
             nint filterCallback,
             nint logCallback,
+            byte adjacencyCodec,
             [MarshalAs(UnmanagedType.U1)] out bool quantizationNeeded
         );
 

@@ -23,9 +23,30 @@ namespace Garnet.test
         private delegate void ReadCallbackDelegate(ulong context, uint numKeys, uint valueLengthHint, nint keysData, nuint keysLength, nint dataCallback, nint dataCallbackContext);
         private delegate byte WriteCallbackDelegate(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength);
         private delegate byte DeleteCallbackDelegate(ulong context, nint keyData, nuint keyLength);
-        private delegate byte ReadModifyWriteCallbackDelegate(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext);
+        private delegate byte ReadModifyWriteCallbackDelegate(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint prepareCallback, nint dataCallback, nint dataCallbackContext);
         private delegate byte InlineFilterCallbackDelegate(ulong context, nint attrData, nuint attrDataLength);
         private delegate void LogCallbackDelegate(ulong context, nint logMessage, nuint logMessageLength);
+
+        private static unsafe byte SizedRmw(ConcurrentDictionary<(ulong Context, byte[] Key), byte[]> data,
+            (ulong Context, byte[] Key) key, nint prepare, nint write, nint context)
+        {
+            lock (data)
+            {
+                _ = data.TryGetValue(key, out var current);
+                nuint size = 0;
+                byte action;
+                fixed (byte* ptr = current)
+                    action = ((delegate* unmanaged[Cdecl]<nint, nint, nuint, nuint*, byte>)prepare)(
+                        context, (nint)ptr, (nuint)(current?.Length ?? 0), &size);
+                if (action != 1)
+                    return action == 0 ? (byte)1 : (byte)0;
+                var replacement = new byte[size];
+                fixed (byte* ptr = replacement)
+                    ((delegate* unmanaged[Cdecl]<nint, nint, nuint, void>)write)(context, (nint)ptr, size);
+                data[key] = replacement;
+                return 1;
+            }
+        }
 
         private sealed class ContextAndKeyComparer : IEqualityComparer<(ulong Context, byte[] Data)>
         {
@@ -124,13 +145,15 @@ namespace Garnet.test
                 return 0;
             }
 
-            unsafe byte ReadModifyWriteCallback(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint callback, nint callbackContext)
+            unsafe byte ReadModifyWriteCallback(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint prepare, nint callback, nint callbackContext)
             {
                 var keyDataSpan = MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef<byte>((byte*)keyData), (int)keyLength);
 
                 var lookup = (context, keyDataSpan.ToArray());
 
                 var callbackDel = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)callback;
+                if (prepare != 0)
+                    return SizedRmw(data, lookup, prepare, callback, callbackContext);
 
                 _ = data.AddOrUpdate(
                     lookup,
@@ -188,7 +211,7 @@ namespace Garnet.test
             var filterFuncPtr = Marshal.GetFunctionPointerForDelegate(filterDel);
             var logFuncPtr = Marshal.GetFunctionPointerForDelegate(logDel);
 
-            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, VectorManager.DefaultStartPointId, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
+            var rawIndex = NativeDiskANNMethods.create_index_with_adjacency_codec(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, VectorManager.DefaultStartPointId, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, 0, out _);
             ClassicAssert.AreNotEqual(nint.Zero, rawIndex);
             var service = new DiskANNService();
             var startPointKey = BitConverter.GetBytes(VectorManager.DefaultStartPointId);
@@ -352,13 +375,15 @@ namespace Garnet.test
                 return 0;
             }
 
-            unsafe byte ReadModifyWriteCallback(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint callback, nint callbackContext)
+            unsafe byte ReadModifyWriteCallback(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint prepare, nint callback, nint callbackContext)
             {
                 var keyDataSpan = MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef<byte>((byte*)keyData), (int)keyLength);
 
                 var lookup = (context, keyDataSpan.ToArray());
 
                 var callbackDel = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)callback;
+                if (prepare != 0)
+                    return SizedRmw(data, lookup, prepare, callback, callbackContext);
 
                 _ = data.AddOrUpdate(
                     lookup,
@@ -416,7 +441,7 @@ namespace Garnet.test
             var filterFuncPtr = Marshal.GetFunctionPointerForDelegate(filterDel);
             var logFuncPtr = Marshal.GetFunctionPointerForDelegate(logDel);
 
-            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, VectorManager.DefaultStartPointId, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
+            var rawIndex = NativeDiskANNMethods.create_index_with_adjacency_codec(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, VectorManager.DefaultStartPointId, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, 0, out _);
 
             Span<byte> id = [0, 1, 2, 3];
             Span<byte> elem = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
@@ -462,7 +487,7 @@ namespace Garnet.test
             {
                 NativeDiskANNMethods.drop_index(Context, rawIndex);
 
-                rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, VectorManager.DefaultStartPointId, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
+                rawIndex = NativeDiskANNMethods.create_index_with_adjacency_codec(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, VectorManager.DefaultStartPointId, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, 0, out _);
             }
 
             // Search value

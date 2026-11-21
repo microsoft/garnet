@@ -756,7 +756,13 @@ Or in `garnet.conf`:
 | Option                                                        | Default           | Description                                                                                                                          |
 |---------------------------------------------------------------|-------------------|--------------------------------------------------------------------------------------------------------------------------------------|
 | `--enable-vector-set-preview` / `EnableVectorSetPreview`      | `false`           | Master switch for all `V*` commands. When off, every Vector Set command returns `ERR Vector Set (preview) commands are not enabled`. |
+| `--vector-set-adjacency-codec` / `VectorSetAdjacencyCodec`   | `0`               | Storage format for neighbor-list writes: `0` identity (unchanged fixed-width format), `1` StreamVByte64, `2` AdaptiveGap, `3` row Golomb–Rice. |
 | `--vector-set-replay-task-count` / `VectorSetReplayTaskCount` | `0` (= CPU count) | Number of workers used to replay consecutive `VADD`s or `XVIMPORT` terms in parallel.                                                |
+
+The adjacency codec does not change vector quantization or IDs. Compressed lists store neighbors in
+ID order. Reopening an index with another setting does not rewrite it: the new setting applies to
+subsequent writes, and reads accept mixed formats. Do not downgrade to a build that predates
+adjacency compression after writing compressed lists.
 
 ---
 

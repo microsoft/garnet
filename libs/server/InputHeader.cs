@@ -683,8 +683,10 @@ namespace Garnet.server
         public int WriteDesiredSize { get; set; }
 
         public int Index { get; set; }
+        internal bool PrepareFailed { get; set; }
         public nint CallbackContext { get; set; }
         public nint Callback { get; set; }
+        internal nint PrepareCallback { get; set; }
 
         [MemberNotNullWhen(returnValue: true, member: nameof(MaxMigrationHeapAllocationSize))]
         public bool IsMigrationRead => MaxMigrationHeapAllocationSize != null;

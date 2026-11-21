@@ -235,7 +235,7 @@ namespace Garnet.server
         private unsafe delegate* unmanaged[Cdecl]<ulong, uint, uint, nint, nuint, nint, nint, void> ReadCallbackPtr { get; } = &ReadCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> WriteCallbackPtr { get; } = &WriteCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> DeleteCallbackPtr { get; } = &DeleteCallbackUnmanaged;
-        private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> ReadModifyWriteCallbackPtr { get; } = &ReadModifyWriteCallbackUnmanaged;
+        private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, nint, byte> ReadModifyWriteCallbackPtr { get; } = &ReadModifyWriteCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, void> LogCallbackPtr { get; } = &LogCallbackUnmanaged;
 
         private static readonly FilterCallbackDelegate FilterCallbackObject = FilterCallbackManaged;
@@ -427,7 +427,7 @@ namespace Garnet.server
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        private static byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext)
+        private static byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint prepareCallback, nint dataCallback, nint dataCallbackContext)
         {
             Debug.Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
 
@@ -438,19 +438,40 @@ namespace Garnet.server
             VectorInput input = default;
             input.Callback = dataCallback;
             input.CallbackContext = dataCallbackContext;
-            input.WriteDesiredSize = (int)writeLength;
+            input.PrepareCallback = prepareCallback;
+            input.WriteDesiredSize = prepareCallback == 0 ? (int)writeLength : 0;
 
             var status = ctx.RMW(keyWithNamespace, ref input);
             if (status.IsPending)
             {
-                VectorOutput ignored = new();
-
-                CompletePending(ref status, ref ignored, ref ctx);
+                if (prepareCallback != 0)
+                {
+                    _ = ctx.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    using (completedOutputs)
+                    {
+                        // A faulted pending operation has no entry in completedOutputs.
+                        if (completedOutputs.Next())
+                        {
+                            status = completedOutputs.Current.Status;
+                            input.PrepareFailed = completedOutputs.Current.Input.PrepareFailed;
+                            Debug.Assert(!completedOutputs.Next());
+                        }
+                        else
+                        {
+                            status = Status.CreateError();
+                        }
+                    }
+                }
+                else
+                {
+                    VectorOutput ignored = new();
+                    CompletePending(ref status, ref ignored, ref ctx);
+                }
             }
 
             RestoreKeyLengthPrefix(keyData, keyLength);
 
-            if (status.IsCompletedSuccessfully)
+            if (status.IsCompletedSuccessfully && (prepareCallback == 0 || (!status.IsCanceled && !input.PrepareFailed)))
             {
                 return 1;
             }

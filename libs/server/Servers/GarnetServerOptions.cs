@@ -1112,6 +1112,9 @@ namespace Garnet.server
         /// </summary>
         public bool EnableVectorSetPreview = false;
 
+        /// <summary>Neighbor-list write codec: identity (0), StreamVByte64 (1), AdaptiveGap (2), or row Rice (3).</summary>
+        public int VectorSetAdjacencyCodec;
+
         /// <summary>
         /// Configure how many replay tasks are used to replay VectorSet operations at the replica (default: 0 uses the machine CPU count).
         /// </summary>

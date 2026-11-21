@@ -182,17 +182,66 @@ namespace Garnet.server
         #endregion Upserts
 
         #region RMWs
+        private enum PrepareResult : byte
+        {
+            NoChange = 0,
+            Write = 1,
+            Error = 2,
+        }
+
+        // Scratch can be reused for an updater fallback within one attempt, not across attempts.
+        private const byte PreparedForInitial = 1;
+        private const byte PreparedForCopy = 2;
+
+        private static unsafe PrepareResult PrepareRmw(ref VectorInput input, nint current, nuint currentLength, ref RMWInfo rmwInfo)
+        {
+            var prepare = (delegate* unmanaged[Cdecl]<nint, nint, nuint, nuint*, byte>)input.PrepareCallback;
+            nuint replacementLength = 0;
+            var result = (PrepareResult)prepare(input.CallbackContext, current, currentLength, &replacementLength);
+            if (result == PrepareResult.NoChange)
+                return result;
+
+            if (result == PrepareResult.Write && replacementLength > 0 && replacementLength <= int.MaxValue)
+            {
+                input.WriteDesiredSize = (int)replacementLength;
+                return result;
+            }
+
+            // In-chain tombstone revival reports NotFound when NeedInitialUpdate declines, even for cancellation.
+            input.PrepareFailed = true;
+            rmwInfo.Action = RMWAction.CancelOperation;
+            return PrepareResult.Error;
+        }
+
+        private static unsafe PrepareResult PrepareExistingRmw(ReadOnlySpan<byte> current, ref VectorInput input, ref RMWInfo rmwInfo)
+        {
+            // Pin overflow values too, and reserve a null current pointer for an absent record, not an empty span.
+            fixed (byte* ptr = &MemoryMarshal.GetReference(current))
+                return PrepareRmw(ref input, (nint)ptr, (nuint)current.Length, ref rmwInfo);
+        }
+
+        private static unsafe void WritePreparedReplacement(in LogRecord logRecord, Span<byte> value, in VectorInput input)
+        {
+            Debug.Assert(value.Length == input.WriteDesiredSize);
+
+            // Only fill the destination. An initial/copy destination may still be abandoned if publishing it fails.
+            var writer = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
+            fixed (byte* ptr = value)
+            {
+                AssertAlignment(in logRecord, (nint)ptr);
+                writer(input.CallbackContext, (nint)ptr, (nuint)value.Length);
+            }
+        }
+
         #region Variable Length
         /// <summary>Length of resulting value object when performing RMW modification of value using given input</summary>
         public readonly RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref VectorInput input)
             where TSourceLogRecord : ISourceLogRecord
         {
-            var value = srcLogRecord.ValueSpan;
-
             if (input.WriteDesiredSize < 0)
             {
                 // Add to value, this is a dynamically sized type - which are only used from Garnet, not DiskANN
-                return new() { KeySize = srcLogRecord.Key.Length, ValueSize = value.Length + (-input.WriteDesiredSize), ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in srcLogRecord) };
+                return new() { KeySize = srcLogRecord.Key.Length, ValueSize = srcLogRecord.ValueSpan.Length + (-input.WriteDesiredSize), ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in srcLogRecord) };
             }
 
             return new() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in srcLogRecord) };
@@ -236,14 +285,30 @@ namespace Garnet.server
         {
             Debug.Assert(key.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
 
-            // Only needed when updating ContextMetadata via RMW or the DiskANN RMW callback, all of which set WriteDesiredSize
-            return input.WriteDesiredSize != 0;
+            if (input.PrepareCallback == 0)
+                return input.WriteDesiredSize != 0;
+
+            // A failed in-chain tombstone revival falls back to insertion with the same absent source.
+            if (rmwInfo.UserData == PreparedForInitial)
+                return true;
+
+            if (PrepareRmw(ref input, 0, 0, ref rmwInfo) != PrepareResult.Write)
+                return false;
+
+            rmwInfo.UserData = PreparedForInitial;
+            return true;
         }
 
         /// <inheritdoc/>
         public readonly bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, ref VectorOutput output, ref RMWInfo rmwInfo)
         {
             Debug.Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
+
+            if (input.PrepareCallback != 0)
+            {
+                WritePreparedReplacement(in logRecord, logRecord.ValueSpan, in input);
+                return true;
+            }
 
             var key = logRecord.Key;
             var alignedValue = logRecord.ValueSpan;
@@ -293,13 +358,28 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref VectorInput input, ref VectorOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
-        => input.WriteDesiredSize != 0;
+        {
+            if (input.PrepareCallback == 0)
+                return input.WriteDesiredSize != 0;
+
+            if (rmwInfo.UserData == PreparedForCopy)
+                return true;
+
+            // NeedCopyUpdate runs before sizing, and can decline or cancel without allocating a record.
+            return PrepareExistingRmw(srcLogRecord.ValueSpan, ref input, ref rmwInfo) == PrepareResult.Write;
+        }
 
         /// <inheritdoc/>
         public readonly bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, ref VectorOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             Debug.Assert(srcLogRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
+
+            if (input.PrepareCallback != 0)
+            {
+                WritePreparedReplacement(in dstLogRecord, dstLogRecord.ValueSpan, in input);
+                return true;
+            }
 
             var key = srcLogRecord.Key;
 
@@ -369,6 +449,35 @@ namespace Garnet.server
         public readonly bool InPlaceUpdater(ref LogRecord logRecord, ref VectorInput input, ref VectorOutput output, ref RMWInfo rmwInfo)
         {
             Debug.Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
+
+            if (input.PrepareCallback != 0)
+            {
+                var current = logRecord.ValueSpan;
+                switch (PrepareExistingRmw(current, ref input, ref rmwInfo))
+                {
+                    case PrepareResult.NoChange:
+                        rmwInfo.RecordUnchanged = true;
+                        return true;
+                    case PrepareResult.Error:
+                        return false;
+                }
+
+                if (input.WriteDesiredSize != current.Length)
+                {
+                    var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(in logRecord, ref input) };
+                    functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
+                    if (!logRecord.TrySetContentLengths(in sizeInfo))
+                    {
+                        // Tsavorite falls through to NeedCopyUpdate with the same source under the same lock.
+                        rmwInfo.UserData = PreparedForCopy;
+                        return false;
+                    }
+                    current = logRecord.ValueSpan;
+                }
+
+                WritePreparedReplacement(in logRecord, current, in input);
+                return true;
+            }
 
             var key = logRecord.Key;
 
@@ -504,6 +613,8 @@ namespace Garnet.server
             where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor
         {
+            // Pending RMW retries reuse RMWInfo. Do not reuse scratch prepared before a retry.
+            rmwInfo.UserData = 0;
         }
 
         /// <inheritdoc/>

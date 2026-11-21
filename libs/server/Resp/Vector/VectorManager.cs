@@ -207,11 +207,17 @@ namespace Garnet.server
         /// </summary>
         private ConcurrentDictionary<int, ContextMetadata> recoveredMetadata;
 
+        private readonly byte adjacencyCodec;
+
+        /// <summary>Constructs the vector set manager for one database.</summary>
         public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getTempSession, ILoggerFactory loggerFactory)
         {
             this.dbId = dbId;
 
             IsEnabled = serverOptions.EnableVectorSetPreview;
+            if (serverOptions.VectorSetAdjacencyCodec is < 0 or > 3)
+                throw new GarnetException("VectorSetAdjacencyCodec must be between 0 and 3");
+            adjacencyCodec = (byte)serverOptions.VectorSetAdjacencyCodec;
 
             // Destination for copying the small graph "stub" records back into memory on disk read (see
             // VectorReadBatch.ReadCopyOptions): the read cache when it is enabled (keeps the writable main log

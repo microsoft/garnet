@@ -784,6 +784,10 @@ namespace Garnet
         [Option("enable-vector-set-preview", Required = false, HelpText = "Enable Vector Sets (preview) - this feature (and associated commands) are incomplete, unstable, and subject to change while still in preview")]
         public bool EnableVectorSetPreview { get; set; }
 
+        [IntRangeValidation(0, 3, isRequired: false)]
+        [Option("vector-set-adjacency-codec", Required = false, HelpText = "Neighbor-list write codec: 0 identity (default), 1 StreamVByte64, 2 AdaptiveGap, 3 row Rice")]
+        public int VectorSetAdjacencyCodec { get; set; }
+
         [IntRangeValidation(0, int.MaxValue, isRequired: false)]
         [Option("vector-set-replay-task-count", Required = false, HelpText = "Configure how many replay tasks are used to replay VectorSet operations at the replica (default: 0 uses the machine CPU count)")]
         public int VectorSetReplayTaskCount { get; set; }
@@ -1136,6 +1140,7 @@ namespace Garnet
                 ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
                 ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
                 EnableVectorSetPreview = EnableVectorSetPreview,
+                VectorSetAdjacencyCodec = VectorSetAdjacencyCodec,
                 VectorSetReplayTaskCount = VectorSetReplayTaskCount,
                 VectorSetQuantizationTaskCount = VectorSetQuantizationTaskCount,
                 EnableRangeIndexPreview = EnableRangeIndexPreview,
