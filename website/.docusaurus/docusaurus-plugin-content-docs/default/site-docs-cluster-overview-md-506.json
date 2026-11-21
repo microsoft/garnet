@@ -1,0 +1,29 @@
+{
+  "id": "cluster/overview",
+  "title": "Overview",
+  "description": "Garnet cluster provides an easy and scalable way to operate Garnet across multiple nodes.",
+  "source": "@site/docs/cluster/overview.md",
+  "sourceDirName": "cluster",
+  "slug": "/cluster/overview",
+  "permalink": "/garnet/docs/cluster/overview",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/cluster/overview.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "overview",
+    "sidebar_label": "Overview",
+    "title": "Overview",
+    "slug": "overview"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Modules",
+    "permalink": "/garnet/docs/extensions/module"
+  },
+  "next": {
+    "title": "Replication",
+    "permalink": "/garnet/docs/cluster/replication"
+  }
+}

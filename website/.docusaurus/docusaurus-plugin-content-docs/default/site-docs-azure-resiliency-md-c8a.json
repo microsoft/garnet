@@ -1,0 +1,28 @@
+{
+  "id": "azure/resiliency",
+  "title": "Resiliency in Azure Cosmos DB Garnet Cache",
+  "description": "Azure Cosmos DB Garnet Cache is designed for high availability and resilience, providing enterprise-grade uptime, data persistence, and automatic recovery capabilities. The service offers multiple layers of protection to ensure your cache remains available and your data is preserved even during infrastructure failures, maintenance events, or unexpected outages.",
+  "source": "@site/docs/azure/resiliency.md",
+  "sourceDirName": "azure",
+  "slug": "/azure/resiliency",
+  "permalink": "/garnet/docs/azure/resiliency",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/azure/resiliency.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "resiliency",
+    "sidebar_label": "Resiliency",
+    "title": "Resiliency in Azure Cosmos DB Garnet Cache"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Cluster Configuration",
+    "permalink": "/garnet/docs/azure/cluster-configuration"
+  },
+  "next": {
+    "title": "Security",
+    "permalink": "/garnet/docs/azure/security"
+  }
+}
