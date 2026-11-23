@@ -445,6 +445,19 @@ invoked from `GlobalAfterEnteringState(IN_PROGRESS)`. State publication itself
 is performed by the driver between the before-transition and after-transition
 hooks.
 
+### Invalid records in streaming snapshot phase 2
+
+Phase 2 skips invalid records, including elided ones, before copying their
+fields, but keeps sealed, valid historical versions below its upper address.
+Once the version changes, only new-version records can be elided, so AOF replay
+on the replica recreates the key of a record elided after the tail sample.
+Streaming an elided record could also resurrect the value of a key deleted in
+the checkpoint version and re-created after the sample. Other bounded lookups,
+such as slot migration, report an elided record only if its key has a record at
+or above the bound, and skip invalid records that are not sealed.
+Disk-pending lookups honor the same exclusive upper address: a later
+compaction copy above it cannot suppress an original still needed by phase 2.
+
 ## Index growth phase work
 
 Index growth uses a shorter graph:

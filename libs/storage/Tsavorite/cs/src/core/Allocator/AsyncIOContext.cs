@@ -42,6 +42,9 @@ namespace Tsavorite.core
         /// </summary>
         public long minAddress;
 
+        /// <summary>Exclusive upper address for conditional lookups; ordinary reads are unbounded.</summary>
+        public long maxAddress = long.MaxValue;
+
         /// <summary>
         /// Record buffer
         /// </summary>
@@ -75,6 +78,7 @@ namespace Tsavorite.core
             diskLogRecord = default;
             logicalAddress = 0;
             minAddress = 0;
+            maxAddress = long.MaxValue;
             record = null;
             objBuffer = null;
             callbackQueue = null;
