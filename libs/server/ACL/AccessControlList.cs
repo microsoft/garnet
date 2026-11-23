@@ -18,6 +18,8 @@ namespace Garnet.server.ACL
         /// </summary>
         const string DefaultUserName = "default";
 
+        readonly object userHandlesLock = new();
+
         /// <summary>
         /// Dictionary containing all <see cref="UserHandle"/>s defined in the ACL.
         /// </summary>
@@ -56,11 +58,14 @@ namespace Garnet.server.ACL
         /// <returns>Matching user object, or null if no user with the given name was found.</returns>
         public UserHandle GetUserHandle(string username)
         {
-            if (_userHandles.TryGetValue(username, out var userHandle))
+            lock (userHandlesLock)
             {
-                return userHandle;
+                if (_userHandles.TryGetValue(username, out var userHandle))
+                {
+                    return userHandle;
+                }
+                return null;
             }
-            return null;
         }
 
         /// <summary>
@@ -69,7 +74,10 @@ namespace Garnet.server.ACL
         /// <returns>The default user of this access control list.</returns>
         public UserHandle GetDefaultUserHandle()
         {
-            return _defaultUserHandle;
+            lock (userHandlesLock)
+            {
+                return _defaultUserHandle;
+            }
         }
 
         /// <summary>
@@ -77,14 +85,23 @@ namespace Garnet.server.ACL
         /// </summary>
         /// <param name="userHandle">User to add to the list.</param>
         /// <exception cref="ACLUserAlreadyExistsException">Thrown if a user with the given username already exists.</exception>
+        /// <exception cref="ACLException">Thrown if the handle has already been invalidated.</exception>
         public void AddUserHandle(UserHandle userHandle)
         {
             var username = userHandle?.User.Name;
 
-            // If a user with the given name already exists in the ACL, the new user cannot be added
-            if (!_userHandles.TryAdd(username, userHandle))
+            lock (userHandlesLock)
             {
-                throw new ACLUserAlreadyExistsException(username);
+                if (userHandle?.IsValid == false)
+                {
+                    throw new ACLException("An invalidated user handle cannot be added to the ACL");
+                }
+
+                // If a user with the given name already exists in the ACL, the new user cannot be added
+                if (!_userHandles.TryAdd(username, userHandle))
+                {
+                    throw new ACLUserAlreadyExistsException(username);
+                }
             }
         }
 
@@ -100,7 +117,15 @@ namespace Garnet.server.ACL
             {
                 throw new ACLException("The special 'default' user cannot be removed from the system");
             }
-            return _userHandles.TryRemove(username, out _);
+            lock (userHandlesLock)
+            {
+                if (!_userHandles.TryRemove(username, out var userHandle))
+                {
+                    return false;
+                }
+                userHandle.Invalidate();
+                return true;
+            }
         }
 
         /// <summary>
@@ -108,7 +133,12 @@ namespace Garnet.server.ACL
         /// </summary>
         public void ClearUsers()
         {
-            _userHandles.Clear();
+            lock (userHandlesLock)
+            {
+                foreach (var userHandle in _userHandles.Values)
+                    userHandle.Invalidate();
+                _userHandles.Clear();
+            }
         }
 
         /// <summary>
@@ -117,7 +147,10 @@ namespace Garnet.server.ACL
         /// <returns>Dictionary of username/user pairs.</returns>
         public IReadOnlyDictionary<string, UserHandle> GetUserHandles()
         {
-            return _userHandles;
+            lock (userHandlesLock)
+            {
+                return _userHandles;
+            }
         }
 
         /// <summary>
@@ -207,11 +240,16 @@ namespace Garnet.server.ACL
                 streamReader.Close();
             }
 
-            // Add back default user and update the cached default user handle
-            _defaultUserHandle = acl.CreateDefaultUserHandle(defaultPassword);
+            var defaultUserHandle = acl.CreateDefaultUserHandle(defaultPassword);
+            lock (userHandlesLock)
+            {
+                foreach (var userHandle in _userHandles.Values)
+                    userHandle.Invalidate();
 
-            // Atomically replace the user list
-            _userHandles = acl._userHandles;
+                // Publish the default handle and directory together for cold-path lookups.
+                _defaultUserHandle = defaultUserHandle;
+                _userHandles = acl._userHandles;
+            }
         }
 
         /// <summary>

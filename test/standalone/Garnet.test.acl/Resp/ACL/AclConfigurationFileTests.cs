@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server.ACL;
+using Garnet.server.Auth;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -21,6 +22,66 @@ namespace Garnet.test.Resp.ACL
     [TestFixture]
     class AclConfigurationFileTests : AclTest
     {
+        sealed class DelayedAclAuthenticator(AccessControlList acl, Action beforePublication) : GarnetACLAuthenticator(acl, null)
+        {
+            protected override bool AuthenticateInternal(UserHandle userHandle, ReadOnlySpan<byte> username, ReadOnlySpan<byte> password)
+            {
+                beforePublication();
+                _userHandle = userHandle;
+                return true;
+            }
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void LateAuthenticationCannotRestoreRevokedHandle(bool reload)
+        {
+            var acl = new AccessControlList();
+            ACLParser.ParseACLRule($"user {TestUserA} on nopass +@all", acl);
+            var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
+            File.WriteAllText(configurationFile, $"user {TestUserA} on nopass +get");
+            var username = Encoding.ASCII.GetBytes(TestUserA);
+            var auth = new DelayedAclAuthenticator(acl, () =>
+            {
+                if (reload)
+                {
+                    acl.Load("", configurationFile);
+                }
+                else
+                {
+                    ClassicAssert.IsTrue(acl.DeleteUserHandle(TestUserA));
+                    ACLParser.ParseACLRule($"user {TestUserA} on nopass +get", acl);
+                }
+            });
+
+            ClassicAssert.IsTrue(auth.Authenticate(""u8, username));
+            ClassicAssert.IsFalse(auth.IsAuthenticated);
+            var fresh = new GarnetAclWithPasswordAuthenticator(acl, null);
+            ClassicAssert.IsTrue(fresh.Authenticate(""u8, username));
+            ClassicAssert.IsTrue(fresh.IsAuthenticated);
+        }
+
+        [Test]
+        public void RevokedHandleCannotBeReadded()
+        {
+            var acl = new AccessControlList();
+            ACLParser.ParseACLRule($"user {TestUserA} on nopass +@all", acl);
+            var handle = acl.GetUserHandle(TestUserA);
+            ClassicAssert.IsTrue(acl.DeleteUserHandle(TestUserA));
+            Assert.Throws<ACLException>(() => acl.AddUserHandle(handle));
+            ClassicAssert.IsNull(acl.GetUserHandle(TestUserA));
+        }
+
+        [Test]
+        public void ClearUsersRevokesExistingAuthentication()
+        {
+            var acl = new AccessControlList();
+            var auth = new GarnetAclWithPasswordAuthenticator(acl, null);
+            ClassicAssert.IsTrue(auth.Authenticate(""u8, "default"u8));
+            acl.ClearUsers();
+            ClassicAssert.IsFalse(auth.IsAuthenticated);
+        }
+
         /// <summary>
         /// Ensures an empty input file will result in just the default user being present.
         /// </summary>

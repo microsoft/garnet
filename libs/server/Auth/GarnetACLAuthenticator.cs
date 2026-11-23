@@ -44,8 +44,7 @@ namespace Garnet.server.Auth
         /// <summary>
         /// Check if the authenticated user's handle is still present in the current ACL.
         /// </summary>
-        public virtual bool IsAuthenticated => _userHandle != null &&
-            ReferenceEquals(_userHandle, _acl.GetUserHandle(_userHandle.User.Name));
+        public virtual bool IsAuthenticated => _userHandle != null && _userHandle.IsValid;
 
         /// <summary>
         /// ACL authenticator is can use ACL.
