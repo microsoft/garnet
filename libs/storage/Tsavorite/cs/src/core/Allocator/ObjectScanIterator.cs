@@ -312,9 +312,11 @@ namespace Tsavorite.core
                         Debug.Assert(currentAddress + allocatedSize <= hlogBase.FlushedUntilAddress,
                             $"Record at {currentAddress} of size {allocatedSize} extends past FlushedUntilAddress {hlogBase.FlushedUntilAddress}");
 
-                        // A flush writes no objects for an invalid record, and a frame deserializes none, so any object id an invalid record
-                        // still holds is stale here; copying or disposing it would fail or free another record's object.
-                        if (invalidRecordFilter != InvalidRecordScanFilter.None && recordInfo.Invalid && !new LogRecord(physicalAddress).DataHeader.RecordIsInline)
+                        // An invalid record's object and overflow fields still hold ids into the ObjectIdMap of the page that was flushed, which no
+                        // longer exists: the flush wrote none of its objects, and loading this frame deserialized objects only for valid records. Such
+                        // a record has no key or value to return, and disposing its ids would clear slots of this scan's own map, which can hold other
+                        // records' objects. So no scan returns it, whatever its invalid-record filter.
+                        if (recordInfo.Invalid && !new LogRecord(physicalAddress).DataHeader.RecordIsInline)
                             continue;
 
                         // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
