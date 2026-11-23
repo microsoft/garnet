@@ -1462,7 +1462,7 @@ namespace Tsavorite.core
             var endLogicalAddress = hlogBase.GetLogicalAddressOfStartOfPage(page + 1);
             var physicalAddress = hlogBase.GetPhysicalAddress(startLogicalAddress);
 
-            // no need to clear locks for records that will not end up in main memory
+            // No need to clear bits for records that will not end up in main memory
             if (headAddress >= endLogicalAddress)
                 return;
 

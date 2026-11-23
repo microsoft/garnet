@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -32,6 +33,24 @@ namespace Tsavorite.test
 
             public long GetHashCode64<TKey>(TKey key) where TKey : IKey, allows ref struct
                 => distinct ? SpanByteComparer.StaticGetHashCode64(key.KeyBytes) : 1;
+        }
+
+        /// <summary>Collects a lookup scan's records by key.</summary>
+        sealed class CollectingScan : IScanIteratorFunctions
+        {
+            /// <summary>Keys and values actually delivered by the lookup scan.</summary>
+            internal readonly Dictionary<long, long> records = [];
+
+            public bool OnStart(long beginAddress, long endAddress) => true;
+            public void OnStop(bool completed, long numberOfRecords) { }
+            public void OnException(Exception exception, long numberOfRecords) { }
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord record, RecordMetadata metadata, long numberOfRecords,
+                out CursorRecordResult result) where TSourceLogRecord : ISourceLogRecord
+            {
+                records.Add(BitConverter.ToInt64(record.Key), BitConverter.ToInt64(record.ValueSpan));
+                result = CursorRecordResult.Accept;
+                return true;
+            }
         }
 
         [SetUp]
@@ -185,6 +204,67 @@ namespace Tsavorite.test
             }
             Assert.That(store.Log.TailAddress, Is.EqualTo(tail), "The continuation must not allocate or reinsert its saved source.");
             Assert.That(store.FindHashBucketEntryForKey(TestSpanByteKey.FromArray(key), out _), Is.False);
+        }
+
+        /// <summary>
+        /// A lookup scan must skip a valid, non-tombstone record whose key has no hash-index entry (its tag is absent): no version of the key
+        /// is reachable, so reporting the record would return a key that does not exist. Bounded and unbounded lookups reach the same check.
+        /// </summary>
+        /// <param name="objectAllocator">Use the object allocator rather than the span-byte allocator.</param>
+        /// <param name="evict">Flush and evict the log before scanning, so that the records are read from disk.</param>
+        /// <param name="bounded">Bound the scan at the tail, as slot migration does, rather than leaving it unbounded, as Garnet's SCAN does.</param>
+        [Test]
+        public void LookupScanSkipsMissingTag([Values] bool objectAllocator, [Values] bool evict, [Values] bool bounded)
+        {
+            if (objectAllocator)
+                CheckLookupScanMissingTag<ObjectAllocator<ScanStoreFunctions>>((settings, functions) => new(settings, functions), evict, bounded);
+            else
+                CheckLookupScanMissingTag<SpanByteAllocator<ScanStoreFunctions>>((settings, functions) => new(settings, functions), evict, bounded);
+        }
+
+        /// <summary>Runs <see cref="LookupScanSkipsMissingTag"/> for one allocator.</summary>
+        void CheckLookupScanMissingTag<TAllocator>(Func<AllocatorSettings, ScanStoreFunctions, TAllocator> factory, bool evict, bool bounded)
+            where TAllocator : IAllocator<ScanStoreFunctions>
+        {
+            // Each key has its own tag chain (distinct: true).
+            using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "lookup-missing-tag.log"), deleteOnClose: true);
+            using var objectLog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "lookup-missing-tag.obj.log"), deleteOnClose: true);
+            using var store = new TsavoriteKV<ScanStoreFunctions, TAllocator>(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objectLog,
+                PageSize = MinKvLogPageSize,
+                LogMemorySize = 1L << 20,
+                MutableFraction = 1
+            }, StoreFunctions.Create(new ScanKeyComparer(distinct: true)), factory);
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new());
+            var basic = session.BasicContext;
+
+            // Key 1's record is the only record below sourceEnd; key 2's follows it.
+            var key = BitConverter.GetBytes(1L);
+            _ = basic.Upsert(TestSpanByteKey.FromArray(key), BitConverter.GetBytes(10L));
+            var sourceEnd = store.Log.TailAddress;
+            _ = basic.Upsert(TestSpanByteKey.FromArray(BitConverter.GetBytes(2L)), BitConverter.GetBytes(20L));
+            if (evict)
+                store.Log.FlushAndEvict(wait: true);
+
+            // Remove key 1's hash-index entry. Its record stays in the log, valid and not a tombstone, so the scan supplies it.
+            RemoveTag(store, key);
+            using (var iter = store.Log.Scan(store.Log.BeginAddress, sourceEnd))
+            {
+                Assert.That(iter.GetNext(), Is.True);
+                Assert.That(iter.Info.Invalid || iter.Info.Tombstone, Is.False,
+                    "The test needs a valid, non-tombstone record whose tag is absent.");
+            }
+
+            // The scan must report only key 2.
+            long cursor = 0;
+            var scanner = new CollectingScan();
+            var tail = store.Log.TailAddress;
+            _ = session.ScanCursor(ref cursor, long.MaxValue, scanner, tail, maxAddress: bounded ? tail : long.MaxValue);
+            Assert.That(scanner.records, Is.EquivalentTo(new Dictionary<long, long> { [2] = 20 }),
+                "The scan must skip the unreachable record and report the live key.");
         }
 
         /// <summary>Removes the hash-index entry of <paramref name="key"/>'s tag, leaving its records in the log. When keys share one tag chain,
