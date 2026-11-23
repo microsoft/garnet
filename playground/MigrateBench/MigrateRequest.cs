@@ -41,7 +41,7 @@ namespace MigrateBench
             var result = awaiter.GetResult();
             var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
             totalElapsed += elapsed;
-            var t = TimeSpan.FromTicks(elapsed);
+            var t = TimeSpan.FromSeconds((double)elapsed / Stopwatch.Frequency);
             if (verbose)
                 logger?.LogInformation("[{msg}] ElapsedTime = {elapsed} seconds", msg, t.TotalSeconds);
             return result;
@@ -49,6 +49,7 @@ namespace MigrateBench
 
         public MigrateRequest(Options opts, ILogger logger = null)
         {
+            ArgumentOutOfRangeException.ThrowIfNegative(opts.PollIntervalMs);
             this.opts = opts;
             var sourceEndpoint = opts.SourceEndpoint.Split(':');
             var targetEndpoint = opts.TargetEndpoint.Split(':');
@@ -147,20 +148,17 @@ namespace MigrateBench
                 var resp = sourceNode.ExecuteAsync(request).GetAwaiter().GetResult();
 
                 logger?.LogInformation("Waiting for Migration to Complete");
-                resp = sourceNode.ExecuteAsync("CLUSTER", "MTASKS").GetAwaiter().GetResult();
-                while (int.Parse(resp) > 0)
-                {
-                    Thread.Yield();
-                    resp = sourceNode.ExecuteAsync("CLUSTER", "MTASKS").GetAwaiter().GetResult();
-                }
+                WaitForMigrationCompletion(startTimestamp);
 
                 var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
-                var t = TimeSpan.FromTicks(elapsed);
+                VerifySlotOwnership(Common.GetSingleSlots(opts, logger));
+                var t = TimeSpan.FromSeconds((double)elapsed / Stopwatch.Frequency);
                 logger?.LogInformation("SLOTSRANGE Elapsed Time: {elapsed} seconds", t.TotalSeconds);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Error at MigrateSlotsRange");
+                throw;
             }
         }
 
@@ -176,25 +174,71 @@ namespace MigrateBench
                     migrate.Add(slot.ToString());
 
                 var request = migrate.ToArray();
+                var startUtc = DateTime.UtcNow;
                 var startTimestamp = Stopwatch.GetTimestamp();
                 logger?.LogInformation("Issuing MIGRATE SLOTS");
                 var resp = sourceNode.ExecuteAsync(request).GetAwaiter().GetResult();
 
                 logger?.LogInformation("Waiting for Migration to Complete");
-                resp = sourceNode.ExecuteAsync("CLUSTER", "MTASKS").GetAwaiter().GetResult();
-                while (int.Parse(resp) > 0)
-                {
-                    Thread.Yield();
-                    resp = sourceNode.ExecuteAsync("CLUSTER", "MTASKS").GetAwaiter().GetResult();
-                }
+                WaitForMigrationCompletion(startTimestamp);
 
                 var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
-                var t = TimeSpan.FromTicks(elapsed);
+                VerifySlotOwnership(_slots);
+                var t = TimeSpan.FromSeconds((double)elapsed / Stopwatch.Frequency);
                 logger?.LogInformation("SLOTS Elapsed Time: {elapsed} seconds", t.TotalSeconds);
+                logger?.LogInformation("MIGRATION_UTC {start:o} {end:o}", startUtc, startUtc + t);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Error at MigrateSlots");
+                throw;
+            }
+        }
+
+        private void WaitForMigrationCompletion(long startTimestamp)
+        {
+            while (true)
+            {
+                var remaining = TimeSpan.FromMilliseconds(timeout) - Stopwatch.GetElapsedTime(startTimestamp);
+                if (remaining <= TimeSpan.Zero)
+                    throw new TimeoutException("Timed out waiting for migration tasks to complete");
+                var response = sourceNode.ExecuteAsync("CLUSTER", "MTASKS").WaitAsync(remaining).GetAwaiter().GetResult();
+                if (int.Parse(response) == 0)
+                    return;
+
+                // Remote task polling is expensive; sleep instead of consuming a core between requests.
+                if (opts.PollIntervalMs == 0)
+                    Thread.Yield();
+                else
+                    Thread.Sleep(opts.PollIntervalMs);
+            }
+        }
+
+        private void VerifySlotOwnership(IReadOnlyCollection<int> slots)
+        {
+            foreach (var client in new[] { sourceNode, targetNode })
+            {
+                var nodes = client.ExecuteAsync("CLUSTER", "NODES")
+                    .WaitAsync(TimeSpan.FromMilliseconds(timeout)).GetAwaiter().GetResult();
+                var target = nodes.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(static line => line.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                    .FirstOrDefault(fields => fields[0] == targetNodeId);
+                var ownedSlots = new HashSet<int>();
+                if (target != null)
+                {
+                    foreach (var range in target.Skip(8))
+                    {
+                        if (range.StartsWith('['))
+                            continue;
+                        var bounds = range.Trim().Split('-');
+                        var start = int.Parse(bounds[0]);
+                        var end = bounds.Length == 1 ? start : int.Parse(bounds[1]);
+                        for (var slot = start; slot <= end; slot++)
+                            ownedSlots.Add(slot);
+                    }
+                }
+                if (!slots.All(ownedSlots.Contains))
+                    throw new InvalidOperationException("Migration tasks ended without handing all requested slots to the target");
             }
         }
 
@@ -254,12 +298,12 @@ namespace MigrateBench
                 }
 
                 var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
-                var t = TimeSpan.FromTicks(elapsed);
+                var t = TimeSpan.FromSeconds((double)elapsed / Stopwatch.Frequency);
                 logger?.LogInformation("KEYS Elapsed Time: {elapsed} seconds", t.TotalSeconds);
-                logger?.LogInformation("SetSlot Elapsed Time: {elapsed} seconds", TimeSpan.FromTicks(setSlotElapsed).TotalSeconds);
-                logger?.LogInformation("CountKeys Elapsed Time: {elapsed} seconds", TimeSpan.FromTicks(countKeysElapsed).TotalSeconds);
-                logger?.LogInformation("GetKeys Elapsed Time: {elapsed} seconds", TimeSpan.FromTicks(getKeysElapsed).TotalSeconds);
-                logger?.LogInformation("MigrateKeys Elapsed Time: {elapsed} seconds", TimeSpan.FromTicks(migrateKeysElapsed).TotalSeconds);
+                logger?.LogInformation("SetSlot Elapsed Time: {elapsed} seconds", (double)setSlotElapsed / Stopwatch.Frequency);
+                logger?.LogInformation("CountKeys Elapsed Time: {elapsed} seconds", (double)countKeysElapsed / Stopwatch.Frequency);
+                logger?.LogInformation("GetKeys Elapsed Time: {elapsed} seconds", (double)getKeysElapsed / Stopwatch.Frequency);
+                logger?.LogInformation("MigrateKeys Elapsed Time: {elapsed} seconds", (double)migrateKeysElapsed / Stopwatch.Frequency);
             }
             catch (Exception ex)
             {

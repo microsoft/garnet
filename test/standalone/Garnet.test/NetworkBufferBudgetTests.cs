@@ -545,10 +545,11 @@ namespace Garnet.test
         [Test]
         public void LiveConnectionsConvergeAfterPressureArrives()
         {
-            StartServer(networkBufferMemoryBudget: "8m", networkSendBufferMinSize: "16k");
+            StartServer(networkBufferMemoryBudget: "1m", networkSendBufferMinSize: "16k");
 
-            const int Early = 10;
-            const int Late = 200;
+            const int Early = 2;
+            const int Late = 48;
+            var pool = NetworkPool();
 
             var early = new List<Socket>();
             var late = new List<Socket>();
@@ -567,22 +568,19 @@ namespace Garnet.test
                     late.Add(Ping(Connect()));
 
                 ClassicAssert.AreEqual(ReceiveFloor, StatBytes("targetBufferSize"), "the budget must be binding now");
-                var underPressure = SocketStatBytes("liveBytes");
+                var underPressure = pool.LiveBytes;
 
                 // Only the early connections do any work from here, so any change is attributable to them.
                 foreach (var s in early)
                     for (var j = 0; j < 20; j++)
                         _ = Ping(s);
 
-                var converged = SocketStatBytes("liveBytes");
+                // Receive shrinkage alone is below this threshold; both directions must converge.
+                Assert.That(() => underPressure - pool.LiveBytes, Is.GreaterThan(Early * 150L * 1024).After(5_000).PollEvery(10),
+                    "Both send and receive buffers must converge after pressure arrives.");
+                var converged = pool.LiveBytes;
                 TestContext.Out.WriteLine($"underPressure={underPressure}, converged={converged}, " +
                     $"delta per early connection={(underPressure - converged) / Early}");
-
-                // Each early connection was holding 128 KB buffers in both directions and should end near 16 KB.
-                // The receive side alone accounts for about half of this; the threshold sits above that, so the
-                // assertion cannot be satisfied without the send-side stack converging too.
-                ClassicAssert.Greater(underPressure - converged, Early * 150L * 1024,
-                    $"live connections did not converge after pressure arrived ({underPressure} -> {converged})");
             }
             finally
             {
@@ -1433,9 +1431,8 @@ namespace Garnet.test
         /// </summary>
         static Socket Ping(Socket s)
         {
-            s.Send(Encoding.ASCII.GetBytes("*1\r\n$4\r\nPING\r\n"));
-            var buf = new byte[64];
-            _ = s.Receive(buf);
+            Send(s, "*1\r\n$4\r\nPING\r\n");
+            ClassicAssert.AreEqual("+PONG\r\n", ReadExactly(s, 7));
             return s;
         }
 
@@ -1508,7 +1505,9 @@ namespace Garnet.test
         /// reply takes a send buffer and a receive buffer off the very free list being measured, so an
         /// assertion on the free list would be read from a snapshot the reading of it had already changed.
         /// </summary>
-        string PoolStats()
+        string PoolStats() => "server_socket_0=" + NetworkPool().GetStats();
+
+        LimitedFixedBufferPool NetworkPool()
         {
             var field = typeof(GarnetServer).GetField("servers",
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
@@ -1516,7 +1515,12 @@ namespace Garnet.test
 
             foreach (var listener in (IGarnetServer[])field.GetValue(server))
                 if (listener is GarnetServerTcp tcp)
-                    return "server_socket_0=" + tcp.GetBufferPoolStats();
+                {
+                    var poolField = typeof(GarnetServerTcp).GetField("networkPool",
+                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                    ClassicAssert.IsNotNull(poolField);
+                    return (LimitedFixedBufferPool)poolField.GetValue(tcp);
+                }
 
             throw new AssertionException("the server has no TCP listener to read pool stats from");
         }

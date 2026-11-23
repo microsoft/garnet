@@ -512,7 +512,7 @@ namespace Garnet.server
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SetPop<TGarnetApi>(ref TGarnetApi storageApi)
+        private bool SetPop<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             if (parseState.Count < 1 || parseState.Count > 2)
@@ -530,13 +530,6 @@ namespace Garnet.server
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
-
-                if (countParameter == 0)
-                {
-                    WriteEmptySet();
-
-                    return true;
-                }
             }
 
             // Prepare input
@@ -552,6 +545,12 @@ namespace Garnet.server
             {
                 case GarnetStatus.OK:
                     // Process output
+                    if (countParameter == 0)
+                    {
+                        WriteEmptySet();
+                        break;
+                    }
+
                     ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
@@ -641,18 +640,10 @@ namespace Garnet.server
             var countParameter = int.MinValue;
             if (parseState.Count == 2)
             {
-                // Prepare response
-                if (!parseState.TryGetInt(1, out countParameter))
+                // Prepare response. int.MinValue marks an absent count, and as a count it has no positive counterpart.
+                if (!parseState.TryGetInt(1, out countParameter) || countParameter == int.MinValue)
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-                }
-
-                if (countParameter == 0)
-                {
-                    while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                        SendAndReset();
-
-                    return true;
                 }
             }
 

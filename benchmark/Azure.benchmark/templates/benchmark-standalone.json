@@ -1,0 +1,13 @@
+{
+  "SchemaVersion": 1,
+  "Kind": "Benchmark",
+  "System": "Resp.benchmark",
+  "InstanceConfig": "..\\03-workload\\bench\\bench-standalone.conf",
+  "Target": {
+    "Vm": "vm0",
+    "Port": 7000
+  },
+  "Instances": [
+    { "Vm": "vm2" }
+  ]
+}

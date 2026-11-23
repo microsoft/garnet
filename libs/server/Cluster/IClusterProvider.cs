@@ -63,6 +63,13 @@ namespace Garnet.server
         RoleInfo GetReplicaInfo();
 
         /// <summary>
+        /// Reads the replica role and its primary information from one configuration snapshot.
+        /// </summary>
+        /// <param name="info">Replica information when the captured role is a replica.</param>
+        /// <returns>True for a replica snapshot; false for a primary.</returns>
+        bool TryGetReplicaInfo(out RoleInfo info);
+
+        /// <summary>
         /// Purger buffer pool for provided manager
         /// </summary>
         /// <param name="managerType"></param>
@@ -141,6 +148,14 @@ namespace Garnet.server
         /// Update cluster auth (atomically)
         /// </summary>
         void UpdateClusterAuth(string clusterUsername, string clusterPassword);
+
+        /// <summary>
+        /// Notifies the cluster provider that the gossip-client configuration group changed at runtime so the
+        /// live gossip clients can be swapped for new instances built from the updated configuration. The swap
+        /// is best-effort: new work observes the replacement immediately and the previous clients are retired
+        /// gracefully in the background so their in-flight requests can drain.
+        /// </summary>
+        void OnGossipClientConfigChanged();
 
         /// <summary>
         /// Get checkpoint info

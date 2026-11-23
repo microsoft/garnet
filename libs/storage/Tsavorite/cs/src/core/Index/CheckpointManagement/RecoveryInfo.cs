@@ -340,6 +340,8 @@ namespace Tsavorite.core
         const int CheckpointVersion = 1;
         public Guid token;
         public long table_size;
+        /// <summary>Size of the main hash index in the index checkpoint file, including any padding to the writing device's sector
+        /// size. The overflow buckets follow it in the same file.</summary>
         public ulong num_ht_bytes;
         public ulong num_ofb_bytes;
         public int num_buckets;

@@ -122,8 +122,10 @@ namespace Garnet.server
                         targetSize / HighTargetSizeDeltaFraction, targetSize / LowTargetSizeDeltaFraction, loggerFactory?.CreateLogger("MainLogSizeTracker"));
                 store.Log.SetLogSizeTracker(mainLogTracker);
 
+                // The generation an index resize replaces is freed when its split completes, so it is not charged:
+                // charging it would evict log pages for memory that is about to be released.
                 if (indexMemoryBudget > 0)
-                    mainLogTracker.ExternalMemorySizeProvider = () => Math.Max(0, store.IndexTotalSizeBytes - indexMemoryBudget);
+                    mainLogTracker.ExternalMemorySizeProvider = () => Math.Max(0, store.IndexSettledSizeBytes - indexMemoryBudget);
             }
 
             if (store.ReadCache != null && readCacheTargetSize > 0)

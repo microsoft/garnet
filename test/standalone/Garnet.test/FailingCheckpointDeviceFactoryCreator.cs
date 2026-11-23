@@ -124,6 +124,9 @@ namespace Garnet.test
 
             /// <inheritdoc/>
             public IEnumerable<FileDescriptor> ListContents(string path) => underlying.ListContents(path);
+
+            /// <inheritdoc/>
+            public uint GetSectorSize(FileDescriptor fileInfo) => underlying.GetSectorSize(fileInfo);
         }
     }
 }

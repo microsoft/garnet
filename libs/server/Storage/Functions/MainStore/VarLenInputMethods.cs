@@ -56,46 +56,23 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Parse ASCII byte array into double and validate that only contains ASCII decimal characters
+        /// Parse ASCII byte array into a finite double, applying the same validation as the update itself
         /// </summary>
         /// <param name="source">Source string to evaluate</param>
-        /// <param name="val">Parsed long value</param>
-        /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
+        /// <param name="val">Parsed double value</param>
+        /// <returns>True if input is a valid finite double, otherwise false</returns>
         static bool IsValidDouble(ReadOnlySpan<byte> source, out double val)
-        {
-            try
-            {
-                // Check for valid number
-                return NumUtils.TryReadDouble(source, out val) || !double.IsFinite(val);
-            }
-            catch
-            {
-                // Signal value is not a valid number
-                val = 0;
-                return false;
-            }
-        }
+            => NumUtils.TryParseWithInfinity(source, out val) && double.IsFinite(val);
 
         /// <summary>
-        /// Parse ASCII byte array into double and validate that only contains ASCII decimal characters
+        /// Parse ASCII byte array into a finite double, applying the same validation as the update itself
         /// </summary>
         /// <param name="source">Source string to evaluate</param>
-        /// <param name="val">Parsed long value</param>
-        /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
+        /// <param name="sourceLen">Length of source string</param>
+        /// <param name="val">Parsed double value</param>
+        /// <returns>True if input is a valid finite double, otherwise false</returns>
         static bool IsValidDouble(byte* source, int sourceLen, out double val)
-        {
-            try
-            {
-                // Check for valid number
-                return NumUtils.TryReadDouble(sourceLen, source, out val) || !double.IsFinite(val);
-            }
-            catch
-            {
-                // Signal value is not a valid number
-                val = 0;
-                return false;
-            }
-        }
+            => IsValidDouble(new ReadOnlySpan<byte>(source, sourceLen), out val);
 
         /// <inheritdoc/>
         public RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref StringInput input)
@@ -137,11 +114,15 @@ namespace Garnet.server
 
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
+                case RespCommand.SETIFNE:
+                case RespCommand.SETIFDNE:
                     fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                     fieldInfo.HasExpiration = input.arg1 != 0;
                     return fieldInfo;
 
                 case RespCommand.SETKEEPTTL:
+                case RespCommand.SETKEEPTTLIFNE:
+                case RespCommand.SETKEEPTTLIFDNE:
                     // Copy input to value; do not change expiration
                     fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                     return fieldInfo;
@@ -198,9 +179,12 @@ namespace Garnet.server
                     {
                         var functions = functionsState.GetCustomCommandFunctions((ushort)cmd);
                         fieldInfo.ValueSize = functions.GetInitialLength(ref input);
+
+                        // Only a positive expiration is set; -1 (remove) and 0 (keep) leave a new record without one
+                        fieldInfo.HasExpiration = input.arg1 > 0;
+                        return fieldInfo;
                     }
-                    else
-                        fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
+                    fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                     fieldInfo.HasExpiration = input.arg1 != 0;
                     return fieldInfo;
             }
@@ -230,8 +214,10 @@ namespace Garnet.server
                         var incrByValue = input.header.cmd == RespCommand.INCRBY ? input.arg1 : 1;
 
                         var value = srcLogRecord.ValueSpan;
-                        fieldInfo.ValueSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead)
-                                                 // TODO set error as in PrivateMethods.IsValidNumber and test in caller, to avoid the log record allocation. This would require 'output'
+
+                        // A value that is not a number is copied to the new record unchanged
+                        fieldInfo.ValueSize = value.Length;
+                        // TODO set error as in PrivateMethods.IsValidNumber and test in caller, to avoid the log record allocation. This would require 'output'
                         if (srcLogRecord.IsPinnedValue ? IsValidNumber(srcLogRecord.PinnedValuePointer, value.Length, out var curr) : IsValidNumber(value, out curr))
                         {
                             // TODO Consider adding a way to cache curr/next for the IPU call
@@ -245,7 +231,9 @@ namespace Garnet.server
                         var decrByValue = input.header.cmd == RespCommand.DECRBY ? input.arg1 : 1;
 
                         value = srcLogRecord.ValueSpan;
-                        fieldInfo.ValueSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead).
+
+                        // A value that is not a number is copied to the new record unchanged
+                        fieldInfo.ValueSize = value.Length;
                         if (srcLogRecord.IsPinnedValue ? IsValidNumber(srcLogRecord.PinnedValuePointer, value.Length, out curr) : IsValidNumber(value, out curr))
                         {
                             // TODO Consider adding a way to cache curr/next for the IPU call
@@ -257,12 +245,17 @@ namespace Garnet.server
                         var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
 
                         value = srcLogRecord.ValueSpan;
-                        fieldInfo.ValueSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead)
+
+                        // A value that is not a number is copied to the new record unchanged
+                        fieldInfo.ValueSize = value.Length;
                         if (srcLogRecord.IsPinnedValue ? IsValidDouble(srcLogRecord.PinnedValuePointer, value.Length, out var currVal) : IsValidDouble(value, out currVal))
                         {
                             // TODO Consider adding a way to cache currVal/nextVal for the IPU call
                             var nextVal = currVal + incrByFloat;
-                            fieldInfo.ValueSize = NumUtils.CountCharsInDouble(nextVal, out _, out _, out _);
+
+                            // A non-finite result is rejected by the update, which then writes nothing
+                            if (double.IsFinite(nextVal))
+                                fieldInfo.ValueSize = NumUtils.CountCharsInDouble(nextVal, out _, out _, out _);
                         }
                         return fieldInfo;
 
@@ -297,6 +290,10 @@ namespace Garnet.server
 
                     case RespCommand.SETKEEPTTLXX:
                     case RespCommand.SETKEEPTTL:
+                    case RespCommand.SETKEEPTTLIFEQ:
+                    case RespCommand.SETKEEPTTLIFNE:
+                    case RespCommand.SETKEEPTTLIFDEQ:
+                    case RespCommand.SETKEEPTTLIFDNE:
                         fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                         fieldInfo.HasExpiration = srcLogRecord.DataHeader.HasExpiration;
                         return fieldInfo;
@@ -304,6 +301,10 @@ namespace Garnet.server
                     case RespCommand.SET:
                     case RespCommand.SETEXXX:
                     case RespCommand.SETEXNX:
+                    case RespCommand.SETIFEQ:
+                    case RespCommand.SETIFNE:
+                    case RespCommand.SETIFDEQ:
+                    case RespCommand.SETIFDNE:
                         fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                         fieldInfo.HasExpiration = input.arg1 != 0;
                         return fieldInfo;
@@ -350,6 +351,8 @@ namespace Garnet.server
 
                     case RespCommand.GETDEL:
                     case RespCommand.DELIFGREATER:
+                    case RespCommand.DELIFEQ:
+                    case RespCommand.DELEX:
                         // Min allocation (only metadata) needed since this is going to be used for tombstoning anyway.
                         return fieldInfo;
 
@@ -383,7 +386,9 @@ namespace Garnet.server
                         {
                             var functions = functionsState.GetCustomCommandFunctions((ushort)cmd);
                             fieldInfo.ValueSize = functions.GetLength(srcLogRecord.ValueSpan, ref input);
-                            fieldInfo.HasExpiration = input.arg1 != 0;
+
+                            // A positive expiration sets it, 0 keeps the existing one, and -1 removes it
+                            fieldInfo.HasExpiration = input.arg1 > 0 || (input.arg1 == 0 && srcLogRecord.DataHeader.HasExpiration);
                             return fieldInfo;
                         }
                         throw new GarnetException("Unsupported operation on input");
@@ -403,7 +408,7 @@ namespace Garnet.server
             {
                 KeySize = key.KeyBytes.Length,
                 ValueSize = value.Length,
-                HasETag = false
+                HasETag = input.HasEtag && input.arg2 != LogRecord.NoETag
             };
 
             switch (input.header.cmd)

@@ -8,12 +8,12 @@
     Step 3: Deploys security/keyvault.bicep to create the shared Key Vault, copies public keys from the manifest basePath
             into security/, uploads the inter-node VMSS private key as secret 'vmss-ssh-private', and ensures a
             CA-signed server/client TLS certificate set exists in Key Vault.
-    Step 4: Publishes a read-only, policy-bound SAS URL for the tools tarball blob into the Key Vault (secret 'tools-sas-url')
-            so the VMSS can pull tools.tar.gz at boot without a Storage Blob Data Reader role assignment (no RBAC required).
-    Step 5: Reads network deployment outputs and generates vmss-parameters.json for subsequent VMSS deployments.
+    Step 4: Reads network deployment outputs and generates vmss-parameters.json for subsequent VMSS deployments.
+    Storage uses Entra authentication only. This phase creates no role assignments;
+    grant the publisher Blob Data Contributor separately and use -GrantStorageAccess when deploying VMSS.
 
-    The deploy action is idempotent: it discovers existing network, storage, and Key Vault resources and skips
-    (re)deploying them. The storage account and Key Vault names are discovered at deploy time by management scripts
+    The deploy action reuses network and Key Vault resources and enforces storage hardening on existing accounts.
+    The storage account and Key Vault names are discovered at deploy time by management scripts
     (via their 'app=azurebench' tag / resource-group lookup), so they are NOT persisted to vmss-parameters.json.
 
     SSH key definitions are read from security/manifest.json (basePath, userKeys, vmKeys).
@@ -22,9 +22,8 @@
     Azure resource group name. Required; you are prompted if omitted.
 
 .PARAMETER Action
-    deploy      - Deploy shared resources (network, storage, Key Vault + SSH/TLS material, tools SAS) and generate vmss-parameters.json (default)
+    deploy      - Deploy shared resources (network, storage, Key Vault + SSH/TLS material) and generate vmss-parameters.json (default)
     stage       - Query existing network resources in the resource group and generate vmss-parameters.json (no deployment)
-    refresh-sas - Regenerate the tools tarball SAS and refresh the 'tools-sas-url' Key Vault secret (renews expiry)
 
 .EXAMPLE
     # Deploy shared resources (prompts for the resource group name)
@@ -47,20 +46,12 @@ param(
     [Alias('Location')]
     [string]$Region = '',
 
-    [ValidateSet('deploy', 'stage', 'refresh-sas')]
+    [ValidateSet('deploy', 'stage')]
     [string]$Action = 'deploy',
 
     [string]$DeploymentName = 'network-deploy',
 
     [string]$ContainerName = 'tools',
-
-    [string]$ToolsBlobName = 'tools.tar.gz',
-
-    [string]$SasPolicyName = 'vmss-tools-read',
-
-    [string]$SasSecretName = 'tools-sas-url',
-
-    [int]$SasExpiryDays = 365,
 
     [string]$TlsTargetHost = 'azurebench-server',
 
@@ -82,11 +73,9 @@ if ($Help) {
     Write-Host "  -rg <name>              Resource group name (required; prompted if omitted)"
     Write-Host "  -Region <name>          Azure region (default: resource group location)"
     Write-Host "  -Action <action>        Action to perform (default: deploy)"
-    Write-Host "                          deploy  - Deploy shared resources (network, storage, Key Vault + SSH/TLS material, tools SAS)"
+    Write-Host "                          deploy  - Deploy shared resources (network, storage, Key Vault + SSH/TLS material)"
     Write-Host "                                    and generate parameters (idempotent: skips resources that already exist)"
     Write-Host "                          stage   - Query existing network resources and generate parameters (no deployment)"
-    Write-Host "                          refresh-sas - Regenerate the tools tarball SAS and refresh the 'tools-sas-url' Key Vault secret"
-    Write-Host "  -SasExpiryDays <n>      Stored access policy / SAS expiry in days (default: 365)"
     Write-Host "  -TlsTargetHost <name>   DNS identity placed in the server certificate (default: azurebench-server)"
     Write-Host "  -TlsValidityDays <n>    TLS certificate lifetime in days (default: 365)"
     Write-Host "  -TlsRenewBeforeDays <n> Regenerate certificates this many days before expiry (default: 30)"
@@ -184,7 +173,7 @@ function Resolve-Region {
 # storage/storage.bicep; management scripts discover it later by its 'app=azurebench'
 # tag, so it is intentionally NOT written to vmss-parameters.json.
 function Deploy-Storage {
-    param([string]$ResourceGroup, [string]$Region, [string]$StorageDir)
+    param([string]$ResourceGroup, [string]$Region, [string]$StorageDir, [string]$ContainerName)
 
     Write-Host "`n=== Deploying storage account ===" -ForegroundColor Cyan
     Write-Host "  Resource Group : $ResourceGroup"
@@ -196,7 +185,7 @@ function Deploy-Storage {
         --resource-group $ResourceGroup `
         --name 'storage-deploy' `
         --template-file (Join-Path $StorageDir 'storage.bicep') `
-        --parameters location=$Region `
+        --parameters location=$Region containerName=$ContainerName `
         --output none
 
     if ($LASTEXITCODE -ne 0) {
@@ -371,97 +360,6 @@ function Set-VmssPrivateKeySecret {
     Write-Host "  Secret '$secretName' uploaded." -ForegroundColor Green
 }
 
-# Publishes a read-only, policy-bound SAS URL for the tools tarball blob into the Key Vault
-# as a secret (default 'tools-sas-url'). This is the no-RBAC delivery path: the VMSS reads
-# the secret via its Key Vault access at boot and curls the tarball, so no Storage Blob
-# Data Reader role assignment (roleAssignments/write) is required.
-#   1. Retrieves an account key (listKeys) — data-plane ops use the key, not blob RBAC.
-#   2. Ensures a container stored access policy (read+list) with a bounded expiry; a stored
-#      policy lets us extend/revoke centrally without re-issuing SAS.
-#   3. Generates a SAS bound to that policy and stores the full blob URL as a KV secret.
-# Idempotent for -Action deploy (skips if the secret exists); -Action refresh-sas forces
-# regeneration (-Force) and refreshes the policy expiry.
-function Publish-ToolsSas {
-    param(
-        [string]$ResourceGroup, [string]$StorageAccount, [string]$VaultName,
-        [string]$ContainerName, [string]$PolicyName, [string]$BlobName,
-        [string]$SecretName, [int]$ExpiryDays, [switch]$Force
-    )
-
-    Write-Host "`n=== Publishing tools SAS to Key Vault ===" -ForegroundColor Cyan
-
-    if (-not $Force) {
-        $existing = az keyvault secret show --vault-name $VaultName --name $SecretName --query id -o tsv 2>$null
-        if ($existing) {
-            Write-Host "  Secret '$SecretName' already exists in '$VaultName'; skipping (use -Action refresh-sas to regenerate)." -ForegroundColor Yellow
-            return
-        }
-    }
-
-    $accountKey = az storage account keys list --account-name $StorageAccount --resource-group $ResourceGroup --query "[0].value" -o tsv 2>$null
-    if (-not $accountKey) {
-        Write-Error "Could not retrieve a key for storage account '$StorageAccount'."
-        exit 1
-    }
-
-    $expiry = (Get-Date).AddDays($ExpiryDays).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-
-    # Ensure the stored access policy exists (create or update its expiry). policy list
-    # returns an object keyed by policy name, so membership is a property-name check.
-    $policiesJson = az storage container policy list --account-name $StorageAccount --account-key $accountKey `
-        --container-name $ContainerName -o json 2>$null
-    $policies = if ($policiesJson) { $policiesJson | ConvertFrom-Json } else { $null }
-    $policyExists = $policies -and (($policies.PSObject.Properties.Name) -contains $PolicyName)
-
-    if ($policyExists) {
-        Write-Host "  Updating stored access policy '$PolicyName' (expiry $expiry)..."
-        az storage container policy update --account-name $StorageAccount --account-key $accountKey `
-            --container-name $ContainerName --name $PolicyName --permissions rl --expiry $expiry --output none 2>$null
-    } else {
-        Write-Host "  Creating stored access policy '$PolicyName' (expiry $expiry)..."
-        az storage container policy create --account-name $StorageAccount --account-key $accountKey `
-            --container-name $ContainerName --name $PolicyName --permissions rl --expiry $expiry --output none 2>$null
-    }
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to set stored access policy '$PolicyName' on container '$ContainerName'."
-        exit 1
-    }
-
-    # SAS bound to the policy (permissions/expiry inherited from the policy).
-    $sas = az storage container generate-sas --account-name $StorageAccount --account-key $accountKey `
-        --name $ContainerName --policy-name $PolicyName -o tsv 2>$null
-    if ($sas) { $sas = $sas.Trim() }
-    if (-not $sas) {
-        Write-Error "Failed to generate SAS for container '$ContainerName'."
-        exit 1
-    }
-
-    $blobEndpoint = (az storage account show --name $StorageAccount --resource-group $ResourceGroup --query "primaryEndpoints.blob" -o tsv 2>$null)
-    if (-not $blobEndpoint) {
-        Write-Error "Could not determine the blob endpoint for storage account '$StorageAccount'."
-        exit 1
-    }
-    $blobEndpoint = $blobEndpoint.TrimEnd('/')
-    $sasUrl = "$blobEndpoint/$ContainerName/${BlobName}?$sas"
-
-    # Store the ready-to-use SAS URL as a KV secret via a temp file: the SAS contains '&',
-    # which az.cmd would misinterpret as a command separator if passed inline as --value.
-    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) "tools-sas-$([guid]::NewGuid().ToString('N')).txt"
-    try {
-        Set-Content -Path $tmp -Value $sasUrl -NoNewline -Encoding ascii
-        az keyvault secret set --vault-name $VaultName --name $SecretName --file $tmp --output none 2>$null
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to store secret '$SecretName' in Key Vault '$VaultName'."
-            exit 1
-        }
-    } finally {
-        if (Test-Path $tmp) { Remove-Item $tmp -Force }
-    }
-
-    Write-Host "  Stored SAS URL as secret '$SecretName' (expires $expiry)." -ForegroundColor Green
-    Write-Host "    $blobEndpoint/$ContainerName/$BlobName?<sas>" -ForegroundColor DarkGray
-}
-
 # Check if resource group exists
 $rgExists = az group exists --name $rg 2>$null
 if ($rgExists -ne 'true') {
@@ -518,32 +416,6 @@ if ($Action -eq 'stage') {
 
     Write-VmssParams -Location $inv.Location -NsgId $inv.NsgId -VnetName $inv.VnetName `
         -SubnetName $subnets[0] -AccSubnetName $subnets[1] -ProximityId $inv.ProximityId
-    exit 0
-}
-
-if ($Action -eq 'refresh-sas') {
-    Write-Host "`n=== Refreshing tools SAS in '$rg' ===" -ForegroundColor Cyan
-
-    $inv = Get-ResourceInventory -ResourceGroup $rg
-    if (-not $inv.HasStorage) {
-        Write-Error "No storage account (app=azurebench) found in '$rg'. Run -Action deploy first."
-        exit 1
-    }
-
-    $kvName = az keyvault list --resource-group $rg --query "[?tags.app=='azurebench'].name" -o tsv 2>$null |
-        Where-Object { $_ } | Select-Object -First 1
-    if (-not $kvName) {
-        $kvName = az keyvault list --resource-group $rg --query "[].name" -o tsv 2>$null |
-            Where-Object { $_ } | Select-Object -First 1
-    }
-    if (-not $kvName) {
-        Write-Error "No Key Vault found in '$rg'. Run -Action deploy first."
-        exit 1
-    }
-
-    Publish-ToolsSas -ResourceGroup $rg -StorageAccount $inv.StorageName -VaultName $kvName `
-        -ContainerName $ContainerName -PolicyName $SasPolicyName -BlobName $ToolsBlobName `
-        -SecretName $SasSecretName -ExpiryDays $SasExpiryDays -Force
     exit 0
 }
 
@@ -607,10 +479,13 @@ if ($inv.HasNetwork) {
 
 # --- Storage account ---
 if ($inv.HasStorage) {
-    Write-Host "Storage account already exists in '$rg' (account: $($inv.StorageName)); skipping storage deployment." -ForegroundColor Yellow
+    Write-Host "Hardening existing storage account '$($inv.StorageName)' (disables Shared Key and local users)." -ForegroundColor Yellow
     $storageName = $inv.StorageName
+    az storage account update --resource-group $rg --name $storageName `
+        --allow-shared-key-access false --enable-local-user false --output none
+    if ($LASTEXITCODE -ne 0) { throw "Failed to harden storage account '$storageName'." }
 } else {
-    $storageName = Deploy-Storage -ResourceGroup $rg -Region $Region -StorageDir $storageDir
+    $storageName = Deploy-Storage -ResourceGroup $rg -Region $Region -StorageDir $storageDir -ContainerName $ContainerName
 }
 
 # --- Key Vault + SSH keys ---
@@ -631,11 +506,6 @@ try {
     Write-Error "TLS certificate provisioning failed: $($_.Exception.Message)"
     exit 1
 }
-
-# --- Tools tarball SAS (stored in Key Vault for no-RBAC blob delivery) ---
-Publish-ToolsSas -ResourceGroup $rg -StorageAccount $storageName -VaultName $kvName `
-    -ContainerName $ContainerName -PolicyName $SasPolicyName -BlobName $ToolsBlobName `
-    -SecretName $SasSecretName -ExpiryDays $SasExpiryDays
 
 # --- Generate vmss-parameters.json ---
 Write-VmssParams -Location $location -NsgId $nsgId -VnetName $vnetName `

@@ -512,6 +512,7 @@ namespace Garnet.test
             bool copyReadsToTail = false,
             int replayTaskCount = 1,
             bool failOnRecoveryError = false,
+            bool aofReplayClearAboveTail = true,
             bool fastAofTruncate = false,
             bool useAofNullDevice = false,
             LogCompactionType compactionType = LogCompactionType.None,
@@ -529,7 +530,8 @@ namespace Garnet.test
             int? sessionParseStateMaxRetainedArgs = null,
             int? networkSendThrottleMax = null,
             TimeSpan? networkSendTimeout = null,
-            TimeSpan? tlsHandshakeTimeout = null
+            TimeSpan? tlsHandshakeTimeout = null,
+            bool replicaDiskBasedSyncWriteBuffersConcurrently = false
         )
         {
             if (useAzureStorage)
@@ -629,8 +631,10 @@ namespace Garnet.test
                 ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
                 EnableVectorSetPreview = enableVectorSetPreview,
                 EnableRangeIndexPreview = enableRangeIndexPreview,
+                ReplicaDiskBasedSyncWriteBuffersConcurrently = replicaDiskBasedSyncWriteBuffersConcurrently,
                 CopyReadsToTail = copyReadsToTail,
                 FailOnRecoveryError = failOnRecoveryError,
+                AofReplayClearAboveTail = aofReplayClearAboveTail,
                 FastAofTruncate = fastAofTruncate,
                 UseAofNullDevice = useAofNullDevice,
                 CompactionType = compactionType,
@@ -826,7 +830,14 @@ namespace Garnet.test
             int vectorSetReplayTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
             bool enableRangeIndexPreview = false,
-            TimeSpan? networkSendTimeout = null)
+            TimeSpan? networkSendTimeout = null,
+            bool enableVectorSetPreview = true,
+            string replicaDiskBasedSyncChunkSize = "16m",
+            int replicaDiskBasedSyncPipelineDepth = 4,
+            int replicaDiskBasedSyncWriteBuffers = 1,
+            bool replicaDiskBasedSyncWriteBuffersConcurrently = false,
+            string migrationSendBufferSize = null,
+            int migrationPipelineDepth = 1)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -896,7 +907,15 @@ namespace Garnet.test
                     vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                     threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
                     enableRangeIndexPreview: enableRangeIndexPreview,
-                    networkSendTimeout: networkSendTimeout);
+                    networkSendTimeout: networkSendTimeout,
+                    enableVectorSetPreview: enableVectorSetPreview,
+                    replicaDiskBasedSyncChunkSize: replicaDiskBasedSyncChunkSize,
+                    replicaDiskBasedSyncPipelineDepth: replicaDiskBasedSyncPipelineDepth,
+                    replicaDiskBasedSyncWriteBuffers: replicaDiskBasedSyncWriteBuffers,
+                    replicaDiskBasedSyncWriteBuffersConcurrently: replicaDiskBasedSyncWriteBuffersConcurrently);
+
+                opts[i].MigrationSendBufferSize = migrationSendBufferSize;
+                opts[i].MigrationPipelineDepth = migrationPipelineDepth;
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -983,7 +1002,11 @@ namespace Garnet.test
             bool enableRangeIndexPreview = false,
             int vectorSetQuantizationTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
-            TimeSpan? networkSendTimeout = null)
+            TimeSpan? networkSendTimeout = null,
+            string replicaDiskBasedSyncChunkSize = "16m",
+            int replicaDiskBasedSyncPipelineDepth = 4,
+            int replicaDiskBasedSyncWriteBuffers = 1,
+            bool replicaDiskBasedSyncWriteBuffersConcurrently = false)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -1104,6 +1127,10 @@ namespace Garnet.test
                 CheckpointThrottleFlushDelayMs = checkpointThrottleFlushDelayMs,
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
+                ReplicaDiskBasedSyncChunkSize = replicaDiskBasedSyncChunkSize,
+                ReplicaDiskBasedSyncPipelineDepth = replicaDiskBasedSyncPipelineDepth,
+                ReplicaDiskBasedSyncWriteBuffers = replicaDiskBasedSyncWriteBuffers,
+                ReplicaDiskBasedSyncWriteBuffersConcurrently = replicaDiskBasedSyncWriteBuffersConcurrently,
                 AofPhysicalSublogCount = sublogCount,
                 AofReplayTaskCount = replayTaskCount,
                 EnableVectorSetPreview = enableVectorSetPreview,
@@ -1214,7 +1241,12 @@ namespace Garnet.test
             return configOptions;
         }
 
-        public static GarnetClient GetGarnetClient(EndPoint endpoint = null, bool useTLS = false, bool recordLatency = false, client.LightEpoch epoch = null)
+        public static GarnetClient GetGarnetClient(
+            EndPoint endpoint = null,
+            bool useTLS = false,
+            bool recordLatency = false,
+            client.LightEpoch epoch = null,
+            NetworkWriterOptions? networkWriterOptions = null)
         {
             SslClientAuthenticationOptions sslOptions = null;
             if (useTLS)
@@ -1227,7 +1259,7 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new GarnetClient(endpoint ?? EndPoint, sslOptions, recordLatency: recordLatency, epoch: epoch);
+            return new GarnetClient(endpoint ?? EndPoint, sslOptions, networkWriterOptions: networkWriterOptions, recordLatency: recordLatency, epoch: epoch);
         }
 
         public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool raw = false, EndPoint endPoint = null)

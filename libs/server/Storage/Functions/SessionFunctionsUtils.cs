@@ -143,7 +143,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         internal static bool InPlaceWriterForLogRecordValue<TSourceLogRecord, TInput, TVariableLengthInput>(ref LogRecord logRecord, ref TInput input, in TSourceLogRecord inputLogRecord,
-                ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, TVariableLengthInput varlenInput, FunctionsState functionsState, long expiration)
+                ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, TVariableLengthInput varlenInput, FunctionsState functionsState)
             where TSourceLogRecord : ISourceLogRecord
             where TVariableLengthInput : IVariableLengthInput<TInput>
         {
@@ -151,9 +151,9 @@ namespace Garnet.server
             // Create local sizeInfo
             var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(logRecord, inputLogRecord, ref input) };
             functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
-            _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
+            if (!logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo))
+                return false;
 
-            UpdateExpiration(ref logRecord, expiration);
             sizeInfo.AssertOptionalsIfSet(logRecord.DataHeader);
 
             if (!logRecord.Info.Modified)

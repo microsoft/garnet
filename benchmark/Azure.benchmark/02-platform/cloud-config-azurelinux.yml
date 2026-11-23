@@ -12,6 +12,10 @@ write_files:
     permissions: '0644'
     content: |
       VAULT_NAME=__KEYVAULT_NAME__
+  - path: /opt/deploy-actions/storage.env
+    permissions: '0644'
+    content: |
+      TOOLS_BLOB_URL=__TOOLS_BLOB_URL__
   - path: /opt/deploy-actions/deployment.env
     permissions: '0644'
     content: |
@@ -23,17 +27,16 @@ runcmd:
   - sudo tdnf install -y kernel-headers glibc-devel gcc-c++
   - sudo tdnf install -y tcpdump pciutils jq iperf3 ethtool powershell
 
-  # Fetch the tools bundle (tools.tar.gz) from the shared storage account via the
-  # policy-bound SAS URL stored in Key Vault (read with the VMSS managed identity),
-  # then extract it to /home/guser/tools and run the installer. Retries while the
-  # Key Vault access policy propagates.
+  # Fetch the tools bundle (tools.tar.gz) from the shared storage account using the
+  # VMSS managed identity (Storage Blob Data Reader; Shared Key/SAS is disabled), then
+  # extract it to /home/guser/tools and run the installer. Retries for ~10 minutes
+  # while the role assignment propagates.
   - |
-    for i in $(seq 1 12); do
-      TOKEN=$(curl -s -H Metadata:true "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://vault.azure.net" | jq -r '.access_token // empty')
+    for i in $(seq 1 40); do
+      TOKEN=$(curl -s -H Metadata:true "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://storage.azure.com/" | jq -r '.access_token // empty')
       if [ -n "$TOKEN" ]; then
         AUTHSCHEME=Bearer
-        SASURL=$(curl -s -H "Authorization: $AUTHSCHEME $TOKEN" "https://__KEYVAULT_NAME__.vault.azure.net/secrets/__TOOLS_SAS_SECRET__?api-version=7.4" | jq -r '.value // empty')
-        if [ -n "$SASURL" ] && curl -fsSL "$SASURL" -o /tmp/tools.tar.gz; then
+        if curl -fsSL -H "Authorization: $AUTHSCHEME $TOKEN" -H "x-ms-version: 2023-11-03" "__TOOLS_BLOB_URL__" -o /tmp/tools.tar.gz; then
           echo "tools bundle fetched"; break
         fi
       fi

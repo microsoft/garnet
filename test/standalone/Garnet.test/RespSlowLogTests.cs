@@ -1,6 +1,11 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using System.Threading.Tasks;
+#if DEBUG
+using Garnet.common;
+#endif
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -58,7 +63,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void TestSlowLogGetWithEntry()
+        public async Task TestSlowLogGetWithEntry()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
@@ -69,7 +74,29 @@ namespace Garnet.test
             string timeout = $"{(float)(0.1 + slowLogThreshold / 1_000_000)}";
             db.Execute("BLPOP", "foo", timeout);
 
-            var newResult = (RedisResult[])db.Execute("SLOWLOG", "GET", -1);
+            RedisResult[] newResult;
+#if DEBUG
+            using (ExceptionInjectionHelper.EnabledScope(ExceptionInjectionType.SlowLog_Pause_After_Deserialize))
+            {
+                var pending = db.ExecuteAsync("SLOWLOG", "GET", -1);
+                try
+                {
+                    await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.SlowLog_Pause_After_Deserialize)
+                        .WaitAsync(TimeSpan.FromSeconds(5));
+                    GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+                    // Reuse evacuated space before the response reads its argument pointers.
+                    for (var i = 0; i < 1024; i++)
+                        GC.KeepAlive(new byte[4096]);
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.EnableException(ExceptionInjectionType.SlowLog_Pause_After_Deserialize);
+                }
+                newResult = (RedisResult[])await pending.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+#else
+            newResult = (RedisResult[])await db.ExecuteAsync("SLOWLOG", "GET", -1).WaitAsync(TimeSpan.FromSeconds(5));
+#endif
             ClassicAssert.AreEqual(1, newResult.Length);
 
             var entry = (RedisResult[])newResult[0];

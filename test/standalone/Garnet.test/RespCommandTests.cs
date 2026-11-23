@@ -43,6 +43,14 @@ namespace Garnet.test
             RespCommand.SETEXXX,
             RespCommand.SETKEEPTTL,
             RespCommand.SETKEEPTTLXX,
+            RespCommand.SETIFEQ,
+            RespCommand.SETKEEPTTLIFEQ,
+            RespCommand.SETIFNE,
+            RespCommand.SETKEEPTTLIFNE,
+            RespCommand.SETIFDEQ,
+            RespCommand.SETKEEPTTLIFDEQ,
+            RespCommand.SETIFDNE,
+            RespCommand.SETKEEPTTLIFDNE,
             RespCommand.BITOP_AND,
             RespCommand.BITOP_OR,
             RespCommand.BITOP_XOR,
@@ -491,6 +499,59 @@ namespace Garnet.test
                 var info = results[i];
                 VerifyCommandInfo(commands[i], info);
             }
+        }
+
+        /// <summary>
+        /// Test COMMAND, COMMAND INFO, and COMMAND COUNT when custom commands are registered
+        /// with RespCommandsInfo that omits Name (e.g. only Arity set) or without RespCommandsInfo.
+        /// </summary>
+        [Test]
+        public void CommandWithPartialCustomCommandInfoTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var factory = new MyDictFactory();
+            server.Register.NewType(factory);
+            server.Register.NewCommand("SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), new RespCommandsInfo { Arity = 4 }, new RespCommandDocs { Summary = "Set if prefix matches" });
+            server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
+            server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), new RespCommandsInfo { Arity = 4 });
+            server.Register.NewProcedure("SUM", () => new Sum(), new RespCommandsInfo { Arity = -1 });
+            server.Register.NewCommand("DELIFM", CommandType.ReadModifyWrite, new DeleteIfMatchCustomCommand());
+
+            var commandCount = (int)db.Execute("COMMAND", "COUNT");
+            var results = (RedisResult[])db.Execute("COMMAND");
+
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(externalRespCommandsInfo.Count + 4, commandCount);
+            ClassicAssert.AreEqual(commandCount, results.Length);
+            ClassicAssert.IsTrue(results.All(res => !res.IsNull && res.Length == 10 && (string)res[0] != null));
+
+            var infoResults = (RedisResult[])db.Execute("COMMAND", "INFO", "SETIFPM", "MYDICTSET", "READWRITETX", "SUM", "DELIFM");
+            ClassicAssert.IsNotNull(infoResults);
+            ClassicAssert.AreEqual(5, infoResults.Length);
+            ClassicAssert.AreEqual("SETIFPM", (string)((RedisResult[])infoResults[0])[0]);
+            ClassicAssert.AreEqual(4, (int)((RedisResult[])infoResults[0])[1]);
+            ClassicAssert.IsEmpty((RedisResult[])((RedisResult[])infoResults[0])[2]);
+            ClassicAssert.IsEmpty((RedisResult[])((RedisResult[])infoResults[0])[6]);
+            ClassicAssert.AreEqual("MYDICTSET", (string)((RedisResult[])infoResults[1])[0]);
+            ClassicAssert.AreEqual(4, (int)((RedisResult[])infoResults[1])[1]);
+            ClassicAssert.IsEmpty((RedisResult[])((RedisResult[])infoResults[1])[2]);
+            ClassicAssert.IsEmpty((RedisResult[])((RedisResult[])infoResults[1])[6]);
+            ClassicAssert.AreEqual("READWRITETX", (string)((RedisResult[])infoResults[2])[0]);
+            ClassicAssert.AreEqual(4, (int)((RedisResult[])infoResults[2])[1]);
+            ClassicAssert.IsEmpty((RedisResult[])((RedisResult[])infoResults[2])[2]);
+            ClassicAssert.IsEmpty((RedisResult[])((RedisResult[])infoResults[2])[6]);
+            ClassicAssert.AreEqual("SUM", (string)((RedisResult[])infoResults[3])[0]);
+            ClassicAssert.AreEqual(-1, (int)((RedisResult[])infoResults[3])[1]);
+            ClassicAssert.IsEmpty((RedisResult[])((RedisResult[])infoResults[3])[2]);
+            ClassicAssert.IsEmpty((RedisResult[])((RedisResult[])infoResults[3])[6]);
+            ClassicAssert.IsTrue(infoResults[4].IsNull);
+
+            var docsResults = (RedisResult[])db.Execute("COMMAND", "DOCS", "SETIFPM");
+            ClassicAssert.IsNotNull(docsResults);
+            ClassicAssert.AreEqual(2, docsResults.Length);
+            ClassicAssert.AreEqual("SETIFPM", (string)docsResults[0]);
         }
 
         /// <summary>

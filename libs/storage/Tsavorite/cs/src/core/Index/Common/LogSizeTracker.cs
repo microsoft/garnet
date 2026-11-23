@@ -130,6 +130,8 @@ namespace Tsavorite.core
         /// setting bounds it.
         /// <para>Sampled once per resizer iteration, not on every budget comparison, so a provider may cost a few field
         /// reads.</para>
+        /// <para>Report memory that persists. A transient peak, such as the generation an index resize is replacing, would
+        /// make the log evict pages for memory that is about to be freed.</para>
         /// </remarks>
         public Func<long> ExternalMemorySizeProvider { get; set; }
 

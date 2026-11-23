@@ -508,7 +508,7 @@ namespace Garnet.server
 
                             if (respProtocolVersion >= 3)
                             {
-                                WriteDoubleNumeric(double.Parse(score.ReadOnlySpan));
+                                WriteDoubleNumeric(ParseUtils.ReadDouble(score, canBeInfinite: true));
                             }
                             else
                             {
@@ -825,8 +825,8 @@ namespace Garnet.server
 
             if (parseState.Count >= 2)
             {
-                // Read count
-                if (!parseState.TryGetInt(1, out paramCount))
+                // Read count. Unlike a positive count, a negative one is not capped by the set size; reject one the packed count field cannot hold
+                if (!parseState.TryGetInt(1, out paramCount) || paramCount < (int.MinValue >> 2))
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
@@ -866,17 +866,26 @@ namespace Garnet.server
             var status = GarnetStatus.NOTFOUND;
             ObjectOutput output = default;
 
-            // This prevents going to the backend if ZRANDMEMBER is called with a count of 0
-            if (paramCount != 0)
-            {
-                // Prepare output
-                output = GetObjectOutput();
-                status = storageApi.SortedSetRandomMember(key, ref input, ref output);
-            }
+            // Prepare output
+            output = GetObjectOutput();
+            status = storageApi.SortedSetRandomMember(key, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
+                    if (paramCount == 0)
+                    {
+                        if (includedCount)
+                        {
+                            WriteEmptyArray();
+                        }
+                        else
+                        {
+                            WriteNull();
+                        }
+                        break;
+                    }
+
                     ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:

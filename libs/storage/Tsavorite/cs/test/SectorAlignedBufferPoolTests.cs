@@ -4,7 +4,9 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -291,6 +293,43 @@ namespace Tsavorite.test
             finally { pool.Free(); }
         }
 
+        [Test]
+        public void PopFromAnEmptyDepotStripeDoesNotWaitForItsLock()
+        {
+            // An empty stripe must answer a pop without taking its lock.
+            var stripe = new DepotStripe(cap: 1);
+            var stripeLock = typeof(DepotStripe).GetField("items", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(stripe);
+            using var held = new ManualResetEventSlim();
+            using var release = new ManualResetEventSlim();
+            var holder = new Thread(() =>
+            {
+                lock (stripeLock)
+                {
+                    held.Set();
+                    _ = release.Wait(TimeSpan.FromSeconds(10));
+                }
+            });
+            holder.Start();
+            try
+            {
+                ClassicAssert.IsTrue(held.Wait(TimeSpan.FromSeconds(10)));
+                var timer = Stopwatch.StartNew();
+                ClassicAssert.IsNull(stripe.TryPop());
+                ClassicAssert.Less(timer.Elapsed, TimeSpan.FromSeconds(5), "a pop from an empty stripe waited for the stripe's lock");
+            }
+            finally
+            {
+                release.Set();
+                holder.Join();
+            }
+
+            // The check must not hide a page that is present.
+            var page = new SectorAlignedMemory();
+            ClassicAssert.IsTrue(stripe.TryPush(page));
+            ClassicAssert.AreSame(page, stripe.TryPop());
+            ClassicAssert.IsNull(stripe.TryPop());
+        }
+
         // ---- Multi-pool isolation ------------------------------------------------------------------------------
 
         [Test]
@@ -450,6 +489,38 @@ namespace Tsavorite.test
                 p.Return();
         }
 
+        /// <summary>
+        /// Start <paramref name="count"/> threads that each register with <paramref name="pool"/> and then park until
+        /// <paramref name="release"/> is set; returns once all have registered.
+        /// </summary>
+        private static Thread[] RegisterParkedThreads(SectorAlignedBufferPool pool, int count, ManualResetEventSlim release)
+        {
+            var threads = new Thread[count];
+            var registered = new CountdownEvent(count);    // not disposed: a worker may still be inside Signal when Wait returns
+            for (var t = 0; t < count; t++)
+            {
+                threads[t] = new Thread(() =>
+                {
+                    pool.Get(SectorSize, clearOnReturn: false).Return();
+                    registered.Signal();
+                    _ = release.Wait(TimeSpan.FromMinutes(1));
+                }, maxStackSize: 256 << 10);
+                threads[t].Start();
+            }
+            ClassicAssert.IsTrue(registered.Wait(TimeSpan.FromMinutes(1)), "worker threads did not register");
+            return threads;
+        }
+
+        /// <summary>Release and join threads started by <see cref="RegisterParkedThreads"/>.</summary>
+        private static void ReleaseParkedThreads(Thread[] threads, ManualResetEventSlim release)
+        {
+            release.Set();
+            if (threads is null)
+                return;
+            foreach (var thread in threads)
+                thread.Join();
+        }
+
         [Test]
         public void LocalRetentionIsBoundedByThePerThreadByteCap()
         {
@@ -526,6 +597,184 @@ namespace Tsavorite.test
             }
             finally { pool.Free(); }
             ClassicAssert.AreEqual(0, pool.ReservedBytes, "budget must return to zero after Free");
+        }
+
+        [Test]
+        public void LocalRetentionStaysBoundedWhenMoreThreadsThanExpectedUseThePool()
+        {
+            // With more threads than expected, the slices of the live threads must sum to at most half the small
+            // sub-budget, so a newly arriving thread can still cache.
+            var expected = ConcurrencySharding.ExpectedConcurrentThreads;
+            var smallBudget = (long)expected << 20;
+            SectorAlignedBufferPool.ManagedBudgetBytes = 4 * smallBudget;   // the small sub-budget is a quarter of the total
+            const int BufferSize = 8192;
+            var pool = new SectorAlignedBufferPool(1, SectorSize);
+            var threadCount = 4 * expected;
+            var threads = new Thread[threadCount];
+            using var allRegistered = new CountdownEvent(threadCount);
+            using var allParked = new CountdownEvent(threadCount);
+            using var release = new ManualResetEventSlim();
+            var burstLock = new object();
+            var parkedBytes = 0L;
+            try
+            {
+                var expectedSlice = pool.ThreadLocalByteCap;
+                for (var t = 0; t < threadCount; t++)
+                {
+                    threads[t] = new Thread(() =>
+                    {
+                        pool.Get(BufferSize, clearOnReturn: false).Return();
+                        allRegistered.Signal();
+                        _ = allRegistered.Wait(TimeSpan.FromMinutes(1));
+
+                        // One burst at a time, each the size of a slice cut for the expected thread count.
+                        lock (burstLock)
+                        {
+                            RentBurstAndReturn(pool, BufferSize, (int)(expectedSlice / BufferSize));
+                            parkedBytes += pool.CallerLocalBytes;
+                        }
+                        allParked.Signal();
+                        release.Wait();
+                    }, maxStackSize: 256 << 10);
+                    threads[t].Start();
+                }
+                ClassicAssert.IsTrue(allParked.Wait(TimeSpan.FromMinutes(1)), "worker threads did not park");
+
+                ClassicAssert.LessOrEqual(parkedBytes, smallBudget / 2,
+                    "the live threads together must not park more than half the small sub-budget");
+
+                var newcomerLocalBytes = 0L;
+                var newcomer = new Thread(() =>
+                {
+                    pool.Get(BufferSize, clearOnReturn: false).Return();
+                    newcomerLocalBytes = pool.CallerLocalBytes;
+                });
+                newcomer.Start();
+                newcomer.Join();
+                ClassicAssert.Greater(newcomerLocalBytes, 0, "a thread arriving after the others parked must still cache");
+            }
+            finally
+            {
+                release.Set();
+                foreach (var thread in threads)
+                    thread?.Join();
+                pool.Free();
+            }
+            ClassicAssert.AreEqual(0, pool.ReservedBytes, "budget must return to zero after Free");
+        }
+
+        [Test]
+        public void AThreadAboveALoweredCeilingSpillsDownOnItsNextReturn()
+        {
+            // A thread that parked a full slice before more threads arrived must return to the re-cut ceiling at its
+            // next Return, and the buffers it spills must stay reusable.
+            var expected = ConcurrencySharding.ExpectedConcurrentThreads;
+            SectorAlignedBufferPool.ManagedBudgetBytes = 4 * ((long)expected << 20);   // the small sub-budget is a quarter of the total
+            const int BufferSize = 8192;
+            var pool = new SectorAlignedBufferPool(1, SectorSize);
+            using var release = new ManualResetEventSlim();
+            Thread[] others = null;
+            try
+            {
+                var slice = pool.ThreadLocalByteCap;
+                RentBurstAndReturn(pool, BufferSize, (int)(slice / BufferSize));
+                var parked = pool.CallerLocalBytes;
+
+                others = RegisterParkedThreads(pool, expected, release);
+                var ceiling = pool.ThreadLocalByteCap;
+                ClassicAssert.Greater(parked, ceiling, "the thread must hold more than the re-cut ceiling before its next Return");
+
+                pool.Get(BufferSize, clearOnReturn: false).Return();
+                ClassicAssert.LessOrEqual(pool.CallerLocalBytes, ceiling, "the next Return must spill down to the ceiling");
+
+                var reservedBefore = pool.SmallReservedBytes;
+                var newcomer = new Thread(() => pool.Get(BufferSize, clearOnReturn: false).Return());
+                newcomer.Start();
+                newcomer.Join();
+                ClassicAssert.AreEqual(reservedBefore, pool.SmallReservedBytes, "another thread must reuse a spilled buffer rather than allocate");
+            }
+            finally
+            {
+                pool.Free();
+                ReleaseParkedThreads(others, release);
+            }
+            ClassicAssert.AreEqual(0, pool.ReservedBytes, "budget must return to zero after Free");
+        }
+
+        [Test]
+        public void TheCeilingRisesAgainOnceTheExtraThreadsExit()
+        {
+            // The ceiling is cut for the threads using the pool, so it must rise again once the threads that lowered it
+            // have exited and their shards are finalized.
+            SectorAlignedBufferPool.ManagedBudgetBytes = 64L << 20;
+            var pool = new SectorAlignedBufferPool(1, SectorSize);
+            using var release = new ManualResetEventSlim();
+            Thread[] others = null;
+            try
+            {
+                var initial = pool.ThreadLocalByteCap;
+                var page = pool.Get(SectorSize, clearOnReturn: false);
+                var shard = page.originBucket.owner;
+                others = RegisterParkedThreads(pool, ConcurrencySharding.ExpectedConcurrentThreads, release);
+                ClassicAssert.Less(shard.localByteCap, initial, "more threads than expected must lower the ceiling");
+
+                ReleaseParkedThreads(others, release);
+                others = null;
+                for (var attempt = 0; attempt < 40 && shard.localByteCap < initial; attempt++)
+                {
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                }
+                ClassicAssert.AreEqual(initial, shard.localByteCap, "the ceiling must rise again once the extra threads exit");
+                page.Return();
+            }
+            finally
+            {
+                pool.Free();
+                ReleaseParkedThreads(others, release);
+            }
+            ClassicAssert.AreEqual(0, pool.ReservedBytes, "budget must return to zero after Free");
+        }
+
+        [Test]
+        public void FinalizingAShardThePoolNeverCountedLeavesTheCeilingUnchanged()
+        {
+            // A shard is constructed before the pool counts it, so one whose construction or registration throws is
+            // finalized uncounted; that finalization must not uncount a live thread.
+            SectorAlignedBufferPool.ManagedBudgetBytes = 64L << 20;
+            var pool = new SectorAlignedBufferPool(1, SectorSize);
+            using var release = new ManualResetEventSlim();
+            Thread[] others = null;
+            try
+            {
+                var page = pool.Get(SectorSize, clearOnReturn: false);
+                others = RegisterParkedThreads(pool, ConcurrencySharding.ExpectedConcurrentThreads, release);
+                var lowered = pool.ThreadLocalByteCap;
+
+                var uncounted = AbandonUncountedShard(pool);
+                for (var attempt = 0; attempt < 40 && uncounted.IsAlive; attempt++)
+                {
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                }
+                ClassicAssert.IsFalse(uncounted.IsAlive, "the uncounted shard must have been finalized");
+                ClassicAssert.AreEqual(lowered, pool.ThreadLocalByteCap, "an uncounted shard's finalizer must not raise the ceiling");
+                page.Return();
+            }
+            finally
+            {
+                pool.Free();
+                ReleaseParkedThreads(others, release);
+            }
+            ClassicAssert.AreEqual(0, pool.ReservedBytes, "budget must return to zero after Free");
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static WeakReference AbandonUncountedShard(SectorAlignedBufferPool pool)
+        {
+            var numClasses = SectorAlignedBufferPool.TestNumClasses;
+            var shard = new ThreadShard(pool, numClasses, SectorSize, new int[numClasses], pool.ThreadLocalByteCap, bornSealed: false);
+            return new WeakReference(shard, trackResurrection: true);
         }
 
         // ---- Dead-thread permit reclamation --------------------------------------------------------------------
@@ -919,6 +1168,66 @@ namespace Tsavorite.test
                 Thread.Sleep(25);
             }
             ClassicAssert.AreEqual(0, pool.ReservedBytes, "budget must quiesce to zero after a raced Free");
+        }
+
+        [Test]
+        public void AReturnAtTheCeilingThatRacesFreeDoesNotThrow([Values] bool ceilingLowered)
+        {
+            // Free zeroes a shard's counters without synchronizing with its owner, so an owner Return already past the
+            // liveness check can see bytes retained on a chain while the shard counts no class as active.
+            SectorAlignedBufferPool.ManagedBudgetBytes = 64L << 20;
+            const int BufferSize = 8192;
+            var pool = new SectorAlignedBufferPool(1, SectorSize);
+            using var release = new ManualResetEventSlim();
+            Thread[] others = null;
+            try
+            {
+                var page = pool.Get(BufferSize, clearOnReturn: false);
+                RentBurstAndReturn(pool, BufferSize, (int)(pool.ThreadLocalByteCap / BufferSize) + 1);
+                if (ceilingLowered)
+                    others = RegisterParkedThreads(pool, ConcurrencySharding.ExpectedConcurrentThreads, release);
+                var shard = page.originBucket.owner;
+                ClassicAssert.AreEqual(ceilingLowered, shard.localBytes > pool.ThreadLocalByteCap);
+                shard.activeClasses = 0;
+
+                Assert.DoesNotThrow(page.Return);
+            }
+            finally
+            {
+                pool.Free();
+                ReleaseParkedThreads(others, release);
+            }
+            ClassicAssert.AreEqual(0, pool.ReservedBytes, "budget must return to zero after Free");
+        }
+
+        [Test]
+        public void AReturnAtTheCeilingThatRacesFreeDetachingAChainDoesNotThrow([Values] bool ceilingLowered)
+        {
+            // Free detaches another thread's owner-local chains before zeroing their counters, so an owner Return
+            // already past the liveness check can find a class counted as over its share whose chain is now empty.
+            SectorAlignedBufferPool.ManagedBudgetBytes = 64L << 20;
+            var pool = new SectorAlignedBufferPool(1, SectorSize);
+            using var release = new ManualResetEventSlim();
+            Thread[] others = null;
+            try
+            {
+                var page = pool.Get(8192, clearOnReturn: false);
+                RentBurstAndReturn(pool, 4096, (int)(pool.ThreadLocalByteCap / 4096) + 1);
+                if (ceilingLowered)
+                    others = RegisterParkedThreads(pool, ConcurrencySharding.ExpectedConcurrentThreads, release);
+                var shard = page.originBucket.owner;
+                ClassicAssert.AreEqual(ceilingLowered, shard.localBytes > pool.ThreadLocalByteCap);
+                var crowded = shard.buckets.Single(b => b.localHead is not null);
+                SectorAlignedBufferPool.ReleaseChainPermits(Interlocked.Exchange(ref crowded.localHead, null));
+
+                Assert.DoesNotThrow(page.Return);
+            }
+            finally
+            {
+                pool.Free();
+                ReleaseParkedThreads(others, release);
+            }
+            ClassicAssert.AreEqual(0, pool.ReservedBytes, "budget must return to zero after Free");
         }
 
         [Test]

@@ -537,6 +537,46 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase("01")]
+        [TestCase("+1")]
+        [TestCase("-0")]
+        [TestCase("1f")]
+        public async Task HINCRBYRejectsInvalidIntegersAsync(string by)
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            ClassicAssert.IsTrue(await db.HashSetAsync("foo", "bar", "01").ConfigureAwait(false));
+
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("HINCRBY", "foo", "bar", "1"));
+            ClassicAssert.AreEqual("ERR hash value is not an integer.", exc0.Message);
+            ClassicAssert.AreEqual("01", (string)await db.HashGetAsync("foo", "bar").ConfigureAwait(false));
+
+            ClassicAssert.IsFalse(await db.HashSetAsync("foo", "bar", "1").ConfigureAwait(false));
+
+            var exc1 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("HINCRBY", "foo", "bar", by));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", exc1.Message);
+            ClassicAssert.AreEqual("1", (string)await db.HashGetAsync("foo", "bar").ConfigureAwait(false));
+
+            var exc2 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("HINCRBY", "foo", "fizz", by));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", exc2.Message);
+            ClassicAssert.IsNull((string)await db.HashGetAsync("foo", "fizz").ConfigureAwait(false));
+        }
+
+        [Test]
+        public async Task HINCRBYFLOATNormalizeFloatAsync()
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            ClassicAssert.AreEqual("10", (string)await db.ExecuteAsync("HINCRBYFLOAT", ["foo", "bar", "1e1"]).ConfigureAwait(false));
+            ClassicAssert.AreEqual("10", (string)await db.HashGetAsync("foo", "bar").ConfigureAwait(false));
+
+            ClassicAssert.AreEqual("110", (string)await db.ExecuteAsync("HINCRBYFLOAT", ["foo", "bar", "1e2"]).ConfigureAwait(false));
+            ClassicAssert.AreEqual("110", (string)await db.HashGetAsync("foo", "bar").ConfigureAwait(false));
+        }
+
+        [Test]
         public void CanDoHashDecrement()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -937,7 +977,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual("email1@example.com", members[1]);
         }
 
-
         [Test]
         public async Task CanDoHGETALL()
         {
@@ -960,6 +999,21 @@ namespace Garnet.test
             ClassicAssert.AreEqual("abc", result["foo"]);
             ClassicAssert.AreEqual("def", result["bar"]);
         }
+
+        [Test]
+        public async Task HGETALLReturnTypeAsync()
+        {
+            await using var redis2 = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig(protocol: RedisProtocol.Resp2)).ConfigureAwait(false);
+
+            var resp2EmptyResponse = await redis2.GetDatabase().ExecuteAsync("HGETALL", "foo").ConfigureAwait(false);
+            ClassicAssert.AreEqual(ResultType.Array, resp2EmptyResponse.Resp3Type);
+
+            await using var redis3 = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig(protocol: RedisProtocol.Resp3)).ConfigureAwait(false);
+
+            var resp3EmptyResponse = await redis3.GetDatabase().ExecuteAsync("HGETALL", "foo").ConfigureAwait(false);
+            ClassicAssert.AreEqual(ResultType.Map, resp3EmptyResponse.Resp3Type);
+        }
+
         [Test]
         public async Task CanDoHMSETMultipleTimes()
         {
@@ -1850,6 +1904,26 @@ namespace Garnet.test
         }
 
         [Test]
+        public void HashIncrementByFloatRejectsNaNAndNonFiniteResults()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "floathash";
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("HINCRBYFLOAT", key, "new", "nan"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT), ex.Message);
+            ClassicAssert.IsFalse(db.HashExists(key, "new"));
+
+            _ = db.HashSet(key, "big", "1.7e308");
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("HINCRBYFLOAT", key, "big", "nan"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT), ex.Message);
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("HINCRBYFLOAT", key, "big", "1.7e308"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR), ex.Message);
+            ClassicAssert.AreEqual("1.7e308", (string)db.HashGet(key, "big"));
+        }
+
+        [Test]
         public void CanDoHRANDFIELDCommandLC()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
@@ -1954,6 +2028,26 @@ namespace Garnet.test
             response = lightClientRequest.SendCommands("HRANDFIELD randhash 2 WITHVALUES", "PING", 5, 1);
             expectedResponse = "*4\r\n"; // 2 field/value pairs
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void CanDoHRANDFIELDWithUnrepresentableNegativeCountLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("HSET randhash f1 v1 f2 v2 f3 v3");
+            TestUtils.AssertEqualUpToExpectedLength(":3\r\n", response);
+
+            // A negative count asks for that many fields with repeats, so unlike a positive count it cannot be reduced
+            // to the size of the hash; a count below what the packed count field represents is rejected
+            const string expectedResponse = "-ERR value is not an integer or out of range.\r\n+PONG\r\n";
+            foreach (var count in new[] { "-536870913", "-2147483648" })
+            {
+                response = lightClientRequest.SendCommands($"HRANDFIELD randhash {count}", "PING", 1, 1);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+                response = lightClientRequest.SendCommands($"HRANDFIELD randhash {count} WITHVALUES", "PING", 1, 1);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
         }
 
         [Test]

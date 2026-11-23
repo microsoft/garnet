@@ -11,6 +11,7 @@ using Garnet.server;
 using HdrHistogram;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using StackExchange.Redis;
 
 namespace Garnet.test
 {
@@ -106,97 +107,104 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Bytes retained per connection, optionally after the connection has issued a command. The
-        /// difference between the two is the part of the session that only exists once it records.
-        /// </summary>
-        long MeasurePerConnection(bool ping)
-        {
-            // A discarded round of idle connections first: the threads, sockets and network buffers a
-            // batch of connections brings up are one-time costs, and charging them to the measured round
-            // makes the result depend on ordering. Deliberately idle, so this does not pre-populate the
-            // shared array pool the histograms rent from and hide their cost.
-            var warmup = new List<Socket>();
-            for (var i = 0; i < Connections; i++) warmup.Add(Connect());
-            foreach (var w in warmup) { try { w.Dispose(); } catch { } }
-
-            var sockets = new List<Socket>();
-            try
-            {
-                sockets.Add(Connect());
-                if (ping) Ping(sockets[0]); else OpenSessionWithoutRecording(sockets[0]);
-
-                var baseline = SettledMemory();
-
-                for (var i = 1; i < Connections; i++)
-                {
-                    var s = Connect();
-                    if (ping) Ping(s); else OpenSessionWithoutRecording(s);
-                    sockets.Add(s);
-                }
-
-                // Every connection must have produced a session, or the measurement is of sockets rather
-                // than of sessions and the arm proves nothing about per-session allocation.
-                var deadline = DateTime.UtcNow.AddSeconds(15);
-                int seen;
-                while ((seen = RespSessionCount()) < Connections && DateTime.UtcNow < deadline)
-                    Thread.Sleep(50);
-                ClassicAssert.GreaterOrEqual(seen, Connections,
-                    $"only {seen} of {Connections} sessions were created, so no per-session cost was measured");
-
-                return Math.Max(0, SettledMemory() - baseline) / (Connections - 1);
-            }
-            finally
-            {
-                foreach (var s in sockets) { try { s.Dispose(); } catch { } }
-            }
-        }
-
-        static long EagerCostPerSession()
-            => 2L * Enum.GetValues<LatencyMetricsType>().Length
-                  * new LongHistogram(1, TimeStamp.Seconds(100), GarnetServerOptions.DefaultLatencyMonitorPrecision)
-                        .GetEstimatedFootprintInBytes();
-
-        /// <summary>
-        /// A session that exists but has never recorded must not carry the histograms. The assertion is on
-        /// the absolute per-session cost against what all twelve histograms would add: a session also pays
-        /// for its parse state, scratch buffers and network buffers, so the bar is "well under the eager
-        /// cost", not "near zero". Restoring eager allocation adds the full eager figure on top of that
-        /// baseline and puts it over the bar.
+        /// A session that has never recorded owns no histograms, independently of other per-session allocations.
         /// </summary>
         [Test]
         public void IdleConnectionsDoNotPayForHistograms()
         {
-            StartServer(latencyMonitor: true);
-            var idle = MeasurePerConnection(ping: false);
-            var eager = EagerCostPerSession();
+            StartServer(latencyMonitor: true, samplingFreq: 60);
+            var sockets = new List<Socket>();
+            try
+            {
+                for (var i = 0; i < Connections; i++)
+                {
+                    var socket = Connect();
+                    sockets.Add(socket);
+                    OpenSessionWithoutRecording(socket);
+                }
 
-            TestContext.Progress.WriteLine(
-                $"per-session retained without recording: {idle / 1024}KB (eager allocation would add {eager / 1024}KB)");
-
-            ClassicAssert.Less(idle, eager,
-                "a session that never records should not be charged for all twelve histograms");
+                Assert.That(() => RespSessionCount(), Is.EqualTo(Connections).After(15_000).PollEvery(10),
+                    "Every connection must have created a session before inspecting histogram ownership.");
+                foreach (var session in ActiveSessions())
+                {
+                    var metrics = session.LatencyMetrics?.metrics;
+                    ClassicAssert.IsNotNull(metrics, "Latency monitoring must be enabled.");
+                    foreach (var entry in metrics)
+                        ClassicAssert.IsNull(entry.latency, "An idle session must not allocate histograms.");
+                }
+            }
+            finally
+            {
+                foreach (var socket in sockets)
+                    socket.Dispose();
+            }
         }
 
         /// <summary>
-        /// The flip side, asserted as a magnitude rather than a direction: the gap between a session that
-        /// records and one that does not has to be a real share of the histogram cost. Under eager
-        /// allocation both arms pay the same and the gap collapses, which is what this catches. A bare
-        /// "recording > idle" would not -- the two measurements differ by noise either way.
+        /// Recording allocates histograms on the same sessions that previously held none. Inspect ownership
+        /// directly because renting an already-pooled array need not increase the process's retained heap.
         /// </summary>
         [Test]
         public void RecordingConnectionsDoAllocateHistograms()
         {
-            StartServer(latencyMonitor: true);
-            var idle = MeasurePerConnection(ping: false);
-            var recording = MeasurePerConnection(ping: true);
-            var eager = EagerCostPerSession();
+            // Keep the monitor from reclaiming the histograms while this test inspects them.
+            StartServer(latencyMonitor: true, samplingFreq: 60);
+            var sockets = new List<Socket>();
+            try
+            {
+                for (var i = 0; i < Connections; i++)
+                {
+                    var socket = Connect();
+                    sockets.Add(socket);
+                    OpenSessionWithoutRecording(socket);
+                }
 
-            TestContext.Progress.WriteLine(
-                $"per-session retained: without recording={idle / 1024}KB recording={recording / 1024}KB " +
-                $"(all twelve histograms would be {eager / 1024}KB)");
+                var deadline = DateTime.UtcNow.AddSeconds(15);
+                List<RespServerSession> sessions;
+                while ((sessions = ActiveSessions()).Count < Connections && DateTime.UtcNow < deadline)
+                    Thread.Sleep(10);
+                ClassicAssert.AreEqual(Connections, sessions.Count, "every connection must have created a session");
+                foreach (var session in sessions)
+                {
+                    var metrics = session.LatencyMetrics?.metrics;
+                    ClassicAssert.IsNotNull(metrics, "latency monitoring must be enabled on every session");
+                    foreach (var entry in metrics)
+                        ClassicAssert.IsNull(entry.latency, "an incomplete command must not allocate histograms");
+                }
 
-            ClassicAssert.Greater(recording - idle, eager / 4,
-                "recording a latency value should allocate the histograms it records into");
+                foreach (var socket in sockets)
+                {
+                    socket.Send("G\r\n"u8);
+                    var reply = new byte[7];
+                    for (var received = 0; received < reply.Length;)
+                    {
+                        var read = socket.Receive(reply.AsSpan(received));
+                        ClassicAssert.Greater(read, 0, "connection closed before the PING reply");
+                        received += read;
+                    }
+                    ClassicAssert.AreEqual("+PONG\r\n", Encoding.ASCII.GetString(reply));
+                }
+
+                // Receiving PONG can precede the session's final latency recording.
+                deadline = DateTime.UtcNow.AddSeconds(15);
+                foreach (var session in sessions)
+                {
+                    LongHistogram[] histograms;
+                    while (((histograms = session.LatencyMetrics.metrics[(int)LatencyMetricsType.NET_RS_BYTES].latency) == null
+                            || histograms[0].TotalCount + histograms[1].TotalCount == 0)
+                           && DateTime.UtcNow < deadline)
+                        Thread.Sleep(10);
+                    ClassicAssert.IsNotNull(histograms, "every recording session must allocate its histograms");
+                    ClassicAssert.AreEqual(2, histograms.Length, "session histograms must be double buffered");
+                    ClassicAssert.Greater(histograms[0].TotalCount + histograms[1].TotalCount, 0,
+                        "the PING must be recorded, not just allocate empty histograms");
+                }
+            }
+            finally
+            {
+                foreach (var socket in sockets)
+                    socket.Dispose();
+            }
         }
 
         /// <summary>
@@ -228,26 +236,25 @@ namespace Garnet.test
         public void LatencyIsStillReportedAtReducedPrecision()
         {
             StartServer(latencyMonitor: true, precision: 1);
-            using var s = Connect();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
 
             // Session metrics reach the global histograms only when the monitor next samples.
             var deadline = DateTime.UtcNow.AddSeconds(30);
-            string reply;
             do
             {
-                for (var i = 0; i < 50; i++) Ping(s);
-
-                s.Send(Encoding.ASCII.GetBytes("*2\r\n$7\r\nLATENCY\r\n$9\r\nHISTOGRAM\r\n"));
-                var buf = new byte[64 * 1024];
-                var n = s.Receive(buf);
-                reply = Encoding.ASCII.GetString(buf, 0, n);
-
-                StringAssert.DoesNotContain("-ERR", reply);
-                if (reply.Contains("NET_RS_LAT")) return;
+                db.Ping();
+                var reply = (RedisResult[])db.Execute("LATENCY", "HISTOGRAM", "NET_RS_LAT");
+                if (reply.Length != 0)
+                {
+                    ClassicAssert.AreEqual("NET_RS_LAT", reply[0].ToString());
+                    return;
+                }
+                Thread.Sleep(10);
             }
             while (DateTime.UtcNow < deadline);
 
-            Assert.Fail($"latency metrics were never reported: {reply}");
+            Assert.Fail("Latency metrics were never reported.");
         }
 
         /// <summary>
@@ -281,53 +288,32 @@ namespace Garnet.test
             [Values(GarnetServerOptions.DefaultLatencyMonitorPrecision, 1, 0)] int precision)
         {
             StartServer(latencyMonitor: true, precision: precision);
-            using var s = Connect();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
 
             var expected = new LongHistogram(1, TimeStamp.Seconds(100), precision).GetEstimatedFootprintInBytes();
 
             var deadline = DateTime.UtcNow.AddSeconds(30);
-            string reply;
             do
             {
-                for (var i = 0; i < 50; i++) Ping(s);
-
-                s.Send(Encoding.ASCII.GetBytes("*2\r\n$7\r\nLATENCY\r\n$9\r\nHISTOGRAM\r\n"));
-                var buf = new byte[256 * 1024];
-                var n = s.Receive(buf);
-                reply = Encoding.ASCII.GetString(buf, 0, n);
-
-                StringAssert.DoesNotContain("-ERR", reply);
-                if (reply.Contains("NET_RS_LAT"))
+                db.Ping();
+                var reply = (RedisResult[])db.Execute("LATENCY", "HISTOGRAM");
+                var hasNetworkLatency = false;
+                for (var i = 0; i < reply.Length; i += 2)
                 {
-                    var reported = ReportedHistogramSizes(reply);
-                    CollectionAssert.IsNotEmpty(reported, "LATENCY HISTOGRAM should report a size per type");
-                    foreach (var size in reported)
-                        ClassicAssert.AreEqual(expected, size,
-                            $"histograms should be sized for precision {precision}");
-                    return;
+                    hasNetworkLatency |= reply[i].ToString() == "NET_RS_LAT";
+                    var histogram = (RedisResult[])reply[i + 1];
+                    ClassicAssert.AreEqual("size", histogram[2].ToString());
+                    ClassicAssert.AreEqual(expected, (long)histogram[3],
+                        $"Histograms should be sized for precision {precision}.");
                 }
+                if (hasNetworkLatency)
+                    return;
+                Thread.Sleep(10);
             }
             while (DateTime.UtcNow < deadline);
 
-            Assert.Fail($"latency metrics were never reported: {reply}");
-        }
-
-        /// <summary>
-        /// The sizes reported under each "size" field of a LATENCY HISTOGRAM reply.
-        /// </summary>
-        static List<int> ReportedHistogramSizes(string reply)
-        {
-            var sizes = new List<int>();
-            var marker = "\r\n$4\r\nsize\r\n:";
-            for (var i = reply.IndexOf(marker, StringComparison.Ordinal); i >= 0;
-                 i = reply.IndexOf(marker, i + 1, StringComparison.Ordinal))
-            {
-                var from = i + marker.Length;
-                var to = reply.IndexOf("\r\n", from, StringComparison.Ordinal);
-                if (to > from && int.TryParse(reply[from..to], out var size))
-                    sizes.Add(size);
-            }
-            return sizes;
+            Assert.Fail("Latency metrics were never reported.");
         }
 
         /// <summary>

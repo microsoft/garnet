@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -55,6 +56,25 @@ namespace Garnet.server
             this.storageSession = new StorageSession(storeWrapper, scratchBufferBuilder, scratchBufferAllocator, sessionMetrics, LatencyMetrics, dbId: 0, readSessionState: null, database.VectorManager, logger);
             this.BasicGarnetApi = new BasicGarnetApi(storageSession, storageSession.stringBasicContext, storageSession.objectBasicContext, storageSession.unifiedBasicContext);
             this.VectorBasicContext = storageSession.vectorBasicContext;
+        }
+
+        /// <summary>
+        /// Delete a batch of keys under one synchronous epoch-protected scope.
+        /// </summary>
+        /// <param name="keys">Keys to delete; the caller bounds the batch size.</param>
+        public void DeleteKeys(ReadOnlySpan<PinnedSpanByte> keys)
+        {
+            var unsafeContext = storageSession.unifiedBasicContext.Session.UnsafeContext;
+            unsafeContext.BeginUnsafe();
+            try
+            {
+                foreach (var key in keys)
+                    _ = storageSession.DELETE(key, ref unsafeContext);
+            }
+            finally
+            {
+                unsafeContext.EndUnsafe();
+            }
         }
 
         /// <inheritdoc />

@@ -82,6 +82,20 @@ namespace Garnet.server
         void ReleaseCurrentEpoch();
 
         /// <summary>
+        /// Sets the session whose epoch this session releases and re-acquires while it waits for a key that is
+        /// being migrated.
+        /// </summary>
+        /// <remarks>
+        /// Migration waits for every network session to move past a configuration change. A session that executes
+        /// commands on behalf of a network session, such as the one that runs the commands of a Lua script, is not
+        /// itself tracked, and the network session holds its epoch until the batch containing the script ends.
+        /// Releasing the executing session's own epoch while waiting would therefore leave the migration waiting
+        /// for the network session, and the script waiting for the migration.
+        /// </remarks>
+        /// <param name="owner">The session whose epoch is released while waiting, or null to use this session's own.</param>
+        void SetEpochOwner(IClusterSession owner);
+
+        /// <summary>
         /// Process cluster commands
         /// </summary>
         unsafe void ProcessClusterCommands(RespCommand command, VectorManager vectorManager, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend);

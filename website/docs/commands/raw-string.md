@@ -14,7 +14,7 @@ title: Raw String
     APPEND key value
 ```
 
-If key already exists and is a string, this command appends the value at the end of the string. If key does not exist it is created and set as an empty string. 
+If key already exists and is a string, this command appends the value at the end of the string. If key does not exist it is created and set as an empty string. The result can be at most 512 MB; an append that would exceed this returns an error and leaves the value unchanged.
 
 #### RESP Reply
 
@@ -51,6 +51,60 @@ Decrements the number stored at key by the value of parameter `decrement`. If th
 #### Resp Reply
 
 Integer reply: the value of the key after decrementing it.
+
+---
+
+### DELEX
+
+#### Syntax
+
+```bash
+    DELEX key [IFEQ comparison-value | IFNE comparison-value | IFDEQ digest | IFDNE digest]
+```
+
+Without a condition, delete the key regardless of its type. With IFEQ, atomically delete an existing string only if its bytes equal comparison-value. With IFNE, delete it only if its bytes differ. IFDEQ and IFDNE compare the current value's XXH3-64 digest for equality or inequality. Obtain the digest with [DIGEST](#digest). A conditional delete returns WRONGTYPE for a live non-string value. A failed comparison leaves the value and expiration unchanged. Missing or expired keys always return 0.
+
+#### Resp Reply
+
+Integer reply: 1 if the key was deleted; 0 if it was missing, expired, or the condition was not met.
+
+---
+
+### DELIFEQ
+
+#### Syntax
+
+```bash
+    DELIFEQ key comparison-value
+```
+
+Atomically delete an existing string only if its bytes equal comparison-value. This is equivalent to DELEX key IFEQ comparison-value. A live non-string value returns WRONGTYPE. A failed comparison leaves the value and expiration unchanged.
+
+#### Resp Reply
+
+Integer reply: 1 if the key was deleted; 0 if it was missing, expired, or the comparison failed.
+
+---
+
+### DIGEST
+
+#### Syntax
+
+```bash
+    DIGEST key
+```
+
+Compute the XXH3-64 hash of the string value's bytes and return it as 16 lowercase hexadecimal characters, including leading zeros. Neither the key nor TTL/ETag metadata is included. The digest is computed on demand, not cached or stored in the value.
+
+Use this digest with SET or DELEX's IFDEQ and IFDNE conditions. Comparisons ignore hexadecimal letter case. When an existing string is compared, the supplied digest must be exactly 16 characters; a length mismatch returns an error. Redis-compatible comparison does not separately reject non-hexadecimal characters: they do not match the computed digest.
+
+Hashing takes O(N) time in the value length. XXH3 is non-cryptographic and collisions are possible; digest equality is not an exact byte-equality guarantee.
+
+#### Resp Reply
+
+* Bulk string reply: the 16-character digest.
+* Nil reply: the key is missing or expired.
+* Error reply: WRONGTYPE if the live value is not a string.
 
 ---
 
@@ -316,7 +370,7 @@ Simple string reply: OK.
 #### Syntax
 
 ```bash
-    SET key value [NX | XX] [GET] [EX seconds | PX milliseconds] [KEEPTTL]
+    SET key value [NX | XX | IFEQ comparison-value | IFNE comparison-value | IFDEQ digest | IFDNE digest] [GET] [EX seconds | PX milliseconds | EXAT unix-time-seconds | PXAT unix-time-milliseconds | KEEPTTL]
 ```
 
 Set **key** to hold the string value. If key already holds a value, it is overwritten, regardless of its type. Any previous time to live associated with the **key** is discarded on successful SET operation.
@@ -325,15 +379,24 @@ Set **key** to hold the string value. If key already holds a value, it is overwr
 
 * EX seconds -- Set the specified expire time, in seconds (a positive integer).
 * PX milliseconds -- Set the specified expire time, in milliseconds (a positive integer).
+* EXAT unix-time-seconds -- Set the specified Unix time at which the key will expire, in seconds.
+* PXAT unix-time-milliseconds -- Set the specified Unix time at which the key will expire, in milliseconds.
 * NX -- Only set the key if it does not already exist.
 * XX -- Only set the key if it already exists.
+* IFEQ comparison-value -- Atomically set an existing string only if its bytes equal comparison-value. A missing or expired key is not created.
+* IFNE comparison-value -- Atomically set a string only if its bytes differ from comparison-value, or create it if the key is missing or expired.
+* IFDEQ digest -- Atomically set an existing string only if its current XXH3-64 digest equals digest. A missing or expired key is not created.
+* IFDNE digest -- Atomically set a string only if its current XXH3-64 digest differs from digest, or create it if the key is missing or expired.
+* GET -- Return the previous string value, including when a comparison fails, or nil if the key does not exist.
 * KEEPTTL -- Retain the time to live associated with the key.
+
+NX, XX, IFEQ, IFNE, IFDEQ, and IFDNE are mutually exclusive. Value/digest comparisons return WRONGTYPE for a live non-string value. A failed comparison leaves the value and expiration unchanged. See [DIGEST](#digest) for the digest format. Digest comparisons recompute the current value's hash inside the atomic storage operation; no cached digest is used.
 
 #### Resp Reply
 
 Any of the following:
 
-* Nil reply: GET not given: Operation was aborted (conflict with one of the XX/NX options).
+* Nil reply: GET not given: Operation was aborted (the condition was not met).
 * Simple string reply: OK. GET not given: The key was set.
 * Nil reply: GET given: The key didn't exist before the SET.
 * Bulk string reply: GET given: The previous value of the key.

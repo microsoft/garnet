@@ -96,34 +96,33 @@ namespace Garnet.server
 
             var options = SortedSetAddOption.None;
             var currTokenIdx = 0;
-            var parsedOptions = false;
 
             var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             try
             {
+                // Parse options if present
+                if (!input.parseState.TryGetDouble(currTokenIdx, out _))
+                {
+                    if (!GetOptions(ref input, ref currTokenIdx, out options, ref writer))
+                        return;
+                }
+
+                // Validate scores before we apply any of them
+                for (var ix = currTokenIdx; ix < input.parseState.Count; ix += 2)
+                {
+                    if (!input.parseState.TryGetDouble(ix, out _))
+                    {
+                        writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                        return;
+                    }
+                }
+
+                // Apply updates
                 while (currTokenIdx < input.parseState.Count)
                 {
-                    // Try to parse a Score field
-                    if (!input.parseState.TryGetDouble(currTokenIdx, out var score))
-                    {
-                        // Try to get and validate options before the Score field, if any
-                        if (!parsedOptions)
-                        {
-                            parsedOptions = true;
-                            if (!GetOptions(ref input, ref currTokenIdx, out options, ref writer))
-                                return;
-                            continue; // retry after parsing options
-                        }
-                        else
-                        {
-                            // Invalid Score encountered
-                            writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
-                            return;
-                        }
-                    }
-
-                    parsedOptions = true;
+                    // Parse a Score field
+                    var score = input.parseState.GetDouble(currTokenIdx);
                     currTokenIdx++;
 
                     // Member
@@ -458,7 +457,7 @@ namespace Garnet.server
                     }
                 }
 
-                if (count >= 2 && ((!options.ByScore && !options.ByLex) || options.ByScore))
+                if (count >= 2 && options.ByScore)
                 {
                     if (!TryParseParameter(minSpan, out var minValue, out var minExclusive) ||
                         !TryParseParameter(maxSpan, out var maxValue, out var maxExclusive))
@@ -468,69 +467,74 @@ namespace Garnet.server
                         return;
                     }
 
-                    if (options.ByScore)
-                    {
-                        var scoredElements = GetElementsInRangeByScore(minValue, maxValue, minExclusive, maxExclusive, options.WithScores, options.Reverse, options.ValidLimit, false, options.Limit);
+                    var scoredElements = GetElementsInRangeByScore(minValue, maxValue, minExclusive, maxExclusive, options.WithScores, options.Reverse, options.ValidLimit, false, options.Limit);
 
-                        WriteSortedSetResult(options.WithScores, scoredElements.Count, respProtocolVersion, scoredElements, ref writer);
+                    WriteSortedSetResult(options.WithScores, scoredElements.Count, respProtocolVersion, scoredElements, ref writer);
+                }
+                else if (count >= 2 && !options.ByLex)
+                {
+                    // byIndex
+                    if (!input.parseState.TryGetLong(0, out var start) || !input.parseState.TryGetLong(1, out var stop))
+                    {
+                        writer.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                        output.result1 = RangeError;
+                        return;
+                    }
+
+                    // Clamping to the int range selects the same elements
+                    var setCount = Count();
+                    int minIndex = (int)Math.Clamp(start, int.MinValue, int.MaxValue), maxIndex = (int)Math.Clamp(stop, int.MinValue, int.MaxValue);
+                    if (options.ValidLimit)
+                    {
+                        writer.WriteError(CmdStrings.RESP_ERR_LIMIT_NOT_SUPPORTED);
+                        output.result1 = RangeError;
+                        return;
+                    }
+                    else if (start > setCount - 1)
+                    {
+                        // return empty list
+                        writer.WriteEmptyArray();
+                        return;
                     }
                     else
                     {
-                        // byIndex
-                        var setCount = Count();
-                        int minIndex = (int)minValue, maxIndex = (int)maxValue;
-                        if (options.ValidLimit)
+                        //shift from the end of the set
+                        if (minIndex < 0)
                         {
-                            writer.WriteError(CmdStrings.RESP_ERR_LIMIT_NOT_SUPPORTED);
-                            output.result1 = RangeError;
-                            return;
+                            minIndex = setCount + minIndex;
                         }
-                        else if (minValue > setCount - 1)
+                        if (maxIndex < 0)
                         {
-                            // return empty list
+                            maxIndex = setCount + maxIndex;
+                        }
+                        else if (maxIndex >= setCount)
+                        {
+                            maxIndex = setCount - 1;
+                        }
+
+                        // No elements to return if both indexes fall outside the range or min is higher than max
+                        if ((minIndex < 0 && maxIndex < 0) || (minIndex > maxIndex))
+                        {
                             writer.WriteEmptyArray();
                             return;
                         }
                         else
                         {
-                            //shift from the end of the set
-                            if (minIndex < 0)
+                            // Clamp minIndex to 0, if it is beyond the number of elements
+                            minIndex = Math.Max(0, minIndex);
+
+                            // calculate number of elements
+                            var n = maxIndex - minIndex + 1;
+                            var iterator = options.Reverse ? sortedSet.Reverse() : sortedSet;
+
+                            if (expirationTimes is not null)
                             {
-                                minIndex = setCount + minIndex;
-                            }
-                            if (maxIndex < 0)
-                            {
-                                maxIndex = setCount + maxIndex;
-                            }
-                            else if (maxIndex >= setCount)
-                            {
-                                maxIndex = setCount - 1;
+                                iterator = iterator.Where(x => !IsExpired(x.Element));
                             }
 
-                            // No elements to return if both indexes fall outside the range or min is higher than max
-                            if ((minIndex < 0 && maxIndex < 0) || (minIndex > maxIndex))
-                            {
-                                writer.WriteEmptyArray();
-                                return;
-                            }
-                            else
-                            {
-                                // Clamp minIndex to 0, if it is beyond the number of elements
-                                minIndex = Math.Max(0, minIndex);
+                            iterator = iterator.Skip(minIndex).Take(n);
 
-                                // calculate number of elements
-                                var n = maxIndex - minIndex + 1;
-                                var iterator = options.Reverse ? sortedSet.Reverse() : sortedSet;
-
-                                if (expirationTimes is not null)
-                                {
-                                    iterator = iterator.Where(x => !IsExpired(x.Element));
-                                }
-
-                                iterator = iterator.Skip(minIndex).Take(n);
-
-                                WriteSortedSetResult(options.WithScores, n, respProtocolVersion, iterator, ref writer);
-                            }
+                            WriteSortedSetResult(options.WithScores, n, respProtocolVersion, iterator, ref writer);
                         }
                     }
                 }

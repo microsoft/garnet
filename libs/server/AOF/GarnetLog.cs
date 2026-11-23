@@ -176,8 +176,26 @@ namespace Garnet.server
             }
         }
 
-        public ValueTask RecoverAsync()
-            => singleLog != null ? singleLog.RecoverAsync() : shardedLog.RecoverAsync();
+        /// <summary>
+        /// Recover every physical sublog to its latest commit
+        /// </summary>
+        /// <param name="clearAboveTail">Whether to clear everything each sublog's device holds above its recovered tail, as
+        /// <see cref="PrepareToAppend"/> does</param>
+        public ValueTask RecoverAsync(bool clearAboveTail)
+            => singleLog != null ? singleLog.RecoverAsync(clearAboveTail) : shardedLog.RecoverAsync(clearAboveTail);
+
+        /// <summary>
+        /// Clear everything each physical sublog's device holds above its tail (<see cref="TsavoriteLog.PrepareToAppend"/>).
+        /// Call after recovery or <see cref="Initialize"/>, before anything is appended. A sublog already cleared since it was
+        /// recovered or initialized is left as it is.
+        /// </summary>
+        public void PrepareToAppend()
+        {
+            if (singleLog != null)
+                singleLog.PrepareToAppend();
+            else
+                shardedLog.PrepareToAppend();
+        }
 
         public bool RecoverLatestSequenceNumber(out long recoverUntilSequenceNumber)
         {

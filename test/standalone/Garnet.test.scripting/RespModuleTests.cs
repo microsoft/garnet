@@ -178,6 +178,36 @@ namespace Garnet.test
         }
 
 
+        /// <summary>
+        /// A module cannot register a custom command expiration below -1: the registration returns InvalidRegistrationInfo and the command is not added.
+        /// </summary>
+        [Test]
+        public void TestModuleRejectsCommandExpirationTicksBelowMinusOne()
+        {
+            var onLoad =
+                    @"context.Initialize(""TestExpiryModule"", 1);
+
+                    var status = context.RegisterCommand(""TestExpiryModule.SetIfPM"", new SetIfPMCustomCommand(), CommandType.ReadModifyWrite,
+                    new RespCommandsInfo { Name = ""TestExpiryModule.SETIFPM"", Arity = 4, FirstKey = 1, LastKey = 1, Step = 1,
+                    Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.String | RespAclCategories.Write },
+                    expirationTicks: -2);
+                    if (status != ModuleActionStatus.InvalidRegistrationInfo)
+                        throw new Exception($""Unexpected status {status}"");
+
+                    context.RegisterProcedure(""TestExpiryModule.SUM"", () => new Sum());";
+
+            var modulePath = CreateTestModule(onLoad, "TestExpiryModule.dll");
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("MODULE", ["LOADCS", modulePath]));
+            _ = Assert.Throws<RedisServerException>(() => db.Execute("TestExpiryModule.SETIFPM", "key", "value", "prefix"));
+
+            _ = db.StringSet("key1", "1");
+            ClassicAssert.AreEqual("1", db.Execute("TestExpiryModule.SUM", "key1").ToString());
+        }
+
         [Test]
         public void TestModuleLoadUsingGarnetOptions()
         {

@@ -503,6 +503,13 @@ namespace Garnet.server
                     {
                         if (NumUtils.TryReadInt64(token, out var expTicks))
                         {
+                            // -1 removes the expiration, 0 keeps it, and a positive value sets it
+                            if (expTicks < -1)
+                            {
+                                errorMsg = CmdStrings.RESP_ERR_INVALID_EXPIRATION_TICKS;
+                                break;
+                            }
+
                             cmdArgs.ExpirationTicks = expTicks;
                             optionalParamsRead++;
                             continue;
@@ -881,7 +888,7 @@ namespace Garnet.server
             else
             {
                 var usingShardedLog = storeWrapper.serverOptions.AofPhysicalSublogCount > 1;
-                if (storeWrapper.clusterProvider.IsPrimary())
+                if (!storeWrapper.clusterProvider.TryGetReplicaInfo(out var role))
                 {
                     var (replication_offset, replicaInfo) = storeWrapper.clusterProvider.GetPrimaryInfo();
 
@@ -923,8 +930,9 @@ namespace Garnet.server
                 }
                 else
                 {
-                    var role = storeWrapper.clusterProvider.GetReplicaInfo();
-
+#if DEBUG
+                    ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Role_Pause_After_Role_Check);
+#endif
                     while (!RespWriteUtils.TryWriteArrayLength(usingShardedLog ? 6 : 5, ref dcurr, dend))
                         SendAndReset();
 

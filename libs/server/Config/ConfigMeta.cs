@@ -31,10 +31,11 @@ namespace Garnet.server
     /// <param name="Max">Inclusive upper bound accepted by CONFIG SET.</param>
     /// <param name="EnumType">Declared enum type, for <see cref="ConfigKind.Enum"/> options.</param>
     /// <param name="IsRuntime">Whether the option is served by <see cref="RuntimeServerConfig"/>.</param>
-    /// <param name="ReadOnly">Whether CONFIG SET rejects the option.</param>
+    /// <param name="IsReadOnly">Whether CONFIG SET rejects the option.</param>
+    /// <param name="GroupType">This parameter is part of a group of parameters.</param>
     /// <param name="TimeUnit">Unit the slot is stored in, for duration-valued options.</param>
     /// <param name="ReadOnlyFormatter">
-    /// For <see cref="ReadOnly"/> options, computes the CONFIG GET value directly from the live
+    /// For <see cref="IsReadOnly"/> options, computes the CONFIG GET value directly from the live
     /// <see cref="GarnetServerOptions"/> (the read-only fall-through). Must not capture the options
     /// instance so the metadata stays static and shared across every <see cref="RuntimeServerConfig"/>.
     /// </param>
@@ -50,7 +51,8 @@ namespace Garnet.server
         long Max,
         Type EnumType,
         bool IsRuntime,
-        bool ReadOnly,
+        bool IsReadOnly,
+        ServerConfigGroupType GroupType,
         ConfigTimeUnit TimeUnit = ConfigTimeUnit.None,
         Func<GarnetServerOptions, string> ReadOnlyFormatter = null,
         ConfigUpdateAction UpdateAction = null);

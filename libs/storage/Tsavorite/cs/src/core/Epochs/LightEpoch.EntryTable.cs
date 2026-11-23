@@ -3,7 +3,11 @@
 
 using System.Diagnostics;
 
+#if GARNET_CLIENT_EPOCH
+namespace Garnet.client
+#else
 namespace Tsavorite.core
+#endif
 {
     public sealed unsafe partial class LightEpoch
     {

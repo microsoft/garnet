@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
+using System.Buffers.Text;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
@@ -282,10 +284,27 @@ namespace Garnet.server
             var key = GetByteSpanFromInput(ref input, 0);
             var incrSlice = input.parseState.GetArgSliceByRef(1);
 
-            if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out long incr))
+            // Redis is particular about the format of increments
+            long incr = 0;
+            unsafe
             {
-                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-                return;
+                var ptr = incrSlice.ptr;
+
+                bool invalid;
+                try
+                {
+                    invalid = !RespReadUtils.TryReadInt64Safe(ref ptr, ptr + incrSlice.length, out incr, out var bytesRead, out _, out _, allowLeadingZeros: false) || bytesRead != (ulong)incrSlice.Length;
+                }
+                catch
+                {
+                    invalid = true;
+                }
+
+                if (invalid)
+                {
+                    writer.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                    return;
+                }
             }
 
             DeleteExpiredItems();
@@ -302,10 +321,28 @@ namespace Garnet.server
             }
             else
             {
-                if (!NumUtils.TryParse(hashValueRef, out long result))
+                long result = 0;
+                unsafe
                 {
-                    writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_INTEGER);
-                    return;
+                    fixed (byte* ptr = hashValueRef)
+                    {
+                        var ptrCopy = ptr;
+                        bool invalid;
+                        try
+                        {
+                            invalid = !RespReadUtils.TryReadInt64Safe(ref ptrCopy, ptrCopy + hashValueRef.Length, out result, out var bytesRead, out _, out _, allowLeadingZeros: false) || bytesRead != (ulong)hashValueRef.Length;
+                        }
+                        catch
+                        {
+                            invalid = true;
+                        }
+
+                        if (invalid)
+                        {
+                            writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_INTEGER);
+                            return;
+                        }
+                    }
                 }
 
                 // Branchless signed overflow detection: overflow iff both operands have the same sign AND the
@@ -376,7 +413,23 @@ namespace Garnet.server
 
             if (!exists || IsExpired(key))
             {
-                hashValueRef = incrSlice.ToArray();
+                // Exponent format can't be stored, so normalize it
+                if (incrSlice.ReadOnlySpan.ContainsAny((byte)'e', (byte)'E'))
+                {
+                    Span<byte> scratchSpace = stackalloc byte[30];
+
+                    if (!Utf8Formatter.TryFormat(incr, scratchSpace, out var written, new StandardFormat('R')))
+                    {
+                        throw new GarnetException("Could not format float point value");
+                    }
+
+                    hashValueRef = scratchSpace[..written].ToArray();
+                }
+                else
+                {
+                    hashValueRef = incrSlice.ToArray();
+                }
+
                 UpdateSize(key, hashValueRef, add: true);
             }
             else
@@ -394,6 +447,13 @@ namespace Garnet.server
                 }
 
                 result += incr;
+
+                // Two finite values can sum to an infinity, which is not stored
+                if (!double.IsFinite(result))
+                {
+                    writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
+                    return;
+                }
 
                 var formattedValue = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatDoubleLength];
                 var success = result.TryFormat(formattedValue, out var bytesWritten, provider: CultureInfo.InvariantCulture);

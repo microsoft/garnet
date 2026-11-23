@@ -114,7 +114,8 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum, bool forceWriteMetadata)
         {
-            if (!forceWriteMetadata && fastCommitThrottleFreq > 0 && (commitCount++ % fastCommitThrottleFreq != 0)) return;
+            if (!forceWriteMetadata && fastCommitThrottleFreq > 0 && (commitCount++ % fastCommitThrottleFreq != 0))
+                return;
 
             using var device = deviceFactory.Get(checkpointNamingScheme.TsavoriteLogCommitMetadata(commitNum));
 
@@ -131,7 +132,10 @@ namespace Tsavorite.core
                 var prior = flogCommitHistory[flogCommitHistoryOffset];
                 flogCommitHistory[flogCommitHistoryOffset] = commitNum;
                 flogCommitHistoryOffset = (byte)((flogCommitHistoryOffset + 1) % flogCommitCount);
-                if (prior != default)
+
+                // Rewriting the latest commit's file, as TsavoriteLog does when it clears above the tail of a log recovered to the
+                // commit that OnRecovery recorded, must not delete that same file
+                if (prior != default && prior != commitNum)
                 {
                     // System.Threading.Tasks.Task.Run(() => deviceFactory.Delete(checkpointNamingScheme.TsavoriteLogCommitMetadata(prior)));
                     deleteQueue.EnqueueAndTryWork(prior, true);
@@ -148,7 +152,9 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public IEnumerable<long> ListCommits()
         {
-            return deviceFactory.ListContents(checkpointNamingScheme.TsavoriteLogCommitBasePath).Select(checkpointNamingScheme.CommitNumber).OrderByDescending(e => e);
+            // The naming scheme returns -1 for a file that is not one of this log's, such as another sublog's
+            return deviceFactory.ListContents(checkpointNamingScheme.TsavoriteLogCommitBasePath).Select(checkpointNamingScheme.CommitNumber)
+                .Where(commitNum => commitNum >= 0).OrderByDescending(e => e);
         }
 
         /// <inheritdoc />
@@ -180,6 +186,35 @@ namespace Tsavorite.core
                 ReadInto(device, 0, out body, size + sizeof(int));
 
             return new Span<byte>(body).Slice(sizeof(int)).ToArray();
+        }
+
+        /// <summary>
+        /// Read length-prefixed metadata through the non-creating API, retaining the same stream for the prefix
+        /// and body so concurrent deletion cannot cause a second open to create or select a different file.
+        /// </summary>
+        /// <param name="fileDescriptor">Metadata file to read.</param>
+        /// <returns>The metadata payload without its length prefix or sector padding.</returns>
+        protected byte[] ReadStreamMetadata(FileDescriptor fileDescriptor)
+        {
+            try
+            {
+                using var stream = deviceFactory.OpenRead(fileDescriptor);
+                using var reader = new BinaryReader(stream);
+                var size = reader.ReadInt32();
+                ThrowIfInvalidMetadataSize(size, fileDescriptor);
+                var metadata = new byte[size];
+                stream.ReadExactly(metadata);
+                return metadata;
+            }
+            catch (EndOfStreamException ex)
+            {
+                throw new TsavoriteException($"Checkpoint metadata is truncated in {Path.Combine(fileDescriptor.directoryName ?? string.Empty, fileDescriptor.fileName ?? string.Empty)}", ex);
+            }
+            catch (Exception ex) when (deviceFactory.IsFileNotFound(ex))
+            {
+                throw new FileNotFoundException("Checkpoint metadata disappeared during inspection",
+                    Path.Combine(fileDescriptor.directoryName ?? string.Empty, fileDescriptor.fileName ?? string.Empty), ex);
+            }
         }
 
         /// <summary>
@@ -265,6 +300,10 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
+        public byte[] ReadIndexCheckpointMetadata(Guid indexToken)
+            => ReadStreamMetadata(checkpointNamingScheme.IndexCheckpointMetadata(indexToken));
+
+        /// <inheritdoc />
         public void CommitLogCheckpointMetadata(Guid logToken, byte[] commitMetadata)
         {
             using var device = NextLogCheckpointDevice(logToken);
@@ -316,6 +355,10 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
+        public byte[] ReadLogCheckpointMetadata(Guid logToken)
+            => ReadStreamMetadata(checkpointNamingScheme.LogCheckpointMetadata(logToken));
+
+        /// <inheritdoc />
         public IDevice GetIndexDevice(Guid indexToken)
         {
             return deviceFactory.Get(checkpointNamingScheme.HashTable(indexToken));
@@ -331,6 +374,15 @@ namespace Tsavorite.core
         public IDevice GetSnapshotObjectLogDevice(Guid token)
         {
             return deviceFactory.Get(checkpointNamingScheme.ObjectLogSnapshot(token));
+        }
+
+        /// <inheritdoc />
+        public uint GetCheckpointDeviceSectorSize()
+        {
+            // The token only names a directory below the base; probing does not create it.
+            var sectorSize = deviceFactory.GetSectorSize(checkpointNamingScheme.HashTable(Guid.Empty));
+            sectorSize = Math.Max(sectorSize, deviceFactory.GetSectorSize(checkpointNamingScheme.LogSnapshot(Guid.Empty)));
+            return Math.Max(sectorSize, deviceFactory.GetSectorSize(checkpointNamingScheme.ObjectLogSnapshot(Guid.Empty)));
         }
 
         /// <inheritdoc />

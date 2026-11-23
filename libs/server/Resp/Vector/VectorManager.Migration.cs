@@ -145,6 +145,17 @@ namespace Garnet.server
             input.header.cmd = RespCommand.VADD;
             input.arg1 = CreateIndexArg;
 
+            // Validate the length before reinterpreting the peer-supplied value as a fixed-size
+            // Index struct. Every other ReadIndex caller (CreateNewIndex/RecreateIndex) performs
+            // this check; the migration import path relied only on a Debug.Assert, which is compiled
+            // out in Release builds, so a malformed/short record could be read past its bounds.
+            // Keep it consistent and fail closed on malformed records.
+            if (value.Length != Index.Size)
+            {
+                logger?.LogWarning("Received malformed Vector Set migration index record for {key}: value length {Length} != expected {Size}", SpanByte.ToShortString(key), value.Length, Index.Size);
+                throw new GarnetException("Invalid or corrupt Vector Set index record (unexpected length)");
+            }
+
             ReadIndex(value, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out var flags, out var indexPtr);
             var startPointId = ReadStartPointId(value);
 
@@ -160,7 +171,7 @@ namespace Garnet.server
 
             if (invalidMigrationRecord)
             {
-                logger?.LogWarning("Received invalid Vector Set migration record for {key}: {context}, {dimensions}, {reduceDims}, {quantyType}, {buildExplorationFactor}, {numLinks}, {distanceMetric}, {flags}", SpanByte.ToShortString(key), context, dimensions, reduceDims, quantizationAndImportTaskCount, buildExplorationFactor, numLinks, distanceMetric, flags);
+                logger?.LogWarning("Received invalid Vector Set migration record for {key}: {context}, {dimensions}, {reduceDims}, {quantyType}, {buildExplorationFactor}, {numLinks}, {distanceMetric}, {flags}", SpanByte.ToShortString(key), context, dimensions, reduceDims, quantizationTaskCount, buildExplorationFactor, numLinks, distanceMetric, flags);
                 throw new GarnetException("Invalid or corrupt Vector Set index record");
             }
 
@@ -283,7 +294,7 @@ namespace Garnet.server
                     // Post recreation the index might already need quantization - if so, queue it up
                     if (requestQuantization)
                     {
-                        EnqueueQuantization(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, 0, 0, null));
+                        EnqueueQuantization(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
                     }
 
                     // For REPLICAs which are following, we need to fake up a write

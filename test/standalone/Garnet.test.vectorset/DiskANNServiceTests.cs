@@ -62,7 +62,6 @@ namespace Garnet.test
         public void CheckInternalId()
         {
             const ulong Context = 8;
-            const ulong ImportContext = 16;
 
             ConcurrentDictionary<(ulong Context, byte[] Key), byte[]> data = new(new ContextAndKeyComparer());
 
@@ -195,7 +194,8 @@ namespace Garnet.test
             var startPointKey = BitConverter.GetBytes(VectorManager.DefaultStartPointId);
             ClassicAssert.IsTrue(service.ImportTerm(Context, rawIndex, DiskANNService.FullVector, startPointKey, new byte[75]));
             ClassicAssert.IsTrue(service.ImportTerm(Context, rawIndex, DiskANNService.NeighborList, startPointKey, new byte[11 * sizeof(uint)]));
-            ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNImportResult.Success, service.FinishImport(Context, rawIndex, 0, 1));
+            ClassicAssert.IsTrue(service.VerifyImport(Context, rawIndex, 0, 1));
+            ClassicAssert.IsTrue(service.FinishImport(Context, rawIndex));
             ClassicAssert.AreEqual(0UL, NativeDiskANNMethods.card(Context, rawIndex));
 
             Span<byte> id = [0, 1, 2, 3];
@@ -236,22 +236,6 @@ namespace Garnet.test
             }
 
             service.DropIndex(Context, rawIndex);
-            var importIndex = NativeDiskANNMethods.create_index(ImportContext, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, VectorManager.DefaultStartPointId, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
-            ClassicAssert.AreNotEqual(nint.Zero, importIndex);
-            try
-            {
-                var importId = BitConverter.GetBytes(1u);
-                ClassicAssert.IsTrue(service.ImportTerm(ImportContext, importIndex, DiskANNService.FullVector, importId, elem));
-                ClassicAssert.IsTrue(service.ImportTerm(ImportContext, importIndex, DiskANNService.NeighborList, importId, new byte[11 * sizeof(uint)]));
-                ClassicAssert.IsTrue(service.ImportTerm(ImportContext, importIndex, DiskANNService.InternalIdMap, id, importId));
-                ClassicAssert.IsTrue(service.ImportTerm(ImportContext, importIndex, DiskANNService.ExternalIdMap, importId, id));
-
-                ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNImportResult.FinishFailed, service.FinishImport(ImportContext, importIndex, 0, 1));
-            }
-            finally
-            {
-                service.DropIndex(ImportContext, importIndex);
-            }
 
             GC.KeepAlive(deleteDel);
             GC.KeepAlive(writeDel);

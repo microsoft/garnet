@@ -449,6 +449,9 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void WaitForSendCapacity()
         {
+#if DEBUG
+            _ = ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Sender_Signal_Before_Slot_Wait);
+#endif
             // A send usually completes shortly while the peer reads, so spin progressively, as the semaphore's own
             // blocking wait does, before paying for a task and a blocking wait.
             var spinner = ConfiguredSpinWait.BoundedProgressive(CapacitySpinIterations, sleep1Threshold: -1);
@@ -465,6 +468,9 @@ namespace Garnet.common
 
             // Closing the socket completes every in-flight send, so the release this waiter is owed arrives promptly
             _ = TryClose();
+#if DEBUG
+            ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Sender_Pause_Before_Timed_Out_Slot_Wait);
+#endif
             AsyncUtils.BlockingWait(slot);
             throw new GarnetException($"Closed connection to {remoteEndpoint}: no send completed within {sendTimeoutMs} ms",
                 LogLevel.Warning, clientResponse: false, disposeSession: true);
