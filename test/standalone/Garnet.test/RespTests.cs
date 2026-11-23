@@ -6466,7 +6466,7 @@ namespace Garnet.test
                 AssertDuplicateDefinitionError("MAXAGE", () => mainDB.Execute("CLIENT", "KILL", "MAXAGE", "123", "MAXAGE", "456"));
             }
 
-            static void AssertDuplicateDefinitionError(string filter, TestDelegate shouldThrow)
+            static void AssertDuplicateDefinitionError(string filter, Action shouldThrow)
             {
                 var exc = ClassicAssert.Throws<RedisServerException>(shouldThrow);
                 ClassicAssert.AreEqual($"ERR Filter '{filter}' defined multiple times", exc.Message);
@@ -7681,11 +7681,12 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task GetParseAlignmentAsync()
+        public async Task GetParseAlignmentAsync([Values] bool scatterGather, [Values(1, 10, int.MaxValue)] int bytesPerSend)
         {
-            await using var connection = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig(allowAdmin: true)).ConfigureAwait(false);
             var db = connection.GetDatabase();
 
+            ClassicAssert.AreEqual("OK", (string)await db.ExecuteAsync("CONFIG", "SET", "sg-get", scatterGather ? "yes" : "no").ConfigureAwait(false));
             ClassicAssert.AreEqual("OK", (string)await db.ExecuteAsync("SET", "foo", "bar").ConfigureAwait(false));
 
             // Reject malformed GET
@@ -7700,6 +7701,16 @@ namespace Garnet.test
 
             // Command stream still aligned
             ClassicAssert.AreEqual("bar", (string)await db.ExecuteAsync("GET", "foo").ConfigureAwait(false));
+
+            using var client = TestUtils.CreateRequest(countResponseType: CountResponseType.Bytes);
+            var error = "-ERR wrong number of arguments for 'GET' command\r\n";
+            var value = "$3\r\nbar\r\n";
+            foreach (var command in new[] { "GET", "GET fizz buzz", "get", "get fizz buzz" })
+            {
+                ClassicAssert.AreEqual(error + value, client.Execute(command, "GET foo", error.Length + value.Length, bytesPerSend));
+                ClassicAssert.AreEqual(value + error, client.Execute("GET foo", command, value.Length + error.Length, bytesPerSend));
+            }
+            ClassicAssert.AreEqual("+PONG\r\n", client.Execute("PING", 7, bytesPerSend));
         }
     }
 }

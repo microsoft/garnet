@@ -86,18 +86,21 @@ namespace Garnet.server
                 }
                 else
                 {
-                    // Deserialize the parse state
+                    // Argument slices borrow the serialized bytes until their response is written.
                     fixed (byte* ptr = entry.Arguments)
                     {
                         sps.DeserializeFrom(ptr);
-                    }
-                    while (!RespWriteUtils.TryWriteArrayLength(sps.Count + 1, ref dcurr, dend))
-                        SendAndReset();
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(entry.Command.ToString(), ref dcurr, dend))
-                        SendAndReset();
-                    for (int i = 0; i < sps.Count; i++)
-                    {
-                        WriteAsciiBulkString(sps.GetString(i));
+#if DEBUG
+                        ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.SlowLog_Pause_After_Deserialize);
+#endif
+                        while (!RespWriteUtils.TryWriteArrayLength(sps.Count + 1, ref dcurr, dend))
+                            SendAndReset();
+                        while (!RespWriteUtils.TryWriteAsciiBulkString(entry.Command.ToString(), ref dcurr, dend))
+                            SendAndReset();
+                        for (int i = 0; i < sps.Count; i++)
+                        {
+                            WriteAsciiBulkString(sps.GetString(i));
+                        }
                     }
                 }
                 while (!RespWriteUtils.TryWriteAsciiBulkString(entry.ClientIpPort, ref dcurr, dend))

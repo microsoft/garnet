@@ -4857,6 +4857,32 @@ namespace Garnet.test
         }
 
         [Test]
+        public void ZRandMemberZeroCountValidatesTypeAndKeepsSessionAlive(
+            [Values(RedisProtocol.Resp2, RedisProtocol.Resp3)] RedisProtocol protocol, [Values] bool withScores)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
+            var db = redis.GetDatabase();
+            db.SortedSetAdd("sorted", "member", 1);
+            db.StringSet("string", "value");
+            db.ListRightPush("list", "member");
+
+            foreach (var key in new[] { "sorted", "missing", "string", "list" })
+            {
+                var args = withScores ? new object[] { key, 0, "WITHSCORES" } : [key, 0];
+                if (key == "string" || key == "list")
+                {
+                    var error = ClassicAssert.Throws<RedisServerException>(() => db.Execute("ZRANDMEMBER", args));
+                    ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE), error.Message);
+                }
+                else
+                {
+                    ClassicAssert.IsEmpty((RedisResult[])db.Execute("ZRANDMEMBER", args));
+                }
+                ClassicAssert.AreEqual("PONG", (string)db.Execute("PING"));
+            }
+        }
+
+        [Test]
         public void CanUseZRandMemberWithOverflowingCount()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
