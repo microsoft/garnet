@@ -145,6 +145,17 @@ namespace Garnet.server
             input.header.cmd = RespCommand.VADD;
             input.arg1 = CreateIndexArg;
 
+            // Validate the length before reinterpreting the peer-supplied value as a fixed-size
+            // Index struct. Every other ReadIndex caller (CreateNewIndex/RecreateIndex) performs
+            // this check; the migration import path relied only on a Debug.Assert, which is compiled
+            // out in Release builds, so a malformed/short record could be read past its bounds.
+            // Keep it consistent and fail closed on malformed records.
+            if (value.Length != Index.Size)
+            {
+                logger?.LogWarning("Received malformed Vector Set migration index record for {key}: value length {Length} != expected {Size}", SpanByte.ToShortString(key), value.Length, Index.Size);
+                throw new GarnetException("Invalid or corrupt Vector Set index record (unexpected length)");
+            }
+
             ReadIndex(value, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out var flags, out var indexPtr);
             var startPointId = ReadStartPointId(value);
 

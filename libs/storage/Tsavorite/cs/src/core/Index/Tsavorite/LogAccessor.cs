@@ -234,6 +234,9 @@ namespace Tsavorite.core
         /// consumers do, giving precedence to the later record for a key: <c>ClientSession.Iterate</c> and <see cref="CompactionType.Scan"/>
         /// buffer the earlier versions in a temporary store, while <see cref="CompactionType.Lookup"/> consults the hash index for a newer
         /// version of the key.</para>
+        /// <para>With <paramref name="includeClosedRecords"/>, the scan also returns sealed and invalid records, except that the object allocator
+        /// skips an invalid record read from disk that has object or overflow fields: the flush wrote none of its objects, so it has no key or
+        /// value to return.</para>
         /// </remarks>
         /// <returns>Scan iterator instance</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

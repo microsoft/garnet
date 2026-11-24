@@ -184,7 +184,7 @@ namespace Tsavorite.core
         /// </summary>
         internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<TsavoriteLogStoreFunctions, TsavoriteLogAllocator> store,
                 ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress,
-                bool resetCursor = true, bool includeTombstones = false)
+                bool resetCursor = true, bool includeTombstones = false, bool skipInvalidRecords = false)
             => throw new TsavoriteException("TsavoriteLogAllocator Scan methods should not be used");
 
         /// <summary>

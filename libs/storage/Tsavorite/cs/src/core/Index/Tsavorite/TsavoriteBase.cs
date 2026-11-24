@@ -304,7 +304,10 @@ namespace Tsavorite.core
         /// A helper function that is used to find the slot corresponding to a
         /// key in the specified version of the hash table
         /// </summary>
-        /// <returns>true if such a slot exists, and populates <paramref name="hei"/>, else returns false</returns>
+        /// <returns>True if such a slot exists and populates <paramref name="hei"/>. Otherwise returns false, leaving the first
+        /// bucket and bucket index initialized for locking, but clearing the bucket pointer and entry and invalidating the slot.
+        /// Callers must not access the current entry or attempt insertion after a false return. If this returns false for an existing
+        /// record then that record may have been elided.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool FindTag(ref HashEntryInfo hei)
         {

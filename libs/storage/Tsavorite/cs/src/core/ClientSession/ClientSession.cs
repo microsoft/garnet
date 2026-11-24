@@ -500,7 +500,7 @@ namespace Tsavorite.core
         /// point-in-time view of every key that existed when the scan started.
         /// <para/>
         /// Internally captures <c>Log.TailAddress</c> once and passes it as both
-        /// <c>endAddress</c> and <c>maxAddress</c> to <see cref="ScanCursor"/>. This is the
+        /// <c>endAddress</c> and <c>maxAddress</c> to <see cref="ScanCursor{TScanFunctions}(ref long, long, TScanFunctions, long, bool, long, bool, bool)"/>. This is the
         /// lookup-based equivalent of the legacy <see cref="Iterate{TScanFunctions}(ref TScanFunctions, long)"/>
         /// (which builds a parallel <c>tempKv</c> sized like the keyspace and copies every
         /// in-range record into it). The snapshot variant avoids that O(N) memory cost; per-call
@@ -541,8 +541,21 @@ namespace Tsavorite.core
         public bool ScanCursor<TScanFunctions>(ref long cursor, long count, TScanFunctions scanFunctions, long endAddress = long.MaxValue, bool validateCursor = false,
                 long maxAddress = long.MaxValue, bool resetCursor = true, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions
+            => ScanCursor(ref cursor, count, scanFunctions, endAddress, validateCursor, maxAddress, resetCursor, includeTombstones, skipInvalidRecords: false);
+
+        /// <summary>
+        /// <see cref="ScanCursor{TScanFunctions}(ref long, long, TScanFunctions, long, bool, long, bool, bool)"/>, optionally skipping every invalid record.
+        /// </summary>
+        /// <remarks>
+        /// Only streaming checkpoint phase 2 sets <paramref name="skipInvalidRecords"/>, so that it never streams an elided record. Other lookups skip
+        /// only invalid records that are not sealed, and a bounded lookup pushes an elided record only if its key has a record at or above
+        /// <paramref name="maxAddress"/>; see <see cref="InvalidRecordScanFilter"/> and <see cref="AllocatorBase{TStoreFunctions, TAllocator}.ConditionalScanPush"/>.
+        /// </remarks>
+        internal bool ScanCursor<TScanFunctions>(ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor,
+                long maxAddress, bool resetCursor, bool includeTombstones, bool skipInvalidRecords)
+            where TScanFunctions : IScanIteratorFunctions
             => store.hlogBase.ScanCursor(store, scanCursorState ??= new(), ref cursor, count, scanFunctions, endAddress, validateCursor, maxAddress,
-                resetCursor: resetCursor, includeTombstones: includeTombstones);
+                resetCursor: resetCursor, includeTombstones: includeTombstones, skipInvalidRecords: skipInvalidRecords);
 
         /// <summary>
         /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.

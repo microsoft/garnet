@@ -2847,7 +2847,8 @@ namespace Tsavorite.core
                 // Initialize to "invalid record or key does not match so get previous record" address to read
                 prevAddressToRead = recordInfo.PreviousAddress;
 
-                if (recordInfo.Invalid) // includes IsNull
+                // Follow past copies outside a bounded scan even when they match the requested key.
+                if (recordInfo.Invalid || ctx.logicalAddress >= ctx.maxAddress) // Invalid includes IsNull
                     return false;
 
                 var offsetToKeyStart = dataHeader.GetOffsetToKeyStart();

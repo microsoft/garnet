@@ -3,7 +3,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.cluster;
 using Garnet.common;
 using Garnet.server;
@@ -31,8 +33,8 @@ namespace Garnet.test.cluster
 
         void WaitForCheckpointAfter(int nodeIndex, DateTimeOffset prior)
         {
-            var deadline = DateTime.UtcNow.AddSeconds(30);
-            while (LastSave(nodeIndex) <= prior && DateTime.UtcNow < deadline)
+            var elapsed = Stopwatch.StartNew();
+            while (LastSave(nodeIndex) <= prior && elapsed.Elapsed < TimeSpan.FromSeconds(30))
                 Thread.Sleep(25);
             Assert.That(LastSave(nodeIndex), Is.GreaterThan(prior));
         }
@@ -51,6 +53,36 @@ namespace Garnet.test.cluster
             using var session = new FailoverSession(provider, FailoverOption.DEFAULT,
                 TimeSpan.FromSeconds(1), default, provider.clusterManager.clusterConnectionStore.Epoch);
             Assert.That(session.FailoverTimeout, Is.False);
+        }
+
+        [Test, CancelAfter(30_000)]
+        public async Task PrimaryRoleWaitsUntilRecoveryCompletes()
+        {
+            context.CreateInstances(1, enableAOF: true);
+            context.MeetAndAssignSlotsAllNodes(1);
+            var provider = (ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider;
+            Assert.That(provider.replicationManager.BeginRecovery(RecoveryStatus.ClusterFailover, upgradeLock: false), Is.True);
+            Task waiting = null;
+            try
+            {
+                var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                waiting = Task.Run(() =>
+                {
+                    started.SetResult();
+                    context.clusterTestUtils.WaitForPrimaryRole(0, context.logger);
+                });
+                await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.ThrowsAsync<TimeoutException>(async () => await waiting.WaitAsync(TimeSpan.FromMilliseconds(250)),
+                    "The primary role alone does not mean recovery has finished and writes can be served.");
+            }
+            finally
+            {
+                provider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
+                if (waiting != null)
+                    await waiting.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+
+            Assert.That(context.clusterTestUtils.GetDatabase().StringSet("ready-key", "value"), Is.True);
         }
 
         [Test, CancelAfter(120_000)]

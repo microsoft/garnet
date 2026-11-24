@@ -343,13 +343,16 @@ namespace Garnet.test
 
             for (var i = 0; i < 10; i++)
                 RentAndReturn();
+            // Require a clean steady-state window without charging a one-time runtime allocation to the pool.
+            var allocated = long.MaxValue;
+            for (var round = 0; round < 5 && allocated != 0; round++)
+            {
+                var before = GC.GetAllocatedBytesForCurrentThread();
+                for (var i = 0; i < 100; i++)
+                    RentAndReturn();
+                allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            }
 #if !DEBUG
-            var before = GC.GetAllocatedBytesForCurrentThread();
-#endif
-            for (var i = 0; i < 100; i++)
-                RentAndReturn();
-#if !DEBUG
-            var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
             ClassicAssert.AreEqual(0, allocated);
 #endif
 

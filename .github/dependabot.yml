@@ -4,6 +4,10 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    ignore:
+      # Garnet tracks LTS (even) .NET releases; the SDK major moves together with the target framework
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       dotnet-deps:
         patterns:

@@ -204,9 +204,12 @@ namespace Tsavorite.core
         /// or one of the TScanIterator reader functions returning false</returns>
         /// <remarks>Currently we load an entire page, which while inefficient in performance, allows us to make the cursor safe (by ensuring we align to a valid record) if it is not
         /// the last one returned. We could optimize this to load only the subset of a page that is pointed to by the cursor and use DiskLogRecord.GetSerializedRecordLength as in
-        /// AsyncGetFromDiskCallback. However, this would not validate the cursor and would therefore require maintaining a cursor history.</remarks>
+        /// AsyncGetFromDiskCallback. However, this would not validate the cursor and would therefore require maintaining a cursor history.
+        /// <para>Only streaming checkpoint phase 2 sets <paramref name="skipInvalidRecords"/>, which skips every invalid record, including elided ones.
+        /// Other lookups skip only invalid records that are not sealed, and a bounded lookup pushes an elided record only if its key has a record at
+        /// or above <paramref name="maxAddress"/>; see <see cref="InvalidRecordScanFilter"/> and <see cref="ConditionalScanPush"/>.</para></remarks>
         internal abstract bool ScanCursor<TScanFunctions>(TsavoriteKV<TStoreFunctions, TAllocator> store, ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions,
-                long endAddress, bool validateCursor, long maxAddress, bool resetCursor = true, bool includeTombstones = false)
+                long endAddress, bool validateCursor, long maxAddress, bool resetCursor = true, bool includeTombstones = false, bool skipInvalidRecords = false)
             where TScanFunctions : IScanIteratorFunctions;
 
         /// <summary>
@@ -310,22 +313,9 @@ namespace Tsavorite.core
             }
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(internalStatus, sessionFunctions));
 
-            // NOTFOUND is set only when FindTag found no hash-index entry for this key's tag, which means no record for
-            // this key is reachable by any operation: the key's whole tag chain was elided (by a Delete, or by an RCU in
-            // InternalRMW/InternalUpsert, both of which SealAndInvalidate the source when CanElide holds) and it was not
-            // re-inserted. The record is still physically in the log, and the search above only asks "is there a *newer*
-            // version of this key?", so without this check it would correctly find nothing newer and push a dead record.
-            // Note this keys off the reachability of the *key*, not of this record: if the key was re-inserted -- possibly
-            // above maxAddress, as during slot migration -- the chain is non-empty, so we still push and the key is
-            // reported. That distinction is what makes this safe for point-in-time consumers (migration, streaming
-            // snapshot), which must never lose a key that is live outside the scanned range.
+            // An absent tag means no version of the key is reachable (a delete elided it), so do not push this record.
             if (internalStatus == OperationStatus.NOTFOUND)
-            {
-                // Closed records only reach here when the iterator was created with includeClosedRecords, which
-                // ScanCursor does when maxAddress is bounded; otherwise SkipOnScan filters them out.
-                Debug.Assert(srcLogRecord.Info.Invalid, "Expected an invalid record if its key's HashBucket is empty");
                 return Status.CreateFound();
-            }
 
             if (needIO)
             {
@@ -334,6 +324,22 @@ namespace Tsavorite.core
             }
             else
             {
+                // Only bounded lookups return invalid records, and only sealed ones; streaming checkpoint phase 2 skips them all
+                // (see InvalidRecordScanFilter). An invalid sealed record is usually elided: an update replaced the key's only
+                // record, or a delete removed it. The search above covers only addresses below maxAddress, and NOTFOUND covers
+                // only an empty hash slot; once another key with the same tag holds that slot, a deleted key's elided record looks
+                // live. So push the record only if its key has a record at or above maxAddress (a later version or a tombstone),
+                // or if finding one needs IO. These callers (slot migration and IterateLookupSnapshot) need keys: reporting a
+                // deleted key is harmless, but dropping a live one is not. A key deleted before the bound and re-created after it
+                // is pushed; it exists now. A record whose insert never committed is also invalid and sealed, and is handled the
+                // same way. An update that elides a record releases its overflow key, so that record cannot be matched to its key,
+                // which is then reported only if it has a record below maxAddress. A pending continuation re-enters here with a copy
+                // that keeps both bits.
+                var recordInfo = srcLogRecord.Info;
+                if (recordInfo.Invalid && recordInfo.IsSealed
+                        && !HasRecordAtOrAbove<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(sessionFunctions, in srcLogRecord, keyHash, currentAddress, maxAddress))
+                    return Status.CreateFound();
+
                 // A more recent version of the key was not found, so push the original record (with its originalAddress).
                 RecordMetadata recordMetadata = new(originalAddress);
 
@@ -360,6 +366,29 @@ namespace Tsavorite.core
                 internalStatus = OperationStatus.SUCCESS;
             }
             return sessionFunctions.Store.HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus, out _);
+        }
+
+        /// <summary>
+        /// Whether the key of <paramref name="srcLogRecord"/> has a record at or above <paramref name="maxAddress"/>, or determining
+        /// that needs IO. A tombstone counts.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool HasRecordAtOrAbove<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TSessionFunctionsWrapper sessionFunctions,
+                in TSourceLogRecord srcLogRecord, long keyHash, long currentAddress, long maxAddress)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
+            OperationStatus internalStatus;
+            bool needIO;
+            do
+            {
+                if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, srcLogRecord, ref stackCtx,
+                      currentAddress, minAddress: maxAddress, maxAddress: long.MaxValue, out internalStatus, out needIO))
+                    return true;
+            }
+            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(internalStatus, sessionFunctions));
+            return needIO;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

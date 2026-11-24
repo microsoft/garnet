@@ -1142,6 +1142,28 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanUseZScanWithInfiniteScores()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "ssInfScores";
+
+            var added = db.Execute("ZADD", key, "-inf", "a", "1.5", "b", "+inf", "c");
+            ClassicAssert.AreEqual(3, (int)added);
+
+            var result = db.Execute("ZSCAN", key, "0");
+            var fields = (RedisValue[])result[1];
+            var scores = new Dictionary<string, string>();
+            for (var i = 0; i < fields.Length; i += 2)
+                scores[fields[i]] = fields[i + 1];
+
+            ClassicAssert.AreEqual(3, scores.Count);
+            ClassicAssert.AreEqual("-inf", scores["a"]);
+            ClassicAssert.AreEqual("1.5", scores["b"]);
+            ClassicAssert.AreEqual("inf", scores["c"]);
+        }
+
+        [Test]
         public void CanDoZScanWithCursor()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -4832,6 +4854,32 @@ namespace Garnet.test
             response = lightClientRequest.SendCommandChunks("ZRANDMEMBER dadi 0 WITHSCORES", bytesSent);
             expectedResponse = "*0\r\n"; // Empty List
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void ZRandMemberZeroCountValidatesTypeAndKeepsSessionAlive(
+            [Values(RedisProtocol.Resp2, RedisProtocol.Resp3)] RedisProtocol protocol, [Values] bool withScores)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
+            var db = redis.GetDatabase();
+            db.SortedSetAdd("sorted", "member", 1);
+            db.StringSet("string", "value");
+            db.ListRightPush("list", "member");
+
+            foreach (var key in new[] { "sorted", "missing", "string", "list" })
+            {
+                var args = withScores ? new object[] { key, 0, "WITHSCORES" } : [key, 0];
+                if (key == "string" || key == "list")
+                {
+                    var error = ClassicAssert.Throws<RedisServerException>(() => db.Execute("ZRANDMEMBER", args));
+                    ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE), error.Message);
+                }
+                else
+                {
+                    ClassicAssert.IsEmpty((RedisResult[])db.Execute("ZRANDMEMBER", args));
+                }
+                ClassicAssert.AreEqual("PONG", (string)db.Execute("PING"));
+            }
         }
 
         [Test]
