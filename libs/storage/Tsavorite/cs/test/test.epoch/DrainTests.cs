@@ -179,6 +179,89 @@ namespace Tsavorite.test.epoch
             Assert.That(counts, Is.All.EqualTo(1), $"{counts.Count(c => c == 0)} actions never ran and {counts.Count(c => c > 1)} ran more than once");
         }
 
+        /// <summary>
+        /// Registering and draining contend for the same drain-list slots: one thread releases a slot while
+        /// another claims it. Every action must still run exactly once and no thread may find a claimed slot
+        /// without its action. This needs the slot's epoch to become visible only after its action, which
+        /// weakly ordered hardware (ARM64) does not give plain writes.
+        /// </summary>
+        [Test]
+        public void ConcurrentRegisteringAndDrainingRunsEveryActionExactlyOnce()
+        {
+            var threadCount = Math.Max(8, Environment.ProcessorCount);
+            var duration = TimeSpan.FromSeconds(3);
+
+            long registered = 0, ran = 0, ranMoreThanOnce = 0, exceptions = 0;
+            var stop = false;
+            var threads = new Thread[threadCount];
+            using var start = new ManualResetEventSlim();
+
+            for (var t = 0; t < threadCount; t++)
+            {
+                var rng = ((uint)t + 1) * 2654435761u;
+                threads[t] = new Thread(() =>
+                {
+                    long localRegistered = 0;
+                    start.Wait();
+                    while (!Volatile.Read(ref stop))
+                    {
+                        try
+                        {
+                            epoch.Resume();
+                            rng ^= rng << 13;
+                            rng ^= rng >> 17;
+                            rng ^= rng << 5;
+                            if (rng % 8 == 0)
+                            {
+                                localRegistered++;
+                                var runs = 0;
+                                epoch.BumpCurrentEpoch(() =>
+                                {
+                                    if (Interlocked.Increment(ref runs) == 1)
+                                        Interlocked.Increment(ref ran);
+                                    else
+                                        Interlocked.Increment(ref ranMoreThanOnce);
+                                });
+                            }
+                            else
+                                epoch.ProtectAndDrain();
+                            epoch.Suspend();
+                        }
+                        catch (NullReferenceException)
+                        {
+                            Interlocked.Increment(ref exceptions);
+                            if (epoch.ThisInstanceProtected())
+                                epoch.Suspend();
+                        }
+                    }
+                    Interlocked.Add(ref registered, localRegistered);
+                })
+                { IsBackground = true };
+                threads[t].Start();
+            }
+
+            start.Set();
+            Thread.Sleep(duration);
+            Volatile.Write(ref stop, true);
+            JoinAll(threads);
+
+            // Nobody else is protected now, so each of these drains whatever is still pending.
+            for (var i = 0; i < 4 * LightEpoch.TestHookDrainListCapacity; i++)
+            {
+                using (epoch.ProtectedScope())
+                {
+                    epoch.BumpCurrentEpoch(() => { });
+                }
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(Interlocked.Read(ref exceptions), Is.Zero, "a drain found a claimed slot with no action");
+                Assert.That(Interlocked.Read(ref ranMoreThanOnce), Is.Zero, "actions ran more than once");
+                Assert.That(Interlocked.Read(ref ran), Is.EqualTo(Interlocked.Read(ref registered)), "registered actions never ran");
+            });
+        }
+
         [Test]
         public void ActionDoesNotRunWhileAnotherThreadIsProtected()
         {
