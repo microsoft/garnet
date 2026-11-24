@@ -653,6 +653,9 @@ namespace Garnet.server
                 case RespCommand.XVIMPORT:
                     vectorManager.HandleVectorSetImportReplication(storageSession, obtainServerSession, key, ref input);
                     return true;
+                case RespCommand.XVSCOPY:
+                    vectorManager.HandleVectorSetShallowCopyReplication(storageSession, obtainServerSession, ref input);
+                    return true;
                 case RespCommand.VREM:
                     vectorManager.HandleVectorSetRemoveReplication(storageSession, key, ref input);
                     return true;

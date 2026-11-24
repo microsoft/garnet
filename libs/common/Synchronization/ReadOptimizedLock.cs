@@ -88,6 +88,11 @@ namespace Garnet.common
             /// </summary>
             public readonly bool IsExclusive => type is LockType.Exclusive or LockType.AllExclusive;
 
+            /// <summary>
+            /// True if this LockToken is uninitialized (ie. all zero values).
+            /// </summary>
+            public readonly bool IsDefault => type == default && token == default;
+
             private LockToken(LockType type, int token)
             {
                 this.type = type;

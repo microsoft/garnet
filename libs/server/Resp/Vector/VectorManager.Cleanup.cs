@@ -6,6 +6,8 @@ using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -26,12 +28,14 @@ namespace Garnet.server
         private sealed class PostDropCleanupFunctions : IScanIteratorFunctions
         {
             private readonly StorageSession storageSession;
-            private readonly FrozenSet<ulong> contexts;
+            private readonly FrozenSet<ulong> deleteContexts;
+            private readonly FrozenDictionary<ulong, List<ulong>> copyToContexts;
 
-            public PostDropCleanupFunctions(StorageSession storageSession, HashSet<ulong> contexts)
+            public PostDropCleanupFunctions(StorageSession storageSession, HashSet<ulong> contexts, Dictionary<ulong, List<ulong>> copyToContexts)
             {
-                this.contexts = contexts.ToFrozenSet();
+                this.deleteContexts = contexts.ToFrozenSet();
                 this.storageSession = storageSession;
+                this.copyToContexts = copyToContexts.ToFrozenDictionary();
             }
 
             public void OnException(Exception exception, long numberOfRecords) { }
@@ -62,11 +66,52 @@ namespace Garnet.server
                 // We only store the _first_ context in a batch of related contexts to delete
                 // so mask it down to just the first context
                 var pairedContext = ns & ~(ContextStep - 1);
-                if (!contexts.Contains(pairedContext))
+                if (!deleteContexts.Contains(pairedContext))
                 {
                     // Not a target vector set, ignore
                     cursorRecordResult = CursorRecordResult.Skip;
                     return true;
+                }
+
+                // If we're going to delete, check to see if we need to copy this value over to a different context
+                // before we do so
+                if (copyToContexts.TryGetValue(pairedContext, out var copyTo))
+                {
+                    Span<byte> namespaceSpanRaw = stackalloc byte[sizeof(uint)];
+
+                    foreach (var targetContext in copyTo)
+                    {
+                        var namespaceSpan = namespaceSpanRaw;
+
+                        var updatedContext = targetContext | (ns & (ContextStep - 1));
+                        StoreContextInNamespace(updatedContext, ref namespaceSpan);
+
+                        // Only allow new records, if the target Vector Set already has a key here we want to bail
+                        var input = new VectorInput();
+                        input.CopyOnWrite = VectorInput.CopyOnWriteOperation.DisallowOverwrite;
+                        input.WriteDesiredSize = logRecord.ValueSpan.Length;
+
+                        var output = new VectorOutput();
+                        GCHandle? valuePin = logRecord.IsPinnedValue ? null : logRecord.ValueOverflow.Pin();
+                        try
+                        {
+                            output.SpanByteAndMemory = SpanByteAndMemory.FromPinnedSpan(logRecord.ValueSpan);
+
+                            VectorElementKey copyToKey = new(namespaceSpan, logRecord.KeyBytes);
+
+                            var copyStatus = storageSession.vectorBasicContext.RMW(copyToKey, ref input, ref output);
+                            if (copyStatus.IsPending)
+                            {
+                                VectorOutput ignored = new();
+                                CompletePending(ref copyStatus, ref ignored, ref storageSession.vectorBasicContext);
+                            }
+                        }
+                        finally
+                        {
+                            valuePin?.Free();
+                            output.SpanByteAndMemory.Dispose();
+                        }
+                    }
                 }
 
                 VectorElementKey toDeleteKey = new(namespaceBytes, logRecord.KeyBytes);
@@ -146,12 +191,13 @@ namespace Garnet.server
                     throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
                 }
 
-                ActiveThreadSession = dropSession.storageSession;
-                try
+                // Process all pending drops
+                foreach (var (k, (context, indexPtr)) in requestedDrops)
                 {
-                    // Process all pending drops
-                    foreach (var (k, (context, indexPtr)) in requestedDrops)
+                    try
                     {
+                        SetActiveThreadSession(dropSession.storageSession, default, context);
+
                         long keyHash;
                         unsafe
                         {
@@ -176,10 +222,10 @@ namespace Garnet.server
                             }
                         }
                     }
-                }
-                finally
-                {
-                    ActiveThreadSession = null;
+                    finally
+                    {
+                        ClearActiveThreadSession();
+                    }
                 }
             }
         }
@@ -277,7 +323,6 @@ namespace Garnet.server
 
                 try
                 {
-                    // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
                     using var cleanupSession = (RespServerSession)getTempSession();
                     if (cleanupSession.activeDbId != dbId && !cleanupSession.TrySwitchActiveDatabaseSession(dbId))
                     {
@@ -293,6 +338,7 @@ namespace Garnet.server
                     ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
 
                     HashSet<ulong> needCleanup = null;
+                    Dictionary<ulong, List<ulong>> copyDeletedRecords = null;
                     lock (this)
                     {
                         for (var i = 0; i < contextMetadatas.Length; i++)
@@ -309,6 +355,12 @@ namespace Garnet.server
                                 }
                             }
                         }
+
+                        // Determine any copying we need to do as part of deleting shallow copied Vector Sets
+                        if (needCleanup != null)
+                        {
+                            copyDeletedRecords = DetermineShallowCopyDataCopies(shallowCopyBackReferences, needCleanup);
+                        }
                     }
 
                     if (needCleanup == null)
@@ -317,7 +369,7 @@ namespace Garnet.server
                         continue;
                     }
 
-                    PostDropCleanupFunctions callbacks = new(cleanupSession.storageSession, needCleanup);
+                    PostDropCleanupFunctions callbacks = new(cleanupSession.storageSession, needCleanup, copyDeletedRecords);
 
                     // Scan whole keyspace and remove any associated data using a snapshot
                     // lookup-based push iterator. This avoids building a parallel tempKv (which
@@ -337,6 +389,15 @@ namespace Garnet.server
 
                             _ = dirtyContextMetadatas.Add(contextIndex);
                         }
+
+                        // Update shallowCopyBackReferences now that deletes are finished
+                        foreach (var (shallowCopy, source) in shallowCopyBackReferences.ToList())
+                        {
+                            if (needCleanup.Contains(shallowCopy) || needCleanup.Contains(source))
+                            {
+                                shallowCopyBackReferences.Remove(shallowCopy, out _);
+                            }
+                        }
                     }
 
                     UpdateContextMetadata(ref delCtx);
@@ -350,6 +411,94 @@ namespace Garnet.server
                     _ = cleanupGate.Release();
                 }
             }
+        }
+
+        /// <summary>
+        /// Determine the set of copies to do as part of deleting Vector Sets.
+        /// </summary>
+        /// <param name="shallowCopyBackReferences">Map of shallow copy context -&gt; source context</param>
+        /// <param name="toDeleteContexts">Contexts to be deleted</param>
+        /// <returns>Map of context being deleted -&gt; contexts to copy records into (if they do not exist)</returns>
+        internal static Dictionary<ulong, List<ulong>> DetermineShallowCopyDataCopies(ConcurrentDictionary<ulong, ulong> shallowCopyBackReferences, HashSet<ulong> toDeleteContexts)
+        {
+            // Logic here is to build a graph of copies, and each time we remove one of the contexts we record what needs to be copied where
+
+            // A map of source context -> contexts it's copied into
+            var totalGraph = new Dictionary<ulong, HashSet<ulong>>();
+            {
+                // Build one layer, totalGraph[source] -> [copy]
+                foreach (var (copyContext, srcContext) in shallowCopyBackReferences)
+                {
+                    if (!totalGraph.TryGetValue(srcContext, out var copiedTo))
+                    {
+                        totalGraph[srcContext] = copiedTo = [];
+                    }
+
+                    _ = copiedTo.Add(copyContext);
+                }
+
+                // Repeatedly update totalGraph so source context -> [copied directly, copied indirectly, ...]
+                var modified = true;
+                while (modified)
+                {
+                    modified = false;
+
+                    foreach (var (sourceContext, copiedToContexts) in totalGraph)
+                    {
+                        foreach (var copiedIntoContext in copiedToContexts.ToList())
+                        {
+                            if (totalGraph.TryGetValue(copiedIntoContext, out var copiedAgainIntoContexts))
+                            {
+                                foreach (var copiedIndirectlyContext in copiedAgainIntoContexts)
+                                {
+                                    if (copiedToContexts.Add(copiedIndirectlyContext))
+                                    {
+                                        modified = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Reduce totalGraph to copies that need to be performed
+            //
+            // This is basicallythe subset of [copied directly, copied indirectly, ...] where the context _survives_ but doesn't have an immediate predecessor that does
+            var ret = new Dictionary<ulong, List<ulong>>();
+            foreach (var deletedContext in toDeleteContexts)
+            {
+                if (totalGraph.TryGetValue(deletedContext, out var copiedTo))
+                {
+                    List<ulong> survivingCopies = null;
+
+                    // Filter down to actual copies to perform
+                    foreach (var copiedIntoContext in copiedTo)
+                    {
+                        // Don't copy into anything that's being deleted
+                        if (toDeleteContexts.Contains(copiedIntoContext))
+                        {
+                            continue;
+                        }
+
+                        // Don't copy into a shallow copy if its direct predecessor is surviving
+                        if (shallowCopyBackReferences.TryGetValue(copiedIntoContext, out var source) && !toDeleteContexts.Contains(source))
+                        {
+                            continue;
+                        }
+
+                        survivingCopies ??= [];
+                        survivingCopies.Add(copiedIntoContext);
+                    }
+
+                    if (survivingCopies != null)
+                    {
+                        ret[deletedContext] = survivingCopies;
+                    }
+                }
+            }
+
+            return ret;
         }
 
         /// <summary>
@@ -448,7 +597,7 @@ namespace Garnet.server
                 return;
             }
 
-            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out _);
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out _, out _);
 
             // Record _may_ be dead, but does not imply anything about the Vector Set if it is
             if (flags.HasFlag(VectorSetFlags.SuppressCleanup))
@@ -504,7 +653,7 @@ namespace Garnet.server
                                     else
                                     {
                                         // If the _context_ on this record has changed, that also means the old Vector Set is dead
-                                        ReadIndex(output.SpanByteAndMemory.Span, out var liveContext, out _, out _, out _, out _, out _, out _, out _, out _);
+                                        ReadIndex(output.SpanByteAndMemory.Span, out var liveContext, out _, out _, out _, out _, out _, out _, out _, out _, out _);
                                         needsDelete = liveContext != context;
                                     }
                                 }

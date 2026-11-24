@@ -76,11 +76,17 @@ namespace Garnet.server
 
                     try
                     {
-
                         dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
                         var dataLen = (nuint)value.Length;
 
                         AssertAlignment(in srcLogRecord, dataPtr);
+
+                        // Ignore empty records if we're in a COW context and data length is zero - this implies we've written a "cenotaph" to fake a deletion
+                        if (input.CopyOnWrite == VectorInput.CopyOnWriteOperation.ReadWithCenotaph && dataLen == 0)
+                        {
+                            readInfo.Action = ReadAction.CancelOperation;
+                            return false;
+                        }
 
                         if (isAttribute)
                         {
@@ -236,6 +242,13 @@ namespace Garnet.server
         {
             Debug.Assert(key.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
 
+            // If we're in an RMW on a COW chain, we need to bail if we'd create a new record
+            if (input.CopyOnWrite == VectorInput.CopyOnWriteOperation.DisallowCreate)
+            {
+                rmwInfo.Action = RMWAction.CancelOperation;
+                return false;
+            }
+
             // Only needed when updating ContextMetadata via RMW or the DiskANN RMW callback, all of which set WriteDesiredSize
             return input.WriteDesiredSize != 0;
         }
@@ -250,6 +263,13 @@ namespace Garnet.server
 
             if (input.Callback == 0)
             {
+                if (input.CopyOnWrite == VectorInput.CopyOnWriteOperation.DisallowOverwrite)
+                {
+                    // We're making a copy before a RMW
+                    output.SpanByteAndMemory.Span.CopyTo(alignedValue);
+                    return logRecord.TrySetContentLengths(logRecord.ValueSpan.Length, in sizeInfo);
+                }
+
                 Debug.Assert(logRecord.NamespaceBytes.Length == 1 && logRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
                 Debug.Assert(key.Length == sizeof(int), "Should have int sized key for ContextMetadata");
 
@@ -293,7 +313,16 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref VectorInput input, ref VectorOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
-        => input.WriteDesiredSize != 0;
+        {
+            // A COW operation shouldn't overwrite a value, that implies we raced another thread doing the COW
+            if (input.CopyOnWrite == VectorInput.CopyOnWriteOperation.DisallowOverwrite)
+            {
+                rmwInfo.Action = RMWAction.CancelOperation;
+                return false;
+            }
+
+            return input.WriteDesiredSize != 0;
+        }
 
         /// <inheritdoc/>
         public readonly bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, ref VectorOutput output, ref RMWInfo rmwInfo)
@@ -369,6 +398,13 @@ namespace Garnet.server
         public readonly bool InPlaceUpdater(ref LogRecord logRecord, ref VectorInput input, ref VectorOutput output, ref RMWInfo rmwInfo)
         {
             Debug.Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
+
+            // A COW operation shouldn't overwrite a value, that implies we raced another thread doing the COW
+            if (input.CopyOnWrite == VectorInput.CopyOnWriteOperation.DisallowOverwrite)
+            {
+                rmwInfo.Action = RMWAction.CancelOperation;
+                return false;
+            }
 
             var key = logRecord.Key;
 

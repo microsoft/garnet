@@ -326,12 +326,11 @@ namespace Garnet.test
                 if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var info))
                     continue;
 
+                var isInWriteBlock = (int)cmd is >= ((int)RespCommandExtensions.FirstWriteCommand) and <= ((int)RespCommandExtensions.LastWriteCommand);
                 var firstWrite = (int)RespCommandExtensions.FirstWriteCommand;
                 var lastWrite = (int)RespCommandExtensions.LastWriteCommand;
-                var isInWriteBlock = (int)cmd >= firstWrite && (int)cmd <= lastWrite;
-                var isWrite = info.AclCategories.HasFlag(RespAclCategories.Write);
 
-                if (isWrite)
+                if (isInWriteBlock)
                 {
                     ClassicAssert.IsTrue(isInWriteBlock, $"Write command {cmd} is outside the write block [{firstWrite},{lastWrite}]");
                 }

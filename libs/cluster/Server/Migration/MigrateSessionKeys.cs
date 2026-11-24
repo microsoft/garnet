@@ -40,8 +40,15 @@ namespace Garnet.cluster
 
                 // Discover Vector Sets linked namespaces
                 var allKeys = migrateTask.sketch.Keys.Select(t => t.Item1);
-                var indexesToMigrate = new Dictionary<byte[], (byte[] Value, DateTime? Expiration)>(ByteArrayComparer.Instance);
+                var indexesToMigrate = new Dictionary<byte[], (byte[] Value, DateTime? Expiration, bool IsShallowCopyOrShallowCopySource)>(ByteArrayComparer.Instance);
                 _namespaces = clusterProvider.storeWrapper.DefaultDatabase.VectorManager.GetNamespacesForKeys(clusterProvider.storeWrapper, allKeys, indexesToMigrate);
+
+                // Cannot 
+                if (indexesToMigrate.Any(static kv => kv.Value.IsShallowCopyOrShallowCopySource))
+                {
+                    logger?.LogError("Cannot migrate Shallow Copied Vector Sets (or their sources) by keys");
+                    return false;
+                }
 
                 // Discover RangeIndex keys upfront
                 var rangeIndexKeysToMigrate = clusterProvider.serverOptions.EnableRangeIndexPreview
@@ -86,11 +93,11 @@ namespace Garnet.cluster
                     try
                     {
 
-                        foreach (var (key, (value, expiration)) in indexesToMigrate)
+                        foreach (var (key, (value, expiration, _)) in indexesToMigrate)
                         {
                             // Update the index context as we move it, so it arrives on the destination node pointed at the appropriate
                             // namespaces for element data
-                            VectorManager.ReadIndex(value, out var oldContext, out _, out _, out _, out _, out _, out _, out _, out _);
+                            VectorManager.ReadIndex(value, out var oldContext, out _, out _, out _, out _, out _, out _, out _, out _, out _);
 
                             var newContext = _namespaceMap[oldContext];
                             VectorManager.SetContextForMigration(value, newContext);
