@@ -269,7 +269,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteNull()
+        internal void WriteNull()
         {
             if (respProtocolVersion >= 3)
             {

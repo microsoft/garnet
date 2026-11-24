@@ -170,6 +170,7 @@ namespace Garnet
         private void InitializeServer()
         {
             Debug.Assert(opts != null);
+            opts.ValidateMigrationOptions();
 
             if (!opts.QuietMode)
             {
@@ -186,6 +187,9 @@ namespace Garnet
                     {normal}
                     """);
             }
+
+            // Validate programmatic options before allocating stores or network buffers.
+            _ = opts.GetReplicaDiskBasedSyncPipelineDepth();
 
             var clusterFactory = opts.EnableCluster ? new ClusterFactory() : null;
 

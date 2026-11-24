@@ -33,10 +33,21 @@ namespace Tsavorite.core
         internal virtual ObjectLogFilePositionInfo GetObjectLogTail() => new();  // This marks it as "unset"
         /// <summary>Set the ObjectLog tail position, if this is ObjectAllocator.</summary>
         internal virtual void SetObjectLogTail(ObjectLogFilePositionInfo tail) { }
+        /// <summary>For recovery: where the objects of the valid records below <paramref name="untilAddress"/> on its page end in the object log, aligned up to
+        ///     the object log's sector size; not set if none of them has objects, or there is no object log. Call only while that page is resident and its
+        ///     objects are not loaded, so its records still hold their object-log positions. Only implemented by ObjectAllocator.</summary>
+        /// <param name="untilAddress">The end of the records to consider; the page holding it is the one examined</param>
+        internal virtual ObjectLogFilePositionInfo GetObjectLogEndOfKeptRecordsOnPage(long untilAddress) => new();
         /// <summary>Calculate the total serialized object size on a loaded page. Only implemented by ObjectAllocator.</summary>
         internal virtual long CalculatePageObjectSizes(long page, long startAddress, long untilAddress) => 0;
-        /// <summary>Load objects for records on an already-loaded page for recovery pass 2.</summary>
-        internal virtual void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice) { }
+        /// <summary>Load objects for records on an already-loaded page for recovery pass 2; records at or above <paramref name="snapshotFromAddress"/> read theirs
+        ///     from <paramref name="snapshotObjectLogDevice"/>, and records below it from the main object log.</summary>
+        /// <param name="page">The page whose records' objects are loaded</param>
+        /// <param name="fromAddress">The lowest address whose record's objects are needed</param>
+        /// <param name="untilAddress">The end of the records whose objects are loaded</param>
+        /// <param name="snapshotObjectLogDevice">The object-log device for records at or above <paramref name="snapshotFromAddress"/></param>
+        /// <param name="snapshotFromAddress">The lowest address whose record is the snapshot file's copy; long.MaxValue when no record is</param>
+        internal virtual void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice snapshotObjectLogDevice, long snapshotFromAddress) { }
     }
 
     /// <summary>
@@ -223,6 +234,17 @@ namespace Tsavorite.core
 
         /// <summary>Sector size</summary>
         protected readonly int sectorSize;
+
+        /// <summary>
+        /// The number of times <see cref="Reset"/> has reset the device. A truncation records it when requested, and is skipped if
+        /// it has changed by the time the truncation runs: the reset device truncates from segment 0, so the truncation would remove
+        /// the new log's segments.
+        /// </summary>
+        long resetCount;
+
+        /// <summary>Held by a truncation from its check of <see cref="resetCount"/> through the device truncation, and by
+        /// <see cref="ResetCore"/> while it resets the device, so the device cannot be reset between the check and the truncation</summary>
+        readonly object truncationLock = new();
         #endregion
 
         #region Private page metadata
@@ -370,6 +392,9 @@ namespace Tsavorite.core
         ///            drained — close pages (advancing SafeHeadAddress and ClosedUntilAddress)
         ///            and free pages. Mirrors OnPagesClosed's invariant.
         ///
+        ///   Device:  reset the device, which forgets its open handles and truncated range,
+        ///            and skip any truncation requested before this (see <see cref="resetCount"/>).
+        ///
         ///   Final:   publish new BeginAddress synchronously. Publishing it last (rather than
         ///            up front) means an iterator with a stale nextAddress sees
         ///            currentAddress &gt; OLD BeginAddress and does not snap forward into the
@@ -479,6 +504,14 @@ namespace Tsavorite.core
                 phase2Done.Wait();
             }
 
+            // -------- Device: forget open handles and the truncated range --------
+            // The device then truncates from segment 0, so a truncation requested before this would remove the new log's segments.
+            // Advancing resetCount makes such a truncation skip, and taking the lock waits for one already past that check. The
+            // lock is taken with the epoch released: a truncation in progress waits for an epoch drain.
+            _ = Interlocked.Increment(ref resetCount);
+            lock (truncationLock)
+                device.Reset();
+
             // Restore caller's epoch state if they were protected on entry.
             if (wasProtected)
                 epoch.Resume();
@@ -496,7 +529,6 @@ namespace Tsavorite.core
                 for (int i = 0; i < BufferSize; i++)
                     PendingFlush[i]?.list?.Clear();
             }
-            device.Reset();
         }
 
         /// <summary>
@@ -509,18 +541,23 @@ namespace Tsavorite.core
         /// <summary>Asynchronously wraps <see cref="TruncateUntilAddressBlocking(long)"/>; fires
         /// <see cref="IRecordTriggers.OnTruncate(long)"/> AFTER the device truncation completes when
         /// <see cref="IStoreFunctions.CallOnTruncate"/> is true.</summary>
-        internal void TruncateUntilAddress(long toAddress) => _ = Task.Run(() =>
+        /// <param name="toAddress">The address to truncate the log below</param>
+        /// <param name="requestResetCount">The value of <see cref="resetCount"/> when the truncation was requested. If a
+        /// <see cref="Reset"/> has happened since, the truncation and OnTruncate are skipped.</param>
+        internal void TruncateUntilAddress(long toAddress, long requestResetCount) => _ = Task.Run(() =>
         {
-            TruncateUntilAddressBlocking(toAddress);
+            lock (truncationLock)
+            {
+                if (requestResetCount != Volatile.Read(ref resetCount))
+                    return;
+                TruncateUntilAddressBlocking(toAddress);
+            }
             if (storeFunctions.CallOnTruncate)
                 storeFunctions.OnTruncate(toAddress);
         });
 
         /// <summary>Synchronously (blocking) wraps <see cref="IDevice.TruncateUntilAddress(long)"/>; overridden when an allocator potentially has to interact with multiple devices</summary>
         protected virtual void TruncateUntilAddressBlocking(long toAddress) => device.TruncateUntilAddress(toAddress);
-
-        /// <summary>Remove disk segment</summary>
-        protected virtual void RemoveSegment(int segment) => device.RemoveSegment(segment);
 
         internal virtual bool TryComplete() => device.TryComplete();
 
@@ -902,11 +939,37 @@ namespace Tsavorite.core
                 if (storeFunctions.CallOnTruncate)
                     storeFunctions.OnTruncate(toAddress);
 
-                for (int s = lastValidSegment + 1; s <= lastAvailSegment; s++)
-                {
-                    logger?.LogInformation("Trimming tail segment {s} on disk", s);
-                    RemoveSegment(s);
-                }
+                logger?.LogInformation("Trimming disk segments above {lastSegment}", lastValidSegment);
+                TrimSegmentsAbove(recoveredHLCInfo, lastValidSegment, lastAvailSegment);
+            }
+        }
+
+        /// <summary>
+        /// Remove the log's segments above <paramref name="lastValidSegment"/>, which hold only data written after the checkpoint
+        /// being recovered
+        /// </summary>
+        /// <param name="recoveredHLCInfo">The checkpoint being recovered</param>
+        /// <param name="lastValidSegment">The highest segment that recovery needs</param>
+        /// <param name="lastAvailSegment">The highest segment the device is known to hold. Segments are removed one at a time up
+        /// to it only if the device cannot list its segments.</param>
+        private protected virtual void TrimSegmentsAbove(in HybridLogCheckpointInfo recoveredHLCInfo, int lastValidSegment, int lastAvailSegment)
+        {
+            if (device.TryRemoveSegmentsAbove(lastValidSegment, out _))
+                return;
+
+            // TryRemoveSegmentsAbove returns false only when the device cannot list its segments. So remove the segments known to
+            // exist, up to lastAvailSegment, one at a time, highest first, so that an interruption leaves the remaining segments
+            // contiguous. This relies on RemoveSegment removing only the segment named, as IDevice requires.
+            //
+            // A NativeStorageDevice with an older native library instead removes every open segment through the one named, valid
+            // ones included. It lists its own segments, and a composite device has each component remove its own, so it gets here
+            // only as a component of a composite device another of whose components cannot list its segments. That case is
+            // deliberately left unhandled: recovery itself never trims (it passes trimLog false; only tests pass true), Garnet
+            // builds no composite devices, and current native libraries remove only the segment named.
+            for (var segment = lastAvailSegment; segment > lastValidSegment; segment--)
+            {
+                logger?.LogInformation("Trimming tail segment {s} on disk", segment);
+                device.RemoveSegment(segment);
             }
         }
 
@@ -1117,8 +1180,19 @@ namespace Tsavorite.core
         public long GetTailAddress()
         {
             var local = TailPageOffset;
+            if (local.Offset >= PageSize)
+                local = GetStableTailPageOffset(local);
+            return GetLogicalAddressOfStartOfPage(local.Page) | (uint)local.Offset;
+        }
 
-            // Handle corner cases during page overflow.
+        /// <summary>Resolves a tail page offset observed during page overflow.</summary>
+        /// <remarks>
+        /// Kept out of line because <see cref="Thread.Yield"/> is a P/Invoke: a method that inlines it sets up a P/Invoke
+        /// frame, a thread-static lookup, on every call, whether or not it yields.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        PageOffset GetStableTailPageOffset(PageOffset local)
+        {
             // The while loop is guaranteed to terminate because HandlePageOverflow ensures that it fixes the unstable TailPageOffset immediately.
             while (local.Offset >= PageSize)
             {
@@ -1132,7 +1206,7 @@ namespace Tsavorite.core
                 _ = Thread.Yield();
                 local = TailPageOffset;
             }
-            return GetLogicalAddressOfStartOfPage(local.Page) | (uint)local.Offset;
+            return local;
         }
 
         /// <summary>Get tail address without considering whether it is unstable; this is called during HandlePageOverflow as part of determining
@@ -1738,11 +1812,14 @@ namespace Tsavorite.core
         /// <summary>Shift begin address</summary>
         public void ShiftBeginAddress(long newBeginAddress, bool truncateLog, bool noFlush = false)
         {
+            // Recorded with the request, so the truncation is skipped if a Reset rewinds the log before it runs
+            var requestResetCount = Volatile.Read(ref resetCount);
+
             // First update the begin address
             if (!MonotonicUpdate(ref BeginAddress, newBeginAddress, out _))
             {
                 if (truncateLog)
-                    epoch.BumpCurrentEpoch(() => TruncateUntilAddress(newBeginAddress));
+                    epoch.BumpCurrentEpoch(() => TruncateUntilAddress(newBeginAddress, requestResetCount));
                 return;
             }
 
@@ -1799,7 +1876,7 @@ namespace Tsavorite.core
                     if (h)
                         OnPagesClosed(newBeginAddress);
                     if (truncateLog)
-                        TruncateUntilAddress(newBeginAddress);
+                        TruncateUntilAddress(newBeginAddress, requestResetCount);
                 });
             }
         }
@@ -2179,25 +2256,54 @@ namespace Tsavorite.core
 
         /// <summary>Read pages from specified device(s) for recovery, with no output of the countdown event (but it is still created in the
         ///     <see cref="PageAsyncReadResult{TContext}"/> and thus must be Dispose()d).</summary>
+        /// <typeparam name="TContext">The type of <paramref name="context"/></typeparam>
+        /// <param name="readPageStart">The first page to read</param>
+        /// <param name="numPages">The number of pages to read</param>
+        /// <param name="untilAddress">The end of the data to read; the page holding it is read only up to it, rounded up to a sector</param>
+        /// <param name="context">The context passed to the read completion callback</param>
+        /// <param name="devicePageOffset">For a snapshot <paramref name="logDevice"/>, the page at its offset 0</param>
+        /// <param name="logDevice">The snapshot device to read from; null for the main log device</param>
+        /// <param name="objectLogDevice">The object-log device a <see cref="RecoveryPhase.Pass2"/> read deserializes objects from; null for the main object log</param>
+        /// <param name="recoveryPhase">The recovery phase of the read; objects are deserialized as each page is read except in <see cref="RecoveryPhase.Pass1"/></param>
+        /// <param name="firstPageReadOffset">The sector-aligned offset on <paramref name="readPageStart"/> from which to read that page; the resident page's
+        ///     bytes below it are kept. Nonzero only for a <see cref="RecoveryPhase.Pass1"/> read, which deserializes no objects (that would start at the page start).</param>
         internal void AsyncReadPagesForRecovery<TContext>(long readPageStart, int numPages, long untilAddress, TContext context,
-            long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null, RecoveryPhase recoveryPhase = RecoveryPhase.Pass1)
-            => AsyncReadPagesForRecovery(readPageStart, numPages, untilAddress, context, out _, devicePageOffset, logDevice, objectLogDevice, recoveryPhase);
+            long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null, RecoveryPhase recoveryPhase = RecoveryPhase.Pass1, int firstPageReadOffset = 0)
+            => AsyncReadPagesForRecovery(readPageStart, numPages, untilAddress, context, out _, devicePageOffset, logDevice, objectLogDevice, recoveryPhase, firstPageReadOffset);
 
         /// <summary>Read pages from specified device for recovery, returning the countdown event</summary>
+        /// <typeparam name="TContext">The type of <paramref name="context"/></typeparam>
+        /// <param name="readPageStart">The first page to read</param>
+        /// <param name="numPages">The number of pages to read</param>
+        /// <param name="untilAddress">The end of the data to read; the page holding it is read only up to it, rounded up to a sector</param>
+        /// <param name="context">The context passed to the read completion callback</param>
+        /// <param name="completed">Outputs the countdown event for the page reads; see <see cref="PageAsyncReadResult{TContext}.handle"/></param>
+        /// <param name="devicePageOffset">For a snapshot <paramref name="logDevice"/>, the page at its offset 0</param>
+        /// <param name="logDevice">The snapshot device to read from; null for the main log device</param>
+        /// <param name="objectLogDevice">The object-log device a <see cref="RecoveryPhase.Pass2"/> read deserializes objects from; null for the main object log</param>
+        /// <param name="recoveryPhase">The recovery phase of the read; objects are deserialized as each page is read except in <see cref="RecoveryPhase.Pass1"/></param>
+        /// <param name="firstPageReadOffset">The sector-aligned offset on <paramref name="readPageStart"/> from which to read that page; the resident page's
+        ///     bytes below it are kept. Nonzero only for a <see cref="RecoveryPhase.Pass1"/> read, which deserializes no objects (that would start at the page start).</param>
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void AsyncReadPagesForRecovery<TContext>(long readPageStart, int numPages, long untilAddress, TContext context,
-            out CountdownEvent completed, long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null, RecoveryPhase recoveryPhase = RecoveryPhase.Pass1)
+            out CountdownEvent completed, long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null, RecoveryPhase recoveryPhase = RecoveryPhase.Pass1,
+            int firstPageReadOffset = 0)
         {
+            Debug.Assert(firstPageReadOffset == 0 || (firstPageReadOffset % sectorSize == 0 && firstPageReadOffset < PageSize && recoveryPhase == RecoveryPhase.Pass1
+                && IsAllocated(GetPageIndexForPage(readPageStart))), $"Invalid firstPageReadOffset {firstPageReadOffset}");
             var usedDevice = logDevice ?? this.device;
 
             completed = new CountdownEvent(numPages);
-            for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
+
+            // firstPageReadOffset applies only to the first page; the loop update clears pageReadOffset for the rest.
+            var pageReadOffset = firstPageReadOffset;
+            for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++, pageReadOffset = 0)
             {
                 var pageIndex = (int)(readPage % BufferSize);
                 if (!IsAllocated(pageIndex))
                     _wrapper.AllocatePage(pageIndex);
                 else
-                    ClearPage(readPage, offset: 0);
+                    ClearPage(readPage, offset: pageReadOffset);
 
                 var asyncResult = new PageAsyncReadResult<TContext>()
                 {
@@ -2225,6 +2331,11 @@ namespace Tsavorite.core
                 if (logDevice != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
+                // Start the read at pageReadOffset, in both the file and the page; readLength was computed from the page start.
+                Debug.Assert(pageReadOffset == 0 || readLength > pageReadOffset, $"readLength {readLength} must exceed pageReadOffset {pageReadOffset}");
+                offsetInFile += (ulong)pageReadOffset;
+                readLength -= (uint)pageReadOffset;
+
                 if (recoveryPhase == RecoveryPhase.Pass2)
                 {
                     // Create separate readBuffers for each main-log page, as each page launches its own async read and callbacks are on different threads.
@@ -2233,7 +2344,7 @@ namespace Tsavorite.core
                 }
 
                 // Call the overridden ReadAsync for the derived allocator class
-                ReadAsync(offsetInFile, (IntPtr)pagePointers[pageIndex], readLength, AsyncReadPagesForRecoveryCallback, asyncResult, usedDevice);
+                ReadAsync(offsetInFile, (IntPtr)(pagePointers[pageIndex] + pageReadOffset), readLength, AsyncReadPagesForRecoveryCallback, asyncResult, usedDevice);
             }
         }
 
@@ -2375,10 +2486,11 @@ namespace Tsavorite.core
                     page = flushPage,
                     context = context,
                     count = 1,
-                    // A recovery flush starts at scanFromAddress, which may be mid-page at the first record past the PageHeader.
-                    // In that case it is a front-partial flush: the write length is derived from untilAddress (the page end)
-                    // rather than a full page, and the PageHeader is re-included when the page is written. The snapshot/hybrid-log
-                    // boundary that selects which records copy their objects is carried separately via formerFlushedUntilAddress.
+                    // A recovery flush starts at scanFromAddress, which may be mid-page. In that case it is a front-partial flush: the write length is derived
+                    // from untilAddress (the page end) rather than a full page. At the first record past the PageHeader the PageHeader is re-included when the
+                    // page is written; further in, only the records from there on need writing, as those below it are already on the main log. That happens
+                    // at a mid-page hybrid-log scan start and at the snapshot recovery boundary. The snapshot/hybrid-log boundary that selects which records
+                    // copy their objects is carried separately via formerFlushedUntilAddress.
                     partial = flushFromAddress > pageStartAddress,
                     fromAddress = flushFromAddress,
                     untilAddress = GetLogicalAddressOfStartOfPage(flushPage + 1),
@@ -2653,7 +2765,8 @@ namespace Tsavorite.core
                                         BlittableFrame frame,
                                         ref CountdownEvent completed,
                                         long devicePageOffset = 0,
-                                        IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
+                                        IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null,
+                                        ObjectScanFrame objectFrame = null)
         {
             var usedDevice = device ?? this.device;
 
@@ -2676,6 +2789,7 @@ namespace Tsavorite.core
                 handle = completed,
                 cts = cts,
                 readBuffers = readBuffers,
+                objectFrame = objectFrame,
                 maxAddressOffsetOnPage = maxAddressOffsetOnPage
             };
 
@@ -2733,7 +2847,8 @@ namespace Tsavorite.core
                 // Initialize to "invalid record or key does not match so get previous record" address to read
                 prevAddressToRead = recordInfo.PreviousAddress;
 
-                if (recordInfo.Invalid) // includes IsNull
+                // Follow past copies outside a bounded scan even when they match the requested key.
+                if (recordInfo.Invalid || ctx.logicalAddress >= ctx.maxAddress) // Invalid includes IsNull
                     return false;
 
                 var offsetToKeyStart = dataHeader.GetOffsetToKeyStart();

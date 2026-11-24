@@ -86,6 +86,37 @@ namespace Tsavorite.core
         internal static DiskLogRecord CreateFromTransientLogRecord(in LogRecord memoryLogRecord) => new(memoryLogRecord);
 
         /// <summary>
+        /// Copy a key and its metadata into a reusable scan buffer without retaining the source value.
+        /// </summary>
+        internal static DiskLogRecord CopyKeyForScan(in LogRecord source, SectorAlignedBufferPool bufferPool,
+            ref SectorAlignedMemory scanBuffer, ObjectIdMap transientObjectIdMap)
+        {
+            var sourceHeader = source.DataHeader;
+            var keyPrefixLength = Constants.FixedHeaderSize + sourceHeader.ExtendedNamespaceLength + sourceHeader.KeyLength;
+            var snapshotHeader = sourceHeader;
+            snapshotHeader.SetValueIsInline();
+            snapshotHeader.ValueLength = 0;
+            snapshotHeader.FillerWords = 0;
+            var optionalSize = snapshotHeader.GetOptionalSize();
+            var snapshotSize = RoundUp(keyPrefixLength + optionalSize, Constants.kRecordAlignment);
+            if (scanBuffer == null || scanBuffer.AlignedTotalCapacity < snapshotSize)
+            {
+                scanBuffer?.Return();
+                scanBuffer = null;
+                scanBuffer = bufferPool.Get(snapshotSize);
+            }
+
+            var destination = new Span<byte>(scanBuffer.GetValidPointer(), snapshotSize);
+            source.RecordSpan[..keyPrefixLength].CopyTo(destination);
+            source.RecordSpan.Slice(keyPrefixLength + sourceHeader.ValueLength, optionalSize).CopyTo(destination[keyPrefixLength..]);
+            destination[(keyPrefixLength + optionalSize)..].Clear();
+            var snapshot = new LogRecord(scanBuffer.GetValidPointer(), source.ObjectIdMap);
+            snapshot.SetDataHeader(snapshotHeader);
+            snapshot = LogRecord.CreateRemappedOverPinnedTransientMemory(snapshot.physicalAddress, source.ObjectIdMap, transientObjectIdMap);
+            return new DiskLogRecord(in snapshot);
+        }
+
+        /// <summary>
         /// Allocates <see cref="recordBuffer"/> and copies the LogRecord's record memory into it; any out-of-line objects are shallow-copied.
         /// </summary>
         /// <param name="logRecord">The <see cref="LogRecord"/> to copy</param>
@@ -122,16 +153,17 @@ namespace Tsavorite.core
             return diskLogRecord;
         }
 
-        internal static DiskLogRecord TransferFrom(ref DiskLogRecord srcDiskLogRecord, SectorAlignedBufferPool bufferPool)
+        internal static DiskLogRecord TransferFrom(ref DiskLogRecord srcDiskLogRecord, SectorAlignedBufferPool bufferPool, ObjectIdMap transientObjectIdMap)
         {
             DiskLogRecord diskLogRecord;
             if (srcDiskLogRecord.recordBuffer is not null)
                 diskLogRecord = new DiskLogRecord(in srcDiskLogRecord.logRecord) { recordBuffer = srcDiskLogRecord.recordBuffer };
             else
             {
-                // Deep copy. This is necessary when srcDiskLogRecord does not own its recordBuffer, because the underlying memory
-                // may be freed or reused--e.g. if it is from an iterator frame.
-                diskLogRecord = CopyFrom(in srcDiskLogRecord.logRecord, bufferPool, srcDiskLogRecord.logRecord.objectIdMap);
+                // Move frame-owned slots into the pending operation's map as well as copying the inline bytes.
+                // A frame can be reused before pending IO completes; it must no longer own these heap objects.
+                diskLogRecord = CopyFrom(in srcDiskLogRecord.logRecord, bufferPool, transientObjectIdMap);
+                srcDiskLogRecord.logRecord.Dispose();
             }
 
             srcDiskLogRecord = default;              // Transfer ownership to us, and make sure we don't try to clear the logRecord

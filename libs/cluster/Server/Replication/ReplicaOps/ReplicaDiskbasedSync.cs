@@ -20,6 +20,13 @@ namespace Garnet.cluster
     internal sealed partial class ReplicationManager : IDisposable
     {
         public ReceiveCheckpointHandler recvCheckpointHandler = null;
+
+        /// <summary>
+        /// Startup opt-in sampled once for this manager. The factory returns null without allocating a
+        /// recorder unless enabled; all disk-based sessions share the resulting manager-lifetime instance.
+        /// </summary>
+        internal readonly ReplicaBenchmarkTiming BenchmarkTiming;
+
         CheckpointEntry cEntry;
 
         /// <summary>
@@ -302,6 +309,9 @@ namespace Garnet.cluster
             ref AofAddress recoveredReplicationOffset,
             out ReadOnlySpan<byte> errorMessage)
         {
+            // This local phase covers checkpoint recovery, requested replay and replication-state setup.
+            // It excludes subsequent live AOF catch-up and the benchmark's post-attach visibility marker.
+            var recoveryStarted = BenchmarkTiming == null ? 0 : Stopwatch.GetTimestamp();
             try
             {
                 errorMessage = [];
@@ -330,6 +340,11 @@ namespace Garnet.cluster
 
                 logger?.LogInformation("Initializing AOF");
                 storeWrapper.appendOnlyFile.Log.Initialize(beginAddress, recoveredReplicationOffset);
+
+                // The primary streams to the new tail. Clear what this replica's AOF holds above it first, so that a later
+                // recovery cannot continue from the streamed records into the history they replace.
+                if (clusterProvider.serverOptions.AofReplayClearAboveTail)
+                    storeWrapper.appendOnlyFile.Log.PrepareToAppend();
 
                 // Before we can use the replication offset, we must wait for queued Vector Set ops to complete
                 storeWrapper.DefaultDatabase.VectorManager?.WaitForVectorOperationsToComplete();
@@ -363,6 +378,8 @@ namespace Garnet.cluster
                 // This is necessary to ensure that the stored procedure can perform write operations if needed
                 clusterProvider.replicationManager.aofProcessor.SetInternalWriteSession();
 
+                // Publish only on success; the recovery-status transition in finally is outside this sample.
+                BenchmarkTiming?.RecordRecovery(recoveryStarted);
                 return this.replicationOffset;
             }
             catch (Exception ex)

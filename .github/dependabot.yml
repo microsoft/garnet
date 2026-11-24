@@ -4,6 +4,10 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    ignore:
+      # Garnet tracks LTS (even) .NET releases; the SDK major moves together with the target framework
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       dotnet-deps:
         patterns:
@@ -12,6 +16,14 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    ignore:
+      # NUnit 5 requires a test migration: awaited async assertions and OrderAttribute replacement
+      - dependency-name: "NUnit"
+        update-types: ["version-update:semver-major"]
+      # StackExchange.Redis 3.4 changes cluster routing (replica role detection, no redirects on IServer.Execute),
+      # which the cluster tests need to be migrated for
+      - dependency-name: "StackExchange.Redis"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
     groups:
       nuget-deps:
         patterns:

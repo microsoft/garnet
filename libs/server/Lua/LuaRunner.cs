@@ -164,6 +164,9 @@ namespace Garnet.server
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly RespServerSession respServerSession;
 
+        // The ASKING state of the connection running the script, applied to each command the script issues
+        byte scriptAsking;
+
         readonly ScratchBufferBuilder scratchBufferBuilder;
         TxnKeyEntries txnKeyEntries;
         readonly bool txnMode;
@@ -642,7 +645,8 @@ namespace Garnet.server
                     respPtr++;
                     if (RespReadUtils.TryReadAsSpan(out var errSpan, ref respPtr, respEnd))
                     {
-                        if (errSpan.SequenceEqual(CmdStrings.RESP_ERR_GENERIC_UNK_CMD))
+                        if (errSpan.SequenceEqual(CmdStrings.RESP_ERR_GENERIC_UNK_CMD)
+                            || errSpan.StartsWith("ERR unknown command '"u8))
                         {
                             // Gets a special response
                             return LuaWrappedError(1, constStrs.ErrUnknown);
@@ -1150,6 +1154,7 @@ namespace Garnet.server
 
             preambleOuterSession = outerSession;
             preambleKeyAndArgvCount = count;
+            scriptAsking = outerSession.SessionAsking;
             try
             {
                 LuaRunnerTrampolines.SetCallbackContext(this);
@@ -1195,6 +1200,7 @@ namespace Garnet.server
             }
             finally
             {
+                scriptAsking = 0;
                 LuaRunnerTrampolines.ClearCallbackContext(this);
             }
         }

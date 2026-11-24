@@ -38,6 +38,9 @@ The most important options are shown below:
 - CommitFrequencyMs: Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command. To avoid performance degradation when running with FastAofTruncate and/or UseAofNullDevice, one can set the CommitFrequencyMs to -1.
 - AofReplicationRefreshFrequencyMs: "AOF replication (safe tail address) refresh frequency in milliseconds. 0 = auto refresh after every enqueue.
 - ReplicaDisklessSync: Enable diskless sync to avoid disk write amplification when performing full synchronization when a new replica attaches. This options uses the streaming checkpoint feature to ship the store keys to the replica when full synchronization is required.
+- ReplicaDiskBasedSyncChunkSize: Maximum Tsavorite disk-based checkpoint transfer payload on the primary (`--repl-disk-based-sync-chunk-size`, default `16m`). Sizes from 512 bytes through 512 MiB are rounded down to a power of two, subject to device-sector alignment. `CONFIG SET repl-disk-based-sync-chunk-size` applies to new transfers; `CONFIG GET` returns effective bytes. Excludes metadata, RangeIndex files, diskless sync and AOF streaming.
+- ReplicaDiskBasedSyncPipelineDepth: Maximum unacknowledged disk-based Tsavorite checkpoint chunks per replica on the primary (`--repl-disk-based-sync-pipeline-depth`, default `4`; `1` disables pipelining). Values 1 through 64 are accepted if depth times effective chunk size is at most 512 MiB. `CONFIG SET repl-disk-based-sync-pipeline-depth` applies to new transfers. This bounds outstanding payload, not total buffer memory.
+- ReplicaDiskBasedSyncWriteBuffers: Received disk-based Tsavorite checkpoint chunks the replica may hold for its file writer, queued or being written (`--repl-disk-based-sync-write-buffers`, default `1`; `0` writes each chunk before receiving the next). Values 0 through 8. Set on the replica.
 - ReplicaDisklessSyncDelay: How long to wait between sync requests to allow for other replicas to attach in parallel hence amortize the cost of the streaming checkpoint.
 - OnDemandCheckpoint: This options enables taking an on demand checkpoint when a replica attaches. It used to improve the synchronization performance in the event the AOF log has grown too large or when the AOF has been truncated and synchronization requires a fresh checkpoint to correctly synchronize with the replica. If this option is disabled and the AOF log gets truncated, not having enabled this option could break the attach process unless UseAofNullDevice or FastAofTruncate is enabled since in that case we expect data loss.
 - AllowDataLoss (UseAofNullDevice || (FastAofTruncate && !OnDemandCheckpoint): This is an internal flag computed by base flags as indicated. It is used to skip AOF integrity check when an AOF sync task is started. Using this combination of options should be used with caution
@@ -66,12 +69,153 @@ This approach requires a locking mechanism to ensure that actively read checkpoi
 The locking logic is for checkpoints is implemented in ```CheckpointStore.cs```.
 The attaching replica communicates to the corresponding primary which creates a ```ReplicaSyncSession.cs``` for every attaching replica.
 By examining the metadata of the replica the primary decides if a full or partial synchronization is needed
-If full synchronization is necessary the primary will send the latest checkpoint files to the replica in chunks.
+If full synchronization is necessary the primary will send the latest checkpoint files to the replica in chunks; see [Disk-Based Checkpoint File Transfer](#disk-based-checkpoint-file-transfer).
 It will then signal the replica to recover its latest checkpoint and replay the AOF log if necessary.
 For partial synchronization, the primary signals the replica to recover from its local checkpoint skipping the step for sending the latest checkpoint
 When the recovery is complete, the primary will initiate a permanent background AofSyncTask by establishing an iterator over its own AOF, starting from the checkpoint covered AOF address.
 At startup of the AOF sync task, we validate the AOF integrity unless the nodes are configured in such a way where data loss is inevitable (see AllowDataLoss).
 Integrity validation is required to ensure that the start address requested by the replica has not been truncated and the AOF sync task can start streaming the AOF records to the replica from.
+
+## Disk-Based Checkpoint File Transfer
+
+During a full disk-based sync, the primary ships each Tsavorite checkpoint file (index, main log, object log and snapshot files) to the replica over a dedicated connection. It sends the file as a sequence of `CLUSTER SNAPSHOT_DATA token type startAddress data` requests, then one with empty data that marks the end of the file. The replica replies `+OK` once it accepts a chunk for writing at the same offset in its own copy, and confirms completed writes at end of file. Checkpoint metadata and RangeIndex files use the same command but their own transmitters, unchanged by the work described here.
+
+Originally every file moved in fixed 128 KiB chunks, strictly one at a time. The primary read a chunk, sent it, and waited for the replica to write it and reply before reading the next. Each chunk therefore paid a full network round trip on top of a serial read, send and write, which held a link with a 1 ms round trip to about 100 MB/s. Two changes remove those limits:
+
+| Change | Side | Intent |
+| --- | --- | --- |
+| Configurable, pipelined transfer | Primary | Take the round trip off the critical path without changing the protocol or the replica. Larger chunks amortize per-request costs, and a bounded window of unacknowledged chunks overlaps each round trip, and the replica's write, with the next reads and sends. Settings are captured once per transfer, so `CONFIG SET` cannot mix sizes within one. Also adds the replica-transfer benchmark and fixes TLS send-buffer ownership on abort. |
+| Overlapped replica writes | Replica, and primary read buffers | The replica receives while writing, acknowledges chunk acceptance inline, and waits for every write at end of file. Multiple buffers overlap receive/write; the separate concurrency flag permits concurrent writes to non-overlapping ranges. The primary avoids whole-buffer clearing, validates read lengths before sending, and uses a 16 MiB default chunk size. Also fixes an unrelated `ClusterSession` bug that broke connections whose slot-verification errors overflowed the response buffer. |
+
+In single-machine transfer-only benchmark runs with an emulated 1.05 ms round trip, throughput went from 81 MB/s with 128 KiB stop-and-wait chunks, to about 1.1 GB/s with pipelining alone (4 MiB chunks, depth 4), to about 1.8 GB/s with overlapped replica writes as well (16 MiB chunks, depth 4).
+
+These historical component measurements predate logical-length read validation and padding; they are not performance guarantees for the current implementation.
+
+### Code flow
+
+```mermaid
+sequenceDiagram
+    accTitle: Disk-based checkpoint file transfer
+    accDescr: A primary pipelines checkpoint chunks to a replica, which acknowledges acceptance and confirms all writes at end of file
+    participant T as FileTransmitSource (primary)
+    participant S as FileDataSource
+    participant C as GarnetClientSession
+    participant R as ClusterSession (replica)
+    participant H as ReceiveCheckpointHandler
+    participant K as OverlappedFileDataSink
+    participant W as Writer task
+    loop each chunk, at most depth unacknowledged
+        T->>S: ReadNextChunkAsync
+        S-->>T: sector-aligned buffer
+        T->>C: ExecuteClusterSnapshotData, copies chunk, buffer returned
+        C->>R: CLUSTER SNAPSHOT_DATA token type address data
+        R->>H: ProcessSnapshotData
+        H->>K: WriteChunk, copies into a write buffer
+        K->>W: queued in arrival order
+        K-->>R: accepted
+        R-->>C: +OK, queued
+        W->>W: device writes, at most write-buffers in flight
+    end
+    T->>C: empty chunk, after every OK
+    C->>R: CLUSTER SNAPSHOT_DATA with empty data
+    R->>H: ProcessSnapshotData
+    H->>K: Complete, drains writes and closes the file
+    R-->>C: +OK, all writes succeeded and file closed
+```
+
+#### Primary: reading and sending (`PrimaryOps/DiskbasedReplication`)
+
+1. `ReplicaSyncSession.SendCheckpointAsync` captures one validated chunk-size and pipeline-depth pair from `RuntimeServerConfig.GetReplicaDiskBasedSyncSettings()`. It creates the `GarnetClientSession` to the replica with send buffers sized for that chunk (`ReplicationManager.CreateRSSNetworkBufferSettings`: at least 1 MiB, otherwise twice the chunk). Runtime changes apply to later transfers only. The replication buffer pool has size classes for the whole configurable range but allocates nothing in advance.
+2. `SnapshotTransmissionDriver` sends the files one after another. `TsavoriteSnapshotReader.GetTransmitSources()` yields a `FileTransmitSource` around a `FileDataSource` for each file, built from the same captured settings, and then the metadata sources. One file at a time matches the replica, which has a single active sink.
+3. `FileTransmitSource.TransmitAsync` keeps a FIFO of response tasks: the window, bounded by the pipeline depth. For each chunk:
+   - if the window is full, it flushes framed requests and waits for the oldest acknowledgement;
+   - it reads the next chunk with `FileDataSource.ReadNextChunkAsync`. Reads are bounded by the chunk size and the next segment boundary, and the final read is aligned up to the device sector;
+   - it frames the chunk with `GarnetClientSession.ExecuteClusterSnapshotData(..., flush: false)`. That copies the chunk into the client's send buffer, so the read buffer goes straight back to the pool;
+   - it adds the response task to the window. Ready requests can share a send buffer; `CompletePending(wait: false)` flushes before a window wait, an asynchronous read, and the final drain.
+4. After the last chunk it waits for every acceptance acknowledgement, then sends the end-of-file request and waits for its `OK`. Acceptance does not imply a completed write; a failed end-of-file request aborts the transfer even if every chunk was accepted.
+5. Each request has its own `ReplicaSyncTimeout` deadline. It starts before submission, so socket backpressure counts, and it is not restarted when the request reaches the head of the window. Every response is checked as it completes.
+   - On the first failure (an error reply, a deadline, a disconnect or a cancellation), the transfer cancels any overlapping read and closes the socket to unblock a stalled send.
+   - Full client disposal waits until synchronous buffer access has unwound. Abort observes every outstanding response, and the first failure is rethrown.
+6. `FileDataSource` skips whole-buffer clearing and requires a successful read count covering the logical bytes needed for this chunk. A smaller count, including zero, fails the transfer without advancing its offset: missing checkpoint data is never manufactured as zeros. If a read covers all required bytes but not the sector-rounded request length, only that unread suffix is cleared. Bytes actually read beyond the logical end are preserved. The whole aligned length is sent.
+7. Checkpoint source devices must report populated bytes accurately; zero is not accepted as an unavailable count. Native, RandomAccess and FileStream devices report actual read lengths. Read-length validation cannot detect a device falsely reporting a complete successful read; pre-clearing would only replace missing data with zeros, not recover it.
+
+Chunk sizes are validated against device sectors at startup, through `INamedDeviceFactory.GetSectorSize` for the configured checkpoint and log paths, and again on each runtime change. `FileDataSource` also validates each device it opens.
+
+#### Replica: receiving and writing (`ReplicaOps/DiskbasedReplication`)
+
+1. `ReplicaDiskbasedSync` creates a `ReceiveCheckpointHandler` before it asks the primary to start, and disposes it when the attempt ends. The primary's requests arrive on an inbound connection, served by an ordinary `RespServerSession` and its `ClusterSession`.
+2. `ClusterSession.NetworkClusterSnapshotData` parses each request and calls `ReceiveCheckpointHandler.ProcessSnapshotData`:
+   - start address −1 carries checkpoint metadata, or the header that precedes a RangeIndex file's chunks, handled synchronously;
+   - empty data ends the file and completes its sink;
+   - anything else is a chunk. The file's first chunk opens its device and sink, and the chunk is handed to the sink.
+3. With `ReplicaDiskBasedSyncWriteBuffers` above 0 (default 1), the sink is an `OverlappedFileDataSink`:
+   - `WriteChunk` waits for one of the write-buffer slots, which is the backpressure point. It copies the chunk into a sector-aligned pool buffer, queues it, and returns without waiting for that chunk's write;
+   - the dispatcher awaits each write by default. With `ReplicaDiskBasedSyncWriteBuffersConcurrently=true`, it issues writes without awaiting earlier writes. The same slots bound queued and in-flight writes together. Chunks must advance past the preceding chunk's sector-padded end, so concurrent writes cannot overlap. After each write it returns the buffer, which the pool zeroes, then frees the slot;
+   - the first failed or timed-out write is retained for subsequent requests and completion. Queued chunks not yet issued are discarded and their buffers returned; other issued writes are still awaited. A timed-out write's buffer is abandoned rather than reused, because the device may still read from it;
+   - the end-of-file request blocks in `Complete` until every queued write has been processed and the file is closed, and throws if any write failed.
+
+   With 0 write buffers the sink is `FileDataSink`, which writes each chunk before the command returns, as before these changes. It applies the same short-write check described below.
+4. `ReceiveCheckpointHandler.Dispose` cancels outstanding writes and closes every sink before it frees the buffer pool that their writers return buffers to.
+
+#### Replies: acceptance and completion
+
+`NetworkClusterSnapshotData` writes every reply inline, preserving RESP command order without a background responder. A chunk's `OK` confirms that its payload has been copied and accepted into the bounded write queue. Other commands do not wait for those writes.
+
+The empty end-of-file request is the completion barrier: it waits for all queued writes and closes the device before replying `OK`. A write failure is reported on a subsequent chunk or this barrier, including failures occurring after the last chunk's acceptance reply. A nonzero transferred-byte count below the sector-padded request length also fails the write, even with error code zero; a zero count remains an unavailable count under the device contract. The primary must await this final response before returning success or advancing to another file.
+
+### Guarantees
+
+- A chunk's `OK` means accepted, not written. The end-of-file `OK` confirms every queued write succeeded and the file is closed. Both peers must run the updated implementation; mixed-version negotiation is not provided.
+- Memory is bounded on both sides.
+  - On the primary, at most depth × chunk of payload is unacknowledged, capped at 512 MiB, in send buffers of up to twice the chunk.
+  - On the replica, there is one chunk per write buffer, plus a receive buffer that holds one whole request.
+- Every wait is bounded by `ReplicaSyncTimeout` or by cancellation. Any failure aborts the transfer and closes its connection, and the replica's sync attempt fails as before.
+
+### Configuration
+
+| Setting | Set on | Default | Range and notes |
+| --- | --- | --- | --- |
+| `ReplicaDiskBasedSyncChunkSize` (`--repl-disk-based-sync-chunk-size`) | Primary | 16 MiB | 512 bytes to 512 MiB, rounded down to a power of two, a multiple of the device sector. `CONFIG GET` and `CONFIG SET`. |
+| `ReplicaDiskBasedSyncPipelineDepth` (`--repl-disk-based-sync-pipeline-depth`) | Primary | 4 | 1 to 64, with depth × chunk at most 512 MiB; 1 is stop-and-wait. `CONFIG GET` and `CONFIG SET`. |
+| `ReplicaDiskBasedSyncWriteBuffers` (`--repl-disk-based-sync-write-buffers`) | Replica | 1 | 0 to 8; bounds queued and in-flight writes together. 0 writes each chunk before receiving the next. Requires restart; read-only `CONFIG GET`. |
+| `ReplicaDiskBasedSyncWriteBuffersConcurrently` (`--repl-disk-based-sync-write-buffers-concurrently`) | Replica | false | Concurrent positional writes with more than one buffer; otherwise sequential writes with receive/write overlap. Requires restart; read-only `CONFIG GET`. |
+
+Tuning guidance and memory costs are in the [operator guide](../../cluster/replication.md#disk-based-full-sync-transfer-size).
+
+### Where to start reviewing
+
+| Code | Role | Change |
+| --- | --- | --- |
+| `ReplicaSyncSession`, `TsavoriteCheckpointReader.cs` (`TsavoriteSnapshotReader`), `ReplicationNetworkBufferSettings.cs` (`ReplicationManager`) | Capture the settings; size the client's buffers; build the file sources | Pipelined transfer |
+| `FileTransmitSource` | Pipelined send loop, deadlines, abort | Pipelined transfer |
+| `FileDataSource` | Chunked, sector-aligned reads | Pipelined transfer (chunk size); overlapped writes (logical-length read validation and padding) |
+| `GarnetClientSession`, `GarnetClientSessionReplicationExtensions`, `GarnetClientSessionTcpNetworkHandler`, `NetworkHandler` | Framing without a flush, explicit flushes, TLS send-buffer ownership on abort | Pipelined transfer |
+| `GarnetServerOptions`, `Options`, `OptionsValidators`, `RuntimeServerConfig`, `defaults.conf` | Settings, validation, `CONFIG GET`/`SET` | Pipelined transfer; overlapped writes (write buffers, 16 MiB default) |
+| `ReceiveCheckpointHandler` | Routes requests to sinks and waits for end-of-file completion | Overlapped writes |
+| `OverlappedFileDataSink` | Bounded queued writes, sequential or concurrent, with an end-of-file barrier | Overlapped writes |
+| `FileDataSink` | Synchronous writes with 0 write buffers | Overlapped writes (short-write check) |
+| `RespClusterReplicationCommands.cs` (`NetworkClusterSnapshotData`) | Inline acceptance replies and end-of-file completion | Overlapped writes |
+| `benchmark/Replica-transfer.benchmark` | Real-server full-sync driver; optional component file-transfer driver | Pipelined transfer; overlapped writes |
+
+### Tests and measurement
+
+| Test | Covers |
+| --- | --- |
+| `CheckpointPipelineTests` | The window bound, the end-of-file request after every acknowledgement, and each abort path, including TLS |
+| `GarnetClientArgumentFramingTests` | Rejecting a chunk too large for the client's send buffer, and sending one that exactly fits |
+| `GarnetClientSessionTlsLifetimeTests` | Releasing the TLS send buffer whichever owner finishes first, and after reconnects and failed handshakes or authentication |
+| `DiskBasedCheckpointChunkTests` | Chunk sizing, sector and segment bounds, logical-data versus sector-padding boundaries, truncated-file rejection, and zero-count rejection |
+| `ReplicaCheckpointWriteTests` | Out-of-order write completion, bounded concurrency, non-overlapping padded ranges, disposal, failures, timeouts and short writes in both sinks; immediate acceptance replies and the end-of-file write barrier over a real connection |
+| `ClusterReplicationBaseTests.DiskBasedSync*` | Full syncs across chunk sizes, depths, runtime changes, and 0, 1, 2 and 4 write buffers, with and without TLS |
+| `GarnetServerConfigTests`, `RespConfigTests` | Option parsing, validation and `CONFIG GET`/`SET` |
+| `ReplicaTransferBenchmarkTests` | The benchmark's options, checkpoint generation and ACK-delay precision |
+| `ClusterRedirectTests.ClusterSlotErrorsOverflowingTheResponseBufferAreAllDelivered` | The `ClusterSession` send-size fix |
+
+The [replica-transfer benchmark](https://github.com/microsoft/garnet/tree/main/benchmark/Replica-transfer.benchmark) defaults to `--scenario full`: separate real primary/replica processes, independently selected builds, version-owned fresh checkpoints, real negotiation/transfer/recovery/AOF catch-up, and logical verification. `--scenario transfer-only` retains the shared file sender/sinks but replaces receiver parsing, orchestration, device creation and reply scheduling; only that component mode supports `--ack-delay-us`. Its README includes the production/component flowchart and timing boundaries. Same-host source reads and destination writes can share host storage bandwidth, so separate guest disks do not guarantee isolated I/O.
+
+Optional experimental production phase instrumentation is enabled by `--repl-enable-benchmark-timing true` (`ReplicaEnableBenchmarkTiming`, default false; the runner's `--phase-timing true`). It captures one optional recorder per replication manager at startup, requires restart and is read-only through `CONFIG GET`/`CONFIG GET *`, independent of DEBUG authorization. No environment variable activates it. It records only whole-shipment/recovery timestamps and file-boundary byte counts, with bounded last-successful state exposed through `INFO REPLICATION` after timing. It adds no work to chunk loops; disabled managers retain a null recorder. Uninstrumented/older reference builds have unavailable phase fields. Compare reference/reference and candidate/candidate in separate passes, never mixed Garnet versions within a pair. The runner permits unsupported timing false for reference builds but rejects unsupported timing true. Confirm negligible instrumentation overhead with paired Release controls before interpreting fine performance differences.
+
+Linux full benchmark runs require Native devices and default to the issue-report profile: `--device-type Native --device-io-backend Uring --device-completion-threads 16 --device-io-contexts 256 --device-queue-depth 256 --device-throttle-limit 4096 --device-aio-max-devices 32`. Both primary and replica receive these existing server startup settings, which configure storage, AOF and checkpoint factories. The benchmark README documents supported overrides, bounds, dependencies and reproducible commands; unsupported external builds fail rather than substituting another device/backend. Windows retains RandomAccess defaults. These benchmark defaults do not change Garnet server defaults or reclassify historical RandomAccess results as Native/Uring measurements.
 
 ## Diskless Attach/Sync Details
 
@@ -244,4 +388,3 @@ This method of parallel replay is subject to the constraint that the transaction
 - **Custom transaction procedures** replay is currently restricted by the fact that the body of the transaction is programmatically defined, disallowing parallel operation replay.
 Hence, only a single designated replay background task is used to execute the entire transaction body sequentially.
 The remaining participating replay tasks suspend their replay operation until the main replay tasks completes.
-

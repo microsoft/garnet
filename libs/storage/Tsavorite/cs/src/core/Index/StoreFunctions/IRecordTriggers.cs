@@ -82,11 +82,9 @@ namespace Tsavorite.core
         /// and holds resources that this DiskLogRecord owns, the application should invoke
         /// <see cref="IDisposable.Dispose"/> from this callback.
         /// <para>
-        /// Caveat: scan iterators may briefly wrap an in-memory log record as a DiskLogRecord that
-        /// <em>shares</em> its value-object reference with the live on-log record. Implementations that
-        /// hold external resources should either gate disposal on <paramref name="reason"/> or avoid
-        /// disposing the value object from this callback; uncritical disposal there would corrupt the
-        /// still-alive on-log record.
+        /// Scan-frame cleanup also calls this for deserialized records the iterator never visits.
+        /// The scan iterator's buffered copies of resident records borrow their value objects and release
+        /// only their remapped slots, without invoking this callback.
         /// </para>
         /// Default implementation is a no-op.
         /// </summary>

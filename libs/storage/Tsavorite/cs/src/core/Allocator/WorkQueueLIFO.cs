@@ -3,6 +3,8 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Tsavorite.core
@@ -17,7 +19,12 @@ namespace Tsavorite.core
         readonly Action<T> work;
         readonly SingleWaiterAutoResetEvent onWork;
         readonly Task processQueue;
-        private bool disposed;
+
+        // Set by Dispose. Once set, no work item starts.
+        const long DisposedBit = 1L << 32;
+
+        // DisposedBit, plus in the low 32 bits the managed thread id of the thread running a work item, or 0
+        long state;
 
         public WorkQueueLIFO(Action<T> work)
         {
@@ -30,10 +37,22 @@ namespace Tsavorite.core
             processQueue = Task.Run(ProcessQueue);
         }
 
+        /// <summary>
+        /// Stops processing work. A work item that is running finishes before this returns, unless this is called
+        /// from that work item.
+        /// </summary>
         public void Dispose()
         {
-            disposed = true;
+            var working = (int)Interlocked.Or(ref state, DisposedBit);
             onWork.Signal();
+            if (working == 0 || working == Environment.CurrentManagedThreadId)
+                return;
+
+            // No work item starts once DisposedBit is set, so the thread id can only clear. A work item can run for as long
+            // as a device write, so the wait yields and sleeps rather than spinning.
+            var spinner = new SpinWait();
+            while ((int)Volatile.Read(ref state) != 0)
+                spinner.SpinOnce();
         }
 
         /// <summary>
@@ -52,16 +71,29 @@ namespace Tsavorite.core
         private async Task ProcessQueue()
         {
             // Process items in work queue
-            while (!disposed)
+            while ((Volatile.Read(ref state) & DisposedBit) == 0)
             {
                 while (stack.TryPop(out var workItem))
                 {
+                    // Publish this thread as running a work item unless Dispose came first, so either Dispose sees the item
+                    // running and waits for it, or the item sees Dispose and does not run.
+                    var prior = Interlocked.CompareExchange(ref state, Environment.CurrentManagedThreadId, 0);
+                    if (prior != 0)
+                    {
+                        Debug.Assert(prior == DisposedBit, "Only the queue's single processing loop runs work items");
+                        return;
+                    }
+
                     try
                     {
                         work(workItem);
                     }
                     catch { }
-                    if (disposed) return;
+                    finally
+                    {
+                        // Clear the thread id, keeping DisposedBit if Dispose set it meanwhile
+                        _ = Interlocked.And(ref state, DisposedBit);
+                    }
                 }
                 await onWork.WaitAsync().ConfigureAwait(false);
             }

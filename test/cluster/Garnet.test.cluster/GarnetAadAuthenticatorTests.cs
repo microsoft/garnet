@@ -5,7 +5,10 @@ using System;
 using System.Collections.Generic;
 using System.Security.Claims;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Garnet.server.Auth;
+using Garnet.server.Auth.Aad;
 using Microsoft.Extensions.Time.Testing;
 using Microsoft.IdentityModel.Tokens;
 using NUnit.Framework;
@@ -129,6 +132,47 @@ namespace Garnet.test.cluster
             // Authenticate() must invalidate the previously cached authorized state.
             ClassicAssert.IsFalse(auth.Authenticate(Encoding.UTF8.GetBytes("garbage"), Encoding.UTF8.GetBytes(objId)));
             ClassicAssert.IsFalse(auth.IsAuthenticated);
+        }
+
+        /// <summary>
+        /// A signing-key refresh runs on a thread pool thread and gives it back while the authority has yet to answer,
+        /// so with one free pool thread, other pool work still runs.
+        /// </summary>
+        [Test]
+        public void ASigningKeyRefreshHoldsNoPoolThreadWhileTheFetchIsPending()
+        {
+            using var cap = ThreadPoolCap.ApplyFree(1);
+            using var provider = new PendingFetchSigningTokenProvider();
+            try
+            {
+                ClassicAssert.IsTrue(provider.FetchStarted.Wait(TimeSpan.FromSeconds(10)), "The refresh timer started no fetch");
+
+                using var ran = new ManualResetEventSlim();
+                ThreadPool.UnsafeQueueUserWorkItem(static done => done.Set(), ran, preferLocal: false);
+                ClassicAssert.IsTrue(ran.Wait(TimeSpan.FromSeconds(5)), "No pool work ran while a signing-key fetch was pending");
+            }
+            finally
+            {
+                provider.CompleteFetch();
+            }
+        }
+
+        /// <summary>
+        /// Refreshes on its timer, as a provider created for an authority does, from a fetch the test completes.
+        /// </summary>
+        sealed class PendingFetchSigningTokenProvider() : IssuerSigningTokenProvider(string.Empty, [], refreshTokens: true)
+        {
+            readonly TaskCompletionSource<IReadOnlyCollection<SecurityKey>> fetch = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            internal readonly ManualResetEventSlim FetchStarted = new();
+
+            protected override Task<IReadOnlyCollection<SecurityKey>> RetrieveSigningTokensAsync()
+            {
+                FetchStarted.Set();
+                return fetch.Task;
+            }
+
+            internal void CompleteFetch() => fetch.TrySetResult([]);
         }
     }
 }

@@ -279,6 +279,10 @@ namespace Garnet.cluster
                         replicationInfo.Add(new($"slave{i}", replicaInfo[i].ToString()));
                 }
             }
+
+            // Format last-successful phase samples only for startup-enabled managers, on INFO rather than chunks.
+            if (replicationManager.BenchmarkTiming != null)
+                replicationInfo.AddRange(replicationManager.BenchmarkTiming.GetMetrics());
             return [.. replicationInfo];
         }
 
@@ -307,7 +311,25 @@ namespace Garnet.cluster
                 };
             }
 
+            return GetReplicaInfo(clusterManager.CurrentConfig);
+        }
+
+        /// <inheritdoc />
+        public bool TryGetReplicaInfo(out RoleInfo info)
+        {
             var config = clusterManager.CurrentConfig;
+            if (!serverOptions.EnableCluster || !config.IsReplica)
+            {
+                info = default;
+                return false;
+            }
+
+            info = GetReplicaInfo(config);
+            return true;
+        }
+
+        private RoleInfo GetReplicaInfo(ClusterConfig config)
+        {
             clusterManager.GetConnectionInfo(config.LocalNodePrimaryId, out var connection);
 
             var (address, port) = config.GetWorkerClientAddressFromNodeId(config.LocalNodePrimaryId);

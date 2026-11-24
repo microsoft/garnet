@@ -70,8 +70,18 @@ namespace Garnet.test
             ReadOnlySpan<RespCommand> vectorSetCommands = [RespCommand.VADD, RespCommand.VCARD, RespCommand.VDIM, RespCommand.VEMB, RespCommand.VGETATTR, RespCommand.VINFO, RespCommand.VISMEMBER, RespCommand.VLINKS, RespCommand.VRANDMEMBER, RespCommand.VREM, RespCommand.VSETATTR, RespCommand.VSIM, RespCommand.XVCREATE, RespCommand.XVIMPORT];
             foreach (var cmd in vectorSetCommands)
             {
+                var cmdStr = cmd.ToString();
+                object[] args =
+                    cmd switch
+                    {
+                        RespCommand.VCARD or RespCommand.VDIM or RespCommand.VINFO => ["foo"],
+                        RespCommand.VGETATTR or RespCommand.VISMEMBER or RespCommand.VREM => ["foo", "bar"],
+                        RespCommand.VSETATTR => ["foo", "bar", "fizz"],
+                        _ => [],
+                    };
+
                 // Should all fault before any validation
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(cmd.ToString()));
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(cmdStr, args));
                 ClassicAssert.AreEqual("ERR Vector Set (preview) commands are not enabled", exc.Message);
             }
         }
@@ -267,9 +277,27 @@ namespace Garnet.test
             }
         }
 
-        [Test]
+        private static IEnumerable<TestCaseData> XVIMPORTAofRecoveryCases()
+        {
+            foreach (var quantizer in new[] { "NOQUANT", "Q8", "XSPHERICAL2", "XSPHERICAL2_I8", "XSPHERICAL2_U8", "XSPHERICAL4", "XSPHERICAL4_I8", "XSPHERICAL4_U8" })
+            {
+                foreach (var chunked in new[] { false, true })
+                {
+                    foreach (var replayTasks in new[] { 1, 4 })
+                    {
+                        if (quantizer is "NOQUANT" or "Q8")
+                        {
+                            yield return new TestCaseData(false, quantizer, chunked, replayTasks);
+                        }
+                        yield return new TestCaseData(true, quantizer, chunked, replayTasks);
+                    }
+                }
+            }
+        }
+
+        [TestCaseSource(nameof(XVIMPORTAofRecoveryCases))]
         [CancelAfter(30_000)]
-        public async Task XVIMPORTAofRecoveryAsync([Values] bool finish, [Values("NOQUANT", "Q8")] string quantizer, [Values] bool chunked, [Values(1, 4)] int replayTasks)
+        public async Task XVIMPORTAofRecoveryAsync(bool finish, string quantizer, bool chunked, int replayTasks)
         {
             server.Dispose(deleteDir: true);
             server = CreateImportServer(false);
@@ -277,18 +305,39 @@ namespace Garnet.test
             server.Provider.StoreWrapper.DefaultDatabase.VectorManager.AllocateTestContexts(preAllocatedContexts);
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
-            var vector = MemoryMarshal.AsBytes(new float[] { 1, 2, 3 }.AsSpan()).ToArray();
+            var byteVectors = quantizer.EndsWith("_I8", StringComparison.Ordinal) || quantizer.EndsWith("_U8", StringComparison.Ordinal);
+            byte[] vector = byteVectors ? [1, 2, 3] : MemoryMarshal.AsBytes(new float[] { 1, 2, 3 }.AsSpan()).ToArray();
+            var vectorFormat = byteVectors ? quantizer.EndsWith("_I8", StringComparison.Ordinal) ? "XI8" : "XU8" : "FP32";
             var attributes = chunked ? new string('x', 3 * 1024 * 1024) : "{\"id\":1}";
             byte[] id = [1, 0, 0, 0];
             var startPointKey = BitConverter.GetBytes(42u);
             var neighbors = MemoryMarshal.AsBytes(new uint[] { 1, 0, 0, 0, 1 }.AsSpan()).ToArray();
             object[] create = ["imported", "DIM", 3, quantizer, "M", 4, "EF", 37, "START_POINT", 42];
             byte[] quantized = null;
-            if (quantizer == "Q8")
+            if (quantizer != "NOQUANT")
             {
-                _ = db.Execute("VADD", "source", "FP32", vector, "member", "Q8", "M", 4);
+                var trainingVectors = quantizer == "Q8" ? 1 : 1024;
+                for (var vectorIndex = 0; vectorIndex < trainingVectors; vectorIndex++)
+                {
+                    var value = vectorIndex % 16 + 1;
+                    ClassicAssert.AreEqual(1, (int)db.Execute("VADD", "source", "VALUES", 3, value, value + 1, value + 2, $"training:{vectorIndex}", quantizer, "M", 4));
+                }
+                if (quantizer != "Q8")
+                {
+                    var manager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+                    while (manager.QuantizationRequestsProcessed < 1 || manager.QuantizationBackfillsProcessed < Environment.ProcessorCount)
+                    {
+                        await Task.Delay(10, TestContext.CurrentContext.CancellationToken).ConfigureAwait(false);
+                    }
+                }
                 var stateKey = BitConverter.GetBytes(BinaryPrimitives.ReadUInt32BigEndian("_qnt"u8));
-                create = [.. create, "QUANT_STATE", ReadRawVectorTerm("source", DiskANNService.Metadata, stateKey)];
+                var state = ReadRawVectorTerm("source", DiskANNService.Metadata, stateKey);
+                if (quantizer != "Q8")
+                {
+                    ClassicAssert.AreEqual(1, state[0]);
+                    state = state.AsSpan(1).ToArray();
+                }
+                create = [.. create, "QUANT_STATE", state];
                 quantized = ReadRawVectorTerm("source", DiskANNService.QuantizedVector, BitConverter.GetBytes(0u));
             }
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVCREATE", create));
@@ -316,7 +365,8 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(1, (int)db.Execute("VADD", "imported", "VALUES", 3, 4, 5, 6, "after", quantizer, "M", 4));
             }
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVCREATE", "empty", "DIM", 3, "NOQUANT", "M", 4, "START_POINT", 42));
-            ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "empty", "VECTOR", startPointKey, vector));
+            var startVector = MemoryMarshal.AsBytes(new float[] { 1, 2, 3 }.AsSpan()).ToArray();
+            ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "empty", "VECTOR", startPointKey, startVector));
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "empty", "NEIGHBORS", startPointKey, new byte[5 * sizeof(uint)]));
 
             await VerifyImportingVectorSetAsync(db, "empty").ConfigureAwait(false);
@@ -339,12 +389,18 @@ namespace Garnet.test
             var info = ((string[])db.Execute("VINFO", "imported")).Chunk(2).ToDictionary(static pair => pair[0], static pair => pair[1]);
             ClassicAssert.AreEqual(finish ? "not-importing" : "pending", info["import-state"]);
             ClassicAssert.AreEqual("37", info["build-exploration-factor"]);
+            ClassicAssert.AreEqual(quantizer == "NOQUANT" ? "f32" : quantizer.ToLowerInvariant(), info["quant-type"]);
             CollectionAssert.AreEqual(vector, ReadRawVectorTerm("imported", DiskANNService.FullVector, id));
             CollectionAssert.AreEqual(vector, ReadRawVectorTerm("imported", DiskANNService.FullVector, startPointKey));
+            if (quantized != null)
+            {
+                CollectionAssert.AreEqual(quantized, ReadRawVectorTerm("imported", DiskANNService.QuantizedVector, id));
+                CollectionAssert.AreEqual(quantized, ReadRawVectorTerm("imported", DiskANNService.QuantizedVector, startPointKey));
+            }
             if (finish)
             {
                 ClassicAssert.AreEqual("2", info["size"]);
-                CollectionAssert.AreEqual(new[] { "member" }, (string[])db.Execute("VSIM", "imported", "FP32", vector, "COUNT", 1));
+                CollectionAssert.AreEqual(new[] { "member" }, (string[])db.Execute("VSIM", "imported", vectorFormat, vector, "COUNT", 1));
 
                 // Verification has already happened
 
@@ -622,7 +678,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void XVCREATEQuantizers([Values("NOQUANT", "Q8", "BIN", "XNOQUANT_U8", "XNOQUANT_I8", "XBIN_U8", "XBIN_I8")] string quantizer)
+        public void XVCREATEQuantizers([Values("NOQUANT", "Q8", "BIN", "XNOQUANT_U8", "XNOQUANT_I8", "XBIN_U8", "XBIN_I8", "XSPHERICAL2", "XSPHERICAL2_I8", "XSPHERICAL2_U8", "XSPHERICAL4", "XSPHERICAL4_I8", "XSPHERICAL4_U8")] string quantizer)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
@@ -733,7 +789,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void XVCREATERejectsReductionForByteQuantizers([Values("XNOQUANT_U8", "XNOQUANT_I8", "XBIN_U8", "XBIN_I8")] string quantizer)
+        public void XVCREATERejectsReductionForByteQuantizers([Values("XNOQUANT_U8", "XNOQUANT_I8", "XBIN_U8", "XBIN_I8", "XSPHERICAL2_I8", "XSPHERICAL2_U8", "XSPHERICAL4_I8", "XSPHERICAL4_U8")] string quantizer)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
@@ -852,7 +908,7 @@ namespace Garnet.test
         [Test]
         [CancelAfter(120_000)]
         public async Task XVCREATEQuantStateSurvivesRecreationAsync(
-            [Values("Q8", "BIN")] string quantizer,
+            [Values("Q8", "BIN", "XSPHERICAL2", "XSPHERICAL4")] string quantizer,
             [Values(false, true)] bool checkpoint,
             CancellationToken cancellation)
         {
@@ -866,7 +922,7 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase();
                 var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
-                var vectors = new byte[quantizer == "BIN" ? 1024 : 16][];
+                var vectors = new byte[quantizer == "Q8" ? 16 : 1024][];
                 var random = new Random(42);
                 var stateKey = new byte[sizeof(uint)];
                 BinaryPrimitives.WriteUInt32LittleEndian(stateKey, BinaryPrimitives.ReadUInt32BigEndian("_qnt"u8));
@@ -884,7 +940,7 @@ namespace Garnet.test
                     ClassicAssert.AreEqual(1, (int)await db.ExecuteAsync("VADD", "source", "FP32", vectors[vectorIndex], $"item:{vectorIndex}", quantizer, "M", 32));
                 }
 
-                if (quantizer == "BIN")
+                if (quantizer != "Q8")
                 {
                     while (vectorManager.QuantizationRequestsProcessed < 1 || vectorManager.QuantizationBackfillsProcessed < Environment.ProcessorCount)
                     {
@@ -896,7 +952,7 @@ namespace Garnet.test
 
                 var storedState = ReadRawVectorTerm("source", DiskANNService.Metadata, stateKey);
                 var suppliedState = storedState;
-                if (quantizer == "BIN")
+                if (quantizer != "Q8")
                 {
                     ClassicAssert.AreEqual(1, storedState[0]);
                     suppliedState = storedState.AsSpan(1).ToArray();
@@ -991,7 +1047,7 @@ namespace Garnet.test
                         out var buildExplorationFactor, out var numLinks, out var metric, out _, out _);
                     ClassicAssert.AreEqual(8, dimensions);
                     ClassicAssert.AreEqual(0, reduceDims);
-                    ClassicAssert.AreEqual(quantizer == "BIN" ? VectorQuantType.Bin : VectorQuantType.Q8, quantType);
+                    ClassicAssert.AreEqual(Enum.Parse<VectorQuantType>(quantizer, ignoreCase: true), quantType);
                     ClassicAssert.AreEqual(64, buildExplorationFactor);
                     ClassicAssert.AreEqual(32, numLinks);
                     ClassicAssert.AreEqual(VectorDistanceMetricType.L2, metric);
@@ -1004,7 +1060,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void XVCREATEFailedQuantStateLeavesNoKey([Values("Q8", "BIN")] string quantizer, [Values(0, 1, 7, 8)] int stateLength)
+        public void XVCREATEFailedQuantStateLeavesNoKey([Values("Q8", "BIN", "XSPHERICAL2", "XSPHERICAL4")] string quantizer, [Values(0, 1, 7, 8)] int stateLength)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
@@ -2299,6 +2355,24 @@ namespace Garnet.test
 
             var res2 = db.KeyExists("foo");
             ClassicAssert.IsFalse(res2);
+        }
+
+        [Test]
+        public void TouchVectorSet()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", "vectors", "VALUES", 3, 1, 2, 3, "member", "NOQUANT"));
+            ClassicAssert.IsTrue(db.KeyExpire("vectors", TimeSpan.FromMinutes(5)));
+            var expiration = (long)db.Execute("PEXPIRETIME", "vectors");
+
+            ClassicAssert.IsTrue(db.KeyTouch("vectors"));
+            ClassicAssert.AreEqual(2, db.KeyTouch(["vectors", "missing", "vectors"]));
+            ClassicAssert.AreEqual(expiration, (long)db.Execute("PEXPIRETIME", "vectors"));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VCARD", "vectors"));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VISMEMBER", "vectors", "member"));
+            ClassicAssert.IsFalse(db.KeyExists("missing"));
         }
 
         [Test]
@@ -3794,6 +3868,31 @@ namespace Garnet.test
         }
 
         [Test]
+        public void VREMRemovesImmutableMember([Values] bool evictToDisk)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            const string Key = "vectors";
+            byte[] removed = [1, 0, 0, 0];
+            byte[] retained = [2, 0, 0, 0];
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", [Key, "VALUES", "3", "1", "2", "3", removed, "NOQUANT"]));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", [Key, "VALUES", "3", "4", "5", "6", retained, "NOQUANT"]));
+
+            var log = server.Provider.StoreWrapper.store.Log;
+            if (evictToDisk)
+                log.FlushAndEvict(wait: true);
+            else
+                log.ShiftReadOnlyAddress(log.TailAddress, wait: true);
+
+            ClassicAssert.AreEqual(1, (int)db.Execute("VREM", Key, removed));
+            ClassicAssert.AreEqual(0, (int)db.Execute("VISMEMBER", Key, removed));
+            ClassicAssert.AreEqual(0, (int)db.Execute("VREM", Key, removed));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VCARD", Key));
+            var hits = (byte[][])db.Execute("VSIM", [Key, "VALUES", "3", "1", "2", "3", "COUNT", "2"]);
+            CollectionAssert.AreEqual(new[] { retained }, hits);
+        }
+
+        [Test]
         public void SimpleInternalIdReuse()
         {
             const string Key = "SimpleInternalIdReuse";
@@ -3928,7 +4027,8 @@ namespace Garnet.test
         [Test]
         [CancelAfter(30_000)]
         public async Task WithQuantizationBackfillAsync(
-            [Values(VectorQuantType.NoQuant, VectorQuantType.Bin, VectorQuantType.Q8, VectorQuantType.XNoQuant_I8, VectorQuantType.XNoQuant_U8, VectorQuantType.XBin_I8, VectorQuantType.XBin_U8)] VectorQuantType quantType,
+            [Values(VectorQuantType.NoQuant, VectorQuantType.Bin, VectorQuantType.Q8, VectorQuantType.XNoQuant_I8, VectorQuantType.XNoQuant_U8, VectorQuantType.XBin_I8, VectorQuantType.XBin_U8,
+                VectorQuantType.XSpherical2, VectorQuantType.XSpherical2_I8, VectorQuantType.XSpherical2_U8, VectorQuantType.XSpherical4, VectorQuantType.XSpherical4_I8, VectorQuantType.XSpherical4_U8)] VectorQuantType quantType,
             [Values(true)] bool concurrentAdds,
             [Values(true)] bool concurrentSearches,
             CancellationToken cancellation)
@@ -4720,7 +4820,7 @@ namespace Garnet.test
 
         [Test]
         [CancelAfter(30_000)]
-        public async Task VEMBRawAsync([Values("NOQUANT", "Q8", "BIN", "XNOQUANT_U8", "XNOQUANT_I8", "XBIN_I8", "XBIN_U8")] string quantizer, CancellationToken cancellation)
+        public async Task VEMBRawAsync([Values("NOQUANT", "Q8", "BIN", "XNOQUANT_U8", "XNOQUANT_I8", "XBIN_I8", "XBIN_U8", "XSPHERICAL2", "XSPHERICAL2_I8", "XSPHERICAL2_U8", "XSPHERICAL4", "XSPHERICAL4_I8", "XSPHERICAL4_U8")] string quantizer, CancellationToken cancellation)
         {
             const string VectorSetName = nameof(VEMBRawAsync);
             const string ElementName = nameof(ElementName);
@@ -4785,6 +4885,8 @@ namespace Garnet.test
                         "NOQUANT" => "fp32",
                         "Q8" or "XNOQUANT_I8" or "XNOQUANT_U8" => "q8",
                         "BIN" or "XBIN_I8" or "XBIN_U8" => "bin",
+                        "XSPHERICAL2" or "XSPHERICAL2_I8" or "XSPHERICAL2_U8" => "spherical2",
+                        "XSPHERICAL4" or "XSPHERICAL4_I8" or "XSPHERICAL4_U8" => "spherical4",
                         _ => throw new InvalidOperationException($"Unexpected quantizer: {quantizer}"),
                     };
                 ClassicAssert.AreEqual(expectedQType, Encoding.ASCII.GetString(preQuantVEMBRaw[0]));

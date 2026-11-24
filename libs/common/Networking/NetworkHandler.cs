@@ -143,6 +143,10 @@ namespace Garnet.networking
         readonly byte[] transportSendBuffer;
         readonly unsafe byte* transportSendBufferPtr;
 
+        // Receive cleanup owns one interest. Clients retaining raw plaintext pointers acquire another
+        // before Start; the last release returns the buffer, independently of socket shutdown.
+        int transportSendBufferOwners = 1;
+
         /* Wrapper for buffer used to write directly to the network */
         readonly TNetworkSender networkSender;
 
@@ -157,6 +161,7 @@ namespace Garnet.networking
         readonly SslStream sslStream;
         readonly SemaphoreSlim receivedData, expectingData;
         protected readonly CancellationTokenSource cancellationTokenSource;
+        readonly CancellationToken connectionCancellationToken;
 
         // Stream reader status: Rest = 0, Active = 1, Waiting = 2
         volatile TlsReaderStatus readerStatus;
@@ -210,6 +215,7 @@ namespace Garnet.networking
                 receivedData = new SemaphoreSlim(0);
                 expectingData = new SemaphoreSlim(0);
                 cancellationTokenSource = new();
+                connectionCancellationToken = cancellationTokenSource.Token;
 
                 transportReceiveBufferEntry = this.networkPool.Get(BaseReceiveBufferSize, PoolEntryBufferType.TransportReceiveBuffer);
                 transportReceiveBuffer = transportReceiveBufferEntry.entry;
@@ -336,9 +342,11 @@ namespace Garnet.networking
         async Task AuthenticateAsClientAsync(SslClientAuthenticationOptions sslClientOptions, string remoteEndpointName, CancellationToken token)
         {
             Debug.Assert(readerStatus == TlsReaderStatus.Active);
+            // Socket teardown must cancel the handshake's transport read even when the caller supplied a token.
+            using var authenticationCancellation = CancellationTokenSource.CreateLinkedTokenSource(token, connectionCancellationToken);
             try
             {
-                await sslStream.AuthenticateAsClientAsync(sslClientOptions, token).ConfigureAwait(false);
+                await sslStream.AuthenticateAsClientAsync(sslClientOptions, authenticationCancellation.Token).ConfigureAwait(false);
 
                 if (token.IsCancellationRequested) throw new TaskCanceledException("AuthenticateAsClientAsync was cancelled");
 
@@ -354,9 +362,9 @@ namespace Garnet.networking
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "An error has occurred");
-                readerStatus = TlsReaderStatus.Rest;
-                if (expectingData.CurrentCount == 0) expectingData.Release();
                 Dispose();
+                if (ex is OperationCanceledException && !token.IsCancellationRequested)
+                    throw new IOException("The connection closed during TLS authentication.", ex);
                 throw;
             }
         }
@@ -998,6 +1006,25 @@ namespace Garnet.networking
             => transportSendBufferPtr + transportSendBuffer.Length;
 
         /// <summary>
+        /// Retains the TLS plaintext send buffer for an external sender. Call before starting the handler.
+        /// </summary>
+        protected void RetainTransportSendBuffer()
+        {
+            Debug.Assert(disposeCount == 0);
+            if (transportSendBufferEntry != null)
+                Interlocked.Increment(ref transportSendBufferOwners);
+        }
+
+        /// <summary>
+        /// Disposes one TLS plaintext-buffer ownership interest; the last owner returns the buffer.
+        /// </summary>
+        protected void DisposeTransportSendBuffer()
+        {
+            if (transportSendBufferEntry != null && Interlocked.Decrement(ref transportSendBufferOwners) == 0)
+                transportSendBufferEntry.Dispose();
+        }
+
+        /// <summary>
         /// Implementation of dispose for network handler.
         /// Expected to be called exactly once, by the same thread that listens to network
         /// and calls the mono-threaded ProcessMessage.
@@ -1013,20 +1040,30 @@ namespace Garnet.networking
                 return;
             }
 
-            cancellationTokenSource?.Cancel();
-            serverHook.DisposeMessageConsumer(this);
-            networkSender.Dispose();
-            sslStream?.Dispose();
-            // Release the reader so it sees the cancellation
-            receivedData?.Release();
-            receivedData?.Dispose();
-            // Release the expecter so it sees the cancellation
-            expectingData?.Release();
-            expectingData?.Dispose();
-            cancellationTokenSource?.Dispose();
-            networkReceiveBufferEntry?.Dispose();
-            transportSendBufferEntry?.Dispose();
-            transportReceiveBufferEntry?.Dispose();
+            try
+            {
+                cancellationTokenSource?.Cancel();
+                serverHook.DisposeMessageConsumer(this);
+                networkSender.Dispose();
+                sslStream?.Dispose();
+                // Release the reader so it sees the cancellation
+                receivedData?.Release();
+                receivedData?.Dispose();
+                // Release the expecter so it sees the cancellation
+                expectingData?.Release();
+                expectingData?.Dispose();
+                cancellationTokenSource?.Dispose();
+                networkReceiveBufferEntry?.Dispose();
+                transportReceiveBufferEntry?.Dispose();
+            }
+            finally
+            {
+                DisposeTransportSendBuffer();
+#if DEBUG
+                if (transportSendBufferEntry != null)
+                    _ = ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Tls_Signal_After_Handler_Dispose);
+#endif
+            }
         }
 
         /// <inheritdoc />

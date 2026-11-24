@@ -225,18 +225,19 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task PeerDisconnectDuringHandshakeFaultsConnect()
+        public async Task PeerDisconnectDuringHandshakeFaultsConnect([Values] bool useCancellationToken)
         {
             using var cts = new CancellationTokenSource(Deadline);
             using var listener = Listen();
             using var client = TestUtils.GetGarnetClient(useTLS: true);
-            var connect = client.ConnectAsync(cts.Token);
+            var connect = client.ConnectAsync(useCancellationToken ? cts.Token : default);
             using (var peer = await listener.AcceptTcpClientAsync(cts.Token))
             {
                 ClassicAssert.Greater(await peer.GetStream().ReadAsync(new byte[256], cts.Token), 0);
             }
 
-            var failure = Assert.CatchAsync(async () => await connect.WaitAsync(Deadline));
+            var failure = Assert.CatchAsync(async () => await connect.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.That(cts.IsCancellationRequested, Is.False, "Peer closure must fault the handshake without caller cancellation.");
             Assert.That(failure, Is.InstanceOf<AuthenticationException>().Or.InstanceOf<IOException>().Or.InstanceOf<ObjectDisposedException>());
         }
 

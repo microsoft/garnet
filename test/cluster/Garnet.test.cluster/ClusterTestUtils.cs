@@ -14,6 +14,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
+using Garnet.cluster;
 using Garnet.common;
 using Garnet.server;
 using GarnetClusterManagement;
@@ -1367,7 +1368,7 @@ namespace Garnet.test.cluster
                     if (nodeA.IsReplica != nodeB.IsReplica)
                         return false;
 
-                    if (nodeA.Parent != nodeB.Parent)
+                    if (nodeA.ParentNodeId != nodeB.ParentNodeId)
                         return false;
 
                     if (!nodeA.EndPoint.Equals(nodeB.EndPoint))
@@ -3461,7 +3462,7 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Waits until the node reports the primary role and the multiplexer has observed it.
+        /// Waits until the node has finished recovery in the primary role and the multiplexer has observed it.
         /// The multiplexer caches a per-endpoint replica flag and rejects a primary-only command
         /// before it leaves the client, refreshing that flag only on its periodic configuration
         /// check, so a promotion is not usable until the topology has been re-read.
@@ -3471,9 +3472,12 @@ namespace Garnet.test.cluster
             var endPoint = GetEndPoint(nodeIndex);
             while (true)
             {
-                if (RoleCommand(endPoint, logger).Value.Equals("master"))
+                var info = GetReplicationInfo(endPoint, [ReplicationInfoItem.ROLE, ReplicationInfoItem.RECOVER_STATUS], logger);
+                if (info[0].Item2.Equals("master") &&
+                    info[1].Item2 is nameof(RecoveryStatus.NoRecovery) or nameof(RecoveryStatus.ReadRole))
                 {
-                    if (!redis.GetServer(endPoint).IsReplica) break;
+                    var server = redis.GetServer(endPoint);
+                    if (!server.IsReplica) break;
                     _ = redis.Configure();
                 }
                 BackOff(cancellationToken: context.cts.Token, msg: nameof(WaitForPrimaryRole));

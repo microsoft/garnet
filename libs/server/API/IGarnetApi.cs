@@ -54,6 +54,15 @@ namespace Garnet.server
         GarnetStatus DEL_ETagConditional(PinnedSpanByte key, ref StringInput input);
 
         /// <summary>
+        /// Delete a string only when its value satisfies the supplied comparison.
+        /// </summary>
+        /// <param name="key">Key to delete.</param>
+        /// <param name="input">Command, comparison value, and equality condition.</param>
+        /// <param name="output">RESP integer indicating whether the key was deleted.</param>
+        /// <returns>The storage operation status.</returns>
+        GarnetStatus DELETE_Conditional(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
+
+        /// <summary>
         /// SET
         /// </summary>
         GarnetStatus SET(PinnedSpanByte key, Memory<byte> value);
@@ -178,6 +187,19 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <returns></returns>
         GarnetStatus EXISTS(PinnedSpanByte key);
+
+        #endregion
+
+        #region TOUCH
+
+        /// <summary>
+        /// Touches a key using the normal read path without returning its value.
+        /// </summary>
+        /// <param name="key">The key to touch.</param>
+        /// <param name="input">The TOUCH command input.</param>
+        /// <param name="output">The unified store output.</param>
+        /// <returns>OK if the key exists; otherwise NOTFOUND.</returns>
+        GarnetStatus TOUCH(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output);
 
         #endregion
 
@@ -1411,6 +1433,15 @@ namespace Garnet.server
     /// </summary>
     public interface IGarnetReadApi
     {
+        /// <summary>
+        /// Compute the XXH3-64 digest of the current string value.
+        /// </summary>
+        /// <param name="key">Key to read.</param>
+        /// <param name="input">DIGEST command input.</param>
+        /// <param name="output">RESP bulk string containing the hexadecimal digest.</param>
+        /// <returns>The storage operation status.</returns>
+        GarnetStatus DIGEST(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
+
         #region GET
         /// <summary>
         /// GET
@@ -1865,10 +1896,20 @@ namespace Garnet.server
         /// <summary>
         /// Returns the value associated to the field in the hash stored at key.
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="field"></param>
-        /// <param name="value"></param>
-        /// <returns></returns>
+        /// <remarks>
+        /// A field that is absent from an existing hash reports <see cref="GarnetStatus.NOTFOUND"/>, the same
+        /// status an absent key reports, so it can be told apart from a field that holds an empty value
+        /// (<see cref="GarnetStatus.OK"/> with a zero-length <paramref name="value"/>). Callers that detect a
+        /// missing field by testing for an empty value must check the status instead.
+        /// <para>
+        /// A non-empty <paramref name="value"/> lives in the session's scratch allocator, so it stays valid until
+        /// that allocator is reset: after the current batch of commands, or by <c>ResetScratchBuffer</c>.
+        /// </para>
+        /// </remarks>
+        /// <param name="key">The hash key</param>
+        /// <param name="field">The field to read</param>
+        /// <param name="value">The field's value, empty unless the status is <see cref="GarnetStatus.OK"/></param>
+        /// <returns><see cref="GarnetStatus.OK"/> if the field exists, <see cref="GarnetStatus.NOTFOUND"/> if the key or field does not</returns>
         GarnetStatus HashGet(PinnedSpanByte key, PinnedSpanByte field, out PinnedSpanByte value);
 
         /// <summary>

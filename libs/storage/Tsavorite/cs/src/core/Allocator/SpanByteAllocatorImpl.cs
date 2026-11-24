@@ -275,7 +275,8 @@ namespace Tsavorite.core
         internal override bool Scan<TScanFunctions>(TsavoriteKV<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
                 long beginAddress, long endAddress, ref TScanFunctions scanFunctions, DiskScanBufferingMode diskScanBufferingMode)
         {
-            using SpanByteScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, endAddress, epoch, diskScanBufferingMode, logger: logger);
+            using SpanByteScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, endAddress, epoch, diskScanBufferingMode,
+                logger: logger, includeValues: scanFunctions.IncludeValues);
             return PushScanImpl(beginAddress, endAddress, ref scanFunctions, iter);
         }
 
@@ -283,10 +284,12 @@ namespace Tsavorite.core
         /// Implementation for push-scanning Tsavorite log with a cursor, called from LogAccessor
         /// </summary>
         internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
-                ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress, bool resetCursor = true, bool includeTombstones = false)
+                ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress, bool resetCursor = true,
+                bool includeTombstones = false, bool skipInvalidRecords = false)
         {
             using SpanByteScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> iter = new(store, this, cursor, endAddress, epoch, GetScanCursorBufferingMode(count),
-                includeClosedRecords: maxAddress < long.MaxValue, logger: logger);
+                includeClosedRecords: maxAddress < long.MaxValue, logger: logger, includeValues: scanFunctions.IncludeValues,
+                invalidRecordFilter: skipInvalidRecords ? InvalidRecordScanFilter.SkipAll : InvalidRecordScanFilter.SkipUnsealed);
             return ScanLookup<PinnedSpanByte, SpanByteAndMemory, TScanFunctions, SpanByteScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>>(store, scanCursorState,
                 ref cursor, count, scanFunctions, iter, validateCursor, maxAddress, resetCursor: resetCursor, includeTombstones: includeTombstones);
         }

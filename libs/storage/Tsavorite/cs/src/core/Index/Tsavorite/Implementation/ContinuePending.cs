@@ -171,6 +171,13 @@ namespace Tsavorite.core
                         goto NotFound;
                     }
 
+                    if (stackCtx.recSrc.HasReadCacheSrc)
+                    {
+                        return operationState.readCopyOptions.CopyFrom != ReadCopyFrom.AllImmutable
+                            ? OperationStatus.SUCCESS
+                            : ReadCacheCopyToTail(in memoryRecord, sessionFunctions, ref operationState, ref stackCtx);
+                    }
+
                     // See if we are copying to read cache or tail of log. If we already found the record in memory, we're done.
                     if (operationState.readCopyOptions.CopyFrom != ReadCopyFrom.None && !memoryRecord.IsSet)
                     {
@@ -371,6 +378,10 @@ namespace Tsavorite.core
             {
                 if (TryFindRecordInMainLogForConditionalOperation<ConditionallyHoistedKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, pendingState.requestKey, ref stackCtx,
                         currentAddress: request.logicalAddress, minAddress, pendingState.maxAddress, out internalStatus, out var needIO))
+                    return OperationStatus.SUCCESS;
+                // The tag can disappear while IO is pending. Its saved source is then unreachable; neither create a tag nor
+                // copy it to the tail, which would resurrect the key and use a bucket entry that FindTag did not initialize.
+                if (internalStatus == OperationStatus.NOTFOUND)
                     return OperationStatus.SUCCESS;
                 if (!OperationStatusUtils.IsRetry(internalStatus))
                 {

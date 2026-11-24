@@ -1545,6 +1545,24 @@ namespace Garnet.test
             expectedResponse = ":0\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
+
+        [Test]
+        [TestCase("SINTERSTORE")]
+        [TestCase("SDIFFSTORE")]
+        [TestCase("SUNIONSTORE")]
+        public async Task SetStoreWrongTypeRejectAsync(string command)
+        {
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = connection.GetDatabase();
+
+            ClassicAssert.IsTrue(await db.StringSetAsync("dest", "foo").ConfigureAwait(false));
+            ClassicAssert.IsTrue(await db.StringSetAsync("src", "bar").ConfigureAwait(false));
+
+            var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync(command, ["dest", "missing", "src"]));
+            ClassicAssert.IsTrue(exc.Message.StartsWith("WRONGTYPE "));
+
+            ClassicAssert.AreEqual("foo", await db.StringGetAsync("dest").ConfigureAwait(false));
+        }
         #endregion
 
 
@@ -1682,6 +1700,38 @@ namespace Garnet.test
         }
 
         #endregion
+
+        [Test]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("ZRANDMEMBER")]
+        public async Task WrongTypeOnZeroCountValidationAsync(string cmd)
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            // WRONGTYPE even with 0 COUNT
+            ClassicAssert.IsTrue(await db.StringSetAsync("foo", "bar").ConfigureAwait(false));
+
+            var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync(cmd, ["foo", "0"]));
+            ClassicAssert.IsTrue(exc.Message.StartsWith("WRONGTYPE "));
+
+            // COUNT 0 works on the correct types
+            switch (cmd[0])
+            {
+                case 'S': ClassicAssert.IsTrue(await db.SetAddAsync("fizz", "buzz").ConfigureAwait(false)); break;
+                case 'H': await db.HashSetAsync("fizz", [new("buzz", "hello")]).ConfigureAwait(false); break;
+                case 'Z': ClassicAssert.AreEqual(1, await db.SortedSetAddAsync("fizz", [new("buzz", 1)]).ConfigureAwait(false)); break;
+                default: ClassicAssert.Fail("Unexpected command type"); break;
+            }
+
+            var res = (string[])await db.ExecuteAsync(cmd, ["fizz", "0"]).ConfigureAwait(false);
+            ClassicAssert.AreEqual(0, res.Length);
+
+            // Check the command stream is not desynced
+            await db.PingAsync().ConfigureAwait(false);
+        }
 
 
         #region commonmethods

@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using Garnet.server;
@@ -577,6 +578,68 @@ namespace Garnet.test
             } while (recordsReturned < nKeys);
 
             ClassicAssert.IsTrue(recordsReturned == nKeys);
+        }
+
+        [TestCase(100)]
+        [TestCase(1000)]
+        [TestCase(100000)]
+        public void DiskBackedScanDoesNotRetainListOrChargeResidentHeap(int count)
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, memorySize: "64m", pageSize: "16m");
+            server.Start();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase();
+
+            // Keep one large object on the same disk page as the cursor batches. Each batch reloads the page.
+            var elements = Enumerable.Repeat((RedisValue)"0123456789", 7000).ToArray();
+            for (var i = 0; i < 72; i++)
+                db.ListRightPush("list", elements);
+            const int StringKeyCount = 2500;
+            var strings = Enumerable.Range(0, StringKeyCount)
+                .Select(i => new KeyValuePair<RedisKey, RedisValue>($"filler:{i}", new string('x', 32))).ToArray();
+            db.StringSet(strings);
+            var store = server.Provider.StoreWrapper.store;
+            store.Log.FlushAndEvict(wait: true);
+            Assert.That(store.Log.HeapSizeBytes, Is.Zero, "The list must be evicted before scanning");
+
+            ScanDiskBackedKeys(db, 100000, StringKeyCount + 1);
+            ScanDiskBackedKeys(db, count, StringKeyCount + 1);
+            var baseline = GC.GetTotalMemory(forceFullCollection: true);
+            for (var i = 0; i < 3; i++)
+            {
+                var calls = ScanDiskBackedKeys(db, count, StringKeyCount + 1);
+                var retained = GC.GetTotalMemory(forceFullCollection: true) - baseline;
+                TestContext.WriteLine($"COUNT {count}, pass {i + 1}: {calls} calls, retained change {retained:N0} bytes");
+                Assert.That(retained, Is.LessThan(8L << 20), "Repeated scans must not retain the roughly 42 MB deserialized list");
+                Assert.That(store.Log.HeapSizeBytes, Is.Zero, "Temporary scan objects must not charge the resident heap");
+                var info = (string)db.Execute("INFO", "STORE");
+                var heapLine = info.Split("\r\n").Single(line => line.StartsWith("Log.CurrentHeapSizeBytes:", StringComparison.Ordinal));
+                Assert.That(long.Parse(heapLine.Split(':')[1], CultureInfo.InvariantCulture), Is.Zero);
+            }
+
+            Assert.That(db.ListLength("list"), Is.EqualTo(504000));
+            Assert.That(db.ListGetByIndex("list", 0), Is.EqualTo((RedisValue)"0123456789"));
+            Assert.That(db.StringGet("filler:2499"), Is.EqualTo((RedisValue)new string('x', 32)));
+        }
+
+        static int ScanDiskBackedKeys(IDatabase db, int count, int expectedKeys)
+        {
+            long cursor = 0;
+            var keys = new HashSet<string>();
+            var calls = 0;
+            do
+            {
+                var result = (RedisResult[])db.Execute("SCAN", cursor, "COUNT", count);
+                cursor = (long)result[0];
+                foreach (var key in (string[])result[1])
+                    keys.Add(key);
+                Assert.That(++calls, Is.LessThanOrEqualTo(expectedKeys + 1), "SCAN must terminate");
+            } while (cursor != 0);
+            Assert.That(keys.Count, Is.EqualTo(expectedKeys));
+            Assert.That(keys, Does.Contain("list"));
+            return calls;
         }
 
         [Test]

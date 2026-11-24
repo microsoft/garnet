@@ -58,6 +58,23 @@ namespace Garnet.common
         /// </summary>
         Migration_Slot_End_Scan_Range_Acquisition,
         /// <summary>
+        /// Pause after gathering the next slot-migration batch, before protecting or reading its values.
+        /// </summary>
+        Migration_Slot_After_Scan_Ahead,
+        /// <summary>
+        /// Pause after processing a migration batch, before returning its acknowledgment.
+        /// </summary>
+        Migration_Before_Batch_Response,
+        /// <summary>
+        /// Wait at migration slot driver right after the keys of a scanned batch become inaccessible to writers
+        /// </summary>
+        Migration_Slot_Keys_Transmitting,
+        /// <summary>
+        /// Hold the migration slot driver, until cleared, once it has suspended config merges to hand the slots over.
+        /// A node shutting down does not release the hold.
+        /// </summary>
+        Migration_Hold_Ownership_Transfer,
+        /// <summary>
         /// AOF on replica has diverged from stream coming from primary.
         /// </summary>
         Divergent_AOF_Stream,
@@ -204,8 +221,40 @@ namespace Garnet.common
         /// </summary>
         Sender_Pause_Before_Slot_Release,
         /// <summary>
+        /// Server network sender: signal that a send is waiting for an earlier send's slot.
+        /// </summary>
+        Sender_Signal_Before_Slot_Wait,
+        /// <summary>
         /// Server network sender: pause after a send timeout closes the socket, before waiting for its send slot.
         /// </summary>
         Sender_Pause_Before_Timed_Out_Slot_Wait,
+        /// <summary>
+        /// Checkpoint sender: pause while holding its plaintext send-buffer pointer, before copying the payload.
+        /// </summary>
+        Checkpoint_Pause_Before_Payload_Copy,
+        /// <summary>
+        /// TLS handler: signal that receive-side resource cleanup has finished.
+        /// </summary>
+        Tls_Signal_After_Handler_Dispose,
+        /// <summary>
+        /// Replica checkpoint writer: hold each overlapped file write until cleared.
+        /// </summary>
+        Replication_Hold_Snapshot_Write,
+        /// <summary>
+        /// Replica failover: pause after the primary acknowledged FAILSTOPWRITES, before waiting for the replica to catch up.
+        /// </summary>
+        Failover_Pause_Waiting_For_Sync,
+        /// <summary>
+        /// ROLE: pause after selecting a replica response, before writing it.
+        /// </summary>
+        Role_Pause_After_Role_Check,
+        /// <summary>
+        /// SLOWLOG GET: pause after deserializing argument pointers, before reading them.
+        /// </summary>
+        SlowLog_Pause_After_Deserialize,
+        /// <summary>
+        /// SET over a non-string key: pause while holding the key's lock, before rechecking its type.
+        /// </summary>
+        Set_Pause_Before_NonString_Recheck,
     }
 }
