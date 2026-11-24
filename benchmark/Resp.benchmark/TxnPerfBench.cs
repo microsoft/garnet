@@ -101,7 +101,7 @@ namespace Resp.benchmark
             Thread[] workers = new Thread[NumThreads];
             Console.WriteLine($"Running benchmark using {opts.Client} client type");
 
-            if (opts.Client == ClientType.GarnetClientSession && opts.Pool)
+            if (opts.Client == ClientType.GarnetClientSession && opts.UseFixedWorkerPool)
             {
                 gcsPool = new AsyncPool<GarnetClientSession>(opts.NumThreads.First(), () =>
                 {
@@ -117,7 +117,7 @@ namespace Resp.benchmark
             }
             if (opts.Client == ClientType.SERedis)
             {
-                if (opts.Pool)
+                if (opts.UseFixedWorkerPool)
                 {
                     redisPool = new AsyncPool<IConnectionMultiplexer>(opts.NumThreads.First(), () =>
                     {
@@ -251,7 +251,7 @@ namespace Resp.benchmark
                 OpType op = SelectOpType(rand);
                 long startTimestamp = Stopwatch.GetTimestamp();
 
-                var rd = opts.Pool ? redisPool.Get() : redis;
+                var rd = opts.UseFixedWorkerPool ? redisPool.Get() : redis;
                 var db = rd.GetDatabase(0);
                 ITransaction txn;
                 bool committed;
@@ -305,7 +305,7 @@ namespace Resp.benchmark
                     default:
                         throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!");
                 }
-                if (opts.Pool)
+                if (opts.UseFixedWorkerPool)
                 {
                     redisPool.Return(rd);
                 }

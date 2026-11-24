@@ -449,6 +449,9 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void WaitForSendCapacity()
         {
+#if DEBUG
+            _ = ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Sender_Signal_Before_Slot_Wait);
+#endif
             // A send usually completes shortly while the peer reads, so spin progressively, as the semaphore's own
             // blocking wait does, before paying for a task and a blocking wait.
             var spinner = ConfiguredSpinWait.BoundedProgressive(CapacitySpinIterations, sleep1Threshold: -1);

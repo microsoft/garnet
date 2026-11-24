@@ -36,6 +36,10 @@ namespace Tsavorite.core
         /// <summary>
         /// Allocate memory page, pinned in memory
         /// </summary>
+        /// <remarks>
+        /// The page is left all zeros. TsavoriteLog pages have no <see cref="PageHeader"/> (pageHeaderSize is 0): above page 0,
+        /// entries start at the page's first byte, and the scan reads the zeros after a page's last entry as padding to its end.
+        /// </remarks>
         /// <param name="index"></param>
         internal void AllocatePage(int index)
         {
@@ -51,7 +55,6 @@ namespace Tsavorite.core
                 // No free pages are available so allocate new
                 AllocatePinnedPageArray(index);
             }
-            PageHeader.Initialize(pagePointers[index]);
         }
 
         void ReturnPage(int index)
@@ -98,6 +101,9 @@ namespace Tsavorite.core
         }
 
         internal int OverflowPageCount => freePagePool.Count;
+
+        /// <summary>The device the log is stored on</summary>
+        internal IDevice Device => device;
 
         /// <inheritdoc/>
         protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
@@ -178,7 +184,7 @@ namespace Tsavorite.core
         /// </summary>
         internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<TsavoriteLogStoreFunctions, TsavoriteLogAllocator> store,
                 ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress,
-                bool resetCursor = true, bool includeTombstones = false)
+                bool resetCursor = true, bool includeTombstones = false, bool skipInvalidRecords = false)
             => throw new TsavoriteException("TsavoriteLogAllocator Scan methods should not be used");
 
         /// <summary>

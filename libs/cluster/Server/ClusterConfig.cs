@@ -1214,12 +1214,16 @@ namespace Garnet.cluster
             return new(slotMap, newWorkers);
         }
 
-        public ClusterConfig MergeSlotMap(ClusterConfig senderConfig, ILogger logger = null)
+        public ClusterConfig MergeSlotMap(ClusterConfig remoteSenderConfig, ILogger logger = null)
         {
             // Track if update happened to avoid expensive merge and FlushConfig operation when possible
             var updated = false;
-            var senderSlotMap = senderConfig.slotMap;
-            var assignToWorkerId = GetWorkerIdFromNodeId(senderConfig.LocalNodeId);
+            var senderSlotMap = remoteSenderConfig.slotMap;
+            var assignToWorkerId = GetWorkerIdFromNodeId(remoteSenderConfig.LocalNodeId);
+            var localSenderConfig = workers[assignToWorkerId];
+            // Superseded sender metadata cannot authorize slot claims or handoffs.
+            if (localSenderConfig.ConfigEpoch > remoteSenderConfig.LocalNodeConfigEpoch || localSenderConfig.Role != remoteSenderConfig.LocalNodeRole)
+                return this;
 
             // Create a copy of the local slotMap
             var newSlotMap = new HashSlot[MAX_HASH_SLOT_VALUE];
@@ -1233,7 +1237,7 @@ namespace Garnet.cluster
                     continue;
 
                 // Skip processing this slot information when the sender is not the claimant of the slot and is a primary                
-                if (senderSlotMap[i]._workerId != LOCAL_WORKER_ID && senderConfig.IsPrimary)
+                if (senderSlotMap[i]._workerId != LOCAL_WORKER_ID && remoteSenderConfig.IsPrimary)
                 {
                     var currentOwnerNodeId = workers[currentOwnerId].Nodeid;
                     // Sender does not own node but local node believes it does
@@ -1241,7 +1245,7 @@ namespace Garnet.cluster
                     // in that case slot state should be set to offline to give the opportunity to the actual owner to claim the slot.
                     // Otherwise the sender will falsely remain the owner and its epoch will be greater than that of the new owner and the new owner
                     // will not be able to claim the slot without outside intervention
-                    if (currentOwnerNodeId != null && currentOwnerNodeId.Equals(senderConfig.LocalNodeId, StringComparison.OrdinalIgnoreCase))
+                    if (currentOwnerNodeId != null && currentOwnerNodeId.Equals(remoteSenderConfig.LocalNodeId, StringComparison.OrdinalIgnoreCase))
                     {
                         // logger?.LogWarning("MergeReset: {senderConfig.LocalNodeIdShort} > {i} > {LocalNodeIdShort}", senderConfig.LocalNodeIdShort, i, LocalNodeIdShort);
                         newSlotMap[i]._workerId = RESERVED_WORKER_ID;
@@ -1253,10 +1257,14 @@ namespace Garnet.cluster
                     continue;
                 }
 
-                if (senderConfig.IsPrimary)
+                if (remoteSenderConfig.IsPrimary)
                 {
-                    // Sender is claimant of this node and is a primary, hence it can update the state of this slot, if its config epoch is higher than the old epoch.
-                    if (senderConfig.LocalNodeConfigEpoch != 0 && workers[currentOwnerId].ConfigEpoch >= senderConfig.LocalNodeConfigEpoch)
+                    // A primary's newer epoch supersedes the old owner's claim.
+                    // A demoted owner also authorizes its new primary, even if the demotion's epoch advanced independently.
+                    var owner = workers[currentOwnerId];
+                    var handedOffToSender = owner.Role == NodeRole.REPLICA &&
+                        string.Equals(owner.ReplicaOfNodeId, remoteSenderConfig.LocalNodeId, StringComparison.OrdinalIgnoreCase);
+                    if (remoteSenderConfig.LocalNodeConfigEpoch != 0 && owner.ConfigEpoch >= remoteSenderConfig.LocalNodeConfigEpoch && !handedOffToSender)
                         continue;
                 }
                 else
@@ -1272,9 +1280,12 @@ namespace Garnet.cluster
                     // This should guarantee that only the old primary should proceed with re-assigning the slots to the replica that is taking over
                     // Scenario 4 nodes A,B,C,D for which B,C are replicas of A and B takes over from A,
                     // then due to delay D will receive a gossip from A,B,C in any order.
-                    if (!workers[currentOwnerId].Nodeid.Equals(senderConfig.LocalNodeId))
+                    if (!workers[currentOwnerId].Nodeid.Equals(remoteSenderConfig.LocalNodeId))
                         continue;
-                    assignToWorkerId = GetWorkerIdFromNodeId(senderConfig.LocalNodePrimaryId);
+                    assignToWorkerId = GetWorkerIdFromNodeId(remoteSenderConfig.LocalNodePrimaryId);
+                    // Stale replica gossip must not hand slots back to a node that has itself been demoted.
+                    if (workers[assignToWorkerId].Role != NodeRole.PRIMARY)
+                        continue;
                 }
 
                 // Update happened only if workerId or state changed

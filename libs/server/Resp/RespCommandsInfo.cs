@@ -123,6 +123,35 @@ namespace Garnet.server
         private readonly string[] respFormatFlags;
         private readonly string[] respFormatAclCategories;
 
+        /// <summary>
+        /// Empty constructor for JSON deserialization
+        /// </summary>
+        public RespCommandsInfo()
+        {
+        }
+
+        private RespCommandsInfo(RespCommandsInfo other, string name)
+        {
+            Command = other.Command;
+            Name = name;
+            IsInternal = other.IsInternal;
+            Arity = other.Arity;
+            flags = other.flags;
+            respFormatFlags = other.respFormatFlags;
+            FirstKey = other.FirstKey;
+            LastKey = other.LastKey;
+            Step = other.Step;
+            aclCategories = other.aclCategories;
+            respFormatAclCategories = other.respFormatAclCategories;
+            Tips = other.Tips;
+            KeySpecifications = other.KeySpecifications;
+            StoreType = other.StoreType;
+            SubCommands = other.SubCommands;
+            Parent = other.Parent;
+        }
+
+        internal RespCommandsInfo WithName(string name) => new(this, name);
+
         private static bool TryInitialize(ILogger logger)
         {
             lock (IsInitializedLock)

@@ -1832,6 +1832,176 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SetXxOverwritesNonStringKey([Values(RedisType.List, RedisType.Hash, RedisType.Set)] RedisType type)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+
+            CreateNonStringKey(db, key, type);
+            ClassicAssert.IsTrue(db.StringSet(key, "v1", null, When.Exists, CommandFlags.None));
+            ClassicAssert.AreEqual(RedisType.String, db.KeyType(key));
+            ClassicAssert.AreEqual("v1", (string)db.StringGet(key));
+            ClassicAssert.IsNull(db.KeyTimeToLive(key));
+
+            // With expiry
+            _ = db.KeyDelete(key);
+            CreateNonStringKey(db, key, type);
+            ClassicAssert.IsTrue(db.StringSet(key, "v2", TimeSpan.FromSeconds(100), When.Exists, CommandFlags.None));
+            ClassicAssert.AreEqual(RedisType.String, db.KeyType(key));
+            ClassicAssert.AreEqual("v2", (string)db.StringGet(key));
+            var ttl = db.KeyTimeToLive(key);
+            ClassicAssert.IsNotNull(ttl);
+            ClassicAssert.IsTrue(ttl.Value > TimeSpan.Zero && ttl.Value <= TimeSpan.FromSeconds(100));
+
+            // KEEPTTL XX
+            _ = db.KeyDelete(key);
+            CreateNonStringKey(db, key, type);
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SET", key, "v3", "KEEPTTL", "XX"));
+            ClassicAssert.AreEqual(RedisType.String, db.KeyType(key));
+            ClassicAssert.AreEqual("v3", (string)db.StringGet(key));
+        }
+
+        [Test]
+        public void SetNxLeavesNonStringKey([Values(RedisType.List, RedisType.Hash, RedisType.Set)] RedisType type)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            CreateNonStringKey(db, key, type);
+
+            ClassicAssert.IsFalse(db.StringSet(key, "v1", null, When.NotExists, CommandFlags.None));
+            ClassicAssert.IsFalse(db.StringSet(key, "v2", TimeSpan.FromSeconds(100), When.NotExists, CommandFlags.None));
+            ClassicAssert.IsTrue(db.Execute("SET", key, "v3", "KEEPTTL", "NX").IsNull);
+
+            ClassicAssert.AreEqual(type, db.KeyType(key));
+            ClassicAssert.IsNull(db.KeyTimeToLive(key));
+            switch (type)
+            {
+                case RedisType.List:
+                    ClassicAssert.AreEqual(2, db.ListLength(key));
+                    break;
+                case RedisType.Hash:
+                    ClassicAssert.AreEqual("v", (string)db.HashGet(key, "f"));
+                    break;
+                case RedisType.Set:
+                    ClassicAssert.IsTrue(db.SetContains(key, "m"));
+                    break;
+            }
+        }
+
+        [Test]
+        public void SetKeepTtlOverNonStringKeyKeepsTtl([Values(RedisType.List, RedisType.Hash, RedisType.Set)] RedisType type, [Values] bool xx)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            object[] args = xx ? [key, "v1", "KEEPTTL", "XX"] : [key, "v1", "KEEPTTL"];
+
+            CreateNonStringKey(db, key, type);
+            ClassicAssert.IsTrue(db.KeyExpire(key, TimeSpan.FromSeconds(100)));
+            var expireTime = db.KeyExpireTime(key);
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SET", args));
+            ClassicAssert.AreEqual(RedisType.String, db.KeyType(key));
+            ClassicAssert.AreEqual("v1", (string)db.StringGet(key));
+            ClassicAssert.AreEqual(expireTime, db.KeyExpireTime(key));
+
+            // Without a TTL
+            _ = db.KeyDelete(key);
+            CreateNonStringKey(db, key, type);
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SET", args));
+            ClassicAssert.AreEqual("v1", (string)db.StringGet(key));
+            ClassicAssert.IsNull(db.KeyTimeToLive(key));
+        }
+
+        /// <summary>
+        /// SET KEEPTTL XX over a non-string key that expires while the SET holds its lock finds the key missing.
+        /// </summary>
+        [Test]
+        public async Task SetKeepTtlXxOverNonStringKeyExpiringUnderLock()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+            const ExceptionInjectionType pause = ExceptionInjectionType.Set_Pause_Before_NonString_Recheck;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            var expireTime = DateTime.UtcNow.AddSeconds(1);
+            CreateNonStringKey(db, key, RedisType.List);
+            ClassicAssert.IsTrue(db.KeyExpire(key, expireTime));
+
+            try
+            {
+                ExceptionInjectionHelper.EnableException(pause);
+                var set = db.ExecuteAsync("SET", key, "v1", "KEEPTTL", "XX");
+                await ExceptionInjectionHelper.WaitOnClearAsync(pause).WaitAsync(TimeSpan.FromSeconds(10));
+
+                // Let the key expire before the SET rechecks it
+                await Task.Delay(expireTime - DateTime.UtcNow + TimeSpan.FromMilliseconds(100));
+                ExceptionInjectionHelper.EnableException(pause);
+
+                ClassicAssert.IsTrue((await set).IsNull);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(pause);
+            }
+
+            ClassicAssert.IsFalse(db.KeyExists(key));
+        }
+
+        [Test]
+        public void SetConditionalOnNonStringKeysInTransaction()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            CreateNonStringKey(db, "list", RedisType.List);
+            CreateNonStringKey(db, "hash", RedisType.Hash);
+            CreateNonStringKey(db, "set", RedisType.Set);
+            ClassicAssert.IsTrue(db.KeyExpire("set", TimeSpan.FromSeconds(100)));
+            var expireTime = db.KeyExpireTime("set");
+
+            var tran = db.CreateTransaction();
+            var xx = tran.ExecuteAsync("SET", ["list", "v1", "XX"]);
+            var nx = tran.ExecuteAsync("SET", ["hash", "v2", "NX"]);
+            var keepTtlXx = tran.ExecuteAsync("SET", ["set", "v3", "KEEPTTL", "XX"]);
+            ClassicAssert.IsTrue(tran.Execute());
+
+            ClassicAssert.AreEqual("OK", (string)xx.Result);
+            ClassicAssert.IsTrue(nx.Result.IsNull);
+            ClassicAssert.AreEqual("OK", (string)keepTtlXx.Result);
+            ClassicAssert.AreEqual("v1", (string)db.StringGet("list"));
+            ClassicAssert.AreEqual(RedisType.Hash, db.KeyType("hash"));
+            ClassicAssert.AreEqual("v3", (string)db.StringGet("set"));
+            ClassicAssert.AreEqual(expireTime, db.KeyExpireTime("set"));
+        }
+
+        private static void CreateNonStringKey(IDatabase db, string key, RedisType type)
+        {
+            switch (type)
+            {
+                case RedisType.List:
+                    _ = db.ListRightPush(key, ["a", "b"]);
+                    break;
+                case RedisType.Hash:
+                    _ = db.HashSet(key, "f", "v");
+                    break;
+                case RedisType.Set:
+                    _ = db.SetAdd(key, "m");
+                    break;
+                default:
+                    Assert.Fail($"Unsupported type {type}");
+                    break;
+            }
+        }
+
+        [Test]
         public void SetAndGetExpiryXx()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -3521,7 +3691,7 @@ namespace Garnet.test
         public void SingleRenameWithOldKeyAndNewKeyAsSame()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
+            var db = redis.GetDatabase();
             var origValue = "test1";
             var key = "key1";
             db.StringSet(key, origValue);
@@ -3749,7 +3919,7 @@ namespace Garnet.test
 
             var result = db.KeyRename(key, key, When.NotExists);
 
-            ClassicAssert.IsTrue(result);
+            ClassicAssert.IsFalse(result);
             string retValue = db.StringGet(key);
             ClassicAssert.AreEqual(origValue, retValue);
         }
@@ -3792,6 +3962,27 @@ namespace Garnet.test
         }
 
         #endregion
+
+        [Test]
+        public async Task RenameValidationAsync()
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            //await using var redis = await ConnectionMultiplexer.ConnectAsync("127.0.0.1:6379").ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            //db.KeyDelete("foo");
+            //db.KeyDelete("fizz");
+
+            ClassicAssert.IsTrue(await db.StringSetAsync("foo", "bar").ConfigureAwait(false));
+
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("RENAME", "fizz", "fizz"));
+            ClassicAssert.AreEqual("ERR no such key", exc0.Message);
+
+            ClassicAssert.IsFalse(await db.KeyRenameAsync("foo", "foo", When.NotExists).ConfigureAwait(false));
+
+            var exc1 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("RENAMENX", "fizz", "foo"));
+            ClassicAssert.AreEqual("ERR no such key", exc1.Message);
+        }
 
         [Test]
         public void CanSelectCommand()
@@ -5256,6 +5447,20 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task GETRANGEIntOverflowClampAsync()
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            ClassicAssert.IsTrue(await db.StringSetAsync("foo", "123").ConfigureAwait(false));
+
+            ClassicAssert.AreEqual("123", await db.StringGetRangeAsync("foo", 0, 1 + (long)int.MaxValue).ConfigureAwait(false));
+
+            var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("GETRANGE", "foo", "0", "9223372036854775808"));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", exc.Message);
+        }
+
+        [Test]
         public void SetRangeTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -5336,6 +5541,20 @@ namespace Garnet.test
             resp = db.StringGet(key);
             ClassicAssert.AreEqual(value, resp);
             ClassicAssert.IsTrue(db.KeyDelete(key));
+        }
+
+        [Test]
+        public async Task EmptySetRangeIgnoredAsync()
+        {
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = connection.GetDatabase();
+
+            ClassicAssert.IsTrue(await db.StringSetAsync("foo", "bar").ConfigureAwait(false));
+            ClassicAssert.AreEqual(3, await db.StringSetRangeAsync("foo", 8, "").ConfigureAwait(false));
+            ClassicAssert.AreEqual(3, await db.StringLengthAsync("foo").ConfigureAwait(false));
+
+            ClassicAssert.AreEqual(0, await db.StringSetRangeAsync("fizz", 8, "").ConfigureAwait(false));
+            ClassicAssert.IsFalse(await db.KeyExistsAsync("fizz").ConfigureAwait(false));
         }
 
         /// <summary>
@@ -5725,6 +5944,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, response);
             response = await c.ExecuteAsync("ZSCORE", "nx", "foo").ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedResponse, response);
+            response = await c.ExecuteAsync("MGET", "nx").ConfigureAwait(false);
+            ClassicAssert.AreEqual("*1\r\n" + expectedResponse, response);
 
             response = await c.ExecuteAsync("BITFIELD", "bf", "OVERFLOW", "FAIL", "INCRBY", "u1", "1", "1").ConfigureAwait(false);
             ClassicAssert.AreEqual("*1\r\n:1\r\n", response);
@@ -6245,7 +6466,7 @@ namespace Garnet.test
                 AssertDuplicateDefinitionError("MAXAGE", () => mainDB.Execute("CLIENT", "KILL", "MAXAGE", "123", "MAXAGE", "456"));
             }
 
-            static void AssertDuplicateDefinitionError(string filter, TestDelegate shouldThrow)
+            static void AssertDuplicateDefinitionError(string filter, Action shouldThrow)
             {
                 var exc = ClassicAssert.Throws<RedisServerException>(shouldThrow);
                 ClassicAssert.AreEqual($"ERR Filter '{filter}' defined multiple times", exc.Message);
@@ -7457,6 +7678,39 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             db.StringSet("testkey", "testvalue");
             ClassicAssert.AreEqual("testvalue", db.StringGet("testkey").ToString());
+        }
+
+        [Test]
+        public async Task GetParseAlignmentAsync([Values] bool scatterGather, [Values(1, 10, int.MaxValue)] int bytesPerSend)
+        {
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig(allowAdmin: true)).ConfigureAwait(false);
+            var db = connection.GetDatabase();
+
+            ClassicAssert.AreEqual("OK", (string)await db.ExecuteAsync("CONFIG", "SET", "sg-get", scatterGather ? "yes" : "no").ConfigureAwait(false));
+            ClassicAssert.AreEqual("OK", (string)await db.ExecuteAsync("SET", "foo", "bar").ConfigureAwait(false));
+
+            // Reject malformed GET
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("GET"));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'GET' command", exc0.Message);
+
+            // Command stream still aligned
+            ClassicAssert.AreEqual("bar", (string)await db.ExecuteAsync("GET", "foo").ConfigureAwait(false));
+
+            var exc1 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("GET", "fizz", "buzz"));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'GET' command", exc1.Message);
+
+            // Command stream still aligned
+            ClassicAssert.AreEqual("bar", (string)await db.ExecuteAsync("GET", "foo").ConfigureAwait(false));
+
+            using var client = TestUtils.CreateRequest(countResponseType: CountResponseType.Bytes);
+            var error = "-ERR wrong number of arguments for 'GET' command\r\n";
+            var value = "$3\r\nbar\r\n";
+            foreach (var command in new[] { "GET", "GET fizz buzz", "get", "get fizz buzz" })
+            {
+                ClassicAssert.AreEqual(error + value, client.Execute(command, "GET foo", error.Length + value.Length, bytesPerSend));
+                ClassicAssert.AreEqual(value + error, client.Execute("GET foo", command, value.Length + error.Length, bytesPerSend));
+            }
+            ClassicAssert.AreEqual("+PONG\r\n", client.Execute("PING", 7, bytesPerSend));
         }
     }
 }

@@ -151,6 +151,7 @@ namespace Garnet.test
         volatile bool deferCompletions;
         int sendCallIndex;
         int closed;
+        internal Action AfterChunkCompletion;
 
         internal RingTestHarness(
             int pageSize,
@@ -233,33 +234,32 @@ namespace Garnet.test
         {
             var result = (DuplexOperationAsyncFlushResult<TestRequest>)context;
             var finalChunk = Volatile.Read(ref result.remainingChunks) == 1;
-            DuplexOperationAsyncFlushResult<TestRequest>.CompleteChunk(context);
-
-            // Capture final-chunk ownership before completion, because completion may release the record slot and
-            // allow its reusable context to be initialized for another request before this callback resumes.
-            if (finalChunk)
+            byte[] bytes = null;
+            // Completing the final chunk can immediately reuse its context on another producer thread.
+            if (finalChunk && reassembly.TryRemove(context, out var acc))
             {
-                if (reassembly.TryRemove(context, out var acc))
+                lock (acc)
+                    bytes = acc.ToArray();
+            }
+            DuplexOperationAsyncFlushResult<TestRequest>.CompleteChunk(context);
+            AfterChunkCompletion?.Invoke();
+
+            if (bytes != null)
+            {
+                var offset = 0;
+                while (offset < bytes.Length)
                 {
-                    byte[] bytes;
-                    lock (acc)
-                        bytes = acc.ToArray();
-
-                    var offset = 0;
-                    while (offset < bytes.Length)
+                    var length = bytes.Length - offset;
+                    if (length >= RingPayload.HeaderSize)
                     {
-                        var length = bytes.Length - offset;
-                        if (length >= RingPayload.HeaderSize)
-                        {
-                            var declared = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(offset + 8));
-                            if (declared >= RingPayload.HeaderSize && declared <= length)
-                                length = declared;
-                        }
-
-                        completed.Add(bytes.AsSpan(offset, length).ToArray());
-                        Interlocked.Increment(ref completedCount);
-                        offset += length;
+                        var declared = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(offset + 8));
+                        if (declared >= RingPayload.HeaderSize && declared <= length)
+                            length = declared;
                     }
+
+                    completed.Add(bytes.AsSpan(offset, length).ToArray());
+                    Interlocked.Increment(ref completedCount);
+                    offset += length;
                 }
             }
         }

@@ -379,6 +379,10 @@ namespace Tsavorite.core
                 if (TryFindRecordInMainLogForConditionalOperation<ConditionallyHoistedKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, pendingState.requestKey, ref stackCtx,
                         currentAddress: request.logicalAddress, minAddress, pendingState.maxAddress, out internalStatus, out var needIO))
                     return OperationStatus.SUCCESS;
+                // The tag can disappear while IO is pending. Its saved source is then unreachable; neither create a tag nor
+                // copy it to the tail, which would resurrect the key and use a bucket entry that FindTag did not initialize.
+                if (internalStatus == OperationStatus.NOTFOUND)
+                    return OperationStatus.SUCCESS;
                 if (!OperationStatusUtils.IsRetry(internalStatus))
                 {
                     // Plumb source logical address so PostCopyToTail can name per-flush snapshot files.

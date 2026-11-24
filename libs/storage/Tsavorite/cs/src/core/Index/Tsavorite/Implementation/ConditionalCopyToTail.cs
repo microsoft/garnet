@@ -73,6 +73,10 @@ namespace Tsavorite.core
                 }
                 while (HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
 
+                // An absent tag makes the source unreachable; it may have been elided. Do not retry the insert or create a tag: that would resurrect the key.
+                if (status == OperationStatus.NOTFOUND)
+                    return OperationStatus.SUCCESS;
+
                 // Issue IO if necessary and desired (for ReadFromImmutable, it isn't; just exit in that case), else loop back up and retry the insert.
                 if (!wantIO)
                 {
@@ -107,6 +111,11 @@ namespace Tsavorite.core
                     return Status.CreateFound();
             }
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
+
+            // An absent tag makes the scanned source unreachable, even if it is not a tombstone; it may have been elided. Skip it rather than resurrecting
+            // the key by creating a tag or copying it to the tail; FindTag has not initialized a bucket entry for insertion.
+            if (status == OperationStatus.NOTFOUND)
+                return Status.CreateFound();
 
             if (needIO)
                 status = PrepareIOForConditionalOperation(sessionFunctions, ref operationState, keyHash, in srcLogRecord, ref stackCtx, minAddress, maxAddress);

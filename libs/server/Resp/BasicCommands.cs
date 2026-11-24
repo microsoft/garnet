@@ -465,6 +465,29 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_STRING_EXCEEDS_MAX_SIZE);
             }
 
+            // Empty update value is equivalent to STRLEN behavior
+            if (value.Length == 0)
+            {
+                var status = storageApi.GET(key, out PinnedSpanByte currentValue);
+
+                switch (status)
+                {
+                    case GarnetStatus.OK:
+                        while (!RespWriteUtils.TryWriteInt32(currentValue.Length, ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                    case GarnetStatus.NOTFOUND:
+                        while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                    case GarnetStatus.WRONGTYPE:
+                        WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                        break;
+                }
+
+                return true;
+            }
+
             var input = new StringInput(RespCommand.SETRANGE, ref parseState, startIdx: 1);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
@@ -496,7 +519,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Validate range
-            if (!parseState.TryGetInt(1, out _) || !parseState.TryGetInt(2, out _))
+            if (!parseState.TryGetLong(1, out _) || !parseState.TryGetLong(2, out _))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
@@ -880,14 +903,33 @@ namespace Garnet.server
             if (!getValue)
             {
                 var status = storageApi.SET_Conditional(key, ref input);
+                var overwroteNonString = false;
 
-                // Type already stored in key which requires an explicit delete
-                if (status == GarnetStatus.WRONGTYPE)
+                // Type already stored in key: NX leaves it as is, other variants delete it and set unconditionally
+                if (status == GarnetStatus.WRONGTYPE && cmd != RespCommand.SETEXNX)
                 {
                     using (txnManager.PromoteToTransaction(TransactionStoreTypes.Main | TransactionStoreTypes.Object, key, LockType.Exclusive))
                     {
-                        _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
+                        // KEEPTTL keeps the expiration of the value it replaces. Read it before the recheck, so a key
+                        // that expires in between is found missing rather than replaced by a string without one.
+                        var keepTtl = cmd is RespCommand.SETKEEPTTL or RespCommand.SETKEEPTTLXX;
+                        var expiration = keepTtl ? GetExpirationTicks(key) : 0;
+#if DEBUG
+                        ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Set_Pause_Before_NonString_Recheck);
+#endif
+
+                        // Recheck under the lock, as the key may have changed
                         status = storageSession.SET_Conditional(key, ref input, ref storageSession.stringTransactionalContext);
+                        if (status == GarnetStatus.WRONGTYPE)
+                        {
+                            if (keepTtl)
+                                input.arg1 = expiration;
+
+                            _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
+                            input.header.cmd = RespCommand.SETEXNX;
+                            status = storageSession.SET_Conditional(key, ref input, ref storageSession.stringTransactionalContext);
+                            overwroteNonString = true;
+                        }
                     }
                 }
 
@@ -899,7 +941,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    var ok = status != GarnetStatus.NOTFOUND;
+                    var ok = overwroteNonString || status != GarnetStatus.NOTFOUND;
 
                     // the status returned for SETEXNX as NOTFOUND is the expected status in the happy path, so flip the ok flag
                     if (cmd == RespCommand.SETEXNX)
@@ -940,6 +982,27 @@ namespace Garnet.server
 
                 return true;
             }
+        }
+
+        /// <summary>
+        /// Gets the absolute expiration of a key locked by the current transaction, in ticks, or 0 if it has none.
+        /// </summary>
+        private long GetExpirationTicks(PinnedSpanByte key)
+        {
+            Span<byte> outputSpan = stackalloc byte[32];
+            var input = new UnifiedInput(RespCommand.PEXPIRETIME);
+            var output = new UnifiedOutput(SpanByteAndMemory.FromPinnedSpan(outputSpan));
+
+            if (storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref storageSession.unifiedTransactionalContext) != GarnetStatus.OK)
+                return 0;
+
+            Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "PEXPIRETIME reply fits in the stack buffer");
+            var ptr = output.SpanByteAndMemory.SpanByte.ToPointer();
+            var end = ptr + output.SpanByteAndMemory.SpanByte.length;
+            if (!RespReadUtils.TryReadInt64(out var expirationMs, ref ptr, end) || expirationMs < 0)
+                return 0;
+
+            return ConvertUtils.TryUnixTimestampInMillisecondsToTicks(expirationMs, out var ticks) ? ticks : 0;
         }
 
         private static bool TryGetAbsoluteExpiryTicks(long expiry, bool highPrecision, out long expiryTicks)
@@ -1308,7 +1371,7 @@ namespace Garnet.server
 
                 writer.WriteArrayLength(cmdCount);
 
-                foreach (var customCmd in customCommandManagerSession.GetAllCustomCommandsInfos())
+                foreach (var customCmd in customCmds)
                 {
                     customCmd.Value.ToRespFormat(ref writer);
                 }

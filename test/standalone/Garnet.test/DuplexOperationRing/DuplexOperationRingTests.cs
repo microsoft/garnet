@@ -87,6 +87,36 @@ namespace Garnet.test
             h.AssertReceived(Enumerable.Range(1, RecordCount).Select(i => (long)i));
         }
 
+        [Test]
+        public async Task ReusedFlushContextKeepsDeferredPayloadsSeparate()
+        {
+            using var h = new RingTestHarness(
+                pageSize: 256,
+                pageCount: 2,
+                maxOutstandingRequests: 1,
+                completionCapacity: 1,
+                maxSendChunkSizeBytes: 64);
+            using var cts = new CancellationTokenSource(DrainTimeout);
+            h.DeferCompletions();
+            h.AfterChunkCompletion = () => h.PumpUntilAsync(
+                () => h.SendCallCount >= 2, TimeSpan.FromSeconds(5), cts.Token).GetAwaiter().GetResult();
+
+            await h.EnqueueAsync(RingPayload.Create(1, 64), expectCompletion: false, cts.Token);
+            await h.PumpUntilAsync(() => h.DeferredCompletionCount == 1, DrainTimeout, cts.Token);
+            await h.EnqueueAsync(RingPayload.Create(2, 64), expectCompletion: false, cts.Token);
+
+            ClassicAssert.IsTrue(h.CompleteOneDeferredChunk());
+            await h.PumpUntilAsync(() => h.DeferredCompletionCount == 1, DrainTimeout, cts.Token);
+            ClassicAssert.AreEqual(1, h.CompletedCount, "Reusing a flush context must not complete its next payload.");
+            h.AssertReceived([1]);
+
+            ClassicAssert.IsTrue(h.CompleteOneDeferredChunk());
+            await h.DrainUntilAsync(2, DrainTimeout, cts.Token);
+            ClassicAssert.AreEqual(0, h.DeferredCompletionCount);
+            h.AssertReceived([1, 2]);
+            h.AssertNoBufferLeaks();
+        }
+
         [TestCase(FlushResultAllocationMode.Buffered)]
         [TestCase(FlushResultAllocationMode.PerOperation)]
         public async Task RecordSizingIsByteGranular(FlushResultAllocationMode allocationMode)
