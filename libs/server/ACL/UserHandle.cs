@@ -15,6 +15,7 @@ namespace Garnet.server.ACL
         /// The <see cref="User"/> referred to by the <see cref="UserHandle"/>.
         /// </summary>
         private User user;
+        bool isValid = true;
 
         /// <summary>
         /// Constructor for a <see cref="UserHandle"/>.
@@ -37,6 +38,13 @@ namespace Garnet.server.ACL
         /// </summary>
         /// <returns>Returns the current version of the <see cref="User"/> with the latest modifications.</returns>
         public User User => user;
+
+        /// <summary>
+        /// Whether this handle has not been invalidated by deletion or ACL replacement.
+        /// </summary>
+        public bool IsValid => Volatile.Read(ref isValid);
+
+        internal void Invalidate() => Volatile.Write(ref isValid, false);
 
         /// <summary>
         /// Attempts to set the <see cref="User"/> for a handle.

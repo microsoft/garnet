@@ -55,6 +55,51 @@ namespace Garnet.test.Resp.ACL
             Assert.That(usernames, Does.Contain(TestUserB));
         }
 
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task DeleteUserInvalidatesExistingSessionAsync(bool recreateBeforeCommand)
+        {
+            using var admin = TestUtils.GetGarnetClientSession();
+            admin.Connect();
+            ClassicAssert.AreEqual("OK",
+                await admin.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", $">{DummyPassword}", "+@all").ConfigureAwait(false));
+            ClassicAssert.AreEqual("OK", await admin.ExecuteAsync("SET", "marker", "value").ConfigureAwait(false));
+
+            using var user = TestUtils.GetGarnetClientSession();
+            user.Connect();
+            ClassicAssert.AreEqual("OK", await user.ExecuteAsync("AUTH", TestUserA, DummyPassword).ConfigureAwait(false));
+            ClassicAssert.AreEqual("value", await user.ExecuteAsync("GET", "marker").ConfigureAwait(false));
+
+            ClassicAssert.AreEqual("1", await admin.ExecuteAsync("ACL", "DELUSER", TestUserA).ConfigureAwait(false));
+            if (recreateBeforeCommand)
+            {
+                ClassicAssert.AreEqual("OK",
+                    await admin.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", $">{DummyPasswordB}", "+get").ConfigureAwait(false));
+            }
+
+            var error = Assert.ThrowsAsync<Exception>(
+                async () => await user.ExecuteAsync("GET", "marker").ConfigureAwait(false));
+            ClassicAssert.AreEqual("NOAUTH Authentication required.", error.Message);
+            error = Assert.ThrowsAsync<Exception>(
+                async () => await user.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", "nopass", "+@all").ConfigureAwait(false));
+            ClassicAssert.AreEqual("NOAUTH Authentication required.", error.Message);
+
+            using var fresh = TestUtils.GetGarnetClientSession();
+            fresh.Connect();
+            error = Assert.ThrowsAsync<Exception>(
+                async () => await fresh.ExecuteAsync("AUTH", TestUserA, DummyPassword).ConfigureAwait(false));
+            Assert.That(error.Message, Does.StartWith("WRONGPASS"));
+
+            if (recreateBeforeCommand)
+            {
+                ClassicAssert.AreEqual("OK", await user.ExecuteAsync("AUTH", TestUserA, DummyPasswordB).ConfigureAwait(false));
+                ClassicAssert.AreEqual("value", await user.ExecuteAsync("GET", "marker").ConfigureAwait(false));
+                error = Assert.ThrowsAsync<Exception>(
+                    async () => await user.ExecuteAsync("SET", "marker", "changed").ConfigureAwait(false));
+                Assert.That(error.Message, Does.StartWith("NOPERM"));
+            }
+        }
+
         /// <summary>
         /// Executes deluser command with multiple users
         /// </summary>

@@ -42,9 +42,9 @@ namespace Garnet.server.Auth
         public bool CanAuthenticate => true;
 
         /// <summary>
-        /// Check if the user is authorized to execute commands.
+        /// Check if the authenticated user's handle is still present in the current ACL.
         /// </summary>
-        public virtual bool IsAuthenticated => _userHandle != null;
+        public virtual bool IsAuthenticated => _userHandle != null && _userHandle.IsValid;
 
         /// <summary>
         /// ACL authenticator is can use ACL.
