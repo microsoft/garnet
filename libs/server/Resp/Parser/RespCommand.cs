@@ -1334,7 +1334,13 @@ namespace Garnet.server
             cmd = HashLookupCommand(ref count, ref specificErrorMessage, out success);
 
             if (success && cmd == RespCommand.INVALID)
+            {
                 success = TryHandleInvalidCommand(count, specificErrorMessage, writeErrorOnFailure);
+
+                // Abort the transaction if the command was rejected while queuing
+                if (writeErrorOnFailure && success && txnManager.state == TxnState.Started)
+                    txnManager.Abort();
+            }
 
             return cmd;
         }
