@@ -204,6 +204,15 @@ namespace Garnet.server
         // Track whether the incoming network batch contains slow commands that should not be counter in NET_RS histogram
         bool containsSlowCommand;
 
+        // CLIENT REPLY state: when replies are disabled (OFF) or a SKIP is armed, replies written for the
+        // current command are discarded (unless the handler flushed the output buffer mid-command).
+        bool replyOff;
+        bool suppressNextReply;
+        long replyFlushCount;
+
+        // Set by CLIENT REPLY ON/SKIP so the suppression hook does not drop their own +OK reply
+        bool replySuppressionVeto;
+
         readonly CustomCommandManagerSession customCommandManagerSession;
 
         /// <summary>
@@ -737,10 +746,16 @@ namespace Garnet.server
 
             while (bytesRead - readHead >= 4)
             {
+                // Reply suppression state for the current command (CLIENT REPLY OFF/SKIP)
+                var suppressReply = replyOff || suppressNextReply;
+                replySuppressionVeto = false;
+                var replyHead = dcurr;
+                var flushCountAtStart = replyFlushCount;
+
                 // First, parse the command, making sure we have the entire command available
                 // We use endReadHead to track the end of the current command
                 // On success, readHead is left at the start of the command payload for legacy operators
-                var cmd = ParseCommand(writeErrorOnFailure: true, out var commandReceived);
+                var cmd = ParseCommand(writeErrorOnFailure: !suppressReply, out var commandReceived);
 
                 // If the command was not fully received, reset addresses and break out
                 if (!commandReceived)
@@ -823,6 +838,17 @@ namespace Garnet.server
                 else
                 {
                     containsSlowCommand = true;
+                }
+
+                if (suppressReply && !replySuppressionVeto)
+                {
+                    suppressNextReply = false;
+
+                    // Drop the reply bytes as long as the handler did not flush the output buffer
+                    // mid-command; a flush means part of the reply was already sent and rewinding
+                    // would corrupt the response buffer.
+                    if (replyFlushCount == flushCountAtStart)
+                        dcurr = replyHead;
                 }
 
                 // Advance read head variables to process the next command
@@ -1189,6 +1215,7 @@ namespace Garnet.server
                 RespCommand.CLIENT_SETNAME => NetworkCLIENTSETNAME(),
                 RespCommand.CLIENT_SETINFO => NetworkCLIENTSETINFO(),
                 RespCommand.CLIENT_UNBLOCK => NetworkCLIENTUNBLOCK(),
+                RespCommand.CLIENT_REPLY => NetworkCLIENTREPLY(),
                 RespCommand.COMMAND => NetworkCOMMAND(),
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(),
                 RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(),
@@ -1466,6 +1493,7 @@ namespace Garnet.server
                 networkSender.GetResponseObject();
                 dcurr = networkSender.GetResponseObjectHead();
                 dend = networkSender.GetResponseObjectTail();
+                replyFlushCount++;
             }
             else
             {

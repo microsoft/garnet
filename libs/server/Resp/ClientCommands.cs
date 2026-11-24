@@ -578,6 +578,50 @@ namespace Garnet.server
             => value.IndexOfAnyExceptInRange((byte)33, (byte)126) < 0;
 
         /// <summary>
+        /// CLIENT REPLY ON|OFF|SKIP
+        /// </summary>
+        private bool NetworkCLIENTREPLY()
+        {
+            if (parseState.Count != 1)
+            {
+                return AbortWithWrongNumberOfArguments("CLIENT|REPLY");
+            }
+
+            var mode = parseState.GetArgSliceByRef(0);
+            if (mode.Span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ON))
+            {
+                replyOff = false;
+                suppressNextReply = false;
+                replySuppressionVeto = true;
+
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else if (mode.Span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.OFF))
+            {
+                replyOff = true;
+                suppressNextReply = false;
+            }
+            else if (mode.Span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SKIP))
+            {
+                replySuppressionVeto = true;
+                if (!replyOff)
+                {
+                    suppressNextReply = true;
+
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
+            else
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// CLIENT UNBLOCK
         /// </summary>
         private bool NetworkCLIENTUNBLOCK()
