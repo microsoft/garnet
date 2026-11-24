@@ -423,8 +423,10 @@ namespace Tsavorite.core
                     // This was an empty slot. If it still is, assign this action/epoch to the slot.
                     if (Interlocked.CompareExchange(ref drainList[i].epoch, long.MaxValue - 1, long.MaxValue) == long.MaxValue)
                     {
+                        // Publish the epoch with a volatile write so that no thread can observe it before the action;
+                        // plain writes are not ordered on weakly ordered hardware (ARM64).
                         drainList[i].action = onDrain;
-                        drainList[i].epoch = PriorEpoch;
+                        Volatile.Write(ref drainList[i].epoch, PriorEpoch);
                         _ = Interlocked.Increment(ref drainCount);
                         break;
                     }
@@ -440,7 +442,7 @@ namespace Tsavorite.core
                         {
                             var triggerAction = drainList[i].action;
                             drainList[i].action = onDrain;
-                            drainList[i].epoch = PriorEpoch;
+                            Volatile.Write(ref drainList[i].epoch, PriorEpoch);
                             triggerAction();
                             break;
                         }
@@ -525,8 +527,10 @@ namespace Tsavorite.core
                     {
                         // Store off the trigger action, then set epoch to int.MaxValue to mark this slot as "available for use".
                         var trigger_action = drainList[i].action;
+                        // Release the slot with a volatile write so that the cleared action is visible before the slot
+                        // can be claimed; otherwise the clear can land on top of the next registrant's action.
                         drainList[i].action = null;
-                        drainList[i].epoch = long.MaxValue;
+                        Volatile.Write(ref drainList[i].epoch, long.MaxValue);
                         _ = Interlocked.Decrement(ref drainCount);
 
                         // Execute the action
