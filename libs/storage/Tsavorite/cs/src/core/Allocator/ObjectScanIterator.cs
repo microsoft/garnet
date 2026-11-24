@@ -27,6 +27,9 @@ namespace Tsavorite.core
         private readonly bool assumeInMemory;
         private readonly bool includeValues = true;
 
+        /// <summary>Invalid records to skip before copying their fields; see <see cref="InvalidRecordScanFilter"/>.</summary>
+        private readonly InvalidRecordScanFilter invalidRecordFilter;
+
         private DiskLogRecord diskLogRecord;
         private bool currentRecordFromDisk;
 
@@ -44,10 +47,12 @@ namespace Tsavorite.core
         /// <param name="assumeInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
         /// <param name="includeValues">Whether in-memory snapshots must retain values.</param>
+        /// <param name="invalidRecordFilter">Invalid records to skip before copying their fields.</param>
         internal ObjectScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
                 long beginAddress, long endAddress, LightEpoch epoch, DiskScanBufferingMode diskScanBufferingMode,
                 InMemoryScanBufferingMode memScanBufferingMode = InMemoryScanBufferingMode.NoBuffering,
-                bool includeClosedRecords = false, bool assumeInMemory = false, ILogger logger = null, bool includeValues = true)
+                bool includeClosedRecords = false, bool assumeInMemory = false, ILogger logger = null, bool includeValues = true,
+                InvalidRecordScanFilter invalidRecordFilter = InvalidRecordScanFilter.None)
             : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, endAddress, diskScanBufferingMode, memScanBufferingMode,
                   includeClosedRecords, epoch, hlogBase.LogPageSizeBits, hlogBase._wrapper, logger: logger)
         {
@@ -55,6 +60,7 @@ namespace Tsavorite.core
             this.hlogBase = hlogBase;
             this.assumeInMemory = assumeInMemory;
             this.includeValues = includeValues;
+            this.invalidRecordFilter = invalidRecordFilter;
             if (frameSize > 0)
             {
                 frame = new BlittableFrame(frameSize, hlogBase.PageSize, hlogBase.GetDeviceSectorSize());
@@ -240,7 +246,7 @@ namespace Tsavorite.core
                     nextAddress = currentAddress + allocatedSize;
 
                     var skipOnScan = !includeClosedRecords && recordInfo.SkipOnScan;
-                    if (skipOnScan || recordInfo.IsNull)
+                    if (skipOnScan || recordInfo.IsNull || invalidRecordFilter.Skips(recordInfo))
                         continue;
 
                     if (currentAddress >= headAddress || assumeInMemory)
@@ -264,6 +270,10 @@ namespace Tsavorite.core
                                     continue;
                                 }
                             }
+
+                            // Recheck under the scan lock: the record may have been elided since the check above.
+                            if (invalidRecordFilter.Skips(LogRecord.GetInfo(physicalAddress)))
+                                continue;
 
                             if (!includeValues)
                             {
@@ -301,6 +311,13 @@ namespace Tsavorite.core
                         // FlushedUntilAddress; otherwise its tail is the cleared frame rather than log data.
                         Debug.Assert(currentAddress + allocatedSize <= hlogBase.FlushedUntilAddress,
                             $"Record at {currentAddress} of size {allocatedSize} extends past FlushedUntilAddress {hlogBase.FlushedUntilAddress}");
+
+                        // An invalid record's object and overflow fields still hold ids into the ObjectIdMap of the page that was flushed, which no
+                        // longer exists: the flush wrote none of its objects, and loading this frame deserialized objects only for valid records. Such
+                        // a record has no key or value to return, and disposing its ids would clear slots of this scan's own map, which can hold other
+                        // records' objects. So no scan returns it, whatever its invalid-record filter.
+                        if (recordInfo.Invalid && !new LogRecord(physicalAddress).DataHeader.RecordIsInline)
+                            continue;
 
                         // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
                         // The frame owns every deserialized record, including ones skipped by this iterator.

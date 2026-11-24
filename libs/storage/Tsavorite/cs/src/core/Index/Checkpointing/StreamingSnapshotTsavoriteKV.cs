@@ -116,7 +116,14 @@ namespace Tsavorite.core
                 var scanFunctions = new ScanPhase2Functions(streamingSnapshotIteratorFunctions, this.numberOfRecords);
                 using var s = NewSession<ITsavoriteScanIterator, Empty, Empty, Empty, StreamingSnapshotSessionFunctions>(new());
 
-                _ = s.ScanCursor(ref scannedUntilAddressCursor, long.MaxValue, scanFunctions, endAddress: untilAddress, maxAddress: untilAddress);
+                // Skip every invalid record, including elided ones, rather than pushing an elided record whose key has a record past
+                // the bound, as other bounded lookups do (see ConditionalScanPush). A record elided before the tail sample is not in
+                // this checkpoint's version: its key was updated below the bound, or deleted. IsFrozen keeps old-version records from
+                // being elided after the version change, so a record elided after the sample is a new-version record, and the
+                // replica's AOF replay recreates its key. Pushing elided records would also resurrect deleted values: a key deleted
+                // in this version and re-created after the sample has a record past the bound, so its pre-delete record would be pushed.
+                _ = s.ScanCursor(ref scannedUntilAddressCursor, long.MaxValue, scanFunctions, endAddress: untilAddress, validateCursor: false,
+                    maxAddress: untilAddress, resetCursor: true, includeTombstones: false, skipInvalidRecords: true);
 
                 // Reset the cursor to 0
                 scannedUntilAddressCursor = 0;

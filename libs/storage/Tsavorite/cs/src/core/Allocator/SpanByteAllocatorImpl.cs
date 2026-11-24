@@ -284,10 +284,12 @@ namespace Tsavorite.core
         /// Implementation for push-scanning Tsavorite log with a cursor, called from LogAccessor
         /// </summary>
         internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
-                ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress, bool resetCursor = true, bool includeTombstones = false)
+                ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress, bool resetCursor = true,
+                bool includeTombstones = false, bool skipInvalidRecords = false)
         {
             using SpanByteScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> iter = new(store, this, cursor, endAddress, epoch, GetScanCursorBufferingMode(count),
-                includeClosedRecords: maxAddress < long.MaxValue, logger: logger, includeValues: scanFunctions.IncludeValues);
+                includeClosedRecords: maxAddress < long.MaxValue, logger: logger, includeValues: scanFunctions.IncludeValues,
+                invalidRecordFilter: skipInvalidRecords ? InvalidRecordScanFilter.SkipAll : InvalidRecordScanFilter.SkipUnsealed);
             return ScanLookup<PinnedSpanByte, SpanByteAndMemory, TScanFunctions, SpanByteScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>>(store, scanCursorState,
                 ref cursor, count, scanFunctions, iter, validateCursor, maxAddress, resetCursor: resetCursor, includeTombstones: includeTombstones);
         }

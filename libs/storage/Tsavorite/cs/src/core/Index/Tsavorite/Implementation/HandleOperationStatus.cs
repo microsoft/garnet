@@ -177,6 +177,7 @@ namespace Tsavorite.core
                 op.requestKey = op.pendingState.requestKey;
                 op.logicalAddress = operationState.logicalAddress;
                 op.minAddress = op.pendingState.minAddress;
+                op.maxAddress = op.pendingState.IsConditionalOp ? op.pendingState.maxAddress : long.MaxValue;
                 op.record = null;
                 op.callbackQueue = sessionCtx.readyResponses;
 
