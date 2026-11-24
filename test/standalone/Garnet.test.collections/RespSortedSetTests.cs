@@ -584,6 +584,33 @@ namespace Garnet.test
         }
 
         [Test]
+        public void ExclusiveInfiniteScoreBoundsExcludeInfiniteScores()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "SortedSet_ExclusiveInf";
+
+            var added = db.Execute("ZADD", key, "-inf", "a", "1", "b", "+inf", "c");
+            ClassicAssert.AreEqual(3, (int)added);
+
+            var count = db.Execute("ZCOUNT", key, "(-inf", "(+inf");
+            ClassicAssert.AreEqual(1, (int)count);
+
+            count = db.Execute("ZCOUNT", key, "(inf", "+inf");
+            ClassicAssert.AreEqual(0, (int)count);
+
+            var members = (RedisValue[])db.Execute("ZRANGEBYSCORE", key, "(-inf", "+inf");
+            ClassicAssert.AreEqual(new RedisValue[] { "b", "c" }, members);
+
+            members = (RedisValue[])db.Execute("ZRANGE", key, "(+inf", "-inf", "BYSCORE", "REV");
+            ClassicAssert.AreEqual(new RedisValue[] { "b", "a" }, members);
+
+            var removed = db.Execute("ZREMRANGEBYSCORE", key, "-inf", "(-inf");
+            ClassicAssert.AreEqual(0, (int)removed);
+            ClassicAssert.AreEqual(3, db.SortedSetLength(key));
+        }
+
+        [Test]
         public void ZCountAndZCardWithExpiredAndExpiringItems()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
