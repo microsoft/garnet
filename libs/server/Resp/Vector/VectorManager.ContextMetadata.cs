@@ -544,11 +544,6 @@ namespace Garnet.server
         /// </summary>
         internal FlushGuard BeginFlush()
         {
-            if (!IsEnabled)
-            {
-                return default;
-            }
-
             return new FlushGuard(this);
         }
 
@@ -681,11 +676,6 @@ namespace Garnet.server
         public HashSet<ulong> GetNamespacesForHashSlots(HashSet<int> hashSlots)
         {
             HashSet<ulong> ret = null;
-
-            if (!IsEnabled)
-            {
-                return ret;
-            }
 
             lock (this)
             {
