@@ -216,52 +216,69 @@ namespace Garnet.server
 
             try
             {
-                sectorAlignedMemoryHll1 ??= new SectorAlignedMemory(hllBufferSize + sectorAlignedMemoryPoolAlignment, sectorAlignedMemoryPoolAlignment);
-                var readBuffer = sectorAlignedMemoryHll1.GetValidPointer();
-
                 var dstKey = input.parseState.GetArgSliceByRef(0);
+                var mergedAnySource = false;
 
-                for (var i = 1; i < input.parseState.Count; i++)
+                if (input.parseState.Count > 1)
                 {
-                    #region readSrcHLL
+                    sectorAlignedMemoryHll1 ??= new SectorAlignedMemory(hllBufferSize + sectorAlignedMemoryPoolAlignment, sectorAlignedMemoryPoolAlignment);
+                    var readBuffer = sectorAlignedMemoryHll1.GetValidPointer();
 
-                    var currInput = new StringInput(RespCommand.PFMERGE);
+                    for (var i = 1; i < input.parseState.Count; i++)
+                    {
+                        #region readSrcHLL
 
-                    StringOutput mergeBuffer = default;
-                    mergeBuffer.SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(readBuffer, hllBufferSize);
-                    var srcKey = input.parseState.GetArgSliceByRef(i);
+                        var currInput = new StringInput(RespCommand.PFMERGE);
 
-                    var status = GET(srcKey, ref currInput, ref mergeBuffer, ref currTransactionalContext);
-                    // Handle case merging source key does not exist
-                    if (status == GarnetStatus.NOTFOUND)
-                        continue;
+                        StringOutput mergeBuffer = default;
+                        mergeBuffer.SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(readBuffer, hllBufferSize);
+                        var srcKey = input.parseState.GetArgSliceByRef(i);
+
+                        var status = GET(srcKey, ref currInput, ref mergeBuffer, ref currTransactionalContext);
+                        // Handle case merging source key does not exist
+                        if (status == GarnetStatus.NOTFOUND)
+                            continue;
+                        if (status == GarnetStatus.WRONGTYPE)
+                            return status;
+
+                        // The PFCOUNT/PFMERGE backend is contracted to populate SpanByte (sector-aligned native
+                        // memory we passed in) and never overflow to heap Memory. Assert the contract so any
+                        // future regression is caught immediately rather than silently returning garbage.
+                        Debug.Assert(mergeBuffer.SpanByteAndMemory.IsSpanByte, "PFMERGE backend must populate SpanByte");
+
+                        // Invalid Type
+                        if (*(long*)readBuffer == -1)
+                        {
+                            error = true;
+                            break;
+                        }
+
+                        #endregion
+
+                        #region mergeToDst
+
+                        var mergeSlice = mergeBuffer.SpanByteAndMemory.SpanByte;
+
+                        parseState.InitializeWithArgument(mergeSlice);
+
+                        currInput.parseState = parseState;
+                        status = SET_Conditional(dstKey, ref currInput, ref currTransactionalContext);
+                        if (status == GarnetStatus.WRONGTYPE)
+                            return status;
+
+                        mergedAnySource = true;
+
+                        #endregion
+                    }
+                }
+
+                if (!mergedAnySource && !error)
+                {
+                    parseState.Initialize(0);
+                    var currInput = new StringInput(RespCommand.PFMERGE, ref parseState);
+                    var status = SET_Conditional(dstKey, ref currInput, ref currTransactionalContext);
                     if (status == GarnetStatus.WRONGTYPE)
                         return status;
-
-                    // The PFCOUNT/PFMERGE backend is contracted to populate SpanByte (sector-aligned native
-                    // memory we passed in) and never overflow to heap Memory. Assert the contract so any
-                    // future regression is caught immediately rather than silently returning garbage.
-                    Debug.Assert(mergeBuffer.SpanByteAndMemory.IsSpanByte, "PFMERGE backend must populate SpanByte");
-
-                    // Invalid Type
-                    if (*(long*)readBuffer == -1)
-                    {
-                        error = true;
-                        break;
-                    }
-
-                    #endregion
-
-                    #region mergeToDst
-
-                    var mergeSlice = mergeBuffer.SpanByteAndMemory.SpanByte;
-
-                    parseState.InitializeWithArgument(mergeSlice);
-
-                    currInput.parseState = parseState;
-                    SET_Conditional(dstKey, ref currInput, ref mergeBuffer, ref currTransactionalContext);
-
-                    #endregion
                 }
             }
             finally

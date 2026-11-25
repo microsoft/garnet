@@ -1556,5 +1556,112 @@ namespace Garnet.test
             ClassicAssert.IsTrue(forgedBytes.SequenceEqual(actualBytes0));
             ClassicAssert.IsTrue(forgedBytes.SequenceEqual(actualBytes1));
         }
+
+        [Test]
+        public void HyperLogLogMergeEmptyAndMissingSourcesCreatesDestination()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            // Destination-only merge creates an empty HyperLogLog
+            var reply = (string)db.Execute("PFMERGE", "empty-hll");
+            ClassicAssert.AreEqual("OK", reply);
+            ClassicAssert.IsTrue(db.KeyExists("empty-hll"));
+            ClassicAssert.AreEqual(RedisType.String, db.KeyType("empty-hll"));
+            ClassicAssert.AreEqual(0, db.HyperLogLogLength("empty-hll"));
+
+            // Created key accepts subsequent HLL updates and merges
+            ClassicAssert.IsTrue(db.HyperLogLogAdd("empty-hll", "a"));
+            ClassicAssert.AreEqual(1, db.HyperLogLogLength("empty-hll"));
+
+            // Destination-only merge on an existing HLL preserves its cardinality across mutable and immutable regions
+            reply = (string)db.Execute("PFMERGE", "empty-hll");
+            ClassicAssert.AreEqual("OK", reply);
+            ClassicAssert.AreEqual(1, db.HyperLogLogLength("empty-hll"));
+
+            _ = db.Execute("DEBUG", "FLUSHANDEVICT");
+
+            reply = (string)db.Execute("PFMERGE", "empty-hll");
+            ClassicAssert.AreEqual("OK", reply);
+            ClassicAssert.AreEqual(1, db.HyperLogLogLength("empty-hll"));
+
+            // Merging only non-existent source keys into a missing destination also creates an empty HyperLogLog
+            reply = (string)db.Execute("PFMERGE", "empty-from-missing", "missing-src-1", "missing-src-2");
+            ClassicAssert.AreEqual("OK", reply);
+            ClassicAssert.IsTrue(db.KeyExists("empty-from-missing"));
+            ClassicAssert.AreEqual(0, db.HyperLogLogLength("empty-from-missing"));
+
+            // Destination-only merge inside MULTI/EXEC creates the destination key
+            var tran = db.CreateTransaction();
+            var mergeTask = tran.ExecuteAsync("PFMERGE", "txn-empty-hll");
+            var existsTask = tran.KeyExistsAsync("txn-empty-hll");
+            var countTask = tran.HyperLogLogLengthAsync("txn-empty-hll");
+            ClassicAssert.IsTrue(tran.Execute());
+            ClassicAssert.AreEqual("OK", (string)mergeTask.Result);
+            ClassicAssert.IsTrue(existsTask.Result);
+            ClassicAssert.AreEqual(0, countTask.Result);
+        }
+
+        [Test]
+        public void HyperLogLogMergeDestinationWrongTypeValidation()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.IsTrue(db.StringSet("plain-string", "100"));
+            _ = db.ListLeftPush("list-key", "item");
+            ClassicAssert.IsTrue(db.HyperLogLogAdd("valid-hll", "elem"));
+
+            // Non-HLL string and collection destinations are rejected in the mutable region
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("PFMERGE", "plain-string"));
+            Assert.That(ex!.Message, Does.EndWith("WRONGTYPE Key is not a valid HyperLogLog string value."));
+            ClassicAssert.AreEqual("100", (string)db.StringGet("plain-string"));
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("PFMERGE", "plain-string", "valid-hll"));
+            Assert.That(ex!.Message, Does.EndWith("WRONGTYPE Key is not a valid HyperLogLog string value."));
+            ClassicAssert.AreEqual("100", (string)db.StringGet("plain-string"));
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("PFMERGE", "list-key"));
+            Assert.That(ex!.Message, Does.EndWith("WRONGTYPE Key is not a valid HyperLogLog string value."));
+
+            // Non-HLL string destination is also rejected after moving to the immutable/evicted region
+            _ = db.Execute("DEBUG", "FLUSHANDEVICT");
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("PFMERGE", "plain-string"));
+            Assert.That(ex!.Message, Does.EndWith("WRONGTYPE Key is not a valid HyperLogLog string value."));
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("PFMERGE", "plain-string", "valid-hll"));
+            Assert.That(ex!.Message, Does.EndWith("WRONGTYPE Key is not a valid HyperLogLog string value."));
+            ClassicAssert.AreEqual("100", (string)db.StringGet("plain-string"));
+        }
+
+        [Test]
+        public void HyperLogLogMergeEmptyDestinationAofRecoveryTest()
+        {
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                var reply = (string)db.Execute("PFMERGE", "aof-empty-hll");
+                ClassicAssert.AreEqual("OK", reply);
+                ClassicAssert.IsTrue(db.KeyExists("aof-empty-hll"));
+                ClassicAssert.AreEqual(0, db.HyperLogLogLength("aof-empty-hll"));
+            }
+
+            _ = server.Store.CommitAOFAsync(default).GetAwaiter().GetResult();
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.IsTrue(db.KeyExists("aof-empty-hll"));
+                ClassicAssert.AreEqual(0, db.HyperLogLogLength("aof-empty-hll"));
+            }
+        }
     }
 }
