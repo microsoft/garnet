@@ -212,7 +212,7 @@ namespace Garnet.server
             errorMessage = default;
 
             // Get all binary file paths from inputs binary paths
-            if (!FileUtils.TryGetFiles(binaryPaths, out var binaryFiles, out _, [".dll", ".exe"], ignoreFileNames, SearchOption.AllDirectories))
+            if (!FileUtils.TryGetFiles(binaryPaths, out var binaryFiles, out _, [".dll", ".exe"], ignoreFileNames, searchOption))
             {
                 errorMessage = CmdStrings.RESP_ERR_GENERIC_GETTING_BINARY_FILES;
                 return false;
