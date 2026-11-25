@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
@@ -33,6 +34,7 @@ namespace Tsavorite.test.LogSizeTrackerExternalMemory
         static readonly TimeSpan CompletionTimeout = TimeSpan.FromSeconds(60);
 
         IDevice log;
+        LightEpoch epoch;
         TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         LogSizeTracker<LongStoreFunctions, LongAllocator> tracker;
 
@@ -42,8 +44,10 @@ namespace Tsavorite.test.LogSizeTrackerExternalMemory
             DeleteDirectory(MethodTestDir, wait: true);
             _ = Directory.CreateDirectory(MethodTestDir);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ExternalMemory.log"), deleteOnClose: true);
+            epoch = new LightEpoch();
             store = new(new()
             {
+                Epoch = epoch,
                 IndexSize = 1L << 16,
                 LogDevice = log,
                 MutableFraction = 0.9,
@@ -64,18 +68,44 @@ namespace Tsavorite.test.LogSizeTrackerExternalMemory
             tracker?.Stop(wait: true);
             store?.Dispose();
             store = null;
+            epoch?.Dispose();
             tracker = null;
             log?.Dispose();
             log = null;
             OnTearDown();
         }
 
-        void Populate()
+        void Populate(int count = NumRecords)
         {
             using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions((a, b) => a + b));
             var bContext = session.BasicContext;
-            for (long key = 0; key < NumRecords; key++)
+            for (long key = 0; key < count; key++)
                 _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+        }
+
+        [Test, Category("TsavoriteKV"), Category(SmokeTestCategory)]
+        public void StoreDisposeDrainsPendingPageCloseAndRestoresSharedEpoch()
+        {
+            Populate(512);
+            store.Log.Flush(wait: true);
+
+            var allocator = store.hlogBase;
+            epoch.Resume();
+            try
+            {
+                // Keep the first page pinned while another thread requests its eviction.
+                Task.Run(() => store.Log.ShiftHeadAddress(PageSize, wait: false)).WaitAsync(CompletionTimeout).GetAwaiter().GetResult();
+                Assert.That(allocator.ClosedUntilAddress, Is.LessThan(PageSize));
+
+                store.Dispose();
+                store = null;
+                Assert.That(allocator.ClosedUntilAddress, Is.EqualTo(PageSize));
+                Assert.That(epoch.ThisInstanceProtected(), Is.True);
+            }
+            finally
+            {
+                _ = epoch.TrySuspend();
+            }
         }
 
         /// <summary>

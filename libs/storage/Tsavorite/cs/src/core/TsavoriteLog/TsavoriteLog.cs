@@ -721,18 +721,28 @@ namespace Tsavorite.core
 
         internal void TrueDispose()
         {
-            // Waits for a commit in progress, which writes commit metadata and may shift the begin address
-            commitQueue.Dispose();
+            // A commit or device truncation may be waiting for this thread to leave the epoch.
+            var wasProtected = epoch.TrySuspend();
+            try
+            {
+                // Waits for a commit in progress, which writes commit metadata and may shift the begin address
+                commitQueue.Dispose();
 
-            // Release our in-flight user-word slot back to the epoch. Iterators no longer parked; the
-            // slot column is no longer referenced.
-            epoch.ReleaseUserWord(inflightWord);
-            FailCommitTask(commitTcs, new ObjectDisposedException("TsavoriteLog has been disposed"));
-            allocator.Dispose();
-            if (isEpochOwned)
-                epoch.Dispose();
-            if (disposeLogCommitManager)
-                logCommitManager.Dispose();
+                // Release our in-flight user-word slot back to the epoch. Iterators no longer parked; the
+                // slot column is no longer referenced.
+                epoch.ReleaseUserWord(inflightWord);
+                FailCommitTask(commitTcs, new ObjectDisposedException("TsavoriteLog has been disposed"));
+                allocator.Dispose();
+                if (isEpochOwned)
+                    epoch.Dispose();
+                if (disposeLogCommitManager)
+                    logCommitManager.Dispose();
+            }
+            finally
+            {
+                if (wasProtected && !isEpochOwned)
+                    epoch.Resume();
+            }
         }
 
         #region Enqueue

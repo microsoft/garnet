@@ -109,6 +109,7 @@ namespace Tsavorite.test
             ClassicAssert.IsTrue(SpinWait.SpinUntil(() => (long)resetCountField.GetValue(allocator) == 1, Timeout), "the reset should begin");
             device.Gate.Set();
             ClassicAssert.IsTrue(reset.Wait(Timeout), "the reset should finish once the first truncation does");
+            ClassicAssert.IsTrue(device.TruncationCompleted, "the first truncation should finish before the reset");
 
             // The new log's segments survive the truncation requested before the reset, which is skipped
             FillUntil(log, SegmentSize + 1);
@@ -147,17 +148,49 @@ namespace Tsavorite.test
                     await dispose.WaitAsync(Timeout);
             }
 
+            ClassicAssert.IsTrue(device.TruncationCompleted, "The active truncation should finish before disposal");
             ClassicAssert.IsFalse(device.TruncationStarted.Wait(TimeSpan.FromSeconds(1)), "A queued truncation reached the device during teardown");
+        }
+
+        [Test]
+        [Category("TsavoriteLog")]
+        public void DisposeDrainsTruncationWhileCallerHoldsSharedEpoch()
+        {
+            using var device = new GatedTruncationDevice(CreateFileDevice());
+            var epoch = new LightEpoch();
+            try
+            {
+                using (var log = CreateLog(device, epoch))
+                {
+                    FillUntil(log, SegmentSize + 1);
+                    device.Gate.Reset();
+                    log.UnsafeShiftBeginAddress(SegmentSize, truncateLog: true);
+                    ClassicAssert.IsTrue(device.TruncationStarted.Wait(Timeout), "The device truncation should start");
+
+                    // Hold the shared epoch before truncation can queue its drain callback.
+                    epoch.Resume();
+                    device.Gate.Set();
+                }
+
+                ClassicAssert.IsTrue(device.TruncationCompleted, "Disposal should let the active truncation drain the epoch");
+                ClassicAssert.IsTrue(epoch.ThisInstanceProtected(), "Disposal should restore the caller's shared epoch protection");
+            }
+            finally
+            {
+                _ = epoch.TrySuspend();
+                epoch.Dispose();
+            }
         }
 
         /// <summary>A file device that keeps its segment files, so a test can check which remain</summary>
         IDevice CreateFileDevice() => new RandomAccessLocalStorageDevice(logPath, disableFileBuffering: false, osReadBuffering: true);
 
         /// <summary>A log over <paramref name="device"/> with the fixture's sizes, which is not recovered on construction</summary>
-        TsavoriteLog CreateLog(IDevice device) => new(new TsavoriteLogSettings
+        TsavoriteLog CreateLog(IDevice device, LightEpoch epoch = null) => new(new TsavoriteLogSettings
         {
             LogDevice = device,
             LogCommitManager = manager,
+            Epoch = epoch,
             TryRecoverLatest = false,
             PageSizeBits = PageSizeBits,
             MemorySizeBits = MemorySizeBits,
@@ -225,6 +258,8 @@ namespace Tsavorite.test
             /// <summary>How many truncations have started</summary>
             internal int Truncations => Volatile.Read(ref truncations);
 
+            internal bool TruncationCompleted { get; private set; }
+
             /// <summary>Initialize this device, whose segment range truncation uses, and the one it forwards to</summary>
             public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
             {
@@ -240,7 +275,11 @@ namespace Tsavorite.test
 
                 // Bounded, so a test that fails before opening the gate does not leave this blocked
                 _ = Gate.Wait(Timeout);
-                base.TruncateUntilAddress(toAddress);
+
+                // Use the device's real epoch drain, but bound the wait so a deadlocked disposer can unwind.
+                var completion = new TaskCompletionSource();
+                TruncateUntilAddressAsync(toAddress, _ => completion.SetResult(), null);
+                TruncationCompleted = completion.Task.Wait(Timeout);
             }
 
             /// <summary>Reset this device's segment range, which truncation uses, and the device it forwards to</summary>
