@@ -134,6 +134,25 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.PFMERGE:
+                    if (input.parseState.Count == 0)
+                    {
+                        RecordSizeInfo.AssertValueDataLength(HyperLogLog.DefaultHLL.SparseBytes, in sizeInfo);
+                        if (!logRecord.TrySetContentLengths(HyperLogLog.DefaultHLL.SparseBytes, in sizeInfo, zeroInit: true))
+                        {
+                            functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "PFMERGE");
+                            return false;
+                        }
+
+                        value = logRecord.ValueSpan;
+                        if (logRecord.IsPinnedValue)
+                            HyperLogLog.DefaultHLL.InitSparse(logRecord.PinnedValuePointer);
+                        else
+                            fixed (byte* valuePtr = value)
+                                HyperLogLog.DefaultHLL.InitSparse(valuePtr);
+
+                        break;
+                    }
+
                     //srcHLL offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy + 4 (skip len size)
                     var sbSrcHLL = input.parseState.GetArgSliceByRef(0);
 
@@ -762,11 +781,28 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.PFMERGE:
+                    result = parseOk = false;
+                    valueLen = logRecord.ValueSpan.Length;
+                    if (input.parseState.Count == 0)
+                    {
+                        if (logRecord.IsPinnedValue)
+                            parseOk = HyperLogLog.DefaultHLL.IsValidHYLL(logRecord.PinnedValuePointer, valueLen);
+                        else
+                            fixed (byte* dstHLL = logRecord.ValueSpan)
+                                parseOk = HyperLogLog.DefaultHLL.IsValidHYLL(dstHLL, valueLen);
+
+                        if (!parseOk)
+                        {
+                            rmwInfo.Action = RMWAction.WrongType;
+                            return IPUResult.Failed;
+                        }
+
+                        return IPUResult.NotUpdated;
+                    }
+
                     //srcHLL offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy +4 (skip len size)
                     var srcHLL = input.parseState.GetArgSliceByRef(0).ToPointer();
 
-                    result = parseOk = false;
-                    valueLen = logRecord.ValueSpan.Length;
                     if (logRecord.IsPinnedValue)
                     {
                         var dstHLL = logRecord.PinnedValuePointer;
@@ -792,9 +828,8 @@ namespace Garnet.server
 
                     if (!parseOk)
                     {
-                        //InvalidType                                                
-                        *output.SpanByteAndMemory.SpanByte.ToPointer() = (byte)0xFF;  // Flags invalid HLL
-                        return IPUResult.NotUpdated;
+                        rmwInfo.Action = RMWAction.WrongType;
+                        return IPUResult.Failed;
                     }
                     if (!result)
                         return IPUResult.Failed;
@@ -1253,6 +1288,21 @@ namespace Garnet.server
                     }
 
                     return true;
+                case RespCommand.PFMERGE:
+                    bool isValidDstHLL;
+                    if (srcLogRecord.IsPinnedValue)
+                        isValidDstHLL = HyperLogLog.DefaultHLL.IsValidHYLL(srcLogRecord.PinnedValuePointer, srcLogRecord.ValueSpan.Length);
+                    else
+                        fixed (byte* dstHLL = srcLogRecord.ValueSpan)
+                            isValidDstHLL = HyperLogLog.DefaultHLL.IsValidHYLL(dstHLL, srcLogRecord.ValueSpan.Length);
+
+                    if (!isValidDstHLL)
+                    {
+                        rmwInfo.Action = RMWAction.WrongType;
+                        return false;
+                    }
+
+                    return input.parseState.Count > 0;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {

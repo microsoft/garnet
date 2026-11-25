@@ -101,7 +101,9 @@ namespace Garnet.server
                     fieldInfo.ValueSize = HyperLogLog.DefaultHLL.SparseInitialLength(ref input);
                     return fieldInfo;
                 case RespCommand.PFMERGE:
-                    fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
+                    fieldInfo.ValueSize = input.parseState.Count == 0
+                        ? HyperLogLog.DefaultHLL.SparseBytes
+                        : input.parseState.GetArgSliceByRef(0).Length;
                     return fieldInfo;
 
                 case RespCommand.SETIFGREATER:
@@ -279,6 +281,12 @@ namespace Garnet.server
                         return fieldInfo;
 
                     case RespCommand.PFMERGE:
+                        if (input.parseState.Count == 0)
+                        {
+                            fieldInfo.ValueSize = srcLogRecord.ValueSpan.Length;
+                            return fieldInfo;
+                        }
+
                         // TODO: call HyperLogLog.DefaultHLL.IsValidHYLL and check error return per RMWMethods. This would require 'output'. Also carry this result through to RMWMethods.
                         var srcHLL = input.parseState.GetArgSliceByRef(0).ToPointer();
                         if (srcLogRecord.IsPinnedValue)
