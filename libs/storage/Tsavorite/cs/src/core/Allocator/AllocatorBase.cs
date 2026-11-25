@@ -548,7 +548,7 @@ namespace Tsavorite.core
         {
             lock (truncationLock)
             {
-                if (requestResetCount != Volatile.Read(ref resetCount))
+                if (IsDisposed || requestResetCount != Volatile.Read(ref resetCount))
                     return;
                 TruncateUntilAddressBlocking(toAddress);
             }
@@ -600,6 +600,9 @@ namespace Tsavorite.core
             flushEvent.Dispose();
 
             logSizeTracker?.Stop(wait: true);
+
+            // Queued truncations now see IsDisposed. Wait for one already using the device before tearing down its epoch.
+            lock (truncationLock) { }
         }
 
         /// <summary>Dispose allocator</summary>

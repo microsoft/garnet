@@ -117,6 +117,39 @@ namespace Tsavorite.test
                 ClassicAssert.IsTrue(File.Exists(SegmentPath(segment)), $"segment {segment} of the new log should remain");
         }
 
+        [Test]
+        [Category("TsavoriteLog")]
+        public async Task DisposeWaitsForActiveTruncationAndSkipsQueuedTruncation()
+        {
+            using var device = new GatedTruncationDevice(CreateFileDevice());
+            var log = CreateLog(device);
+            Task dispose = null;
+            try
+            {
+                FillUntil(log, 5 * SegmentSize + 1);
+                device.Gate.Reset();
+                log.UnsafeShiftBeginAddress(2 * SegmentSize, truncateLog: true);
+                ClassicAssert.IsTrue(device.TruncationStarted.Wait(Timeout));
+                log.UnsafeShiftBeginAddress(4 * SegmentSize, truncateLog: true);
+
+                var allocator = (TsavoriteLogAllocatorImpl)typeof(TsavoriteLog)
+                    .GetField("allocator", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(log);
+                dispose = Task.Run(log.Dispose);
+                ClassicAssert.IsTrue(SpinWait.SpinUntil(() => allocator.IsDisposed, Timeout));
+                ClassicAssert.AreNotSame(dispose, await Task.WhenAny(dispose, Task.Delay(100)), "Dispose returned while the device was truncating");
+            }
+            finally
+            {
+                device.Gate.Set();
+                if (dispose is null)
+                    log.Dispose();
+                else
+                    await dispose.WaitAsync(Timeout);
+            }
+
+            ClassicAssert.IsFalse(device.TruncationStarted.Wait(TimeSpan.FromSeconds(1)), "A queued truncation reached the device during teardown");
+        }
+
         /// <summary>A file device that keeps its segment files, so a test can check which remain</summary>
         IDevice CreateFileDevice() => new RandomAccessLocalStorageDevice(logPath, disableFileBuffering: false, osReadBuffering: true);
 
