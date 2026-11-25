@@ -71,7 +71,7 @@ namespace Tsavorite.core
         internal long numPendingChunksToBeSplit;
 
         internal readonly LightEpoch epoch;
-        readonly bool isEpochOwned;
+        private protected readonly bool isEpochOwned;
 
         internal ResizeInfo resizeInfo;
 

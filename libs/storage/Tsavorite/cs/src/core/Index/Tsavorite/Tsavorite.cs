@@ -893,16 +893,25 @@ namespace Tsavorite.core
         /// </summary>
         public void Dispose()
         {
-            hlogBase.Dispose();
-            readcacheBase?.Dispose();
-            LockTable.Dispose();
-            if (disposeCheckpointManager)
-                checkpointManager?.Dispose();
-            RevivificationManager.Dispose();
-            pauseRevivEvent?.Dispose();
+            // Drain while both allocators are intact; device truncation may need this thread to leave the epoch.
+            var wasProtected = epoch.TrySuspend();
+            try
+            {
+                hlogBase.Dispose();
+                readcacheBase?.Dispose();
+                LockTable.Dispose();
+                if (disposeCheckpointManager)
+                    checkpointManager?.Dispose();
+                RevivificationManager.Dispose();
+                pauseRevivEvent?.Dispose();
 
-            // Currently this doesn't do much, but for future safety make sure it's called after its contained objects are disposed.
-            Free();
+                Free();
+            }
+            finally
+            {
+                if (wasProtected && !isEpochOwned)
+                    epoch.Resume();
+            }
         }
 
         /// <summary>
