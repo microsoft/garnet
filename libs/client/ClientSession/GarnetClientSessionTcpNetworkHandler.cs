@@ -26,7 +26,5 @@ namespace Garnet.client
             if (Interlocked.Exchange(ref clientSendBufferDisposed, 1) == 0)
                 DisposeTransportSendBuffer();
         }
-
-        public byte[] RawTransportBuffer => transportReceiveBuffer;
     }
 }

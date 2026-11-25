@@ -61,7 +61,14 @@ namespace Tsavorite.core
         static readonly nint MAP_FAILED = -1;
 
         const int MADV_HUGEPAGE = 14;                   // Linux: hint transparent huge pages for the range
-        const long HugePageSize = 2L << 20;             // 2 MB (x86-64 / arm64 THP granularity)
+        const int MADV_POPULATE_WRITE = 23;             // Linux 5.14+: fault in the range writable without writing to it
+        const int EINVAL = 22;
+
+        /// <summary>Size from which <see cref="Allocate"/> aligns a region to, and hints it for, transparent huge pages on Linux.</summary>
+        internal const long HugePageSize = 2L << 20;    // 2 MB (x86-64 / arm64 THP granularity)
+
+        /// <summary>Set once the kernel has rejected <c>MADV_POPULATE_WRITE</c>, which kernels before 5.14 do not support.</summary>
+        static volatile bool populateUnsupported;
 
         const uint MEM_RESERVE_COMMIT = 0x1000 | 0x2000; // MEM_COMMIT | MEM_RESERVE
         const uint MEM_RELEASE = 0x8000;
@@ -138,6 +145,22 @@ namespace Tsavorite.core
 
         /// <summary>Zero <paramref name="length"/> bytes at <paramref name="ptr"/>.</summary>
         public static void Clear(nint ptr, long length) => NativeMemory.Clear((void*)ptr, (nuint)length);
+
+        /// <summary>Whether <see cref="Populate"/> can fault in memory on this platform and kernel.</summary>
+        public static bool CanPopulate => OperatingSystem.IsLinux() && !populateUnsupported;
+
+        /// <summary>
+        /// Fault in <paramref name="length"/> bytes at <paramref name="ptr"/> as writable, without writing to them, so later writers find
+        /// the pages mapped. Contents are unchanged, so this may run while other threads write the range. Best-effort: where unsupported, or if
+        /// the range is no longer mapped, the pages are left to fault on first touch.
+        /// </summary>
+        public static void Populate(nint ptr, long length)
+        {
+            if (!CanPopulate)
+                return;
+            if (madvise(ptr, (nuint)length, MADV_POPULATE_WRITE) != 0 && Marshal.GetLastPInvokeError() == EINVAL)
+                populateUnsupported = true;
+        }
 
         static long RoundUpToPage(long n) => (n + PageSize - 1) & ~(PageSize - 1);
     }

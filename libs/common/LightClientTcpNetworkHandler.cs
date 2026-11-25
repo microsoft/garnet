@@ -15,6 +15,12 @@ namespace Garnet.server
         {
         }
 
+        /// <summary>
+        /// The receive buffer, which <see cref="LightClient.ResponseBuffer"/> exposes as an array.
+        /// </summary>
         public byte[] RawTransportBuffer => transportReceiveBuffer;
+
+        /// <inheritdoc />
+        protected override bool UseNativeOversizedReceiveBuffers => false;
     }
 }

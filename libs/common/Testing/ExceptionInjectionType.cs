@@ -256,5 +256,15 @@ namespace Garnet.common
         /// SET over a non-string key: pause while holding the key's lock, before rechecking its type.
         /// </summary>
         Set_Pause_Before_NonString_Recheck,
+        // Not prefixed "Network": NetworkTests.NetworkExceptions enables every such point and expects it to fail the connection.
+        /// <summary>
+        /// Network handler: hold a receive buffer replacement until cleared, after the new buffer is allocated and filled and before it is
+        /// installed. Unlike a parked injection point, server shutdown does not release it.
+        /// </summary>
+        ReceiveBuffer_Hold_Before_Swap,
+        /// <summary>
+        /// Network handler: signal that receive-side resource cleanup has finished, for any handler.
+        /// </summary>
+        Handler_Signal_After_Dispose,
     }
 }

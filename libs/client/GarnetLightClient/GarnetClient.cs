@@ -1067,6 +1067,10 @@ namespace Garnet.client
             => ProcessReplies(reqBuffer, bytesReceived);
 
         /// <inheritdoc />
+        public unsafe long GetRequiredReceiveBufferSize(byte* buffer, int bytes)
+            => Garnet.common.Parsing.RespReceiveSize.GetRequiredBytes(buffer, bytes);
+
+        /// <inheritdoc />
         public bool TryCreateMessageConsumer(Span<byte> bytesReceived, INetworkSender networkSender, out IMessageConsumer session)
             => throw new NotSupportedException();
 

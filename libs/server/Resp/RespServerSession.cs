@@ -558,6 +558,10 @@ namespace Garnet.server
         bool txnSkip = false;
         bool consistentReadActive = false;
 
+        /// <inheritdoc />
+        public override long GetRequiredReceiveBufferSize(byte* buffer, int bytes)
+            => RespReceiveSize.GetRequiredBytes(buffer, bytes);
+
         public override int TryConsumeMessages(byte* reqBuffer, int bytesReceived)
         {
             bytesRead = bytesReceived;

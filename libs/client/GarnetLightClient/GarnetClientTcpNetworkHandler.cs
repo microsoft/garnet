@@ -15,7 +15,5 @@ namespace Garnet.client
             : base(serverHook, new ClientTcpNetworkSender(socket, callback, networkBufferSettings, networkPool, networkSendThrottleMax), socket, networkBufferSettings, networkPool, useTLS, messageConsumer: messageConsumer, logger: logger)
         {
         }
-
-        public byte[] RawTransportBuffer => transportReceiveBuffer;
     }
 }
