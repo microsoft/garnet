@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -12,29 +11,48 @@ namespace Tsavorite.core
     /// <para>
     /// The log is append-only, so the appenders that cross into a fresh page all touch the same unmapped addresses at once. With transparent
     /// huge pages the kernel allocates and zeroes a whole 2 MB page for each faulting thread before it takes the page-table lock, and every
-    /// thread but one then discards its page, so most of the fault work is wasted. Populating a page before appenders reach it makes them find
-    /// it mapped; if it is not yet populated when appenders need it, they wait for the populate instead of racing.
+    /// thread but one then discards its page, so most of the fault work is wasted.
     /// </para>
     /// <para>
-    /// Each circular-buffer slot has a state word: zero when nothing is pending; the page's address while its populate is pending; and the
-    /// address with <see cref="RunningBit"/> set while it is being populated. A pending populate is claimed with a compare-and-swap, so it runs
-    /// once: on the shared workers for a page allocated ahead of the tail, or on the thread that turns the tail onto the page if no worker has
-    /// started it. Page addresses are sector-aligned, so the low bit is free.
+    /// Instead, the appenders populate the page allocated ahead of the tail as they fill the current one, one 2 MB chunk (one huge page) at a
+    /// time: an allocation that crosses into chunk <c>k</c> of the current page makes sure the first <c>k + </c><see cref="Lead"/> chunks of
+    /// the next page are claimed, populating any it claims itself. A chunk is claimed by exactly one thread, so no two threads fault in the same
+    /// huge page, and the work is spread over the appenders as they cross chunk boundaries, with no thread or allocation of its own. The thread
+    /// that turns the tail onto a page populates any chunk not yet claimed, and waits for any still being populated, before appenders use it.
+    /// </para>
+    /// <para>
+    /// Each circular-buffer slot has a state word: the number of chunks not yet claimed in the upper half and the number being populated in the
+    /// lower half. Zero means nothing is pending.
     /// </para>
     /// </summary>
     internal sealed class LogPagePrefaulter
     {
-        const long RunningBit = 1;
+        /// <summary>Log2 of the bytes populated at once: one transparent huge page.</summary>
+        internal const int ChunkBits = 21;
+        const long ChunkSize = 1L << ChunkBits;
+
+        /// <summary>
+        /// Chunks of the next page claimed ahead of the chunk of the current page the appenders have reached, so that the last ones have finished
+        /// populating by the time the current page is full.
+        /// </summary>
+        internal const int Lead = 2;
+
+        const long OneUnclaimed = 1L << 32;
+        const long RunningMask = OneUnclaimed - 1;
 
         readonly long[] state;
+        readonly long[] address;
         readonly long length;
+        readonly int chunkCount;
 
         /// <param name="pageCount">Number of circular-buffer slots.</param>
         /// <param name="length">Bytes to populate per page.</param>
         internal LogPagePrefaulter(int pageCount, long length)
         {
             state = new long[pageCount];
+            address = new long[pageCount];
             this.length = length;
+            chunkCount = (int)((length + ChunkSize - 1) >> ChunkBits);
         }
 
         /// <summary>
@@ -43,30 +61,57 @@ namespace Tsavorite.core
         /// </summary>
         internal static bool IsUseful(long pageSizeBytes) => pageSizeBytes >= DirectVirtualMemory.HugePageSize && DirectVirtualMemory.CanPopulate;
 
-        /// <summary>Record that the fresh page at <paramref name="address"/>, installed in slot <paramref name="index"/>, is unpopulated.</summary>
-        internal void MarkPending(int index, long address) => Volatile.Write(ref state[index], address);
-
-        /// <summary>Hand the pending populate of slot <paramref name="index"/>, if any, to the workers.</summary>
-        internal void Queue(int index)
+        /// <summary>
+        /// Record that the fresh page at <paramref name="pageAddress"/>, installed in slot <paramref name="index"/>, is unpopulated. Any earlier
+        /// page in the slot has been cancelled or populated.
+        /// </summary>
+        internal void MarkPending(int index, long pageAddress)
         {
-#if DEBUG
-            testOnQueue?.Invoke();
-#endif
-            var current = Volatile.Read(ref state[index]);
-            if (current != 0 && (current & RunningBit) == 0)
-                Workers.Enqueue(this, index, current);
+            address[index] = pageAddress;
+            Volatile.Write(ref state[index], (long)chunkCount * OneUnclaimed);
         }
 
-#if DEBUG
-        /// <summary>Test only, DEBUG builds only: if set, <see cref="Queue"/> invokes it first.</summary>
-        internal static Action testOnQueue;
-#endif
+        /// <summary>
+        /// Populate chunks of the page in slot <paramref name="index"/>, in order, until at least <paramref name="target"/> of them have been
+        /// claimed. Returns at once if they have been, or nothing is pending.
+        /// </summary>
+        internal void Help(int index, int target)
+        {
+            while (true)
+            {
+                var current = Volatile.Read(ref state[index]);
+                var unclaimed = (int)(current >> 32);
+                if (unclaimed == 0 || chunkCount - unclaimed >= target)
+                    return;
+                if (Interlocked.CompareExchange(ref state[index], current - OneUnclaimed + 1, current) != current)
+                    continue;
 
-        /// <summary>Return once slot <paramref name="index"/> is populated, populating it here if no worker has started it.</summary>
-        internal void EnsurePopulated(int index) => Settle(index, populate: true);
+                var offset = (long)(chunkCount - unclaimed) << ChunkBits;
+                DirectVirtualMemory.Populate((nint)(Volatile.Read(ref address[index]) + offset), Math.Min(ChunkSize, length - offset));
+                _ = Interlocked.Decrement(ref state[index]);
+            }
+        }
 
-        /// <summary>Drop a pending populate of slot <paramref name="index"/>, or wait out a running one, before the page is freed.</summary>
-        internal void Cancel(int index) => Settle(index, populate: false);
+        /// <summary>Return once slot <paramref name="index"/> is populated, populating here any chunk not yet claimed.</summary>
+        internal void EnsurePopulated(int index)
+        {
+            Help(index, chunkCount);
+            WaitForRunning(index);
+        }
+
+        /// <summary>Drop the chunks of slot <paramref name="index"/> not yet claimed, and wait out those being populated, before the page is freed.</summary>
+        internal void Cancel(int index)
+        {
+            var current = Volatile.Read(ref state[index]);
+            while ((current >> 32) != 0)
+            {
+                var seen = Interlocked.CompareExchange(ref state[index], current & RunningMask, current);
+                if (seen == current)
+                    break;
+                current = seen;
+            }
+            WaitForRunning(index);
+        }
 
         /// <summary>Cancel every slot, before the pages are handed off at teardown.</summary>
         internal void CancelAll()
@@ -75,121 +120,18 @@ namespace Tsavorite.core
                 Cancel(index);
         }
 
-        /// <summary>Whether slot <paramref name="index"/> has a populate pending or running.</summary>
+        /// <summary>Whether slot <paramref name="index"/> has chunks not yet claimed or being populated.</summary>
         internal bool IsPending(int index) => Volatile.Read(ref state[index]) != 0;
 
-        void Settle(int index, bool populate)
+        /// <summary>
+        /// Wait for the chunks of slot <paramref name="index"/> that other threads are populating, once none is left unclaimed. Each takes well
+        /// under a millisecond, and the appenders are themselves waiting for the page turn, so this yields but never sleeps a whole millisecond.
+        /// </summary>
+        void WaitForRunning(int index)
         {
             var spinWait = new SpinWait();
-            while (true)
-            {
-                var current = Volatile.Read(ref state[index]);
-                if (current == 0)
-                    return;
-                if ((current & RunningBit) == 0)
-                {
-                    if (populate)
-                    {
-                        if (TryPopulate(index, current))
-                            return;
-                    }
-                    else if (Interlocked.CompareExchange(ref state[index], 0, current) == current)
-                        return;
-                    continue;
-                }
-
-                // Another thread is populating the page; it finishes in a few milliseconds.
-                spinWait.SpinOnce();
-            }
-        }
-
-        /// <summary>Claim the pending populate of the page at <paramref name="address"/>; false if it is no longer pending.</summary>
-        bool TryClaim(int index, long address) => Interlocked.CompareExchange(ref state[index], address | RunningBit, address) == address;
-
-        /// <summary>Mark slot <paramref name="index"/> populated, once its claimed populate has finished.</summary>
-        void Complete(int index) => Volatile.Write(ref state[index], 0);
-
-        /// <summary>Claim and run, on this thread, the pending populate of the page at <paramref name="address"/>; false if it is no longer pending.</summary>
-        bool TryPopulate(int index, long address)
-        {
-            if (!TryClaim(index, address))
-                return false;
-            try
-            {
-                DirectVirtualMemory.Populate((nint)address, length);
-            }
-            finally
-            {
-                Complete(index);
-            }
-            return true;
-        }
-
-        /// <summary>
-        /// Background threads, shared by all allocators, that populate queued pages. Zeroing the memory is most of the work, and appenders can
-        /// fill a page faster than one thread zeroes it, so each page is split into a part per thread.
-        /// </summary>
-        static class Workers
-        {
-            /// <summary>Worker threads; they block on the queue while no page is being filled.</summary>
-            static readonly int Count = Math.Clamp(Environment.ProcessorCount / 8, 1, 4);
-            static readonly BlockingCollection<Work> queue = new();
-            static int started;
-
-            /// <summary>A queued page (<see cref="Job"/> null), or a part of a page another worker has claimed.</summary>
-            readonly record struct Work(LogPagePrefaulter Prefaulter, int Index, long Address, long Length, PageJob Job);
-
-            /// <summary>Counts down the parts of a claimed page; the last to finish marks the page populated.</summary>
-            sealed class PageJob(LogPagePrefaulter prefaulter, int index, int parts)
-            {
-                int remaining = parts;
-
-                internal void PartDone()
-                {
-                    if (Interlocked.Decrement(ref remaining) == 0)
-                        prefaulter.Complete(index);
-                }
-            }
-
-            internal static void Enqueue(LogPagePrefaulter prefaulter, int index, long address)
-            {
-                if (Volatile.Read(ref started) == 0 && Interlocked.CompareExchange(ref started, 1, 0) == 0)
-                {
-                    for (var i = 0; i < Count; i++)
-                        new Thread(Run) { IsBackground = true, Name = "Tsavorite log page prefault" }.Start();
-                }
-                queue.Add(new(prefaulter, index, address, 0, null));
-            }
-
-            static void Run()
-            {
-                foreach (var work in queue.GetConsumingEnumerable())
-                {
-                    if (work.Job is not null)
-                    {
-                        DirectVirtualMemory.Populate((nint)work.Address, work.Length);
-                        work.Job.PartDone();
-                        continue;
-                    }
-
-                    // A stale item, for a page since populated, cancelled or replaced, fails the claim and is skipped.
-                    var prefaulter = work.Prefaulter;
-                    if (!prefaulter.TryClaim(work.Index, work.Address))
-                        continue;
-
-                    // Parts are whole huge pages, so no two threads fault in the same one.
-                    var partLength = (prefaulter.length / Count + DirectVirtualMemory.HugePageSize - 1) & ~(DirectVirtualMemory.HugePageSize - 1);
-                    var parts = (int)((prefaulter.length + partLength - 1) / partLength);
-                    var job = new PageJob(prefaulter, work.Index, parts);
-                    for (var part = 1; part < parts; part++)
-                    {
-                        var offset = part * partLength;
-                        queue.Add(new(prefaulter, work.Index, work.Address + offset, Math.Min(partLength, prefaulter.length - offset), job));
-                    }
-                    DirectVirtualMemory.Populate((nint)work.Address, Math.Min(partLength, prefaulter.length));
-                    job.PartDone();
-                }
-            }
+            while (Volatile.Read(ref state[index]) != 0)
+                spinWait.SpinOnce(sleep1Threshold: -1);
         }
     }
 }

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -16,15 +15,17 @@ namespace Tsavorite.test.spanbyte
     using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordTriggers>;
 
     /// <summary>
-    /// Tests that fresh direct-VM log pages are faulted in by one thread before appenders reach them, rather than by the racing appenders.
-    /// Residency is read with <c>mincore</c>, so these run only on Linux kernels that support <c>MADV_POPULATE_WRITE</c>.
+    /// Tests that each huge page of a fresh direct-VM log page is faulted in by one thread before appenders reach it, rather than by the racing
+    /// appenders. Residency is read with <c>mincore</c>, so these run only on Linux kernels that support <c>MADV_POPULATE_WRITE</c>.
     /// </summary>
     [TestFixture]
     [NonParallelizable]
     internal unsafe class LogPagePrefaultTests : TestBase
     {
-        const long PageSize = 4L << 20;
+        const long ChunkSize = 2L << 20;
+        const long PageSize = 8 * ChunkSize;
         static readonly int OsPageSize = Environment.SystemPageSize;
+        static long ChunkPages => ChunkSize / OsPageSize;
 
         [DllImport("libc", SetLastError = true)]
         static extern int mincore(nint addr, nuint length, byte* vec);
@@ -67,17 +68,6 @@ namespace Tsavorite.test.spanbyte
             return resident;
         }
 
-        static void WaitUntil(Func<bool> condition, string message)
-        {
-            var sw = Stopwatch.StartNew();
-            while (!condition())
-            {
-                if (sw.Elapsed > TimeSpan.FromSeconds(30))
-                    Assert.Fail(message);
-                Thread.Sleep(1);
-            }
-        }
-
         [Test]
         [Category(TsavoriteKVTestCategory)]
         public void EnsurePopulatedFaultsInAPendingPageAndCancelLeavesItUnmapped()
@@ -107,16 +97,56 @@ namespace Tsavorite.test.spanbyte
 
         [Test]
         [Category(TsavoriteKVTestCategory)]
-        public void WorkerPopulatesAQueuedPage()
+        public void HelpPopulatesChunksInOrderUntilTheTargetIsClaimed()
         {
             var block = DirectVirtualMemory.Allocate(PageSize, OsPageSize);
             try
             {
                 var prefaulter = new LogPagePrefaulter(pageCount: 1, PageSize);
                 prefaulter.MarkPending(0, block.AlignedPtr);
-                prefaulter.Queue(0);
-                WaitUntil(() => !prefaulter.IsPending(0), "The worker did not populate the queued page");
+
+                prefaulter.Help(0, target: 3);
+                ClassicAssert.AreEqual(3 * ChunkPages, ResidentPages(block.AlignedPtr, 3 * ChunkSize), "The first three chunks must be populated");
+                ClassicAssert.AreEqual(0, ResidentPages(block.AlignedPtr + 3 * ChunkSize, PageSize - 3 * ChunkSize), "Only the target must be claimed");
+                ClassicAssert.IsTrue(prefaulter.IsPending(0));
+
+                // A target already claimed claims nothing more
+                prefaulter.Help(0, target: 2);
+                ClassicAssert.AreEqual(3 * ChunkPages, ResidentPages(block.AlignedPtr, PageSize));
+
+                prefaulter.EnsurePopulated(0);
                 ClassicAssert.AreEqual(PageSize / OsPageSize, ResidentPages(block.AlignedPtr, PageSize));
+                ClassicAssert.IsFalse(prefaulter.IsPending(0));
+            }
+            finally
+            {
+                DirectVirtualMemory.Free(block);
+            }
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        public void ConcurrentHelpersPopulateEveryChunk()
+        {
+            const long Length = 64 * ChunkSize;
+            var block = DirectVirtualMemory.Allocate(Length, OsPageSize);
+            try
+            {
+                var prefaulter = new LogPagePrefaulter(pageCount: 1, Length);
+                prefaulter.MarkPending(0, block.AlignedPtr);
+
+                var threads = new Thread[8];
+                for (var t = 0; t < threads.Length; t++)
+                {
+                    var target = (t + 1) * 8;
+                    threads[t] = new Thread(() => prefaulter.Help(0, target));
+                    threads[t].Start();
+                }
+                foreach (var thread in threads)
+                    thread.Join();
+
+                ClassicAssert.IsFalse(prefaulter.IsPending(0), "Every chunk must be claimed and finished");
+                ClassicAssert.AreEqual(Length / OsPageSize, ResidentPages(block.AlignedPtr, Length));
             }
             finally
             {
@@ -142,49 +172,40 @@ namespace Tsavorite.test.spanbyte
             var page1 = hlog.GetPhysicalAddress(hlog.GetLogicalAddressOfStartOfPage(1));
             ClassicAssert.AreEqual(PageSize / OsPageSize, ResidentPages(page1, PageSize), "The page the tail turns onto must be populated");
 
-            // Page 2 was allocated ahead of the tail, which no appender has touched; the worker populates it.
+            // Page 2 was allocated ahead of the tail; the page turn populated its first chunks, and no appender has touched it.
             var page2 = hlog.GetPhysicalAddress(hlog.GetLogicalAddressOfStartOfPage(2));
-            WaitUntil(() => ResidentPages(page2, PageSize) == PageSize / OsPageSize, "The page allocated ahead of the tail was not populated");
+            ClassicAssert.AreEqual(LogPagePrefaulter.Lead * ChunkPages, ResidentPages(page2, PageSize), "The page turn must start populating the next page");
+
+            // Each allocation that crosses into another chunk of page 1 populates one more chunk of page 2.
+            for (var chunk = 1; chunk <= PageSize / ChunkSize - LogPagePrefaulter.Lead; chunk++)
+            {
+                while (hlog.GetOffsetOnPage(hlog.GetTailAddress()) < chunk * ChunkSize)
+                    Upsert(bContext, i++);
+                ClassicAssert.AreEqual((chunk + LogPagePrefaulter.Lead) * ChunkPages, ResidentPages(page2, PageSize), $"after the tail crossed into chunk {chunk}");
+            }
+            ClassicAssert.AreEqual(PageSize / OsPageSize, ResidentPages(page2, PageSize), "The next page must be populated before the tail reaches the end of the page");
         }
 
         [Test]
         [Category(TsavoriteKVTestCategory)]
-        public void APrefaultFailureAtAPageTurnRestoresTheTail()
+        public void ThePageTurnPopulatesTheChunksAppendersLeft()
         {
-#if !DEBUG
-            Assert.Ignore("Requires a test hook that exists only in DEBUG builds");
-#else
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
             using var store = CreateNativeStore(log);
             using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
             var hlog = store.hlogBase;
 
-            // Fail the next page turn while it queues the prefault of the page after the one the tail moves onto.
-            const string Injected = "injected prefault failure";
-            LogPagePrefaulter.testOnQueue = () => throw new InvalidOperationException(Injected);
-            var i = 0;
-            try
-            {
-                var ex = Assert.Throws<InvalidOperationException>(() =>
-                {
-                    while (true)
-                        Upsert(bContext, i++);
-                });
-                ClassicAssert.AreEqual(Injected, ex.Message);
-            }
-            finally
-            {
-                LogPagePrefaulter.testOnQueue = null;
-            }
+            // Records of 5.5 MB cross into chunks 2 and 5 of page 0, claiming chunks 0-6 of page 1, and the third does not fit, so no allocation
+            // on page 0 claims chunk 7.
+            var value = new int[(int)(11 * ChunkSize / 4 / sizeof(int))];
+            for (var i = 0; i < 3; i++)
+                Upsert(bContext, i, value);
+            ClassicAssert.AreEqual(1, hlog.GetPage(hlog.GetTailAddress()));
 
-            // A tail left past the end of the page would make every later allocation retry forever.
-            ClassicAssert.LessOrEqual(hlog.TailPageOffset.Offset, hlog.PageSize, "the tail was not restored after the failed page turn");
-            ClassicAssert.AreEqual(0, hlog.TailPageOffset.Page, "the tail moved onto the next page despite the failed page turn");
-
-            while (hlog.GetPage(hlog.GetTailAddress()) < 1)
-                Upsert(bContext, i++);
-#endif
+            // The first record on page 1 writes only its first three chunks.
+            var page1 = hlog.GetPhysicalAddress(hlog.GetLogicalAddressOfStartOfPage(1));
+            ClassicAssert.AreEqual(PageSize / OsPageSize, ResidentPages(page1, PageSize), "The page turn must populate the chunk no appender claimed");
         }
 
         static TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> CreateNativeStore(IDevice log)
@@ -203,8 +224,13 @@ namespace Tsavorite.test.spanbyte
 
         static void Upsert(BasicContext<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext, int k)
         {
-            Span<int> key = [k];
             Span<int> value = stackalloc int[256];
+            Upsert(bContext, k, value);
+        }
+
+        static void Upsert(BasicContext<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext, int k, ReadOnlySpan<int> value)
+        {
+            Span<int> key = [k];
             _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(key)), MemoryMarshal.Cast<int, byte>(value), Empty.Default);
         }
     }

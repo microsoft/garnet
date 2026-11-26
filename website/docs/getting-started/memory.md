@@ -208,11 +208,13 @@ Heap regardless of this setting.)
   library is required — the direct-VM surfaces call the OS virtual-memory APIs directly. (Network buffers within
   the network pool's size classes and the sector-aligned IO/flush buffer pool remain managed in this release.)
 
-On Linux 5.14 and later, a fresh log page is faulted in by one thread before appenders reach it
-(`madvise(MADV_POPULATE_WRITE)`): background threads populate the page allocated ahead of the tail, and the
-thread that moves the tail onto a page finishes populating it if needed. Otherwise every appender crossing into
-the page would fault on the same huge page at once, and the kernel would allocate and zero a 2&#160;MB page for each
-of them only to keep one. On older kernels pages are faulted in on first touch.
+On Linux 5.14 and later, each 2&#160;MB huge page of a fresh log page is faulted in by one thread before appenders
+reach it (`madvise(MADV_POPULATE_WRITE)`). Appenders populate the page allocated ahead of the tail as they fill
+the current one: an allocation that crosses into another 2&#160;MB of the current page populates one more 2&#160;MB of
+the next, and the thread that moves the tail onto a page finishes populating it if needed. No thread or memory
+allocation is involved. Otherwise every appender crossing into the page would fault on the same huge page at
+once, and the kernel would allocate and zero a 2&#160;MB page for each of them only to keep one. On older kernels
+pages are faulted in on first touch.
 
 ### Large network receive buffers
 

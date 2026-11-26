@@ -1120,7 +1120,7 @@ namespace Tsavorite.core
                 int nextPageIndex = GetPageIndexForPage(tailPage + 1);
                 if (!IsAllocated(nextPageIndex))
                     _wrapper.AllocatePage(nextPageIndex);
-                PrefaultTailPages(tailPage);
+                EnsureTailPagePopulated(tailPage);
             }
 
             if (PreallocateLog)
@@ -1288,7 +1288,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetDeviceSectorSize() => sectorSize;
 
-        /// <summary>Have the derived allocator allocate the current and next page, if needed, and prefault them; on failure, restore the tail.</summary>
+        /// <summary>Have the derived allocator allocate the current and next page, if needed.</summary>
         /// <remarks>The derived allocator "owns" the actual memory for the pages in its circular buffer, as it knows the details of their use,
         ///     although for efficiency we keep the <see cref="pagePointers"/> and some utility operations here in
         ///     <see cref="AllocatorBase{TStoreFunctions, TAllocator}"/> (as well as manage <see cref="TailPageOffset"/>).</remarks>
@@ -1298,7 +1298,6 @@ namespace Tsavorite.core
             try
             {
                 AllocateCurrentAndNextPage(pageIndex);
-                PrefaultTailPages(pageIndex);
             }
             catch
             {
@@ -1329,17 +1328,18 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Make sure the page that the tail moves onto, <paramref name="page"/>, is populated before appenders use it, and start populating the
-        /// page allocated after it, so appenders do not race each other through first-touch faults (see <see cref="LogPagePrefaulter"/>).
+        /// Make sure the page that the tail moves onto, <paramref name="page"/>, is populated before appenders use it, so they do not race each
+        /// other through first-touch faults (see <see cref="LogPagePrefaulter"/>).
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void PrefaultTailPages(long page)
-        {
-            if (logPagePrefaulter is null)
-                return;
-            logPagePrefaulter.Queue((int)((page + 1) % BufferSize));
-            logPagePrefaulter.EnsurePopulated((int)(page % BufferSize));
-        }
+        void EnsureTailPagePopulated(long page) => logPagePrefaulter?.EnsurePopulated(GetPageIndexForPage(page));
+
+        /// <summary>
+        /// Help populate the page allocated ahead of the tail, as an allocation on <paramref name="page"/> reaches <paramref name="offset"/>
+        /// (see <see cref="LogPagePrefaulter"/>).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void PrefaultNextPage(int page, int offset)
+            => logPagePrefaulter?.Help(GetPageIndexForPage(page + 1), (offset >> LogPagePrefaulter.ChunkBits) + LogPagePrefaulter.Lead);
 
         /// <summary>
         /// Shift log read-only address, with an optional wait
@@ -1608,8 +1608,9 @@ namespace Tsavorite.core
             // TsavoriteLog the filler must be an entry-length-prefixed record (or left as a zero tail), not a RecordInfo record. Deferred for now
             // (only exercised once a partialSlots caller wastes a sub-partialSlots tail; the AOF chunk writer's zero tails are already handled).
 
-            // Allocate the pages that are not yet allocated, prefault the page the tail moves onto, and set the new tail
+            // Allocate the pages that are not yet allocated, finish populating the page the tail moves onto, and set the new tail
             AllocatePagesWithException(pageIndex, localTailPageOffset, numSlots);
+            EnsureTailPagePopulated(pageIndex);
 
             // Set up the TailPageOffset to account for the page header and then this allocation.
             localTailPageOffset.Page++;
@@ -1624,6 +1625,9 @@ namespace Tsavorite.core
                 if (newReadOnlyAddress > ReadOnlyAddress)
                     _ = ShiftReadOnlyAddress(newReadOnlyAddress);
             }
+
+            // Now that the tail is stable again, start populating the page allocated after the one the tail moved onto
+            PrefaultNextPage(localTailPageOffset.Page, localTailPageOffset.Offset);
 
             // At this point the slot is allocated and we are not allowed to refresh epochs any longer.
             // Return the first logical address after the page header.
@@ -1668,6 +1672,10 @@ namespace Tsavorite.core
                 // before performing any epoch bumps or system calls.
                 return HandlePageOverflow(ref localTailPageOffset, numSlots, partialSlots);
             }
+
+            // An allocation that crosses into another huge page of the tail page helps populate the next page (see LogPagePrefaulter)
+            if ((((localTailPageOffset.Offset - numSlots) ^ localTailPageOffset.Offset) >> LogPagePrefaulter.ChunkBits) != 0)
+                PrefaultNextPage(localTailPageOffset.Page, localTailPageOffset.Offset);
 
             return GetLogicalAddressOfStartOfPage(localTailPageOffset.Page) | ((long)(localTailPageOffset.Offset - numSlots));
         }
@@ -2206,7 +2214,7 @@ namespace Tsavorite.core
 
             // Allocate the current page and the next page (the allocate-ahead invariant) if necessary.
             AllocateCurrentAndNextPage(TailPageOffset.Page);
-            PrefaultTailPages(TailPageOffset.Page);
+            EnsureTailPagePopulated(TailPageOffset.Page);
 
             BeginAddress = beginAddress;
             HeadAddress = headAddress;
