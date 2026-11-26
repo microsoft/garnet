@@ -290,7 +290,16 @@ namespace Garnet.common
                     return page;
                 }
             }
-            var entry = new PoolEntry(size, this);
+            PoolEntry entry;
+            try
+            {
+                entry = new PoolEntry(size, this);
+            }
+            catch
+            {
+                ReleaseAccounting(size);
+                throw;
+            }
             entry.source = source;
 #if DEBUG
             outstandingEntries[entry] = 0;
@@ -305,7 +314,7 @@ namespace Garnet.common
         /// <param name="size">Buffer size in bytes</param>
         /// <param name="bufferType">Identifies the caller for diagnostics.</param>
         /// <returns>The buffer, or null if the pool is disposed</returns>
-        public NativePoolEntry GetNative(int size, PoolEntryBufferType bufferType = PoolEntryBufferType.Unknown)
+        internal NativePoolEntry GetNative(int size, PoolEntryBufferType bufferType = PoolEntryBufferType.Unknown)
         {
             Debug.Assert(size > maxAllocationSize, "Sizes the pool can recycle should come from Get");
             if (Interlocked.Increment(ref totalReferences) < 0)
@@ -326,7 +335,7 @@ namespace Garnet.common
             }
             catch
             {
-                ReleaseNative(size);
+                ReleaseAccounting(size);
                 throw;
             }
         }
@@ -334,13 +343,16 @@ namespace Garnet.common
         /// <summary>
         /// Account for a buffer from <see cref="GetNative"/> being released. The entry frees its own memory.
         /// </summary>
-        internal void ReturnNative(NativePoolEntry entry) => ReleaseNative(entry.length);
+        internal void ReturnNative(NativePoolEntry entry) => ReleaseAccounting(entry.length);
 
-        void ReleaseNative(int size)
+        /// <summary>
+        /// Release the accounting for a buffer that does not go back to a size class: a native one, or one that failed to allocate.
+        /// </summary>
+        void ReleaseAccounting(int size)
         {
             _ = Interlocked.Add(ref liveBytes, -size);
             budget.OnBufferReleased();
-            Debug.Assert(totalReferences > 0, $"ReturnNative with {totalReferences}");
+            Debug.Assert(totalReferences > 0, $"Release with {totalReferences}");
             Interlocked.Decrement(ref totalReferences);
         }
 

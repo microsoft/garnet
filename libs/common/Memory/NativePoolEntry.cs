@@ -17,7 +17,7 @@ namespace Garnet.common
     /// Native memory is returned to the operating system as soon as it is released, and is resident only where it has been written.
     /// </para>
     /// </summary>
-    public sealed unsafe class NativePoolEntry : MemoryManager<byte>
+    internal sealed unsafe class NativePoolEntry : MemoryManager<byte>
     {
         /// <summary>
         /// Pointer to the buffer

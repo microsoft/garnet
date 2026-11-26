@@ -560,7 +560,14 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override long GetRequiredReceiveBufferSize(byte* buffer, int bytes)
-            => RespReceiveSize.GetRequiredBytes(buffer, bytes);
+        {
+            // While a transaction is queued its commands stay at the head of the buffer, parsed up to readHead; scanning
+            // them on every receive would be quadratic in the size of the transaction.
+            var parsed = txnSkip ? readHead : 0;
+            Debug.Assert(parsed <= bytes);
+            var required = RespReceiveSize.GetRequiredBytes(buffer + parsed, bytes - parsed);
+            return required == 0 ? 0 : parsed + required;
+        }
 
         public override int TryConsumeMessages(byte* reqBuffer, int bytesReceived)
         {

@@ -240,9 +240,9 @@ namespace Garnet.test
             StartServer(useTls: false);
             const long MB = 1024 * 1024;
 
-            // Declares a 1,000,000,000 byte argument but sends only part of it, and keeps the message incomplete.
+            // Declares a 300 MB argument but sends only part of it, and keeps the message incomplete.
             using var connection = new Connection(useTls: false);
-            connection.Send(Encoding.ASCII.GetBytes("*2\r\n$4\r\nPING\r\n$1000000000\r\n"));
+            connection.Send(Encoding.ASCII.GetBytes($"*2\r\n$4\r\nPING\r\n${300 * MB}\r\n"));
             var chunk = new byte[MB];
             void SendMB(int count)
             {
@@ -274,6 +274,60 @@ namespace Garnet.test
             live = PoolCounterBytes("liveBytes");
             ClassicAssert.GreaterOrEqual(live, 256 * MB, $"the receive buffer did not grow past 128 MB ({live} bytes live)");
             ClassicAssert.Less(live, 512 * MB, $"the receive buffer grew more than 2x past 128 MB ({live} bytes live)");
+        }
+
+        /// <summary>
+        /// A buffer that is mostly empty is kept for the message whose start it holds, but only up to the size growth from the bytes buffered
+        /// would reach. Otherwise the start of the next message after a large one, declaring a length it never sends, keeps the large buffer.
+        /// </summary>
+        [Test]
+        public void TheStartOfTheNextMessageDoesNotHoldALargeReceiveBuffer()
+        {
+            StartServer(useTls: false);
+            const long MB = 1024 * 1024;
+
+            // A SET that grows the buffer to 8 MB, followed in the same write by the header of a 100 MB SET that never arrives
+            using var connection = new Connection(useTls: false);
+            byte[] set = Command(Encoding.ASCII.GetBytes("SET"), Encoding.ASCII.GetBytes("large"), LargeValue());
+            connection.Send([.. set, .. Encoding.ASCII.GetBytes($"*3\r\n$3\r\nSET\r\n$1\r\nk\r\n${100 * MB}\r\n")]);
+            ClassicAssert.AreEqual("+OK", connection.ReadLine());
+
+            var elapsed = Stopwatch.StartNew();
+            long live;
+            while ((live = PoolCounterBytes("liveBytes")) >= 4 * MB)
+            {
+                ClassicAssert.Less(elapsed.Elapsed, TimeSpan.FromSeconds(10), $"the 8 MB receive buffer was kept ({live} bytes live)");
+                Thread.Sleep(10);
+            }
+        }
+
+        /// <summary>
+        /// A transaction's queued commands stay at the head of the receive buffer until EXEC. The declared length is read from where the server
+        /// stopped parsing, not by rescanning them on every receive, so it is found even past an inline command, which the scan cannot read.
+        /// </summary>
+        [Test]
+        public void ACommandQueuedInATransactionGrowsTheReceiveBufferTowardItsDeclaredLength()
+        {
+            StartServer(useTls: false);
+            var value = LargeValue();
+
+            using (var connection = new Connection(useTls: false))
+            {
+                connection.Send(Command("MULTI"));
+                ClassicAssert.AreEqual("+OK", connection.ReadLine());
+                connection.Send("PING\r\n"u8.ToArray());
+                ClassicAssert.AreEqual("+QUEUED", connection.ReadLine());
+                connection.Send(Command(Encoding.ASCII.GetBytes("SET"), Encoding.ASCII.GetBytes("large"), value));
+                ClassicAssert.AreEqual("+QUEUED", connection.ReadLine());
+                connection.Send(Command("EXEC"));
+                ClassicAssert.AreEqual("*2", connection.ReadLine());
+                ClassicAssert.AreEqual("+PONG", connection.ReadLine());
+                ClassicAssert.AreEqual("+OK", connection.ReadLine());
+            }
+
+            // 128 KB grows 8x to the pool's largest class (1 MB), then once more to the 8 MB that holds the message.
+            ClassicAssert.AreEqual(1, PoolCounter("totalNativeAllocations", useTls: false),
+                "the receive buffer did not grow toward the size the queued command declares");
         }
     }
 }

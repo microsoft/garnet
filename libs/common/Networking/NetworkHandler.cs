@@ -90,7 +90,7 @@ namespace Garnet.networking
         /// <summary>
         /// Native memory backing the network receive buffer when it has grown past the pool's largest size class; null otherwise
         /// </summary>
-        protected NativePoolEntry networkReceiveNativeEntry;
+        private protected NativePoolEntry networkReceiveNativeEntry;
 
         /// <summary>
         /// Buffer that receives data directly from network; null while the buffer is native (see <see cref="networkReceiveNativeEntry"/>)
@@ -570,7 +570,11 @@ namespace Garnet.networking
             var required = session.GetRequiredReceiveBufferSize(plaintext, buffered);
             if (required <= target)
                 return target;
-            return required >= current ? current : (int)BitOperations.RoundUpToPowerOf2((ulong)required);
+
+            // Hold no more than growing a full buffer of the buffered bytes would reach, so that a length declared by a message that has
+            // barely started, such as the next one after a large message, cannot keep a large buffer.
+            var floor = Math.Min((long)BitOperations.RoundUpToPowerOf2((ulong)required), DeclaredGrowthLimit(BitOperations.RoundUpToPowerOf2((uint)buffered)));
+            return (int)Math.Min(Math.Max(floor, target), current);
         }
 
         /// <summary>
@@ -844,12 +848,17 @@ namespace Garnet.networking
                 if (required > newSize)
                 {
                     RespParsingException.ThrowIfMessageExceedsReceiveBufferLimit(required);
-                    var limit = Math.Min(FastReceiveBufferGrowthFactor * currentSize, FastReceiveBufferGrowthLimit);
-                    newSize = Math.Max(newSize, Math.Min((long)BitOperations.RoundUpToPowerOf2((ulong)required), limit));
+                    newSize = Math.Max(newSize, Math.Min((long)BitOperations.RoundUpToPowerOf2((ulong)required), DeclaredGrowthLimit(currentSize)));
                 }
             }
             return (int)Math.Min(newSize, RespLimits.MaxReceiveBufferBytes);
         }
+
+        /// <summary>
+        /// Largest size a full receive buffer of <paramref name="size"/> bytes grows to at once toward the size a message declares.
+        /// </summary>
+        static long DeclaredGrowthLimit(long size)
+            => size < FastReceiveBufferGrowthLimit ? Math.Min(FastReceiveBufferGrowthFactor * size, FastReceiveBufferGrowthLimit) : 2 * size;
 
         /// <summary>
         /// Largest factor by which a full receive buffer grows at once toward the size a message declares. A declared length costs nothing to

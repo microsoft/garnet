@@ -55,9 +55,9 @@ namespace Tsavorite.core
 
         const int PROT_READ_WRITE = 0x1 | 0x2;          // PROT_READ | PROT_WRITE
         const int MAP_PRIVATE = 0x02;                   // MAP_PRIVATE (all Unix)
-        // MAP_ANONYMOUS differs by OS: 0x20 on Linux, 0x1000 on macOS/BSD. Passing the Linux value on macOS with
-        // fd=-1 fails with EBADF, so select it at runtime to keep direct-VM working on osx-x64/osx-arm64.
-        static readonly int MAP_PRIVATE_ANONYMOUS = MAP_PRIVATE | (OperatingSystem.IsMacOS() ? 0x1000 : 0x20);
+        // MAP_ANONYMOUS differs by OS: 0x20 on Linux, 0x1000 on macOS and FreeBSD. Passing the Linux value elsewhere
+        // with fd=-1 fails with EBADF, so select it at runtime.
+        static readonly int MAP_PRIVATE_ANONYMOUS = MAP_PRIVATE | (OperatingSystem.IsMacOS() || OperatingSystem.IsFreeBSD() ? 0x1000 : 0x20);
         static readonly nint MAP_FAILED = -1;
 
         const int MADV_HUGEPAGE = 14;                   // Linux: hint transparent huge pages for the range

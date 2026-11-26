@@ -37,10 +37,13 @@ namespace Garnet.test
         }
 
         [Test]
-        public void ADeclaredLengthBeyondAnIntIsReported()
+        public void OnlyLengthsAnArgumentCanHaveAreReported()
         {
-            const string head = "*2\r\n$3\r\nSET\r\n$5000000000\r\n";
-            ClassicAssert.AreEqual(head.Length + 5_000_000_000L + 2, RequiredBytes(head + "abc"));
+            var head = $"*2\r\n$3\r\nSET\r\n${RespLimits.MaxArgumentLengthBytes}\r\n";
+            ClassicAssert.AreEqual(head.Length + RespLimits.MaxArgumentLengthBytes + 2L, RequiredBytes(head + "abc"));
+
+            // The parser never accepts a longer argument, so no receive buffer needs to hold it
+            ClassicAssert.AreEqual(0, RequiredBytes($"*2\r\n$3\r\nSET\r\n${RespLimits.MaxArgumentLengthBytes + 1L}\r\nabc"));
         }
 
         [TestCase("*1\r\n$4\r\nPING\r\n", Description = "Complete message")]

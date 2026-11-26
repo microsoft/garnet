@@ -17,8 +17,9 @@ namespace Garnet.common.Parsing
         /// </summary>
         /// <param name="buffer">Unparsed bytes</param>
         /// <param name="length">Number of bytes at <paramref name="buffer"/></param>
-        /// <returns>The bound, or zero if every element is complete, an element header is incomplete, or the bytes are not RESP (such as an
-        /// inline command).</returns>
+        /// <returns>The bound, or zero if every element is complete, an element header is incomplete, an element declares a length longer than
+        /// <see cref="RespLimits.MaxArgumentLengthBytes"/>, which no message can be parsed with, or the bytes are not RESP (such as an inline
+        /// command).</returns>
         public static long GetRequiredBytes(byte* buffer, int length)
         {
             var ptr = buffer;
@@ -31,7 +32,7 @@ namespace Garnet.common.Parsing
                     case (byte)'$':
                     case (byte)'=':
                     case (byte)'!':
-                        if (!TryReadLengthLine(ptr + 1, end, out var payloadLength, out var payload))
+                        if (!TryReadLengthLine(ptr + 1, end, out var payloadLength, out var payload) || payloadLength > RespLimits.MaxArgumentLengthBytes)
                             return 0;
                         if (payloadLength < 0)
                         {
