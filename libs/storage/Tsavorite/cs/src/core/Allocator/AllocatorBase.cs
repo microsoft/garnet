@@ -1288,7 +1288,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetDeviceSectorSize() => sectorSize;
 
-        /// <summary>Have the derived allocator allocate the current and next page, if needed.</summary>
+        /// <summary>Have the derived allocator allocate the current and next page, if needed, and prefault them; on failure, restore the tail.</summary>
         /// <remarks>The derived allocator "owns" the actual memory for the pages in its circular buffer, as it knows the details of their use,
         ///     although for efficiency we keep the <see cref="pagePointers"/> and some utility operations here in
         ///     <see cref="AllocatorBase{TStoreFunctions, TAllocator}"/> (as well as manage <see cref="TailPageOffset"/>).</remarks>
@@ -1298,6 +1298,7 @@ namespace Tsavorite.core
             try
             {
                 AllocateCurrentAndNextPage(pageIndex);
+                PrefaultTailPages(pageIndex);
             }
             catch
             {
@@ -1607,10 +1608,8 @@ namespace Tsavorite.core
             // TsavoriteLog the filler must be an entry-length-prefixed record (or left as a zero tail), not a RecordInfo record. Deferred for now
             // (only exercised once a partialSlots caller wastes a sub-partialSlots tail; the AOF chunk writer's zero tails are already handled).
 
-            // Allocate next page and set new tail
-            if (!IsAllocated(pageIndex % BufferSize) || !IsAllocated((pageIndex + 1) % BufferSize))
-                AllocatePagesWithException(pageIndex, localTailPageOffset, numSlots);
-            PrefaultTailPages(pageIndex);
+            // Allocate the pages that are not yet allocated, prefault the page the tail moves onto, and set the new tail
+            AllocatePagesWithException(pageIndex, localTailPageOffset, numSlots);
 
             // Set up the TailPageOffset to account for the page header and then this allocation.
             localTailPageOffset.Page++;

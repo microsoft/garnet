@@ -31,7 +31,13 @@ namespace Garnet.common
 
         readonly LimitedFixedBufferPool pool;
         readonly DirectVmBlock block;
-        int returned, freed;
+        int returned;
+
+        /// <summary>
+        /// <see cref="ReportedToGC"/> and <see cref="Freed"/>, set atomically so that memory pressure reported to the GC is removed exactly once.
+        /// </summary>
+        int state;
+        const int ReportedToGC = 1, Freed = 2;
 
         /// <summary>
         /// Packed source identifier, as for <see cref="PoolEntry"/>.
@@ -50,9 +56,9 @@ namespace Garnet.common
         /// Frees the memory of a buffer that was released with <see cref="ReleaseDeferred"/>.
         /// </summary>
         /// <remarks>
-        /// CA2015 warns that a span over the memory does not keep this object alive. Every user of the buffer holds this object, or a
-        /// <see cref="Memory{T}"/> over it, while it uses the buffer: a socket receive holds its buffer, an <c>SslStream</c> read holds its
-        /// destination, and the network handler that owns the buffer keeps referencing it after releasing it.
+        /// CA2015 warns that a span over the memory does not keep this object alive. Every user of the buffer holds this object, a
+        /// <see cref="Memory{T}"/> over it, or a handle from <see cref="Pin"/> while it uses the buffer: a socket receive holds its buffer, an
+        /// <c>SslStream</c> read holds its destination, and the network handler that owns the buffer keeps referencing it after releasing it.
         /// </remarks>
 #pragma warning disable CA2015
         ~NativePoolEntry() => FreeMemory();
@@ -69,10 +75,19 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Return the buffer to the pool, but free its memory only once this object is unreachable. For teardown paths where another thread may
-        /// still be reading or writing the buffer through a reference that keeps this object alive.
+        /// Return the buffer to the pool, but free its memory only once this object is unreachable, reporting it to the GC until then. For
+        /// teardown paths where another thread may still be reading or writing the buffer through a reference that keeps this object alive.
         /// </summary>
-        public void ReleaseDeferred() => ReturnToPool();
+        public void ReleaseDeferred()
+        {
+            ReturnToPool();
+
+            // Only a collection reclaims the memory from here, so report it to the GC: a buildup of such buffers then prompts one. Reported
+            // before the flag is set, and withdrawn if the memory was freed meanwhile or already reported, so it is removed exactly once.
+            GC.AddMemoryPressure(length);
+            if (Interlocked.CompareExchange(ref state, ReportedToGC, 0) != 0)
+                GC.RemoveMemoryPressure(length);
+        }
 
         void ReturnToPool()
         {
@@ -82,15 +97,19 @@ namespace Garnet.common
 
         void FreeMemory()
         {
-            if (Interlocked.Exchange(ref freed, 1) == 0)
-                DirectVirtualMemory.Free(block);
+            var previous = Interlocked.Or(ref state, Freed);
+            if ((previous & Freed) != 0)
+                return;
+            DirectVirtualMemory.Free(block);
+            if ((previous & ReportedToGC) != 0)
+                GC.RemoveMemoryPressure(length);
         }
 
         /// <inheritdoc />
         public override Span<byte> GetSpan() => new(entryPtr, length);
 
         /// <inheritdoc />
-        public override MemoryHandle Pin(int elementIndex = 0) => new(entryPtr + elementIndex);
+        public override MemoryHandle Pin(int elementIndex = 0) => new(entryPtr + elementIndex, pinnable: this);
 
         /// <inheritdoc />
         public override void Unpin() { }

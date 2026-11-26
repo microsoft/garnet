@@ -24,7 +24,7 @@ namespace Tsavorite.test.spanbyte
     internal unsafe class LogPagePrefaultTests : TestBase
     {
         const long PageSize = 4L << 20;
-        const int OsPageSize = 4096;
+        static readonly int OsPageSize = Environment.SystemPageSize;
 
         [DllImport("libc", SetLastError = true)]
         static extern int mincore(nint addr, nuint length, byte* vec);
@@ -128,29 +128,15 @@ namespace Tsavorite.test.spanbyte
         [Category(TsavoriteKVTestCategory)]
         public void PagesAreResidentBeforeAppendersFillThem()
         {
-            _ = NativeAllocatorInitializer.Initialize(true);
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
-            using var store = new TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(new()
-            {
-                IndexSize = 1L << 16,
-                LogDevice = log,
-                LogMemorySize = PageSize * 8,
-                PageSize = PageSize,
-                CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
-                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+            using var store = CreateNativeStore(log);
             using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
             var hlog = store.hlogBase;
 
-            Span<int> key = stackalloc int[1];
-            Span<int> value = stackalloc int[256];
             var i = 0;
             while (hlog.GetPage(hlog.GetTailAddress()) < 1)
-            {
-                key[0] = i++;
-                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(key)), MemoryMarshal.Cast<int, byte>(value), Empty.Default);
-            }
+                Upsert(bContext, i++);
 
             // The tail has just turned onto page 1: it must be populated in full even though appenders have written only its first record.
             var page1 = hlog.GetPhysicalAddress(hlog.GetLogicalAddressOfStartOfPage(1));
@@ -159,6 +145,67 @@ namespace Tsavorite.test.spanbyte
             // Page 2 was allocated ahead of the tail, which no appender has touched; the worker populates it.
             var page2 = hlog.GetPhysicalAddress(hlog.GetLogicalAddressOfStartOfPage(2));
             WaitUntil(() => ResidentPages(page2, PageSize) == PageSize / OsPageSize, "The page allocated ahead of the tail was not populated");
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        public void APrefaultFailureAtAPageTurnRestoresTheTail()
+        {
+#if !DEBUG
+            Assert.Ignore("Requires a test hook that exists only in DEBUG builds");
+#else
+            using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
+            using var store = CreateNativeStore(log);
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            var bContext = session.BasicContext;
+            var hlog = store.hlogBase;
+
+            // Fail the next page turn while it queues the prefault of the page after the one the tail moves onto.
+            const string Injected = "injected prefault failure";
+            LogPagePrefaulter.testOnQueue = () => throw new InvalidOperationException(Injected);
+            var i = 0;
+            try
+            {
+                var ex = Assert.Throws<InvalidOperationException>(() =>
+                {
+                    while (true)
+                        Upsert(bContext, i++);
+                });
+                ClassicAssert.AreEqual(Injected, ex.Message);
+            }
+            finally
+            {
+                LogPagePrefaulter.testOnQueue = null;
+            }
+
+            // A tail left past the end of the page would make every later allocation retry forever.
+            ClassicAssert.LessOrEqual(hlog.TailPageOffset.Offset, hlog.PageSize, "the tail was not restored after the failed page turn");
+            ClassicAssert.AreEqual(0, hlog.TailPageOffset.Page, "the tail moved onto the next page despite the failed page turn");
+
+            while (hlog.GetPage(hlog.GetTailAddress()) < 1)
+                Upsert(bContext, i++);
+#endif
+        }
+
+        static TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> CreateNativeStore(IDevice log)
+        {
+            _ = NativeAllocatorInitializer.Initialize(true);
+            return new(new()
+            {
+                IndexSize = 1L << 16,
+                LogDevice = log,
+                LogMemorySize = PageSize * 8,
+                PageSize = PageSize,
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+        }
+
+        static void Upsert(BasicContext<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext, int k)
+        {
+            Span<int> key = [k];
+            Span<int> value = stackalloc int[256];
+            _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(key)), MemoryMarshal.Cast<int, byte>(value), Empty.Default);
         }
     }
 }

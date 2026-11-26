@@ -222,8 +222,10 @@ message has been processed. Such buffers, which replication and migration stream
 always allocated in native memory, regardless of `--use-native-allocator`: they are returned to the OS as soon as
 they are released, are resident only as data arrives, and count toward `native_allocator_bytes`. As pinned managed
 arrays they would accumulate in the never-compacted Pinned Object Heap until a full collection and fragment it.
-A full buffer grows toward the size the message declares by up to 8x at a time, so it stays within 8x of the bytes
-received, until it reaches 128&#160;MB; beyond that it doubles as data arrives.
+A buffer still held when its connection closes is freed once a collection finds it unreachable, and is reported to
+the GC (`GC.AddMemoryPressure`) until then, so a buildup of such buffers prompts one. A full buffer grows toward the
+size the message declares by up to 8x at a time, so it stays within 8x of the bytes received, until it reaches
+128&#160;MB; beyond that it doubles as data arrives.
 
 ### Sizing and the GC when native memory is enabled
 

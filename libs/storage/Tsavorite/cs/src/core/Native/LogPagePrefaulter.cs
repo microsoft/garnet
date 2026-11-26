@@ -49,10 +49,18 @@ namespace Tsavorite.core
         /// <summary>Hand the pending populate of slot <paramref name="index"/>, if any, to the workers.</summary>
         internal void Queue(int index)
         {
+#if DEBUG
+            testOnQueue?.Invoke();
+#endif
             var current = Volatile.Read(ref state[index]);
             if (current != 0 && (current & RunningBit) == 0)
                 Workers.Enqueue(this, index, current);
         }
+
+#if DEBUG
+        /// <summary>Test only, DEBUG builds only: if set, <see cref="Queue"/> invokes it first.</summary>
+        internal static Action testOnQueue;
+#endif
 
         /// <summary>Return once slot <paramref name="index"/> is populated, populating it here if no worker has started it.</summary>
         internal void EnsurePopulated(int index) => Settle(index, populate: true);
