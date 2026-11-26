@@ -88,12 +88,13 @@ namespace Garnet.networking
         protected PoolEntry networkReceiveBufferEntry;
 
         /// <summary>
-        /// Native memory backing the network receive buffer when it has grown past the pool's largest size class; null otherwise
+        /// Native memory behind the network receive buffer while it is larger than the pool's largest size class; created the first time it is,
+        /// and reused
         /// </summary>
-        private protected NativePoolEntry networkReceiveNativeEntry;
+        private protected NativeReceiveBuffer networkReceiveNative;
 
         /// <summary>
-        /// Buffer that receives data directly from network; null while the buffer is native (see <see cref="networkReceiveNativeEntry"/>)
+        /// Buffer that receives data directly from network; null while the buffer is native (see <see cref="networkReceiveNative"/>)
         /// This is allocated and populated by derived classes
         /// </summary>
         protected byte[] networkReceiveBuffer;
@@ -138,9 +139,9 @@ namespace Garnet.networking
         /// Buffer that application reads data from
         /// </summary>
         PoolEntry transportReceiveBufferEntry;
-        NativePoolEntry transportReceiveNativeEntry;
+        NativeReceiveBuffer transportReceiveNative;
         /// <summary>
-        /// Transport receive buffer; null while the buffer is native (see <see cref="transportReceiveNativeEntry"/>)
+        /// Transport receive buffer; null while the buffer is native (see <see cref="transportReceiveNative"/>)
         /// </summary>
         protected byte[] transportReceiveBuffer;
         unsafe byte* transportReceiveBufferPtr;
@@ -852,28 +853,6 @@ namespace Garnet.networking
         }
 
         /// <summary>
-        /// Get a receive buffer of <paramref name="size"/> bytes: a pinned array from the pool within its size classes, and native memory above
-        /// them (see <see cref="NativePoolEntry"/>) unless <see cref="UseNativeOversizedReceiveBuffers"/> is false.
-        /// </summary>
-        unsafe void GetReceiveBuffer(int size, PoolEntryBufferType bufferType, out PoolEntry pooled, out NativePoolEntry native, out byte[] array, out byte* ptr)
-        {
-            if (size > networkPool.MaxAllocationSize && UseNativeOversizedReceiveBuffers)
-            {
-                pooled = null;
-                array = null;
-                native = networkPool.GetNative(size, bufferType);
-                ptr = native.entryPtr;
-            }
-            else
-            {
-                native = null;
-                pooled = networkPool.Get(size, bufferType);
-                array = pooled.entry;
-                ptr = pooled.entryPtr;
-            }
-        }
-
-        /// <summary>
         /// Whether receive buffers that grow past the pool's largest size class use native memory. Derived handlers that expose the receive
         /// buffer as an array turn this off.
         /// </summary>
@@ -886,24 +865,60 @@ namespace Garnet.networking
         unsafe void ReplaceNetworkReceiveBuffer(int newSize, PoolEntryBufferType bufferType)
         {
             Debug.Assert(networkReadHead == 0, "Shouldn't call if remaining data not already moved to head of receive buffer");
-            Debug.Assert(networkBytesRead <= newSize, "New buffer must hold the bytes already buffered");
+            ReplaceReceiveBuffer(ref networkReceiveBufferEntry, ref networkReceiveNative, ref networkReceiveBuffer, ref networkReceiveBufferPtr,
+                ref networkReceiveBufferLength, networkBytesRead, newSize, bufferType);
+            RefreshNonTlsTransportAlias();
+        }
 
-            GetReceiveBuffer(newSize, bufferType, out var pooled, out var native, out var array, out var ptr);
-            if (networkBytesRead > 0)
-                Buffer.MemoryCopy(networkReceiveBufferPtr, ptr, newSize, networkBytesRead);
+        /// <summary>
+        /// Replace a receive buffer with one of <paramref name="newSize"/> bytes holding its first <paramref name="buffered"/> bytes: a pinned
+        /// array from the pool within its size classes, and above them the buffer's <see cref="NativeReceiveBuffer"/>, unless
+        /// <see cref="UseNativeOversizedReceiveBuffers"/> is false. The caller guarantees no receive is outstanding against the buffer, so the
+        /// region it replaces is released at once.
+        /// </summary>
+        unsafe void ReplaceReceiveBuffer(ref PoolEntry entry, ref NativeReceiveBuffer native, ref byte[] array, ref byte* ptr, ref int length,
+            int buffered, int newSize, PoolEntryBufferType bufferType)
+        {
+            Debug.Assert(buffered <= newSize, "New buffer must hold the bytes already buffered");
+
+            if (newSize > networkPool.MaxAllocationSize && UseNativeOversizedReceiveBuffers)
+            {
+                native ??= new NativeReceiveBuffer(networkPool);
+                var region = native.Map(newSize);
+                if (buffered > 0)
+                    Buffer.MemoryCopy(ptr, (void*)region.AlignedPtr, newSize, buffered);
+                HoldBeforeReceiveBufferSwap();
+
+                // Unmaps the region it replaces, if the buffer was already native
+                native.Install(region, newSize);
+                array = null;
+                ptr = (byte*)region.AlignedPtr;
+                length = newSize;
+                Interlocked.Exchange(ref entry, null)?.Dispose();
+            }
+            else
+            {
+                var pooled = networkPool.Get(newSize, bufferType);
+                if (buffered > 0)
+                    Buffer.MemoryCopy(ptr, pooled.entryPtr, newSize, buffered);
+                HoldBeforeReceiveBufferSwap();
+
+                array = pooled.entry;
+                ptr = pooled.entryPtr;
+                length = newSize;
+                Interlocked.Exchange(ref entry, pooled)?.Dispose();
+                native?.Unmap();
+            }
+            ReleaseReceiveBuffersIfDisposed();
+        }
+
+        /// <summary>Test hook: holds a receive buffer replacement after the new buffer is filled and before it is installed.</summary>
+        [Conditional("DEBUG")]
+        static void HoldBeforeReceiveBufferSwap()
+        {
 #if DEBUG
             ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.ReceiveBuffer_Hold_Before_Swap);
 #endif
-
-            var oldNative = networkReceiveNativeEntry;
-            networkReceiveNativeEntry = native;
-            networkReceiveBuffer = array;
-            networkReceiveBufferPtr = ptr;
-            networkReceiveBufferLength = newSize;
-            Interlocked.Exchange(ref networkReceiveBufferEntry, pooled)?.Dispose();
-            oldNative?.Release();
-            RefreshNonTlsTransportAlias();
-            ReleaseReceiveBuffersIfDisposed();
         }
 
         /// <summary>
@@ -920,17 +935,16 @@ namespace Garnet.networking
 
         /// <summary>
         /// Release the receive buffers on disposal. A pooled entry is taken by exchange, so that it is returned exactly once when a buffer
-        /// replacement races this; releasing a native entry is idempotent.
+        /// replacement races this; releasing a native buffer is idempotent.
         /// </summary>
         void ReleaseReceiveBuffers()
         {
             Interlocked.Exchange(ref networkReceiveBufferEntry, null)?.Dispose();
             Interlocked.Exchange(ref transportReceiveBufferEntry, null)?.Dispose();
 
-            // A native buffer stays referenced, and so mapped, until the handler is unreachable: a reader or a socket receive on another
-            // thread may still be using it.
-            networkReceiveNativeEntry?.ReleaseDeferred();
-            transportReceiveNativeEntry?.ReleaseDeferred();
+            // A native region stays mapped until the handler is unreachable: a reader or a socket receive on another thread may still be using it.
+            networkReceiveNative?.ReleaseDeferred();
+            transportReceiveNative?.ReleaseDeferred();
         }
 
         /// <summary>
@@ -986,7 +1000,7 @@ namespace Garnet.networking
         /// The transport receive buffer, for reads from <see cref="SslStream"/>.
         /// </summary>
         Memory<byte> TransportReceiveMemory
-            => transportReceiveBuffer != null ? transportReceiveBuffer.AsMemory(0, transportReceiveBufferLength) : transportReceiveNativeEntry.Memory;
+            => transportReceiveBuffer != null ? transportReceiveBuffer.AsMemory(0, transportReceiveBufferLength) : transportReceiveNative.Memory;
 
         /// <summary>
         /// Resizes the transport buffer after a processed read and reports whether the reader must read again.
@@ -1041,23 +1055,8 @@ namespace Garnet.networking
         unsafe void ReplaceTransportReceiveBuffer(int newSize, PoolEntryBufferType bufferType)
         {
             Debug.Assert(transportReadHead == 0, "Shouldn't call if remaining data not already moved to head of transport buffer");
-            Debug.Assert(transportBytesRead <= newSize, "New buffer must hold the bytes already buffered");
-
-            GetReceiveBuffer(newSize, bufferType, out var pooled, out var native, out var array, out var ptr);
-            if (transportBytesRead > 0)
-                Buffer.MemoryCopy(transportReceiveBufferPtr, ptr, newSize, transportBytesRead);
-#if DEBUG
-            ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.ReceiveBuffer_Hold_Before_Swap);
-#endif
-
-            var oldNative = transportReceiveNativeEntry;
-            transportReceiveNativeEntry = native;
-            transportReceiveBuffer = array;
-            transportReceiveBufferPtr = ptr;
-            transportReceiveBufferLength = newSize;
-            Interlocked.Exchange(ref transportReceiveBufferEntry, pooled)?.Dispose();
-            oldNative?.Release();
-            ReleaseReceiveBuffersIfDisposed();
+            ReplaceReceiveBuffer(ref transportReceiveBufferEntry, ref transportReceiveNative, ref transportReceiveBuffer, ref transportReceiveBufferPtr,
+                ref transportReceiveBufferLength, transportBytesRead, newSize, bufferType);
         }
 
         unsafe void ShiftTransportReceiveBuffer()

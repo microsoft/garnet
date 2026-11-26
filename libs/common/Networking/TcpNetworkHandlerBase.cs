@@ -278,7 +278,7 @@ namespace Garnet.common
             if (networkReceiveBuffer != null)
                 e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBufferLength - networkBytesRead);
             else
-                e.SetBuffer(networkReceiveNativeEntry.Memory[networkBytesRead..]);
+                e.SetBuffer(networkReceiveNative.Memory[networkBytesRead..]);
         }
     }
 }
