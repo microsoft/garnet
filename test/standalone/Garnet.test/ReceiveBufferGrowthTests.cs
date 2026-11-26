@@ -340,6 +340,15 @@ namespace Garnet.test
             ClassicAssert.AreEqual("+OK", connection.ReadLine());
 
             WaitForLiveBytesBelow(4 * MB, useTls: true, "the 8 MB receive buffer was kept by the read that followed the message");
+
+            // The buffer was released by a shrink, not by closing the connection
+            var ping = Task.Run(() =>
+            {
+                connection.Send(Command("PING"));
+                return connection.ReadLine();
+            });
+            ClassicAssert.IsTrue(ping.Wait(TimeSpan.FromSeconds(10)), "the connection did not answer after its receive buffer shrank");
+            ClassicAssert.AreEqual("+PONG", ping.Result);
         }
 
         /// <summary>
