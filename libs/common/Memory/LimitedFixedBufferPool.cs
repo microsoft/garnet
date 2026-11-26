@@ -100,6 +100,11 @@ namespace Garnet.common
         /// </summary>
         int totalOutOfBoundAllocations;
 
+        /// <summary>
+        /// Total native buffers accounted by <see cref="TryAcquireNative"/>
+        /// </summary>
+        int totalNativeAllocations;
+
 #if DEBUG
         /// <summary>
         /// Tracks all outstanding (checked-out) pool entries for leak diagnosis.
@@ -285,12 +290,69 @@ namespace Garnet.common
                     return page;
                 }
             }
-            var entry = new PoolEntry(size, this);
+            var entry = NewEntry(size);
             entry.source = source;
 #if DEBUG
             outstandingEntries[entry] = 0;
 #endif
             return entry;
+        }
+
+        /// <summary>
+        /// Allocate a buffer that no size class had free, releasing its accounting if the allocation fails. Kept out of <see cref="Get"/> so that
+        /// the exception handling stays off its path.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        PoolEntry NewEntry(int size)
+        {
+            try
+            {
+                return new PoolEntry(size, this);
+            }
+            catch
+            {
+                ReleaseAccounting(size);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Account for a buffer larger than <see cref="MaxAllocationSize"/>, which no size class can recycle, kept in native memory instead of a
+        /// pinned array. See <see cref="NativeReceiveBuffer"/>.
+        /// </summary>
+        /// <param name="size">Buffer size in bytes</param>
+        /// <returns>False if the pool is disposed</returns>
+        internal bool TryAcquireNative(int size)
+        {
+            Debug.Assert(size > maxAllocationSize, "Sizes the pool can recycle should come from Get");
+            if (Interlocked.Increment(ref totalReferences) < 0)
+            {
+                Interlocked.Decrement(ref totalReferences);
+                logger?.LogError("Invalid TryAcquireNative on disposed pool");
+                return false;
+            }
+
+            var live = Interlocked.Add(ref liveBytes, size);
+            UpdatePeakLiveBytes(live);
+            budget.OnBufferAcquired();
+            Interlocked.Increment(ref totalNativeAllocations);
+            return true;
+        }
+
+        /// <summary>
+        /// Account for a buffer from <see cref="TryAcquireNative"/> being released.
+        /// </summary>
+        internal void ReleaseNative(int size) => ReleaseAccounting(size);
+
+        /// <summary>
+        /// Release the accounting for a buffer that does not go back to a size class: a native one, or one that failed to allocate.
+        /// </summary>
+        void ReleaseAccounting(int size)
+        {
+            _ = Interlocked.Add(ref liveBytes, -size);
+            budget.OnBufferReleased();
+            Debug.Assert(totalReferences > 0, $"Release with {totalReferences}");
+            Interlocked.Decrement(ref totalReferences);
         }
 
         void UpdatePeakLiveBytes(long live)
@@ -401,7 +463,8 @@ namespace Garnet.common
                 $"peakLiveBytes={Format.MemoryBytes(Interlocked.Read(ref peakLiveBytes))}," +
                 $"pooledBytes={Format.MemoryBytes(PooledBytes)}," +
                 $"maxPooledBytes={Format.MemoryBytes(maxPooledBytes)}," +
-                $"totalOutOfBoundAllocations={totalOutOfBoundAllocations}";
+                $"totalOutOfBoundAllocations={totalOutOfBoundAllocations}," +
+                $"totalNativeAllocations={totalNativeAllocations}";
 
             var bufferStats = "";
             var totalBufferCount = 0;

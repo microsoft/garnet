@@ -34,6 +34,9 @@ namespace Garnet.server
         /// <inheritdoc />
         public abstract unsafe int TryConsumeMessages(byte* req_buf, int bytesRead);
 
+        /// <inheritdoc />
+        public virtual unsafe long GetRequiredReceiveBufferSize(byte* buffer, int bytes) => 0;
+
         /// <summary>
         /// Publish an update to a key to all the subscribers of the key
         /// </summary>

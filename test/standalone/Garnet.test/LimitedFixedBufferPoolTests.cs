@@ -104,5 +104,17 @@ namespace Garnet.test
             pool.Dispose();
             Assert.That(pool.GetStats(), Does.Contain("totalBufferCount=0"));
         }
+
+        [Test]
+        public async Task ABufferThatFailsToAllocateIsNotLeftCheckedOut()
+        {
+            var pool = new LimitedFixedBufferPool(64);
+
+            // Longer than any array can be
+            Assert.Throws<OutOfMemoryException>(() => pool.Get(int.MaxValue));
+
+            Assert.That(pool.LiveBytes, Is.Zero, "The failed buffer is still accounted as live.");
+            await Task.Run(pool.Dispose).WaitAsync(Timeout);
+        }
     }
 }

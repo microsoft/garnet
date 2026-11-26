@@ -858,5 +858,9 @@ namespace Garnet.client
         /// <inheritdoc />
         public unsafe int TryConsumeMessages(byte* reqBuffer, int bytesRead)
             => ProcessReplies(reqBuffer, bytesRead);
+
+        /// <inheritdoc />
+        public unsafe long GetRequiredReceiveBufferSize(byte* buffer, int bytes)
+            => Garnet.common.Parsing.RespReceiveSize.GetRequiredBytes(buffer, bytes);
     }
 }

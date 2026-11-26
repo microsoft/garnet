@@ -122,7 +122,7 @@ namespace Garnet.common
         void Start(bool useTLS)
         {
             var receiveEventArgs = new SocketAsyncEventArgs { AcceptSocket = socket };
-            receiveEventArgs.SetBuffer(networkReceiveBuffer, 0, networkReceiveBuffer.Length);
+            SetReceiveBuffer(receiveEventArgs);
             receiveEventArgs.Completed += useTLS ? RecvEventArgCompletedWithTLS : RecvEventArgCompletedWithoutTLS;
 
             // If the client already have packets, avoid handling it here on the handler so we don't block future accepts.
@@ -217,7 +217,7 @@ namespace Garnet.common
                         break;
                     }
                     OnNetworkReceiveWithoutTLS(e.BytesTransferred);
-                    e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
+                    SetReceiveBuffer(e);
                 } while (!e.AcceptSocket.ReceiveAsync(e));
             }
             catch (Exception ex)
@@ -243,7 +243,7 @@ namespace Garnet.common
                     {
                         await receiveTask.ConfigureAwait(false);
                     }
-                    e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
+                    SetReceiveBuffer(e);
                 } while (!e.AcceptSocket.ReceiveAsync(e));
             }
             catch (Exception ex)
@@ -266,6 +266,19 @@ namespace Garnet.common
             networkReceiveBufferEntry = networkPool.Get(BaseReceiveBufferSize, PoolEntryBufferType.NetworkReceiveBuffer);
             networkReceiveBuffer = networkReceiveBufferEntry.entry;
             networkReceiveBufferPtr = networkReceiveBufferEntry.entryPtr;
+            networkReceiveBufferLength = networkReceiveBuffer.Length;
+        }
+
+        /// <summary>
+        /// Point <paramref name="e"/> at the free space in the network receive buffer, which is native memory rather than an array once it has
+        /// grown past the pool's largest size class.
+        /// </summary>
+        void SetReceiveBuffer(SocketAsyncEventArgs e)
+        {
+            if (networkReceiveBuffer != null)
+                e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBufferLength - networkBytesRead);
+            else
+                e.SetBuffer(networkReceiveNative.Memory[networkBytesRead..]);
         }
     }
 }

@@ -205,8 +205,29 @@ Heap regardless of this setting.)
   the managed allocator's behavior, but off the GC heap — so a large index/log does not inflate the managed
   heap. On Linux these regions are 2&#160;MB-aligned and hinted for transparent huge pages, which lowers dTLB
   misses on random index/log access (measured ~8% higher in-memory throughput vs the managed heap). No native
-  library is required — the direct-VM surfaces call the OS virtual-memory APIs directly. (Network buffers and
-  the sector-aligned IO/flush buffer pool remain managed in this release.)
+  library is required — the direct-VM surfaces call the OS virtual-memory APIs directly. (Network buffers within
+  the network pool's size classes and the sector-aligned IO/flush buffer pool remain managed in this release.)
+
+On Linux 5.14 and later, each 2&#160;MB huge page of a fresh log page is faulted in by one thread before appenders
+reach it (`madvise(MADV_POPULATE_WRITE)`). This is done cooperatively at page turns: threads waiting for the
+tail to move onto the next page each populate 2&#160;MB of the page allocated after it, the thread that moved the
+tail populates what is left, and the thread moving the tail onto a page first finishes populating it. No thread
+or memory allocation is involved, and allocations within a page cost nothing more. Otherwise every appender
+crossing into the page would fault on the same huge page at once, and the kernel would allocate and zero a
+2&#160;MB page for each of them only to keep one. On older kernels pages are faulted in on first touch.
+
+### Large network receive buffers
+
+A connection's receive buffer grows to hold a request (or, for a client, a reply) larger than the network
+buffer pool's largest size class (`NetworkReceiveBufferMaxSize`, 1&#160;MB by default), and is released once that
+message has been processed. Such buffers, which replication and migration streams need for every batch, are
+always allocated in native memory, regardless of `--use-native-allocator`: they are returned to the OS as soon as
+they are released, are resident only as data arrives, and count toward `native_allocator_bytes`. As pinned managed
+arrays they would accumulate in the never-compacted Pinned Object Heap until a full collection and fragment it.
+A buffer still held when its connection closes is freed once a collection finds it unreachable, and is reported to
+the GC (`GC.AddMemoryPressure`) until then, so a buildup of such buffers prompts one. A full buffer grows toward the
+size the message declares by up to 8x at a time, so it stays within 8x of the bytes received, until it reaches
+128&#160;MB; beyond that it doubles as data arrives.
 
 ### Sizing and the GC when native memory is enabled
 

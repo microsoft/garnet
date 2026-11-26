@@ -88,6 +88,18 @@ namespace Garnet.common.Parsing
         }
 
         /// <summary>
+        /// Throw if a message being received declares a size beyond the receive buffer limit.
+        /// </summary>
+        /// <param name="requiredSize">Receive buffer size the message needs.</param>
+        public static void ThrowIfMessageExceedsReceiveBufferLimit(long requiredSize)
+        {
+            if (requiredSize > RespLimits.MaxReceiveBufferBytes)
+            {
+                Throw($"Message exceeds the receive buffer limit of '{RespLimits.MaxReceiveBufferBytes}' bytes.");
+            }
+        }
+
+        /// <summary>
         /// Throw NaN (not a number) exception.
         /// </summary>
         /// <param name="buffer">Pointer to an ASCII-encoded byte buffer containing the string that could not be converted.</param>

@@ -48,5 +48,7 @@ The `Get` method allocates a memory segment from the pool for the requested size
 
 The `Return` method returns a memory segment to the pool for reuse.
 
+A receive buffer that grows past the pool's largest size class to hold one large message, which no size class could recycle, is kept in native memory instead of a pinned array, through a `NativeReceiveBuffer` that the network handler reuses for every such size, and the pool accounts for it (`TryAcquireNative`) as it does for a `PoolEntry`. The buffer is returned to the OS once the message is processed rather than left as garbage in the never-compacted Pinned Object Heap, and growing or releasing it allocates nothing managed. A full receive buffer grows toward the size the pending message declares (from its RESP length prefixes) by up to 8x at a time, which keeps it within 8x of the bytes actually received, until it reaches 128 MB, and doubles as data arrives beyond that. While the message arrives the buffer is not shrunk below that size, but neither is it kept larger than growth from the bytes received so far would reach, so a message that has barely started cannot hold a large buffer.
+
 ### PoolEntry Class
 The LimitedFixedBufferPool class internally uses the PoolEntry class to represent memory segments. The PoolEntry class provides methods to reuse and manage the allocated memory segments.

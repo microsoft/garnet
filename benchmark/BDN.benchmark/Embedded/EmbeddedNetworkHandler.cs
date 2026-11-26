@@ -37,6 +37,7 @@ namespace Embedded.server
         public async ValueTask Send(Request request)
         {
             networkReceiveBuffer = request.buffer;
+            networkReceiveBufferLength = request.buffer.Length;
             unsafe { networkReceiveBufferPtr = request.bufferPtr; }
 
             if (useTLS)

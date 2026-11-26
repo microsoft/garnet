@@ -254,7 +254,7 @@ namespace Garnet.test
 
             // Guards the level assertion below against passing vacuously on a run that never grew past the
             // pool's largest class.
-            ClassicAssert.GreaterOrEqual(StatBytes("totalOutOfBoundAllocations", stats), 1,
+            ClassicAssert.GreaterOrEqual(StatBytes("totalNativeAllocations", stats), 1,
                 "the payload did not grow the receive buffer past the pool's largest size class");
 
             // Growing to the payload pooled a 1 MB buffer on the way up. The replacement takes it back out,

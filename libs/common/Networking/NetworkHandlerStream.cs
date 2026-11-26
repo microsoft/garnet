@@ -141,7 +141,7 @@ namespace Garnet.networking
 
                 if (copiedBytes > 0)
                 {
-                    new ReadOnlySpan<byte>(garnetNetworkHandler.networkReceiveBuffer, garnetNetworkHandler.networkReadHead, copiedBytes).CopyTo(buffer.Span);
+                    garnetNetworkHandler.CopyFromNetworkReceiveBuffer(buffer.Span[..copiedBytes]);
                     garnetNetworkHandler.networkReadHead += copiedBytes;
                 }
                 // Debug.WriteLine($"Network read head: {garnetNetworkHandler.networkReadHead}");

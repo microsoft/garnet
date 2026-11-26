@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Security;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Security.Cryptography.X509Certificates;
@@ -82,12 +83,18 @@ namespace Garnet.networking
         protected readonly LimitedFixedBufferPool networkPool;
 
         /// <summary>
-        /// Pool entry
+        /// Pool entry for <see cref="networkReceiveBuffer"/>; null while the buffer is native
         /// </summary>
         protected PoolEntry networkReceiveBufferEntry;
 
         /// <summary>
-        /// Buffer that receives data directly from network
+        /// Native memory behind the network receive buffer while it is larger than the pool's largest size class; created the first time it is,
+        /// and reused
+        /// </summary>
+        private protected NativeReceiveBuffer networkReceiveNative;
+
+        /// <summary>
+        /// Buffer that receives data directly from network; null while the buffer is native (see <see cref="networkReceiveNative"/>)
         /// This is allocated and populated by derived classes
         /// </summary>
         protected byte[] networkReceiveBuffer;
@@ -97,6 +104,11 @@ namespace Garnet.networking
         /// This is allocated and populated by derived classes
         /// </summary>
         protected unsafe byte* networkReceiveBufferPtr;
+
+        /// <summary>
+        /// Length of the network receive buffer
+        /// </summary>
+        protected int networkReceiveBufferLength;
 
         /// <summary>
         /// Bytes read and read head for network buffer
@@ -127,11 +139,13 @@ namespace Garnet.networking
         /// Buffer that application reads data from
         /// </summary>
         PoolEntry transportReceiveBufferEntry;
+        NativeReceiveBuffer transportReceiveNative;
         /// <summary>
-        /// Transport receive buffer
+        /// Transport receive buffer; null while the buffer is native (see <see cref="transportReceiveNative"/>)
         /// </summary>
         protected byte[] transportReceiveBuffer;
         unsafe byte* transportReceiveBufferPtr;
+        int transportReceiveBufferLength;
 
         /// <summary>
         /// Bytes read by application from transport buffer
@@ -220,6 +234,7 @@ namespace Garnet.networking
                 transportReceiveBufferEntry = this.networkPool.Get(BaseReceiveBufferSize, PoolEntryBufferType.TransportReceiveBuffer);
                 transportReceiveBuffer = transportReceiveBufferEntry.entry;
                 transportReceiveBufferPtr = transportReceiveBufferEntry.entryPtr;
+                transportReceiveBufferLength = transportReceiveBuffer.Length;
 
                 transportSendBufferEntry = this.networkPool.Get(BaseSendBufferSize, PoolEntryBufferType.TransportSendBuffer);
                 transportSendBuffer = transportSendBufferEntry.entry;
@@ -284,7 +299,7 @@ namespace Garnet.networking
                     LogSecurityInfo(sslStream, remoteEndpointName, logger);
 
                 // There may be extra bytes left over after auth, we need to process them (non-blocking) before returning
-                var result = sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), cancellationTokenSource.Token);
+                var result = sslStream.ReadAsync(TransportReceiveMemory[transportBytesRead..], cancellationTokenSource.Token);
                 _ = SslReaderAsync(result.AsTask(), cancellationTokenSource.Token);
             }
             catch (Exception ex)
@@ -356,7 +371,7 @@ namespace Garnet.networking
                     LogSecurityInfo(sslStream, remoteEndpointName, logger);
 
                 // There may be extra bytes left over after auth, we need to process them (non-blocking) before returning
-                var result = sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), cancellationTokenSource.Token);
+                var result = sslStream.ReadAsync(TransportReceiveMemory[transportBytesRead..], cancellationTokenSource.Token);
                 _ = SslReaderAsync(result.AsTask(), cancellationTokenSource.Token);
             }
             catch (Exception ex)
@@ -374,6 +389,7 @@ namespace Garnet.networking
             networkBytesRead += bytesTransferred;
             transportReceiveBuffer = networkReceiveBuffer;
             transportReceiveBufferPtr = networkReceiveBufferPtr;
+            transportReceiveBufferLength = networkReceiveBufferLength;
             transportBytesRead = networkBytesRead;
 
             // Occupancy before processing is the capacity this pass needed. Process consumes and compacts the
@@ -441,12 +457,12 @@ namespace Garnet.networking
                 ShiftNetworkReceiveBuffer();
 
             // Double network buffer if out of space after processing is complete
-            if (networkBytesRead == networkReceiveBuffer.Length)
+            if (networkBytesRead == networkReceiveBufferLength)
             {
                 DoubleNetworkReceiveBuffer();
                 networkShrinkCountdown = ShrinkHysteresis;
             }
-            else if (networkReceiveBuffer.Length > BaseReceiveBufferSize)
+            else if (networkReceiveBufferLength > BaseReceiveBufferSize)
             {
                 // Guarded here rather than inside the callee so a buffer still at its base size -- every pass
                 // on a connection that has never grown -- costs one comparison and makes no call.
@@ -472,6 +488,7 @@ namespace Garnet.networking
         /// </para>
         /// </remarks>
         /// <param name="current">Size of the buffer being considered.</param>
+        /// <param name="plaintext">The unparsed bytes at the head of the buffer, or null when the buffer holds ciphertext.</param>
         /// <param name="buffered">Bytes still buffered, which the replacement has to be able to hold.</param>
         /// <param name="demand">
         /// Bytes the buffer held for this pass, sampled before consumed bytes were shifted away. This is the
@@ -480,7 +497,7 @@ namespace Garnet.networking
         /// <param name="countdown">The caller's shrink hysteresis countdown, updated in place.</param>
         /// <param name="target">Size to replace the buffer with, when this returns <see langword="true"/>.</param>
         /// <returns><see langword="true"/> when the caller should replace its buffer with a <paramref name="target"/>-byte one.</returns>
-        bool TryPlanReceiveBufferShrink(int current, int buffered, int demand, ref int countdown, out int target)
+        unsafe bool TryPlanReceiveBufferShrink(int current, byte* plaintext, int buffered, int demand, ref int countdown, out int target)
         {
             var baseSize = BaseReceiveBufferSize;
             target = current;
@@ -501,6 +518,7 @@ namespace Garnet.networking
                 if (!budget.IsUnderPressure)
                     target = Math.Max(networkBufferSettings.maxReceiveBufferSize, target);
 
+                target = RaiseToPendingMessage(target, current, plaintext, buffered);
                 countdown = ShrinkHysteresis;
                 if (target >= current)
                     return false;
@@ -526,11 +544,35 @@ namespace Garnet.networking
                 return false;
 
             countdown = ShrinkHysteresis;
+            target = RaiseToPendingMessage(target, current, plaintext, buffered);
+            if (target >= current)
+                return false;
+
             if (underPressure)
                 budget.RecordPressureShrink();
             else
                 budget.RecordIdleShrink();
             return true;
+        }
+
+        /// <summary>
+        /// Raise a shrink <paramref name="target"/> to hold the whole message whose start is buffered. A buffer grown toward the size a message
+        /// declares stays mostly empty until the message has arrived, and releasing it in the meantime would only grow it again.
+        /// </summary>
+        /// <param name="target">Planned size of the replacement buffer.</param>
+        /// <param name="current">Size of the buffer being considered.</param>
+        /// <param name="plaintext">The unparsed bytes at the head of the buffer, or null when the buffer holds ciphertext.</param>
+        /// <param name="buffered">Number of bytes at <paramref name="plaintext"/>.</param>
+        unsafe int RaiseToPendingMessage(int target, int current, byte* plaintext, int buffered)
+        {
+            if (plaintext == null || buffered == 0 || session == null)
+                return target;
+
+            var required = session.GetRequiredReceiveBufferSize(plaintext, buffered);
+            if (required <= target)
+                return target;
+
+            return (int)Math.Min(Math.Max(DeclaredLengthGrowth.PendingMessageFloor(required, buffered), target), current);
         }
 
         /// <summary>
@@ -543,9 +585,11 @@ namespace Garnet.networking
         /// capacity the traffic needed; the residual left after processing is not.
         /// </param>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        void TryShrinkNetworkReceiveBuffer(int demand)
+        unsafe void TryShrinkNetworkReceiveBuffer(int demand)
         {
-            if (TryPlanReceiveBufferShrink(networkReceiveBuffer.Length, networkBytesRead, demand, ref networkShrinkCountdown, out var target))
+            // Without TLS the network buffer holds the plaintext the session parses; with TLS it holds ciphertext.
+            var plaintext = sslStream == null ? networkReceiveBufferPtr : null;
+            if (TryPlanReceiveBufferShrink(networkReceiveBufferLength, plaintext, networkBytesRead, demand, ref networkShrinkCountdown, out var target))
                 ShrinkNetworkReceiveBuffer(target);
         }
 
@@ -599,7 +643,7 @@ namespace Garnet.networking
             while (networkBytesRead > networkReadHead || transportBytesRead > 0 || retry)
             {
                 retry = false;
-                var result = sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), cancellationTokenSource.Token);
+                var result = sslStream.ReadAsync(TransportReceiveMemory[transportBytesRead..], cancellationTokenSource.Token);
                 if (result.IsCompletedSuccessfully)
                 {
                     // blocking is unavoidable here, but safe since we've checked IsCompletedSuccessfully
@@ -712,7 +756,7 @@ namespace Garnet.networking
                         await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Tls_Pause_With_Partial_Frame).ConfigureAwait(false);
 #endif
                     Debug.Assert(readerStatus == TlsReaderStatus.Active);
-                    int count = await sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), token).ConfigureAwait(false);
+                    int count = await sslStream.ReadAsync(TransportReceiveMemory[transportBytesRead..], token).ConfigureAwait(false);
                     Debug.Assert(readerStatus == TlsReaderStatus.Active);
 
                     if (count == 0)
@@ -778,14 +822,129 @@ namespace Garnet.networking
 
         unsafe void DoubleNetworkReceiveBuffer()
         {
-            RespParsingException.ThrowIfReceiveBufferLimitExceeded(networkReceiveBuffer.Length);
-            var tmp = networkPool.Get(Math.Min(networkReceiveBuffer.Length * 2, RespLimits.MaxReceiveBufferBytes), PoolEntryBufferType.DoubleNetworkReceiveBuffer);
-            Array.Copy(networkReceiveBuffer, tmp.entry, networkReceiveBuffer.Length);
-            networkReceiveBufferEntry.Dispose();
-            networkReceiveBufferEntry = tmp;
-            networkReceiveBuffer = tmp.entry;
-            networkReceiveBufferPtr = tmp.entryPtr;
+            // Without TLS the network buffer holds the plaintext the session parses; with TLS it holds ciphertext.
+            var newSize = GrowReceiveBufferSize(networkReceiveBufferLength, sslStream == null ? networkReceiveBufferPtr : null, networkBytesRead);
+            ReplaceNetworkReceiveBuffer(newSize, PoolEntryBufferType.DoubleNetworkReceiveBuffer);
+        }
+
+        /// <summary>
+        /// Size to grow a full receive buffer of <paramref name="currentSize"/> bytes to. Doubles, unless the session can tell from the unparsed
+        /// bytes that the message being received needs more, in which case the buffer grows toward the power of two that holds it by up to
+        /// <see cref="DeclaredLengthGrowth.FastGrowthFactor"/> at once while below <see cref="DeclaredLengthGrowth.FastGrowthLimit"/>, rather
+        /// than through every size between, each a fresh allocation and copy.
+        /// </summary>
+        /// <param name="currentSize">Size of the full buffer.</param>
+        /// <param name="plaintext">The unparsed bytes at the head of the buffer, or null when the buffer holds ciphertext.</param>
+        /// <param name="buffered">Number of bytes at <paramref name="plaintext"/>.</param>
+        unsafe int GrowReceiveBufferSize(int currentSize, byte* plaintext, int buffered)
+        {
+            RespParsingException.ThrowIfReceiveBufferLimitExceeded(currentSize);
+            var newSize = 2L * currentSize;
+            if (plaintext != null && session != null && currentSize < DeclaredLengthGrowth.FastGrowthLimit)
+            {
+                var required = session.GetRequiredReceiveBufferSize(plaintext, buffered);
+                if (required > newSize)
+                {
+                    RespParsingException.ThrowIfMessageExceedsReceiveBufferLimit(required);
+                    newSize = Math.Max(newSize, Math.Min((long)BitOperations.RoundUpToPowerOf2((ulong)required), DeclaredLengthGrowth.Limit(currentSize)));
+                }
+            }
+            return (int)Math.Min(newSize, RespLimits.MaxReceiveBufferBytes);
+        }
+
+        /// <summary>
+        /// Whether receive buffers that grow past the pool's largest size class use native memory. Derived handlers that expose the receive
+        /// buffer as an array turn this off.
+        /// </summary>
+        protected virtual bool UseNativeOversizedReceiveBuffers => true;
+
+        /// <summary>
+        /// Replace the network receive buffer with one of <paramref name="newSize"/> bytes holding the buffered bytes. Only called while no
+        /// receive is outstanding against the buffer, so the old one is released at once.
+        /// </summary>
+        unsafe void ReplaceNetworkReceiveBuffer(int newSize, PoolEntryBufferType bufferType)
+        {
+            Debug.Assert(networkReadHead == 0, "Shouldn't call if remaining data not already moved to head of receive buffer");
+            ReplaceReceiveBuffer(ref networkReceiveBufferEntry, ref networkReceiveNative, ref networkReceiveBuffer, ref networkReceiveBufferPtr,
+                ref networkReceiveBufferLength, networkBytesRead, newSize, bufferType);
             RefreshNonTlsTransportAlias();
+        }
+
+        /// <summary>
+        /// Replace a receive buffer with one of <paramref name="newSize"/> bytes holding its first <paramref name="buffered"/> bytes: a pinned
+        /// array from the pool within its size classes, and above them the buffer's <see cref="NativeReceiveBuffer"/>, unless
+        /// <see cref="UseNativeOversizedReceiveBuffers"/> is false. The caller guarantees no receive is outstanding against the buffer, so the
+        /// region it replaces is released at once.
+        /// </summary>
+        unsafe void ReplaceReceiveBuffer(ref PoolEntry entry, ref NativeReceiveBuffer native, ref byte[] array, ref byte* ptr, ref int length,
+            int buffered, int newSize, PoolEntryBufferType bufferType)
+        {
+            Debug.Assert(buffered <= newSize, "New buffer must hold the bytes already buffered");
+
+            if (newSize > networkPool.MaxAllocationSize && UseNativeOversizedReceiveBuffers)
+            {
+                native ??= new NativeReceiveBuffer(networkPool);
+                var region = native.Map(newSize);
+                if (buffered > 0)
+                    Buffer.MemoryCopy(ptr, (void*)region.AlignedPtr, newSize, buffered);
+                HoldBeforeReceiveBufferSwap();
+
+                // Unmaps the region it replaces, if the buffer was already native
+                native.Install(region, newSize);
+                array = null;
+                ptr = (byte*)region.AlignedPtr;
+                length = newSize;
+                Interlocked.Exchange(ref entry, null)?.Dispose();
+            }
+            else
+            {
+                var pooled = networkPool.Get(newSize, bufferType);
+                if (buffered > 0)
+                    Buffer.MemoryCopy(ptr, pooled.entryPtr, newSize, buffered);
+                HoldBeforeReceiveBufferSwap();
+
+                array = pooled.entry;
+                ptr = pooled.entryPtr;
+                length = newSize;
+                Interlocked.Exchange(ref entry, pooled)?.Dispose();
+                native?.Unmap();
+            }
+            ReleaseReceiveBuffersIfDisposed();
+        }
+
+        /// <summary>Test hook: holds a receive buffer replacement after the new buffer is filled and before it is installed.</summary>
+        [Conditional("DEBUG")]
+        static void HoldBeforeReceiveBufferSwap()
+        {
+#if DEBUG
+            ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.ReceiveBuffer_Hold_Before_Swap);
+#endif
+        }
+
+        /// <summary>
+        /// Release the receive buffers if the handler was disposed while one was being replaced. <see cref="DisposeImpl"/> can run on another
+        /// thread, such as when the server shuts down, and releases only the buffers installed when it runs.
+        /// </summary>
+        void ReleaseReceiveBuffersIfDisposed()
+        {
+            // Pairs with the increment in DisposeImpl: either it sees the buffer just installed, or this sees the handler disposed.
+            Interlocked.MemoryBarrier();
+            if (Volatile.Read(ref disposeCount) > 0)
+                ReleaseReceiveBuffers();
+        }
+
+        /// <summary>
+        /// Release the receive buffers on disposal. A pooled entry is taken by exchange, so that it is returned exactly once when a buffer
+        /// replacement races this; releasing a native buffer is idempotent.
+        /// </summary>
+        void ReleaseReceiveBuffers()
+        {
+            Interlocked.Exchange(ref networkReceiveBufferEntry, null)?.Dispose();
+            Interlocked.Exchange(ref transportReceiveBufferEntry, null)?.Dispose();
+
+            // A native region stays mapped until the handler is unreachable: a reader or a socket receive on another thread may still be using it.
+            networkReceiveNative?.ReleaseDeferred();
+            transportReceiveNative?.ReleaseDeferred();
         }
 
         /// <summary>
@@ -801,27 +960,19 @@ namespace Garnet.networking
 
             transportReceiveBuffer = networkReceiveBuffer;
             transportReceiveBufferPtr = networkReceiveBufferPtr;
+            transportReceiveBufferLength = networkReceiveBufferLength;
         }
 
         // NoInlining as this should be a rare call if Garnet is properly configured
         [MethodImpl(MethodImplOptions.NoInlining)]
-        unsafe void ShrinkNetworkReceiveBuffer(int newSize)
-        {
-            Debug.Assert(networkReadHead == 0, "Shouldn't call if remaining data not already moved to head of receive buffer");
-            Debug.Assert(networkBytesRead <= newSize, "Shrink target must hold the bytes already buffered");
+        void ShrinkNetworkReceiveBuffer(int newSize)
+            => ReplaceNetworkReceiveBuffer(newSize, PoolEntryBufferType.ShrinkNetworkReceiveBuffer);
 
-            var tmp = networkPool.Get(newSize, PoolEntryBufferType.ShrinkNetworkReceiveBuffer);
-            if (networkBytesRead > 0)
-            {
-                Array.Copy(networkReceiveBuffer, tmp.entry, networkBytesRead);
-            }
-
-            networkReceiveBufferEntry.Dispose();
-            networkReceiveBufferEntry = tmp;
-            networkReceiveBuffer = tmp.entry;
-            networkReceiveBufferPtr = tmp.entryPtr;
-            RefreshNonTlsTransportAlias();
-        }
+        /// <summary>
+        /// Copy <paramref name="destination"/>.Length bytes from the head of the unread network bytes.
+        /// </summary>
+        unsafe void CopyFromNetworkReceiveBuffer(Span<byte> destination)
+            => new ReadOnlySpan<byte>(networkReceiveBufferPtr + networkReadHead, destination.Length).CopyTo(destination);
 
         unsafe void ShiftNetworkReceiveBuffer()
         {
@@ -839,39 +990,39 @@ namespace Garnet.networking
         {
             if (sslStream != null)
             {
-                RespParsingException.ThrowIfReceiveBufferLimitExceeded(transportReceiveBuffer.Length);
-                var tmp = networkPool.Get(Math.Min(transportReceiveBuffer.Length * 2, RespLimits.MaxReceiveBufferBytes), PoolEntryBufferType.DoubleTransportReceiveBuffer);
-                Array.Copy(transportReceiveBuffer, tmp.entry, transportReceiveBuffer.Length);
-                transportReceiveBufferEntry.Dispose();
-                transportReceiveBufferEntry = tmp;
-                transportReceiveBuffer = tmp.entry;
-                transportReceiveBufferPtr = tmp.entryPtr;
+                var newSize = GrowReceiveBufferSize(transportReceiveBufferLength, transportReceiveBufferPtr, transportBytesRead);
+                ReplaceTransportReceiveBuffer(newSize, PoolEntryBufferType.DoubleTransportReceiveBuffer);
                 transportShrinkCountdown = ShrinkHysteresis;
             }
         }
+
+        /// <summary>
+        /// The transport receive buffer, for reads from <see cref="SslStream"/>.
+        /// </summary>
+        Memory<byte> TransportReceiveMemory
+            => transportReceiveBuffer != null ? transportReceiveBuffer.AsMemory(0, transportReceiveBufferLength) : transportReceiveNative.Memory;
 
         /// <summary>
         /// Resizes the transport buffer after a processed read and reports whether the reader must read again.
         /// A read that filled the buffer may have stopped short of the end of a TLS record, leaving decrypted
         /// plaintext inside <see cref="SslStream"/> with no further ciphertext to trigger another receive, so
         /// the reader re-reads even when processing consumed every byte. The buffer doubles only when unparsed
-        /// bytes still fill it.
+        /// bytes still fill it; otherwise the shrink policy applies first, so that the re-read, which may wait
+        /// indefinitely, does not hold a buffer the connection no longer needs.
         /// </summary>
         /// <param name="transportDemand">Bytes the buffer held before processing.</param>
         /// <returns>True if the reader must issue another read before resting.</returns>
         bool AdjustTransportReceiveBufferAfterProcess(int transportDemand)
         {
-            if (transportBytesRead == transportReceiveBuffer.Length)
+            if (transportBytesRead == transportReceiveBufferLength)
             {
                 DoubleTransportReceiveBuffer();
                 return true;
             }
 
-            if (transportDemand == transportReceiveBuffer.Length)
-                return true;
-
+            var filled = transportDemand == transportReceiveBufferLength;
             TryShrinkTransportReceiveBuffer(transportDemand);
-            return false;
+            return filled;
         }
 
         /// <summary>
@@ -883,32 +1034,29 @@ namespace Garnet.networking
         /// Bytes the buffer held for this pass, sampled before consumed bytes were shifted away. This is the
         /// capacity the traffic needed; the residual left after processing is not.
         /// </param>
-        void TryShrinkTransportReceiveBuffer(int demand)
+        unsafe void TryShrinkTransportReceiveBuffer(int demand)
         {
             if (sslStream == null)
                 return;
 
-            if (TryPlanReceiveBufferShrink(transportReceiveBuffer.Length, transportBytesRead, demand, ref transportShrinkCountdown, out var target))
+            if (TryPlanReceiveBufferShrink(transportReceiveBufferLength, transportReceiveBufferPtr, transportBytesRead, demand, ref transportShrinkCountdown, out var target))
                 ShrinkTransportReceiveBuffer(target);
         }
 
         // NoInlining as this should be a rare call if Garnet is properly configured
         [MethodImpl(MethodImplOptions.NoInlining)]
-        unsafe void ShrinkTransportReceiveBuffer(int newSize)
+        void ShrinkTransportReceiveBuffer(int newSize)
+            => ReplaceTransportReceiveBuffer(newSize, PoolEntryBufferType.ShrinkTransportReceiveBuffer);
+
+        /// <summary>
+        /// Replace the TLS transport receive buffer with one of <paramref name="newSize"/> bytes holding the buffered bytes. Only called by the
+        /// reader while no <c>ReadAsync</c> is outstanding against the buffer, so the old one is released at once.
+        /// </summary>
+        unsafe void ReplaceTransportReceiveBuffer(int newSize, PoolEntryBufferType bufferType)
         {
             Debug.Assert(transportReadHead == 0, "Shouldn't call if remaining data not already moved to head of transport buffer");
-            Debug.Assert(transportBytesRead <= newSize, "Shrink target must hold the bytes already buffered");
-
-            var tmp = networkPool.Get(newSize, PoolEntryBufferType.ShrinkTransportReceiveBuffer);
-            if (transportBytesRead > 0)
-            {
-                Array.Copy(transportReceiveBuffer, tmp.entry, transportBytesRead);
-            }
-
-            transportReceiveBufferEntry.Dispose();
-            transportReceiveBufferEntry = tmp;
-            transportReceiveBuffer = tmp.entry;
-            transportReceiveBufferPtr = tmp.entryPtr;
+            ReplaceReceiveBuffer(ref transportReceiveBufferEntry, ref transportReceiveNative, ref transportReceiveBuffer, ref transportReceiveBufferPtr,
+                ref transportReceiveBufferLength, transportBytesRead, newSize, bufferType);
         }
 
         unsafe void ShiftTransportReceiveBuffer()
@@ -1053,8 +1201,7 @@ namespace Garnet.networking
                 expectingData?.Release();
                 expectingData?.Dispose();
                 cancellationTokenSource?.Dispose();
-                networkReceiveBufferEntry?.Dispose();
-                transportReceiveBufferEntry?.Dispose();
+                ReleaseReceiveBuffers();
             }
             finally
             {
@@ -1062,6 +1209,7 @@ namespace Garnet.networking
 #if DEBUG
                 if (transportSendBufferEntry != null)
                     _ = ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Tls_Signal_After_Handler_Dispose);
+                _ = ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Handler_Signal_After_Dispose);
 #endif
             }
         }

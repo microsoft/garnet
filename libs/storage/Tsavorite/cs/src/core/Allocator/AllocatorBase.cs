@@ -150,6 +150,10 @@ namespace Tsavorite.core
         /// <summary>Capacity of <see cref="nativeFreePagePool"/>.</summary>
         const int NativeFreePagePoolSize = 4;
 
+        /// <summary>Faults in fresh direct-VM pages before appenders reach them (see <see cref="LogPagePrefaulter"/>). Null for the managed
+        /// backend, and where pages are too small for transparent huge pages or the kernel cannot populate memory.</summary>
+        readonly LogPagePrefaulter logPagePrefaulter;
+
         /// <summary>Set (under the owner's gate) when <see cref="Dispose"/> has disposed
         /// <see cref="nativeFreePagePool"/>. A block offered for recycling after this must be munmap'd directly
         /// rather than enqueued into the drained pool, which would silently leak it. See
@@ -625,6 +629,8 @@ namespace Tsavorite.core
             // were freed deterministically in ReturnPage (post-flush), so only the live tail pages reach here.
             if (nativeLog is not null)
             {
+                // A populate must not run against a block after it is handed off for unmapping.
+                logPagePrefaulter?.CancelAll();
                 nativeLog.HandOffInstalledBlocks();
                 nativeLog.HandOffDeferredBlocks();
 
@@ -847,6 +853,8 @@ namespace Tsavorite.core
                 {
                     nativeLog = new DirectVmBlockOwner(BufferSize);
                     nativeFreePagePool = new OverflowPool<DirectVmBlock>(NativeFreePagePoolSize, static block => DirectVirtualMemory.Free(block));
+                    if (LogPagePrefaulter.IsUseful(AlignedPageSizeBytes))
+                        logPagePrefaulter = new LogPagePrefaulter(BufferSize, AlignedPageSizeBytes);
                 }
             }
         }
@@ -988,7 +996,12 @@ namespace Tsavorite.core
                 // useNativeLogPages is captured at construction, so this possibly-concurrent path never re-reads the
                 // process-global flag.
                 if (!nativeFreePagePool.TryGet(out var block))
+                {
                     block = DirectVirtualMemory.Allocate(adjustedSize, sectorSize);
+                    // A pooled block was fully written by ClearPage, but a fresh one is unmapped until first touch. An allocator with a page
+                    // header writes it as it allocates the page, which faults in the start of the page on this thread.
+                    logPagePrefaulter?.MarkPending(index, block.AlignedPtr, firstChunkWritten: pageHeaderSize > 0);
+                }
                 else
                     _ = Interlocked.Increment(ref NativeLogPageReuseCount);
                 nativeLog.Blocks[index] = block;
@@ -1015,6 +1028,7 @@ namespace Tsavorite.core
             if (nativeLog is null)
                 return;
             _ = Interlocked.Increment(ref NativeLogPageFreeCount);
+            logPagePrefaulter?.Cancel(index);
             var block = nativeLog.Blocks[index];
             nativeLog.Blocks[index] = default;
 
@@ -1107,6 +1121,7 @@ namespace Tsavorite.core
                 int nextPageIndex = GetPageIndexForPage(tailPage + 1);
                 if (!IsAllocated(nextPageIndex))
                     _wrapper.AllocatePage(nextPageIndex);
+                EnsureTailPagePopulated(tailPage);
             }
 
             if (PreallocateLog)
@@ -1202,8 +1217,9 @@ namespace Tsavorite.core
                     local.Offset = 0;
                     break;
                 }
-                // Offset is being adjusted by overflow thread, spin-wait
-                _ = Thread.Yield();
+                // Offset is being adjusted by overflow thread: rather than spin, populate part of a fresh page ahead of the tail
+                if (logPagePrefaulter is null || !TryPopulateAheadOfTail())
+                    _ = Thread.Yield();
                 local = TailPageOffset;
             }
             return local;
@@ -1311,6 +1327,29 @@ namespace Tsavorite.core
             var nextPageIndex = (pageIndex + 1) % BufferSize;
             if (!IsAllocated(nextPageIndex))
                 _wrapper.AllocatePage(nextPageIndex);
+        }
+
+        /// <summary>
+        /// Make sure the page that the tail moves onto, <paramref name="page"/>, is populated before appenders use it, so they do not race each
+        /// other through first-touch faults (see <see cref="LogPagePrefaulter"/>).
+        /// </summary>
+        void EnsureTailPagePopulated(long page) => logPagePrefaulter?.EnsurePopulated(GetPageIndexForPage(page));
+
+        /// <summary>
+        /// Populate the chunks not yet claimed of the page allocated after <paramref name="page"/>, once the tail has moved onto
+        /// <paramref name="page"/> (see <see cref="LogPagePrefaulter"/>).
+        /// </summary>
+        void PopulateNextPage(long page) => logPagePrefaulter?.PopulateUnclaimed(GetPageIndexForPage(page + 1));
+
+        /// <summary>
+        /// Populate a chunk of the page the tail is turning onto, or else of the page after it, for a thread that would otherwise spin while it
+        /// waits for the page turn (see <see cref="LogPagePrefaulter"/>). False if neither has a chunk left to populate.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        bool TryPopulateAheadOfTail()
+        {
+            var page = TailPageOffset.Page;
+            return logPagePrefaulter.TryPopulateChunk(GetPageIndexForPage(page + 1)) || logPagePrefaulter.TryPopulateChunk(GetPageIndexForPage(page + 2));
         }
 
         /// <summary>
@@ -1580,9 +1619,10 @@ namespace Tsavorite.core
             // TsavoriteLog the filler must be an entry-length-prefixed record (or left as a zero tail), not a RecordInfo record. Deferred for now
             // (only exercised once a partialSlots caller wastes a sub-partialSlots tail; the AOF chunk writer's zero tails are already handled).
 
-            // Allocate next page and set new tail
+            // Allocate next page, finish populating the page the tail moves onto, and set new tail
             if (!IsAllocated(pageIndex % BufferSize) || !IsAllocated((pageIndex + 1) % BufferSize))
                 AllocatePagesWithException(pageIndex, localTailPageOffset, numSlots);
+            EnsureTailPagePopulated(pageIndex);
 
             // Set up the TailPageOffset to account for the page header and then this allocation.
             localTailPageOffset.Page++;
@@ -1597,6 +1637,9 @@ namespace Tsavorite.core
                 if (newReadOnlyAddress > ReadOnlyAddress)
                     _ = ShiftReadOnlyAddress(newReadOnlyAddress);
             }
+
+            // Now that the tail is stable again, populate what the waiting appenders left of the page allocated after the one the tail moved onto
+            PopulateNextPage(localTailPageOffset.Page);
 
             // At this point the slot is allocated and we are not allowed to refresh epochs any longer.
             // Return the first logical address after the page header.
@@ -1704,6 +1747,11 @@ namespace Tsavorite.core
             // already Set() and replaced (no further flush coming) but we still need to drain OnPagesClosed.
             _ = TryComplete();
             epoch.ProtectAndDrain();
+
+            // Rather than yield, populate part of a fresh page ahead of the tail; that takes longer than a yield, so retry at once
+            if (logPagePrefaulter is not null && TryPopulateAheadOfTail())
+                return;
+
             if (++spins < Constants.kFlushSpinCount)
             {
                 _ = Thread.Yield();
@@ -2179,6 +2227,7 @@ namespace Tsavorite.core
 
             // Allocate the current page and the next page (the allocate-ahead invariant) if necessary.
             AllocateCurrentAndNextPage(TailPageOffset.Page);
+            EnsureTailPagePopulated(TailPageOffset.Page);
 
             BeginAddress = beginAddress;
             HeadAddress = headAddress;
