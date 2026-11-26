@@ -66,6 +66,11 @@ namespace Tsavorite.core
         internal long AllocatorBeginAddress => allocator.BeginAddress;
 
         /// <summary>
+        /// The allocator, used in tests
+        /// </summary>
+        internal TsavoriteLogAllocatorImpl Allocator => allocator;
+
+        /// <summary>
         /// The allocator page that <paramref name="logicalAddress"/> maps to; used in tests to verify that TsavoriteLog uses the
         /// full logical-address range (no read-cache-bit masking), unlike the main-store allocators.
         /// </summary>

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -77,8 +78,8 @@ namespace Tsavorite.test.spanbyte
             try
             {
                 var prefaulter = new LogPagePrefaulter(pageCount: 2, PageSize);
-                prefaulter.MarkPending(0, populated.AlignedPtr);
-                prefaulter.MarkPending(1, cancelled.AlignedPtr);
+                prefaulter.MarkPending(0, populated.AlignedPtr, firstChunkWritten: false);
+                prefaulter.MarkPending(1, cancelled.AlignedPtr, firstChunkWritten: false);
 
                 prefaulter.EnsurePopulated(0);
                 prefaulter.Cancel(1);
@@ -97,25 +98,48 @@ namespace Tsavorite.test.spanbyte
 
         [Test]
         [Category(TsavoriteKVTestCategory)]
-        public void HelpPopulatesChunksInOrderUntilTheTargetIsClaimed()
+        public void ChunksArePopulatedInOrderOneAtATime()
         {
             var block = DirectVirtualMemory.Allocate(PageSize, OsPageSize);
             try
             {
                 var prefaulter = new LogPagePrefaulter(pageCount: 1, PageSize);
-                prefaulter.MarkPending(0, block.AlignedPtr);
+                prefaulter.MarkPending(0, block.AlignedPtr, firstChunkWritten: false);
 
-                prefaulter.Help(0, target: 3);
+                for (var i = 0; i < 3; i++)
+                    ClassicAssert.IsTrue(prefaulter.TryPopulateChunk(0));
                 ClassicAssert.AreEqual(3 * ChunkPages, ResidentPages(block.AlignedPtr, 3 * ChunkSize), "The first three chunks must be populated");
-                ClassicAssert.AreEqual(0, ResidentPages(block.AlignedPtr + 3 * ChunkSize, PageSize - 3 * ChunkSize), "Only the target must be claimed");
+                ClassicAssert.AreEqual(0, ResidentPages(block.AlignedPtr + 3 * ChunkSize, PageSize - 3 * ChunkSize), "Only three chunks must be populated");
                 ClassicAssert.IsTrue(prefaulter.IsPending(0));
 
-                // A target already claimed claims nothing more
-                prefaulter.Help(0, target: 2);
-                ClassicAssert.AreEqual(3 * ChunkPages, ResidentPages(block.AlignedPtr, PageSize));
-
-                prefaulter.EnsurePopulated(0);
+                prefaulter.PopulateUnclaimed(0);
                 ClassicAssert.AreEqual(PageSize / OsPageSize, ResidentPages(block.AlignedPtr, PageSize));
+                ClassicAssert.IsFalse(prefaulter.IsPending(0));
+                ClassicAssert.IsFalse(prefaulter.TryPopulateChunk(0), "No chunk must be left to populate");
+            }
+            finally
+            {
+                DirectVirtualMemory.Free(block);
+            }
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        public void AFirstChunkTheAllocatorWritesIsLeftToIt()
+        {
+            var block = DirectVirtualMemory.Allocate(PageSize, OsPageSize);
+            try
+            {
+                var prefaulter = new LogPagePrefaulter(pageCount: 1, PageSize);
+                prefaulter.MarkPending(0, block.AlignedPtr, firstChunkWritten: true);
+
+                ClassicAssert.IsTrue(prefaulter.TryPopulateChunk(0));
+                ClassicAssert.AreEqual(0, ResidentPages(block.AlignedPtr, ChunkSize), "The first chunk must be left to the allocating thread");
+                ClassicAssert.AreEqual(ChunkPages, ResidentPages(block.AlignedPtr + ChunkSize, ChunkSize), "The second chunk must be populated first");
+
+                prefaulter.PopulateUnclaimed(0);
+                ClassicAssert.AreEqual(0, ResidentPages(block.AlignedPtr, ChunkSize));
+                ClassicAssert.AreEqual(PageSize / OsPageSize - ChunkPages, ResidentPages(block.AlignedPtr + ChunkSize, PageSize - ChunkSize));
                 ClassicAssert.IsFalse(prefaulter.IsPending(0));
             }
             finally
@@ -126,20 +150,19 @@ namespace Tsavorite.test.spanbyte
 
         [Test]
         [Category(TsavoriteKVTestCategory)]
-        public void ConcurrentHelpersPopulateEveryChunk()
+        public void ConcurrentThreadsPopulateEveryChunk()
         {
             const long Length = 64 * ChunkSize;
             var block = DirectVirtualMemory.Allocate(Length, OsPageSize);
             try
             {
                 var prefaulter = new LogPagePrefaulter(pageCount: 1, Length);
-                prefaulter.MarkPending(0, block.AlignedPtr);
+                prefaulter.MarkPending(0, block.AlignedPtr, firstChunkWritten: false);
 
                 var threads = new Thread[8];
                 for (var t = 0; t < threads.Length; t++)
                 {
-                    var target = (t + 1) * 8;
-                    threads[t] = new Thread(() => prefaulter.Help(0, target));
+                    threads[t] = new Thread(() => prefaulter.PopulateUnclaimed(0));
                     threads[t].Start();
                 }
                 foreach (var thread in threads)
@@ -156,56 +179,124 @@ namespace Tsavorite.test.spanbyte
 
         [Test]
         [Category(TsavoriteKVTestCategory)]
-        public void PagesAreResidentBeforeAppendersFillThem()
+        public void PagesArePopulatedAtPageTurns()
         {
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
             using var store = CreateNativeStore(log);
             using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
             var hlog = store.hlogBase;
+
+            // Page 1 was allocated ahead of the tail with the store, and only its header has been written.
+            var page1 = hlog.GetPhysicalAddress(hlog.GetLogicalAddressOfStartOfPage(1));
+            ClassicAssert.LessOrEqual(ResidentPages(page1, PageSize), ChunkPages);
 
             var i = 0;
             while (hlog.GetPage(hlog.GetTailAddress()) < 1)
                 Upsert(bContext, i++);
 
             // The tail has just turned onto page 1: it must be populated in full even though appenders have written only its first record.
-            var page1 = hlog.GetPhysicalAddress(hlog.GetLogicalAddressOfStartOfPage(1));
             ClassicAssert.AreEqual(PageSize / OsPageSize, ResidentPages(page1, PageSize), "The page the tail turns onto must be populated");
 
-            // Page 2 was allocated ahead of the tail; the page turn populated its first chunks, and no appender has touched it.
+            // Page 2 was allocated ahead of the tail at the turn, and the thread that turned the tail populated it.
             var page2 = hlog.GetPhysicalAddress(hlog.GetLogicalAddressOfStartOfPage(2));
-            ClassicAssert.AreEqual(LogPagePrefaulter.Lead * ChunkPages, ResidentPages(page2, PageSize), "The page turn must start populating the next page");
-
-            // Each allocation that crosses into another chunk of page 1 populates one more chunk of page 2.
-            for (var chunk = 1; chunk <= PageSize / ChunkSize - LogPagePrefaulter.Lead; chunk++)
-            {
-                while (hlog.GetOffsetOnPage(hlog.GetTailAddress()) < chunk * ChunkSize)
-                    Upsert(bContext, i++);
-                ClassicAssert.AreEqual((chunk + LogPagePrefaulter.Lead) * ChunkPages, ResidentPages(page2, PageSize), $"after the tail crossed into chunk {chunk}");
-            }
-            ClassicAssert.AreEqual(PageSize / OsPageSize, ResidentPages(page2, PageSize), "The next page must be populated before the tail reaches the end of the page");
+            ClassicAssert.AreEqual(PageSize / OsPageSize, ResidentPages(page2, PageSize), "The page turn must populate the next page");
         }
 
+        /// <summary>
+        /// A store operation reads the tail before it allocates, so while a page turn is in progress it waits for the tail to settle.
+        /// </summary>
         [Test]
         [Category(TsavoriteKVTestCategory)]
-        public void ThePageTurnPopulatesTheChunksAppendersLeft()
+        public void AnOperationWaitingForAPageTurnPopulatesAheadOfTheTail()
         {
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
             using var store = CreateNativeStore(log);
-            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
-            var bContext = session.BasicContext;
             var hlog = store.hlogBase;
-
-            // Records of 5.5 MB cross into chunks 2 and 5 of page 0, claiming chunks 0-6 of page 1, and the third does not fit, so no allocation
-            // on page 0 claims chunk 7.
-            var value = new int[(int)(11 * ChunkSize / 4 / sizeof(int))];
-            for (var i = 0; i < 3; i++)
-                Upsert(bContext, i, value);
-            ClassicAssert.AreEqual(1, hlog.GetPage(hlog.GetTailAddress()));
-
-            // The first record on page 1 writes only its first three chunks.
             var page1 = hlog.GetPhysicalAddress(hlog.GetLogicalAddressOfStartOfPage(1));
-            ClassicAssert.AreEqual(PageSize / OsPageSize, ResidentPages(page1, PageSize), "The page turn must populate the chunk no appender claimed");
+
+            // Hold the tail as if a page turn were in progress, so that an allocation waits for it.
+            var tail = hlog.TailPageOffset;
+            var turning = tail;
+            turning.Offset = (int)PageSize + 1;
+            _ = Interlocked.Exchange(ref hlog.TailPageOffset.PageAndOffset, turning.PageAndOffset);
+
+            var upsert = new Thread(() =>
+            {
+                using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+                Upsert(session.BasicContext, 0);
+            });
+            upsert.Start();
+            try
+            {
+                var sw = Stopwatch.StartNew();
+                while (ResidentPages(page1, PageSize) < PageSize / OsPageSize)
+                {
+                    ClassicAssert.Less(sw.Elapsed, TimeSpan.FromSeconds(30), "The waiting allocation did not populate the page ahead of the tail");
+                    Thread.Sleep(1);
+                }
+            }
+            finally
+            {
+                _ = Interlocked.Exchange(ref hlog.TailPageOffset.PageAndOffset, tail.PageAndOffset);
+                upsert.Join();
+            }
+        }
+
+        /// <summary>
+        /// An allocation that finds a page turn in progress, such as one that reached the end of the page just after the thread turning it,
+        /// retries until the turn is done.
+        /// </summary>
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        public void AnAllocationRetryingDuringAPageTurnPopulatesAheadOfTheTail()
+        {
+            _ = NativeAllocatorInitializer.Initialize(true);
+            using var device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "log.log"), deleteOnClose: true);
+            using var log = new TsavoriteLog(new TsavoriteLogSettings
+            {
+                LogDevice = device,
+                PageSize = PageSize,
+                MemorySize = PageSize * 8,
+                SegmentSizeBits = 30,
+                LogCommitDir = MethodTestDir
+            });
+            var allocator = log.Allocator;
+            var page1 = allocator.GetPhysicalAddress(allocator.GetLogicalAddressOfStartOfPage(1));
+
+            // Hold the tail as if a page turn were in progress, so that an allocation retries.
+            var tail = allocator.TailPageOffset;
+            var turning = tail;
+            turning.Offset = (int)PageSize + 1;
+            _ = Interlocked.Exchange(ref allocator.TailPageOffset.PageAndOffset, turning.PageAndOffset);
+
+            var append = new Thread(() =>
+            {
+                allocator.epoch.Resume();
+                try
+                {
+                    ClassicAssert.IsTrue(allocator.TryAllocateRetryNow(64, out _));
+                }
+                finally
+                {
+                    allocator.epoch.Suspend();
+                }
+            });
+            append.Start();
+            try
+            {
+                var sw = Stopwatch.StartNew();
+                while (ResidentPages(page1, PageSize) < PageSize / OsPageSize)
+                {
+                    ClassicAssert.Less(sw.Elapsed, TimeSpan.FromSeconds(30), "The retrying allocation did not populate the page ahead of the tail");
+                    Thread.Sleep(1);
+                }
+            }
+            finally
+            {
+                _ = Interlocked.Exchange(ref allocator.TailPageOffset.PageAndOffset, tail.PageAndOffset);
+                append.Join();
+            }
         }
 
         static TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> CreateNativeStore(IDevice log)
@@ -224,13 +315,8 @@ namespace Tsavorite.test.spanbyte
 
         static void Upsert(BasicContext<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext, int k)
         {
-            Span<int> value = stackalloc int[256];
-            Upsert(bContext, k, value);
-        }
-
-        static void Upsert(BasicContext<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext, int k, ReadOnlySpan<int> value)
-        {
             Span<int> key = [k];
+            Span<int> value = stackalloc int[256];
             _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(key)), MemoryMarshal.Cast<int, byte>(value), Empty.Default);
         }
     }

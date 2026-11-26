@@ -209,12 +209,12 @@ Heap regardless of this setting.)
   the network pool's size classes and the sector-aligned IO/flush buffer pool remain managed in this release.)
 
 On Linux 5.14 and later, each 2&#160;MB huge page of a fresh log page is faulted in by one thread before appenders
-reach it (`madvise(MADV_POPULATE_WRITE)`). Appenders populate the page allocated ahead of the tail as they fill
-the current one: an allocation that crosses into another 2&#160;MB of the current page populates one more 2&#160;MB of
-the next, and the thread that moves the tail onto a page finishes populating it if needed. No thread or memory
-allocation is involved. Otherwise every appender crossing into the page would fault on the same huge page at
-once, and the kernel would allocate and zero a 2&#160;MB page for each of them only to keep one. On older kernels
-pages are faulted in on first touch.
+reach it (`madvise(MADV_POPULATE_WRITE)`). This is done cooperatively at page turns: threads waiting for the
+tail to move onto the next page each populate 2&#160;MB of the page allocated after it, the thread that moved the
+tail populates what is left, and the thread moving the tail onto a page first finishes populating it. No thread
+or memory allocation is involved, and allocations within a page cost nothing more. Otherwise every appender
+crossing into the page would fault on the same huge page at once, and the kernel would allocate and zero a
+2&#160;MB page for each of them only to keep one. On older kernels pages are faulted in on first touch.
 
 ### Large network receive buffers
 

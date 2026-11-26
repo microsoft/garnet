@@ -14,11 +14,11 @@ namespace Tsavorite.core
     /// thread but one then discards its page, so most of the fault work is wasted.
     /// </para>
     /// <para>
-    /// Instead, the appenders populate the page allocated ahead of the tail as they fill the current one, one 2 MB chunk (one huge page) at a
-    /// time: an allocation that crosses into chunk <c>k</c> of the current page makes sure the first <c>k + </c><see cref="Lead"/> chunks of
-    /// the next page are claimed, populating any it claims itself. A chunk is claimed by exactly one thread, so no two threads fault in the same
-    /// huge page, and the work is spread over the appenders as they cross chunk boundaries, with no thread or allocation of its own. The thread
-    /// that turns the tail onto a page populates any chunk not yet claimed, and waits for any still being populated, before appenders use it.
+    /// Instead, pages are populated cooperatively at page turns, one 2 MB chunk (one huge page) at a time, so that an allocation within a page
+    /// costs nothing more. Threads that find the tail turning, and would otherwise spin until it has, each populate a chunk of the page
+    /// allocated ahead of the tail; once the tail has moved, the thread that turned it populates the chunks left; and before the tail moves
+    /// onto a page, the thread turning it populates any chunk still not claimed and waits for those being populated. A chunk is claimed by
+    /// exactly one thread, so no two threads fault in the same huge page, and the work needs no thread or allocation of its own.
     /// </para>
     /// <para>
     /// Each circular-buffer slot has a state word: the number of chunks not yet claimed in the upper half and the number being populated in the
@@ -28,14 +28,8 @@ namespace Tsavorite.core
     internal sealed class LogPagePrefaulter
     {
         /// <summary>Log2 of the bytes populated at once: one transparent huge page.</summary>
-        internal const int ChunkBits = 21;
+        const int ChunkBits = 21;
         const long ChunkSize = 1L << ChunkBits;
-
-        /// <summary>
-        /// Chunks of the next page claimed ahead of the chunk of the current page the appenders have reached, so that the last ones have finished
-        /// populating by the time the current page is full.
-        /// </summary>
-        internal const int Lead = 2;
 
         const long OneUnclaimed = 1L << 32;
         const long RunningMask = OneUnclaimed - 1;
@@ -65,37 +59,49 @@ namespace Tsavorite.core
         /// Record that the fresh page at <paramref name="pageAddress"/>, installed in slot <paramref name="index"/>, is unpopulated. Any earlier
         /// page in the slot has been cancelled or populated.
         /// </summary>
-        internal void MarkPending(int index, long pageAddress)
+        /// <param name="index">Circular-buffer slot.</param>
+        /// <param name="pageAddress">Address of the page.</param>
+        /// <param name="firstChunkWritten">Whether the allocating thread writes the start of the page, such as a page header, faulting in the
+        /// first chunk itself. That chunk is then left out, so that no other thread populates it at the same time.</param>
+        internal void MarkPending(int index, long pageAddress, bool firstChunkWritten)
         {
             address[index] = pageAddress;
-            Volatile.Write(ref state[index], (long)chunkCount * OneUnclaimed);
+            Volatile.Write(ref state[index], (chunkCount - (firstChunkWritten ? 1L : 0L)) * OneUnclaimed);
         }
 
         /// <summary>
-        /// Populate chunks of the page in slot <paramref name="index"/>, in order, until at least <paramref name="target"/> of them have been
-        /// claimed. Returns at once if they have been, or nothing is pending.
+        /// Populate the next chunk of the page in slot <paramref name="index"/> not yet claimed. False if every chunk is claimed, or nothing is pending.
         /// </summary>
-        internal void Help(int index, int target)
+        internal bool TryPopulateChunk(int index)
         {
             while (true)
             {
                 var current = Volatile.Read(ref state[index]);
                 var unclaimed = (int)(current >> 32);
-                if (unclaimed == 0 || chunkCount - unclaimed >= target)
-                    return;
+                if (unclaimed == 0)
+                    return false;
                 if (Interlocked.CompareExchange(ref state[index], current - OneUnclaimed + 1, current) != current)
                     continue;
 
                 var offset = (long)(chunkCount - unclaimed) << ChunkBits;
                 DirectVirtualMemory.Populate((nint)(Volatile.Read(ref address[index]) + offset), Math.Min(ChunkSize, length - offset));
                 _ = Interlocked.Decrement(ref state[index]);
+                return true;
+            }
+        }
+
+        /// <summary>Populate every chunk of the page in slot <paramref name="index"/> not yet claimed.</summary>
+        internal void PopulateUnclaimed(int index)
+        {
+            while (TryPopulateChunk(index))
+            {
             }
         }
 
         /// <summary>Return once slot <paramref name="index"/> is populated, populating here any chunk not yet claimed.</summary>
         internal void EnsurePopulated(int index)
         {
-            Help(index, chunkCount);
+            PopulateUnclaimed(index);
             WaitForRunning(index);
         }
 
