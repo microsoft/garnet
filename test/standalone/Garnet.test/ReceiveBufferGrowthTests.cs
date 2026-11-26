@@ -11,6 +11,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.networking;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -142,9 +143,9 @@ namespace Garnet.test
         }
 
         /// <summary>Reads a byte counter from the server's network buffer pool, which BPSTATS formats with a unit.</summary>
-        static long PoolCounterBytes(string name)
+        static long PoolCounterBytes(string name, bool useTls = false)
         {
-            using var connection = new Connection(useTls: false);
+            using var connection = new Connection(useTls);
             connection.Send(Command("INFO", "BPSTATS"));
             var stats = Encoding.ASCII.GetString(connection.ReadBulkString());
             var start = stats.IndexOf(name + "=", stats.IndexOf("server_socket_0:", StringComparison.Ordinal), StringComparison.Ordinal) + name.Length + 1;
@@ -276,6 +277,18 @@ namespace Garnet.test
             ClassicAssert.Less(live, 512 * MB, $"the receive buffer grew more than 2x past 128 MB ({live} bytes live)");
         }
 
+        /// <summary>Waits for the server's network buffers to hold less than <paramref name="limit"/> bytes.</summary>
+        static void WaitForLiveBytesBelow(long limit, bool useTls, string message)
+        {
+            var elapsed = Stopwatch.StartNew();
+            long live;
+            while ((live = PoolCounterBytes("liveBytes", useTls)) >= limit)
+            {
+                ClassicAssert.Less(elapsed.Elapsed, TimeSpan.FromSeconds(10), $"{message} ({live} bytes live)");
+                Thread.Sleep(10);
+            }
+        }
+
         /// <summary>
         /// A buffer that is mostly empty is kept for the message whose start it holds, but only up to the size growth from the bytes buffered
         /// would reach. Otherwise the start of the next message after a large one, declaring a length it never sends, keeps the large buffer.
@@ -286,19 +299,47 @@ namespace Garnet.test
             StartServer(useTls: false);
             const long MB = 1024 * 1024;
 
-            // A SET that grows the buffer to 8 MB, followed in the same write by the header of a 100 MB SET that never arrives
+            // A SET that grows the buffer to 8 MB, then the header of a 100 MB SET that never arrives. The SET's final CRLF is sent in one small
+            // write with the header, so the server receives them together, the header buffered when the SET completes.
             using var connection = new Connection(useTls: false);
-            byte[] set = Command(Encoding.ASCII.GetBytes("SET"), Encoding.ASCII.GetBytes("large"), LargeValue());
-            connection.Send([.. set, .. Encoding.ASCII.GetBytes($"*3\r\n$3\r\nSET\r\n$1\r\nk\r\n${100 * MB}\r\n")]);
+            var set = Command(Encoding.ASCII.GetBytes("SET"), Encoding.ASCII.GetBytes("large"), LargeValue());
+            connection.Send(set[..^2]);
+            connection.Send([.. "\r\n"u8, .. Encoding.ASCII.GetBytes($"*3\r\n$3\r\nSET\r\n$1\r\nk\r\n${100 * MB}\r\n")]);
             ClassicAssert.AreEqual("+OK", connection.ReadLine());
 
-            var elapsed = Stopwatch.StartNew();
-            long live;
-            while ((live = PoolCounterBytes("liveBytes")) >= 4 * MB)
-            {
-                ClassicAssert.Less(elapsed.Elapsed, TimeSpan.FromSeconds(10), $"the 8 MB receive buffer was kept ({live} bytes live)");
-                Thread.Sleep(10);
-            }
+            WaitForLiveBytesBelow(4 * MB, useTls: false, "the 8 MB receive buffer was kept");
+        }
+
+        [TestCase(100L << 20, 1 << 20, 8L << 20, Description = "A buffer grown 8x from full keeps its size")]
+        [TestCase(100L << 20, (512 << 10) + 1, 4L << 20, Description = "Bytes that fill a 512 KB buffer, but not 1 MB, keep 8x 512 KB")]
+        [TestCase(100L << 20, 40, 256L, Description = "The start of a message keeps 8x the bytes it has sent")]
+        [TestCase(6L << 20, 4 << 20, 8L << 20, Description = "No more than holds the message")]
+        [TestCase(300L << 20, 128 << 20, 256L << 20, Description = "Past 128 MB, 2x")]
+        public void APendingMessageKeepsNoMoreThanGrowthFromItsBufferedBytesWouldReach(long required, int buffered, long floor)
+            => ClassicAssert.AreEqual(floor, DeclaredLengthGrowth.PendingMessageFloor(required, buffered));
+
+        /// <summary>
+        /// Over TLS, a read that fills the buffer is followed by another, which waits for the next message. A message that exactly fills a large
+        /// buffer must not leave it held by that read while the connection is idle.
+        /// </summary>
+        [Test]
+        public void AMessageThatExactlyFillsALargeTlsReceiveBufferDoesNotKeepIt()
+        {
+            StartServer(useTls: true);
+            const int MB = 1024 * 1024;
+
+            // A SET whose encoding is exactly 8 MB, the size the buffer grows to for it
+            var length = 8 * MB;
+            byte[] set;
+            while ((set = Command(Encoding.ASCII.GetBytes("SET"), Encoding.ASCII.GetBytes("large"), new byte[length])).Length > 8 * MB)
+                length -= set.Length - 8 * MB;
+            ClassicAssert.AreEqual(8 * MB, set.Length);
+
+            using var connection = new Connection(useTls: true);
+            connection.Send(set);
+            ClassicAssert.AreEqual("+OK", connection.ReadLine());
+
+            WaitForLiveBytesBelow(4 * MB, useTls: true, "the 8 MB receive buffer was kept by the read that followed the message");
         }
 
         /// <summary>

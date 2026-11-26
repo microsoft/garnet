@@ -571,10 +571,7 @@ namespace Garnet.networking
             if (required <= target)
                 return target;
 
-            // Hold no more than growing a full buffer of the buffered bytes would reach, so that a length declared by a message that has
-            // barely started, such as the next one after a large message, cannot keep a large buffer.
-            var floor = Math.Min((long)BitOperations.RoundUpToPowerOf2((ulong)required), DeclaredGrowthLimit(BitOperations.RoundUpToPowerOf2((uint)buffered)));
-            return (int)Math.Min(Math.Max(floor, target), current);
+            return (int)Math.Min(Math.Max(DeclaredLengthGrowth.PendingMessageFloor(required, buffered), target), current);
         }
 
         /// <summary>
@@ -832,8 +829,8 @@ namespace Garnet.networking
         /// <summary>
         /// Size to grow a full receive buffer of <paramref name="currentSize"/> bytes to. Doubles, unless the session can tell from the unparsed
         /// bytes that the message being received needs more, in which case the buffer grows toward the power of two that holds it by up to
-        /// <see cref="FastReceiveBufferGrowthFactor"/> at once while below <see cref="FastReceiveBufferGrowthLimit"/>, rather than through every
-        /// size between, each a fresh allocation and copy.
+        /// <see cref="DeclaredLengthGrowth.FastGrowthFactor"/> at once while below <see cref="DeclaredLengthGrowth.FastGrowthLimit"/>, rather
+        /// than through every size between, each a fresh allocation and copy.
         /// </summary>
         /// <param name="currentSize">Size of the full buffer.</param>
         /// <param name="plaintext">The unparsed bytes at the head of the buffer, or null when the buffer holds ciphertext.</param>
@@ -842,35 +839,17 @@ namespace Garnet.networking
         {
             RespParsingException.ThrowIfReceiveBufferLimitExceeded(currentSize);
             var newSize = 2L * currentSize;
-            if (plaintext != null && session != null && currentSize < FastReceiveBufferGrowthLimit)
+            if (plaintext != null && session != null && currentSize < DeclaredLengthGrowth.FastGrowthLimit)
             {
                 var required = session.GetRequiredReceiveBufferSize(plaintext, buffered);
                 if (required > newSize)
                 {
                     RespParsingException.ThrowIfMessageExceedsReceiveBufferLimit(required);
-                    newSize = Math.Max(newSize, Math.Min((long)BitOperations.RoundUpToPowerOf2((ulong)required), DeclaredGrowthLimit(currentSize)));
+                    newSize = Math.Max(newSize, Math.Min((long)BitOperations.RoundUpToPowerOf2((ulong)required), DeclaredLengthGrowth.Limit(currentSize)));
                 }
             }
             return (int)Math.Min(newSize, RespLimits.MaxReceiveBufferBytes);
         }
-
-        /// <summary>
-        /// Largest size a full receive buffer of <paramref name="size"/> bytes grows to at once toward the size a message declares.
-        /// </summary>
-        static long DeclaredGrowthLimit(long size)
-            => size < FastReceiveBufferGrowthLimit ? Math.Min(FastReceiveBufferGrowthFactor * size, FastReceiveBufferGrowthLimit) : 2 * size;
-
-        /// <summary>
-        /// Largest factor by which a full receive buffer grows at once toward the size a message declares. A declared length costs nothing to
-        /// send, so this keeps the buffer within this factor of the bytes the client has actually sent (the buffer being full).
-        /// </summary>
-        const long FastReceiveBufferGrowthFactor = 8;
-
-        /// <summary>
-        /// Size up to which a receive buffer grows by <see cref="FastReceiveBufferGrowthFactor"/> toward the size a message declares; beyond
-        /// it, the buffer doubles as the bytes arrive.
-        /// </summary>
-        const long FastReceiveBufferGrowthLimit = 128L << 20;
 
         /// <summary>
         /// Get a receive buffer of <paramref name="size"/> bytes: a pinned array from the pool within its size classes, and native memory above
@@ -1014,7 +993,8 @@ namespace Garnet.networking
         /// A read that filled the buffer may have stopped short of the end of a TLS record, leaving decrypted
         /// plaintext inside <see cref="SslStream"/> with no further ciphertext to trigger another receive, so
         /// the reader re-reads even when processing consumed every byte. The buffer doubles only when unparsed
-        /// bytes still fill it.
+        /// bytes still fill it; otherwise the shrink policy applies first, so that the re-read, which may wait
+        /// indefinitely, does not hold a buffer the connection no longer needs.
         /// </summary>
         /// <param name="transportDemand">Bytes the buffer held before processing.</param>
         /// <returns>True if the reader must issue another read before resting.</returns>
@@ -1026,11 +1006,9 @@ namespace Garnet.networking
                 return true;
             }
 
-            if (transportDemand == transportReceiveBufferLength)
-                return true;
-
+            var filled = transportDemand == transportReceiveBufferLength;
             TryShrinkTransportReceiveBuffer(transportDemand);
-            return false;
+            return filled;
         }
 
         /// <summary>
