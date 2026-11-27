@@ -1430,7 +1430,13 @@ namespace Garnet.server
         /// Subsequent calls will return false.
         /// </summary>
         public bool TryKill()
-        => networkSender.TryClose();
+        {
+            var killed = networkSender.TryClose();
+
+            // A blocked WAIT holds the receive loop, so it would not observe the closed connection on its own
+            _ = TryUnblockWait(withError: false);
+            return killed;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe bool Write(ref Status s, ref byte* dst, int length)

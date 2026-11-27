@@ -28,6 +28,11 @@ namespace Garnet.cluster
             TsavoriteLogScanSingleIterator iter;
             long previousAddress;
 
+            // Address up to which records have been flushed to the replica connection. Unlike previousAddress, which
+            // advances as soon as a chunk is buffered, this advances only after the buffer is sent. Read cross-thread,
+            // so access via Volatile.
+            long sentAddress;
+
             readonly bool timePulseEnabled;
             readonly GarnetAppendOnlyFile appendOnlyFile;
             readonly TsavoriteLog physicalSublog;
@@ -64,6 +69,11 @@ namespace Garnet.cluster
             /// Return previous address for this AofSyncTask
             /// </summary>
             public long PreviousAddress => previousAddress;
+
+            /// <summary>
+            /// Address up to which records have been flushed to the replica connection
+            /// </summary>
+            public long SentAddress => Volatile.Read(ref sentAddress);
 
             /// <summary>
             /// Monotonic high-water address this task has shipped/scanned past, published to the
@@ -110,6 +120,7 @@ namespace Garnet.cluster
                 this.physicalSublogIdx = physicalSublogIdx;
                 this.startAddress = startAddress;
                 previousAddress = startAddress;
+                sentAddress = startAddress;
                 this.localNodeId = localNodeId;
                 this.remoteNodeId = remoteNodeId;
                 this.cts = cts;
@@ -232,6 +243,7 @@ namespace Garnet.cluster
 
                 // Trigger flush while we are out of epoch protection
                 garnetClient.CompletePending(false);
+                Volatile.Write(ref sentAddress, previousAddress);
                 garnetClient.Throttle();
 
                 // Refresh the shipped watermark in the backpressure gate outside epoch protection.

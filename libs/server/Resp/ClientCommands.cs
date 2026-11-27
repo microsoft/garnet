@@ -621,6 +621,13 @@ namespace Garnet.server
                     return true;
                 }
 
+                if (session.TryUnblockWait(toThrowError))
+                {
+                    while (!RespWriteUtils.TryWriteInt32(1, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
                 if (session.storeWrapper?.itemBroker is not null)
                 {
                     var isBlocked = session.storeWrapper.itemBroker.TryGetObserver(session.ObjectStoreSessionID, out var observer);

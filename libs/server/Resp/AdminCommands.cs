@@ -23,7 +23,14 @@ namespace Garnet.server
     {
         internal int noScriptStart;
         internal ulong[] noScriptBitmap;
+
+        const int WaitIdle = 0;
+        const int WaitBlocked = 1;
+        const int WaitUnblocked = 2;
+        const int WaitUnblockedWithError = 3;
+
         CancellationTokenSource waitCts;
+        int waitState;
 
         private void ProcessAdminCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi) where TGarnetApi : IGarnetApi
         {
@@ -689,7 +696,9 @@ namespace Garnet.server
 
             if (replicas < numReplicas && CanBlock)
             {
-                waitCts ??= new CancellationTokenSource();
+                if (waitCts == null || waitCts.IsCancellationRequested)
+                    waitCts = new CancellationTokenSource();
+                Volatile.Write(ref waitState, WaitBlocked);
 
                 // Release the cluster epoch so configuration changes such as failover are not held up by the wait
                 clusterSession?.ReleaseCurrentEpoch();
@@ -698,18 +707,54 @@ namespace Garnet.server
                     if (clusterEnabled)
                         replicas = AsyncUtils.BlockingWait(storeWrapper.clusterProvider.WaitForSyncedReplicasAsync(target, numReplicas, timeout, waitCts.Token));
                     else
-                        _ = waitCts.Token.WaitHandle.WaitOne(timeout == 0 || timeout > int.MaxValue ? Timeout.Infinite : (int)timeout);
+                        WaitForTimeout(timeout, waitCts.Token);
                 }
                 finally
                 {
                     clusterSession?.AcquireCurrentEpoch();
                 }
+
+                if (Interlocked.Exchange(ref waitState, WaitIdle) == WaitUnblockedWithError)
+                    return AbortWithErrorMessage(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK);
             }
 
             while (!RespWriteUtils.TryWriteInt32(replicas, ref dcurr, dend))
                 SendAndReset();
 
             return true;
+        }
+
+        /// <summary>
+        /// Unblocks this session if it is blocked in WAIT
+        /// </summary>
+        /// <param name="withError">Whether WAIT replies with an error instead of the current replica count</param>
+        /// <returns>True if a blocked WAIT was unblocked</returns>
+        internal bool TryUnblockWait(bool withError)
+        {
+            if (Interlocked.CompareExchange(ref waitState, withError ? WaitUnblockedWithError : WaitUnblocked, WaitBlocked) != WaitBlocked)
+                return false;
+
+            waitCts.Cancel();
+            return true;
+        }
+
+        private static void WaitForTimeout(long timeout, CancellationToken token)
+        {
+            if (timeout == 0)
+            {
+                _ = token.WaitHandle.WaitOne();
+                return;
+            }
+
+            var now = Environment.TickCount64;
+            var deadline = timeout > long.MaxValue - now ? long.MaxValue : now + timeout;
+            while (!token.IsCancellationRequested)
+            {
+                var remaining = deadline - Environment.TickCount64;
+                if (remaining <= 0)
+                    return;
+                _ = token.WaitHandle.WaitOne((int)Math.Min(remaining, int.MaxValue));
+            }
         }
 
         private bool NetworkHCOLLECT<TGarnetApi>(ref TGarnetApi storageApi)

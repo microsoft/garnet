@@ -69,6 +69,20 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Return the address up to which records have been flushed to the replica, for every sublog
+        /// </summary>
+        public AofAddress SentAddress
+        {
+            get
+            {
+                var sentAddress = AofAddress.Create(aofSyncTasks.Length, 0);
+                for (var i = 0; i < aofSyncTasks.Length; i++)
+                    sentAddress[i] = aofSyncTasks[i].SentAddress;
+                return sentAddress;
+            }
+        }
+
+        /// <summary>
         /// Return previous address for a specific sublog without copying the full AofAddress struct.
         /// This is the address actually shipped (Consume'd) to the replica, used to bound AOF
         /// truncation conservatively.

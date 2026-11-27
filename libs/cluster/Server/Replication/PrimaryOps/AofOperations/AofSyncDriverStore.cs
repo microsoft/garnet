@@ -223,7 +223,7 @@ namespace Garnet.cluster
                 for (var i = 0; i < numDrivers; i++)
                 {
                     var cr = syncDrivers[i];
-                    if (cr.IsConnected && !cr.PreviousAddress.AnyLesser(address))
+                    if (cr.IsConnected && !cr.SentAddress.AnyLesser(address))
                         count++;
                 }
             }

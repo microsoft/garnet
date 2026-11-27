@@ -515,7 +515,7 @@ The command returns the number of replicas reached, whether the requested number
 
 A replica counts as reached once the primary has sent it the AOF up to the point where `WAIT` was called. Replicas do not acknowledge what they receive, so the count reflects data sent to the replica rather than data it has applied.
 
-Inside a transaction or a script, `WAIT` does not block and returns the current count. Calling `WAIT` on a replica returns an error.
+Inside a transaction or a script, `WAIT` does not block and returns the current count. A blocked `WAIT` can be ended early with `CLIENT UNBLOCK`, which makes it return the current count, or an error when `ERROR` is given. Calling `WAIT` on a replica returns an error.
 
 #### Resp Reply
 
