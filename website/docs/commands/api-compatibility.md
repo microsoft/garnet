@@ -154,7 +154,7 @@ Legend: ➕ = supported, ➖ = not supported.
 |  | [TTL](generic-commands.md#ttl) | ➕ |  |
 |  | [TYPE](generic-commands.md#type) | ➕ |  |
 |  | [UNLINK](generic-commands.md#unlink) | ➕ |  |
-|  | WAIT | ➖ |  |
+|  | [WAIT](generic-commands.md#wait) | ➕ | Counts replicas the writes were sent to, since replicas do not acknowledge them. |
 |  | WAITAOF | ➖ |  |
 | <span id="geo">**GEO**</span> | [GEOADD](data-structures.md#geoadd) | ➕ |  |
 |  | [GEODIST](data-structures.md#geodist) | ➕ |  |

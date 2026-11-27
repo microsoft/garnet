@@ -207,6 +207,34 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Count the connected replicas that have been sent the AOF up to the provided address on every sublog
+        /// </summary>
+        /// <param name="address">AOF address to compare against</param>
+        /// <returns>Number of connected replicas at or past the address</returns>
+        public int CountReplicasSentUntil(in AofAddress address)
+        {
+            var count = 0;
+
+            _lock.ReadLock();
+            try
+            {
+                if (_disposed) return count;
+
+                for (var i = 0; i < numDrivers; i++)
+                {
+                    var cr = syncDrivers[i];
+                    if (cr.IsConnected && !cr.PreviousAddress.AnyLesser(address))
+                        count++;
+                }
+            }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
+            return count;
+        }
+
+        /// <summary>
         /// Publish one physical sublog's minimum shipped address across all attached replicas into
         /// the AOF backpressure gate (long.MaxValue when none is attached, which releases it). A
         /// sync task calls this for its own sublog as it ships, so only the watermark of the sublog

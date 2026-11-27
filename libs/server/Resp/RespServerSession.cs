@@ -449,6 +449,7 @@ namespace Garnet.server
             // completion records into those arrays, and they go back to a shared pool.
             asyncWaiterCancel?.Cancel();
             asyncWaiter?.Signal();
+            waitCts?.Cancel();
 
             if (storeWrapper.monitor != null)
                 storeWrapper.monitor.AddMetricsHistorySessionDispose(sessionMetrics, LatencyMetrics, commandStats);

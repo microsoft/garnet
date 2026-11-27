@@ -311,6 +311,7 @@ namespace Garnet.server
             Add("LASTSAVE", RespCommand.LASTSAVE);
             Add("BGSAVE", RespCommand.BGSAVE);
             Add("COMMITAOF", RespCommand.COMMITAOF);
+            Add("WAIT", RespCommand.WAIT);
             Add("FLUSHALL", RespCommand.FLUSHALL);
             Add("FLUSHDB", RespCommand.FLUSHDB);
             Add("FAILOVER", RespCommand.FAILOVER);

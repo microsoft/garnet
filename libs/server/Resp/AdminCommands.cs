@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server.Custom;
@@ -22,6 +23,7 @@ namespace Garnet.server
     {
         internal int noScriptStart;
         internal ulong[] noScriptBitmap;
+        CancellationTokenSource waitCts;
 
         private void ProcessAdminCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi) where TGarnetApi : IGarnetApi
         {
@@ -59,6 +61,7 @@ namespace Garnet.server
                 RespCommand.LASTSAVE => NetworkLASTSAVE(),
                 RespCommand.BGSAVE => NetworkBGSAVE(),
                 RespCommand.COMMITAOF => NetworkCOMMITAOF(),
+                RespCommand.WAIT => NetworkWAIT(),
                 RespCommand.HCOLLECT => NetworkHCOLLECT(ref storageApi),
                 RespCommand.ZCOLLECT => NetworkZCOLLECT(ref storageApi),
                 RespCommand.MONITOR => NetworkMonitor(),
@@ -650,6 +653,60 @@ namespace Garnet.server
             _ = AsyncUtils.BlockingWait(CommitAofAsync(dbId));
 
             while (!RespWriteUtils.TryWriteSimpleString("AOF file committed"u8, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
+        /// WAIT numreplicas timeout
+        /// </summary>
+        /// <returns></returns>
+        private bool NetworkWAIT()
+        {
+            if (parseState.Count != 2)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.WAIT));
+            }
+
+            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica())
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_WAIT_REPLICA);
+
+            if (!parseState.TryGetLong(0, out var numReplicas))
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+
+            if (!parseState.TryGetLong(1, out var timeout))
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_INTEGER);
+
+            if (timeout < 0)
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_IS_NEGATIVE);
+
+            var clusterEnabled = storeWrapper.serverOptions.EnableCluster;
+
+            // The AOF tail covers every write this session issued before WAIT
+            var target = storeWrapper.appendOnlyFile?.Log.TailAddress ?? default;
+            var replicas = clusterEnabled ? storeWrapper.clusterProvider.GetSyncedReplicaCount(in target) : 0;
+
+            if (replicas < numReplicas && CanBlock)
+            {
+                waitCts ??= new CancellationTokenSource();
+
+                // Release the cluster epoch so configuration changes such as failover are not held up by the wait
+                clusterSession?.ReleaseCurrentEpoch();
+                try
+                {
+                    if (clusterEnabled)
+                        replicas = AsyncUtils.BlockingWait(storeWrapper.clusterProvider.WaitForSyncedReplicasAsync(target, numReplicas, timeout, waitCts.Token));
+                    else
+                        _ = waitCts.Token.WaitHandle.WaitOne(timeout == 0 || timeout > int.MaxValue ? Timeout.Infinite : (int)timeout);
+                }
+                finally
+                {
+                    clusterSession?.AcquireCurrentEpoch();
+                }
+            }
+
+            while (!RespWriteUtils.TryWriteInt32(replicas, ref dcurr, dend))
                 SendAndReset();
 
             return true;

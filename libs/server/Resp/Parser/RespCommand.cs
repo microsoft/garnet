@@ -336,6 +336,7 @@ namespace Garnet.server
         LASTSAVE,
         BGSAVE,
         COMMITAOF,
+        WAIT,
         FAILOVER,
 
         // Custom commands

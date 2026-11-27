@@ -331,6 +331,7 @@ namespace CommandInfoUpdater
             new("UNLINK", RespCommand.UNLINK, StoreType.All),
             new("UNSUBSCRIBE", RespCommand.UNSUBSCRIBE),
             new("UNWATCH", RespCommand.UNWATCH),
+            new("WAIT", RespCommand.WAIT),
             new("WATCH", RespCommand.WATCH),
             new("WATCHMS", RespCommand.WATCHMS),
             new("WATCHOS", RespCommand.WATCHOS),

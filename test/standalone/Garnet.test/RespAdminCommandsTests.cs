@@ -698,6 +698,55 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SeWaitNoReplicasTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.StringSet("key", "value");
+
+            ClassicAssert.AreEqual(0, (long)db.Execute("WAIT", "0", "0"));
+            ClassicAssert.AreEqual(0, (long)db.Execute("WAIT", "-1", "0"));
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            ClassicAssert.AreEqual(0, (long)db.Execute("WAIT", "1", "200"));
+            ClassicAssert.GreaterOrEqual(sw.ElapsedMilliseconds, 150);
+        }
+
+        [Test]
+        public void SeWaitErrorTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("WAIT", "1"));
+            ClassicAssert.AreEqual(string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(RespCommand.WAIT)), ex.Message);
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("WAIT", "one", "0"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER), ex.Message);
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("WAIT", "1", "1.5"));
+            ClassicAssert.AreEqual("ERR timeout is not an integer or out of range", ex.Message);
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("WAIT", "1", "-5"));
+            ClassicAssert.AreEqual("ERR timeout is negative", ex.Message);
+        }
+
+        [Test]
+        public async Task SeWaitInTransactionTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var tran = db.CreateTransaction();
+            _ = tran.StringSetAsync("key", "value");
+            var wait = tran.ExecuteAsync("WAIT", "1", "0");
+            var exec = tran.ExecuteAsync();
+
+            ClassicAssert.IsTrue(await exec.WaitAsync(TimeSpan.FromSeconds(10)));
+            ClassicAssert.AreEqual(0, (long)await wait);
+        }
+
+        [Test]
         public async Task SeFlushDbAndFlushAllTest2([Values(RespCommand.FLUSHALL, RespCommand.FLUSHDB)] RespCommand cmd,
             [Values] bool async, [Values] bool unsafetruncatelog)
         {

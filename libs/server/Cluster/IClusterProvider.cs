@@ -70,6 +70,23 @@ namespace Garnet.server
         bool TryGetReplicaInfo(out RoleInfo info);
 
         /// <summary>
+        /// Counts the connected replicas that have been sent the AOF up to at least the given address on every sublog.
+        /// </summary>
+        /// <param name="address">AOF address to compare against.</param>
+        /// <returns>Number of connected replicas at or past the address.</returns>
+        int GetSyncedReplicaCount(in AofAddress address);
+
+        /// <summary>
+        /// Waits until at least the given number of connected replicas have been sent the AOF up to the given address, or until the timeout.
+        /// </summary>
+        /// <param name="address">AOF address to wait for.</param>
+        /// <param name="numReplicas">Number of replicas to wait for.</param>
+        /// <param name="timeout">Timeout in milliseconds, or 0 to wait without a timeout.</param>
+        /// <param name="token">Cancellation token for the wait.</param>
+        /// <returns>Number of connected replicas at or past the address when the wait ends.</returns>
+        Task<int> WaitForSyncedReplicasAsync(AofAddress address, long numReplicas, long timeout, CancellationToken token);
+
+        /// <summary>
         /// Purger buffer pool for provided manager
         /// </summary>
         /// <param name="managerType"></param>
