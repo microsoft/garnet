@@ -328,6 +328,14 @@ namespace Garnet.cluster
             return true;
         }
 
+        /// <inheritdoc />
+        public int GetSyncedReplicaCount(in AofAddress address)
+            => serverOptions.EnableCluster ? replicationManager.AofSyncDriverStore.CountReplicasSentUntil(address) : 0;
+
+        /// <inheritdoc />
+        public Task<int> WaitForSyncedReplicasAsync(AofAddress address, long numReplicas, long timeout, CancellationToken token)
+            => replicationManager.WaitForSyncedReplicasAsync(address, numReplicas, timeout, token);
+
         private RoleInfo GetReplicaInfo(ClusterConfig config)
         {
             clusterManager.GetConnectionInfo(config.LocalNodePrimaryId, out var connection);

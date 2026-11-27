@@ -7246,6 +7246,7 @@ namespace Garnet.test
         [TestCase("BLPOP keyA 10", Description = "BLPOP replies to CLIENT UNBLOCK ERROR with the error only")]
         [TestCase("BLMOVE keyA keyB LEFT LEFT 10", Description = "BLMOVE replies to CLIENT UNBLOCK ERROR with the error only")]
         [TestCase("BZMPOP 10 1 keyA MIN", Description = "BZMPOP replies to CLIENT UNBLOCK ERROR with the error only")]
+        [TestCase("WAIT 1 0", Description = "WAIT replies to CLIENT UNBLOCK ERROR with the error only")]
         public async Task ClientUnblockWithErrorWritesSingleReplyTest(string blockingCommand)
         {
             var expectedError = "-UNBLOCKED client unblocked via CLIENT UNBLOCK\r\n";

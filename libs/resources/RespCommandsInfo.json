@@ -5894,6 +5894,16 @@
     ]
   },
   {
+    "Command": "WAIT",
+    "Name": "WAIT",
+    "Arity": 3,
+    "AclCategories": "Connection, Slow",
+    "Tips": [
+      "request_policy:all_shards",
+      "response_policy:agg_min"
+    ]
+  },
+  {
     "Command": "WATCH",
     "Name": "WATCH",
     "Arity": -2,

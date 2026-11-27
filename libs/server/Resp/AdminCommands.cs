@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server.Custom;
@@ -22,6 +23,14 @@ namespace Garnet.server
     {
         internal int noScriptStart;
         internal ulong[] noScriptBitmap;
+
+        const int WaitIdle = 0;
+        const int WaitBlocked = 1;
+        const int WaitUnblocked = 2;
+        const int WaitUnblockedWithError = 3;
+
+        CancellationTokenSource waitCts;
+        int waitState;
 
         private void ProcessAdminCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi) where TGarnetApi : IGarnetApi
         {
@@ -59,6 +68,7 @@ namespace Garnet.server
                 RespCommand.LASTSAVE => NetworkLASTSAVE(),
                 RespCommand.BGSAVE => NetworkBGSAVE(),
                 RespCommand.COMMITAOF => NetworkCOMMITAOF(),
+                RespCommand.WAIT => NetworkWAIT(),
                 RespCommand.HCOLLECT => NetworkHCOLLECT(ref storageApi),
                 RespCommand.ZCOLLECT => NetworkZCOLLECT(ref storageApi),
                 RespCommand.MONITOR => NetworkMonitor(),
@@ -653,6 +663,98 @@ namespace Garnet.server
                 SendAndReset();
 
             return true;
+        }
+
+        /// <summary>
+        /// WAIT numreplicas timeout
+        /// </summary>
+        /// <returns></returns>
+        private bool NetworkWAIT()
+        {
+            if (parseState.Count != 2)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.WAIT));
+            }
+
+            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica())
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_WAIT_REPLICA);
+
+            if (!parseState.TryGetLong(0, out var numReplicas))
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+
+            if (!parseState.TryGetLong(1, out var timeout))
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_INTEGER);
+
+            if (timeout < 0)
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_IS_NEGATIVE);
+
+            var clusterEnabled = storeWrapper.serverOptions.EnableCluster;
+
+            // The AOF tail covers every write this session issued before WAIT
+            var target = storeWrapper.appendOnlyFile?.Log.TailAddress ?? default;
+            var replicas = clusterEnabled ? storeWrapper.clusterProvider.GetSyncedReplicaCount(in target) : 0;
+
+            if (replicas < numReplicas && CanBlock)
+            {
+                if (waitCts == null || waitCts.IsCancellationRequested)
+                    waitCts = new CancellationTokenSource();
+                Volatile.Write(ref waitState, WaitBlocked);
+
+                // Release the cluster epoch so configuration changes such as failover are not held up by the wait
+                clusterSession?.ReleaseCurrentEpoch();
+                try
+                {
+                    if (clusterEnabled)
+                        replicas = AsyncUtils.BlockingWait(storeWrapper.clusterProvider.WaitForSyncedReplicasAsync(target, numReplicas, timeout, waitCts.Token));
+                    else
+                        WaitForTimeout(timeout, waitCts.Token);
+                }
+                finally
+                {
+                    clusterSession?.AcquireCurrentEpoch();
+                }
+
+                if (Interlocked.Exchange(ref waitState, WaitIdle) == WaitUnblockedWithError)
+                    return AbortWithErrorMessage(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK);
+            }
+
+            while (!RespWriteUtils.TryWriteInt32(replicas, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Unblocks this session if it is blocked in WAIT
+        /// </summary>
+        /// <param name="withError">Whether WAIT replies with an error instead of the current replica count</param>
+        /// <returns>True if a blocked WAIT was unblocked</returns>
+        internal bool TryUnblockWait(bool withError)
+        {
+            if (Interlocked.CompareExchange(ref waitState, withError ? WaitUnblockedWithError : WaitUnblocked, WaitBlocked) != WaitBlocked)
+                return false;
+
+            waitCts.Cancel();
+            return true;
+        }
+
+        private static void WaitForTimeout(long timeout, CancellationToken token)
+        {
+            if (timeout == 0)
+            {
+                _ = token.WaitHandle.WaitOne();
+                return;
+            }
+
+            var now = Environment.TickCount64;
+            var deadline = timeout > long.MaxValue - now ? long.MaxValue : now + timeout;
+            while (!token.IsCancellationRequested)
+            {
+                var remaining = deadline - Environment.TickCount64;
+                if (remaining <= 0)
+                    return;
+                _ = token.WaitHandle.WaitOne((int)Math.Min(remaining, int.MaxValue));
+            }
         }
 
         private bool NetworkHCOLLECT<TGarnetApi>(ref TGarnetApi storageApi)

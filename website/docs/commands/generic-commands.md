@@ -501,6 +501,28 @@ Integer reply: the number of keys that were unlinked.
 
 ---
 
+### WAIT
+
+#### Syntax
+
+```bash
+    WAIT numreplicas timeout
+```
+
+Blocks the current client until all of its previous write commands have reached at least `numreplicas` replicas, or until `timeout` milliseconds have passed. A timeout of 0 blocks until the replicas are reached.
+
+The command returns the number of replicas reached, whether the requested number was met or the timeout expired, so a timeout is not an error.
+
+A replica counts as reached once the primary has sent it the AOF up to the point where `WAIT` was called. Replicas do not acknowledge what they receive, so the count reflects data sent to the replica rather than data it has applied.
+
+Inside a transaction or a script, `WAIT` does not block and returns the current count. A blocked `WAIT` can be ended early with `CLIENT UNBLOCK`, which makes it return the current count, or an error when `ERROR` is given. Calling `WAIT` on a replica returns an error.
+
+#### Resp Reply
+
+Integer reply: the number of replicas reached by all the writes performed in the context of the current connection.
+
+---
+
 ### DUMP
 
 > [!IMPORTANT]  

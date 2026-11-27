@@ -8472,6 +8472,27 @@
     ]
   },
   {
+    "Command": "WAIT",
+    "Name": "WAIT",
+    "Summary": "Blocks until the asynchronous replication of all preceding write commands sent by the connection is completed.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMREPLICAS",
+        "DisplayText": "numreplicas",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TIMEOUT",
+        "DisplayText": "timeout",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
     "Command": "WATCH",
     "Name": "WATCH",
     "Summary": "Monitors changes to keys to determine the execution of a transaction.",

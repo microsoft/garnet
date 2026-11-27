@@ -7854,6 +7854,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task WaitACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "WAIT",
+                [DoWaitAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoWaitAsync(GarnetClient client)
+            {
+                long val = await client.ExecuteForLongResultAsync("WAIT", ["0", "0"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
         public async Task WatchACLsAsync()
         {
             // TODO: should watch fail outside of a transaction?

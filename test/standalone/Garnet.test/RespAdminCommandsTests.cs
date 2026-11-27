@@ -698,6 +698,107 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SeWaitNoReplicasTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.StringSet("key", "value");
+
+            ClassicAssert.AreEqual(0, (long)db.Execute("WAIT", "0", "0"));
+            ClassicAssert.AreEqual(0, (long)db.Execute("WAIT", "-1", "0"));
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            ClassicAssert.AreEqual(0, (long)db.Execute("WAIT", "1", "200"));
+            ClassicAssert.GreaterOrEqual(sw.ElapsedMilliseconds, 150);
+        }
+
+        [Test]
+        public void SeWaitErrorTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("WAIT", "1"));
+            ClassicAssert.AreEqual(string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(RespCommand.WAIT)), ex.Message);
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("WAIT", "one", "0"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER), ex.Message);
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("WAIT", "1", "1.5"));
+            ClassicAssert.AreEqual("ERR timeout is not an integer or out of range", ex.Message);
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("WAIT", "1", "-5"));
+            ClassicAssert.AreEqual("ERR timeout is negative", ex.Message);
+        }
+
+        [Test]
+        public async Task SeWaitInTransactionTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var tran = db.CreateTransaction();
+            _ = tran.StringSetAsync("key", "value");
+            var wait = tran.ExecuteAsync("WAIT", "1", "0");
+            var exec = tran.ExecuteAsync();
+
+            ClassicAssert.IsTrue(await exec.WaitAsync(TimeSpan.FromSeconds(10)));
+            ClassicAssert.AreEqual(0, (long)await wait);
+        }
+
+        [Test]
+        public async Task WaitClientUnblockTimeoutTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            using var blockingClient = TestUtils.CreateRequest();
+            var clientIdResponse = Encoding.ASCII.GetString(blockingClient.SendCommand("CLIENT ID"));
+            var clientId = clientIdResponse.Substring(1, clientIdResponse.IndexOf("\r\n") - 1);
+
+            var blockingTask = Task.Run(() => Encoding.ASCII.GetString(blockingClient.SendCommand("WAIT 1 0")));
+            await Task.Delay(1000).ConfigureAwait(false);
+
+            ClassicAssert.AreEqual(1, (int)db.Execute("CLIENT", "UNBLOCK", clientId, "TIMEOUT"));
+            ClassicAssert.IsTrue(blockingTask.Wait(TimeSpan.FromSeconds(10)));
+            ClassicAssert.AreEqual(":0\r\n", blockingTask.Result[..":0\r\n".Length]);
+
+            ClassicAssert.AreEqual(0, (int)db.Execute("CLIENT", "UNBLOCK", clientId, "TIMEOUT"));
+        }
+
+        [Test]
+        public async Task WaitClientKillTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            using var blockingClient = TestUtils.CreateRequest();
+            var clientIdResponse = Encoding.ASCII.GetString(blockingClient.SendCommand("CLIENT ID"));
+            var clientId = clientIdResponse.Substring(1, clientIdResponse.IndexOf("\r\n") - 1);
+
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    _ = blockingClient.SendCommand("WAIT 1 0");
+                }
+                catch
+                {
+                }
+            });
+            await Task.Delay(1000).ConfigureAwait(false);
+
+            ClassicAssert.AreEqual(1, (int)db.Execute("CLIENT", "KILL", "ID", clientId));
+
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+            while (db.Execute("CLIENT", "LIST").ToString().Contains($"id={clientId} "))
+            {
+                ClassicAssert.Less(DateTime.UtcNow, deadline, "Killed client blocked in WAIT was not released");
+                await Task.Delay(50).ConfigureAwait(false);
+            }
+        }
+
+        [Test]
         public async Task SeFlushDbAndFlushAllTest2([Values(RespCommand.FLUSHALL, RespCommand.FLUSHDB)] RespCommand cmd,
             [Values] bool async, [Values] bool unsafetruncatelog)
         {

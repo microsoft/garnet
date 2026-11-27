@@ -593,6 +593,51 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Wait until the given number of connected replicas have been sent the AOF up to the input address, or until the timeout
+        /// </summary>
+        /// <param name="address">AOF address to wait for</param>
+        /// <param name="numReplicas">Number of replicas to wait for</param>
+        /// <param name="timeout">Timeout in milliseconds, 0 for no timeout</param>
+        /// <param name="token">Cancellation token for the wait</param>
+        /// <returns>Number of connected replicas at or past the address when the wait ends</returns>
+        public async Task<int> WaitForSyncedReplicasAsync(AofAddress address, long numReplicas, long timeout, CancellationToken token)
+        {
+            var now = Environment.TickCount64;
+            var deadline = timeout == 0 || timeout > long.MaxValue - now ? long.MaxValue : now + timeout;
+
+            // Replicas that are caught up are seen within the CPU-local spin; a lagging replica is polled on a capped
+            // backoff, which bounds the added latency while keeping a long wait off the CPU
+            var spinner = ConfiguredSpinWait.CpuLocal();
+            var backoff = new ExponentialBackoff(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(16));
+            while (true)
+            {
+                var replicas = AofSyncDriverStore.CountReplicasSentUntil(address);
+                if (replicas >= numReplicas)
+                    return replicas;
+
+                var remaining = deadline - Environment.TickCount64;
+                if (remaining <= 0 || token.IsCancellationRequested || ctsRepManager.IsCancellationRequested)
+                    return replicas;
+
+                if (spinner.TryWait())
+                    continue;
+
+                var delay = backoff.RecordFailure();
+                if (delay.TotalMilliseconds > remaining)
+                    delay = TimeSpan.FromMilliseconds(remaining);
+
+                try
+                {
+                    await Task.Delay(delay, token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return AofSyncDriverStore.CountReplicasSentUntil(address);
+                }
+            }
+        }
+
+        /// <summary>
         /// Initiate connection with PRIMARY after restart
         /// </summary>
         public void Start()
