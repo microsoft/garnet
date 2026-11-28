@@ -1,0 +1,75 @@
+{
+  "permalink": "/garnet/blog/etags-when-and-how",
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/blog/2025-01-18-etag-when-and-how.md",
+  "source": "@site/blog/2025-01-18-etag-when-and-how.md",
+  "title": "ETags, When and How",
+  "description": "Garnet recently announced native support for ETag-based commands.",
+  "date": "2025-01-18T00:00:00.000Z",
+  "tags": [
+    {
+      "inline": true,
+      "label": "garnet",
+      "permalink": "/garnet/blog/tags/garnet"
+    },
+    {
+      "inline": true,
+      "label": "concurrency",
+      "permalink": "/garnet/blog/tags/concurrency"
+    },
+    {
+      "inline": true,
+      "label": "caching",
+      "permalink": "/garnet/blog/tags/caching"
+    },
+    {
+      "inline": true,
+      "label": "lock-free",
+      "permalink": "/garnet/blog/tags/lock-free"
+    },
+    {
+      "inline": true,
+      "label": "etags",
+      "permalink": "/garnet/blog/tags/etags"
+    }
+  ],
+  "readingTime": 10.71,
+  "hasTruncateMarker": true,
+  "authors": [
+    {
+      "name": "Hamdaan Khalid",
+      "title": "Software Engineer, Azure Resource Graph",
+      "url": "https://hamdaan-rails-personal.herokuapp.com/about",
+      "imageURL": "https://hamdaan-rails-personal.herokuapp.com/assets/me-f1fa367c094eedf1c151b0b0dfbc057c2b047dec4e10f3974167ec3f803d81f0.jpg",
+      "key": "hkhalid",
+      "page": null
+    },
+    {
+      "name": "Badrish Chandramouli",
+      "title": "Partner Research Manager, Microsoft Research",
+      "url": "https://badrish.net",
+      "imageURL": "https://badrish.net/assets/icons/badrish4.jpg",
+      "key": "badrishc",
+      "page": null
+    }
+  ],
+  "frontMatter": {
+    "slug": "etags-when-and-how",
+    "title": "ETags, When and How",
+    "authors": [
+      "hkhalid",
+      "badrishc"
+    ],
+    "tags": [
+      "garnet",
+      "concurrency",
+      "caching",
+      "lock-free",
+      "etags"
+    ]
+  },
+  "unlisted": false,
+  "nextItem": {
+    "title": "OSS Announcement",
+    "permalink": "/garnet/blog/msr-blog-announcement"
+  }
+}

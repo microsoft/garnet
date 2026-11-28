@@ -1,0 +1,28 @@
+{
+  "id": "azure/api-compatibility",
+  "title": "API compatibility for Azure Cosmos DB Garnet Cache",
+  "description": "Below is the full list of API commands and their implementation status in Azure Cosmos DB Garnet Cache. There is compatibility with Redis clients and support for a subset of Redis data types and commands. The maximum size for a key value pair is 32MB. For the lowest latency, it’s recommended to keep the size of a key value pair to around 1KB.",
+  "source": "@site/docs/azure/api-compatibility.md",
+  "sourceDirName": "azure",
+  "slug": "/azure/api-compatibility",
+  "permalink": "/garnet/docs/azure/api-compatibility",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/azure/api-compatibility.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "api-compatibility",
+    "sidebar_label": "API Compatibility",
+    "title": "API compatibility for Azure Cosmos DB Garnet Cache"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Quick Start",
+    "permalink": "/garnet/docs/azure/quickstart"
+  },
+  "next": {
+    "title": "Cluster Configuration",
+    "permalink": "/garnet/docs/azure/cluster-configuration"
+  }
+}

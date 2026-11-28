@@ -1,0 +1,29 @@
+{
+  "id": "commands/client-commands",
+  "title": "Client Management",
+  "description": "CLIENT ID",
+  "source": "@site/docs/commands/client.md",
+  "sourceDirName": "commands",
+  "slug": "/commands/client",
+  "permalink": "/garnet/docs/commands/client",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/commands/client.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "client-commands",
+    "sidebar_label": "Client Management",
+    "title": "Client Management",
+    "slug": "client"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Server Management",
+    "permalink": "/garnet/docs/commands/server"
+  },
+  "next": {
+    "title": "Checkpoint",
+    "permalink": "/garnet/docs/commands/checkpoint"
+  }
+}
